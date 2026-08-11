@@ -6,21 +6,22 @@ Unicode true
 !include "MUI2.nsh"
 
 !define APP "NanoTorrent"
-!define VER "0.1.0"
+!define VER "0.1.1"
 !define EXE "nanotorrent.exe"
 !define PUBLISHER "Power2All"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP}"
 
 Name "${APP}"
-OutFile "${APP}-Setup.exe"
+OutFile "${APP}-${VER}-Setup.exe"
 InstallDir "$PROGRAMFILES64\${APP}"
 InstallDirRegKey HKLM "Software\${APP}" "InstallDir"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 
-VIProductVersion "0.1.0.0"
+VIProductVersion "0.1.1.0"
 VIAddVersionKey "ProductName" "${APP}"
 VIAddVersionKey "FileVersion" "${VER}"
+VIAddVersionKey "ProductVersion" "${VER}"
 VIAddVersionKey "FileDescription" "${APP} Setup"
 VIAddVersionKey "LegalCopyright" "${PUBLISHER}"
 
@@ -59,10 +60,10 @@ VIAddVersionKey "LegalCopyright" "${PUBLISHER}"
 Section "!${APP} (required)" SecCore
   SectionIn RO
   SetOutPath "$INSTDIR"
+  ; The lang/*.json files are compiled into the exe (see build.rs), so there is
+  ; no lang folder to install. Dropping one next to the exe still overrides a
+  ; locale at runtime.
   File "..\target\release\${EXE}"
-  SetOutPath "$INSTDIR\lang"
-  File "..\lang\*.json"
-  SetOutPath "$INSTDIR"
 
   CreateDirectory "$SMPROGRAMS\${APP}"
   CreateShortcut "$SMPROGRAMS\${APP}\${APP}.lnk" "$INSTDIR\${EXE}"
@@ -111,7 +112,7 @@ Section "Set as default for .torrent files and magnet links" SecAssoc
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "The ${APP} program and its language files."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "The ${APP} program (translations are built in)."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecAssoc} "Register ${APP} for .torrent files and magnet: links. Windows may still ask you to confirm the default the first time."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 

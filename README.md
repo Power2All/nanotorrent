@@ -17,7 +17,7 @@ Site: <https://www.nanotorrent.org>
 | GUI                   | wxWidgets (native Win32)        | native-windows-gui (native Win32 common controls), dark mode |
 | Settings storage      | SQLite (`PicoTorrent.sqlite`)   | Same schema (`NanoTorrent.sqlite`)                   |
 | Resume data           | libtorrent resume blobs in DB   | librqbit session persistence (JSON + `.bitv` mmap)   |
-| Translations          | `lang/*.json` embedded in a DB  | Same `lang/*.json` files on disk                     |
+| Translations          | `lang/*.json` embedded in a DB  | Same `lang/*.json` compiled into the exe             |
 | Single instance / IPC | Win32 mutex + `WM_COPYDATA`     | Loopback TCP on port 37549                           |
 | Notifications         | tray balloons                   | Windows 11 WinRT toasts                              |
 | Logging               | boost::log to file              | `tracing` to file                                    |
@@ -35,8 +35,14 @@ Windows. No C++ dependencies.
 cargo build --release
 ```
 
-The binary is `target/release/nanotorrent.exe`. Ship the `lang/` folder next to
-it for translations (falls back to the embedded en-US otherwise).
+The binary is `target/release/nanotorrent.exe` and ships standalone: every
+`lang/*.json` file is compiled in by `build.rs`, so no folder needs to travel
+with it. A `lang/` folder next to the executable still takes precedence per
+locale, which is the quickest way to edit a translation without rebuilding.
+
+Country flags for the peers list live in `res/flags` (252 public-domain 32x24
+PNGs from flagpedia.net — see `res/flags/SOURCE.md`) and are embedded the same
+way; refresh them with `tools/update-flags.ps1`.
 
 The engine is vendored: `vendor/librqbit` (and `vendor/librqbit-tracker-comms`)
 are the published crates.io sources plus a small stack of mostly
@@ -67,7 +73,8 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   labels, copy info hash / magnet, open in Explorer). Paused torrents blank
   their live columns.
 - **Details tabs** — Overview (with a piece-availability bar), Files (per-file
-  include toggles), Peers (with GeoIP country), and **Trackers** grouped into
+  include toggles), Peers (with GeoIP country **and its flag**), and
+  **Trackers** grouped into
   announce tiers with per-tracker seeds/leeches/fails/next-announce plus
   DHT/LSD/PeX source rows.
 - **Add flows** — Add torrent (parsed file list, save path, label, start
@@ -77,7 +84,7 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   comment / private options.
 - **Notifications** — real Windows 11 toasts on download-complete, under a
   registered AppUserModelID; a notification-area (tray) icon with close-to-tray
-  prompt.
+  prompt, shown for both the window's close button and File ▸ Exit.
 - **File associations** — register NanoTorrent for `.torrent` files and
   `magnet:` links from Preferences.
 - **GeoIP & IP filter** — DB-IP country lookup for peers; eMule/PeerGuardian
@@ -90,8 +97,13 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   auto-apply.
 - **Single-instance** — a second launch forwards its command line (torrent
   files / magnet links) to the running instance and exits.
-- **Translations** — all original language files, selectable in Preferences;
-  the UI text is localized with an embedded en-US fallback.
+- **Translations** — all original language files, compiled into the exe and
+  picked from a scrollable list in Preferences, each shown by its native name
+  ("Nederlands (Nederland)", from Windows' own locale data). A fresh install
+  always starts in English (the OS locale is deliberately not consulted) and
+  English is the first entry; changing the language offers to restart, since
+  the UI is built from the translator at startup. The UI text is localized
+  with an embedded en-US fallback.
 - **Crash log** — a panic hook writes a backtrace to the logs folder (the
   original used Crashpad; there is no upload).
 

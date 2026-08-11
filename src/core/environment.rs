@@ -125,6 +125,11 @@ impl Environment {
     }
 
     /// Port of Environment::GetCurrentLocale.
+    ///
+    /// No longer used to pick the startup locale: NanoTorrent always starts in
+    /// English (`DEFAULT_LOCALE`) and only follows `locale_name` once the user
+    /// has chosen one. Kept because it is a direct port of the original.
+    #[allow(dead_code)]
     pub fn get_current_locale() -> String {
         // GetUserDefaultLocaleName equivalent; fall back to en-US.
         std::env::var("LANG")

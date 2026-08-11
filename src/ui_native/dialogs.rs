@@ -26,6 +26,8 @@ pub enum DialogResult {
     AddTorrent { bytes: Vec<u8>, params: AddParams },
     CreateTorrent(CreateTorrentParams),
     PreferencesSaved,
+    /// Saved, and the UI language changed - the caller offers a restart.
+    PreferencesSavedLanguageChanged,
     /// The close prompt: exit the app or just minimize to tray, and whether to
     /// remember the choice.
     CloseChoice { exit: bool, remember: bool },
@@ -407,7 +409,11 @@ pub fn spawn_close_prompt(
 
         nwg::Window::builder()
             .title("NanoTorrent")
-            .size((440, 210))
+            // 240, not 210: the buttons were made taller (48) to let long
+            // translations wrap, and at 210 the row ended at y=198 - past the
+            // ~177px client area left after the title bar, so the prompt came
+            // up with nothing usable in it.
+            .size((440, 240))
             .center(true)
             .flags(nwg::WindowFlags::WINDOW)
             .build(&mut window)
@@ -434,23 +440,28 @@ pub fn spawn_close_prompt(
             .parent(&window)
             .text(&tr.i18n("close_exit"))
             .position((16, 150))
-            .size((110, 30))
+            .size((110, 48))
             .build(&mut exit_btn)
             .unwrap();
         nwg::Button::builder()
             .parent(&window)
             .text(&tr.i18n("close_minimize"))
             .position((134, 150))
-            .size((150, 30))
+            .size((150, 48))
             .build(&mut min_btn)
             .unwrap();
         nwg::Button::builder()
             .parent(&window)
             .text(&tr.i18n("cancel"))
             .position((320, 150))
-            .size((104, 30))
+            .size((104, 48))
             .build(&mut cancel_btn)
             .unwrap();
+        // Long translations wrap instead of clipping; widths are unchanged so
+        // the row keeps its spacing.
+        for b in [&exit_btn, &min_btn, &cancel_btn] {
+            super::set_button_multiline(b);
+        }
 
         let window_handle = window.handle;
         let result_ref = result.clone();
@@ -998,12 +1009,17 @@ pub fn spawn_add_torrent(
         label_names.extend(labels.iter().map(|l| l.name.clone()));
         nwg::ComboBox::builder()
             .parent(&window)
+            // Same as the language combo: the height is the dropped list's.
+            // Labels are user-created so this list has no fixed upper bound.
             .collection(label_names)
             .selected_index(Some(0))
             .position((120, 92))
             .size((240, 24))
             .build(&mut label_combo)
             .unwrap();
+        if let Some(hwnd) = label_combo.handle.hwnd() {
+            super::set_dropdown_visible_items(hwnd, 12);
+        }
 
         nwg::CheckBox::builder()
             .parent(&window)
@@ -1214,7 +1230,7 @@ pub fn spawn_preferences(
         let mut window = nwg::Window::default();
         nwg::Window::builder()
             .title(&tr.i18n("preferences"))
-            .size((520, 460))
+            .size((520, 530))
             .center(true)
             // Built hidden: run_dialog_window themes the content first, then
             // shows it (the default WS_VISIBLE would flash white in dark mode).
@@ -1226,7 +1242,7 @@ pub fn spawn_preferences(
         nwg::TabsContainer::builder()
             .parent(&window)
             .position((10, 10))
-            .size((500, 390))
+            .size((500, 460))
             .build(&mut tabs)
             .unwrap();
 
@@ -1258,7 +1274,7 @@ pub fn spawn_preferences(
 
         // --- General page --------------------------------------------------
         let mut lang_caption = nwg::Label::default();
-        let mut lang_combo: nwg::ComboBox<String> = nwg::ComboBox::default();
+        let mut lang_combo: nwg::ListBox<String> = nwg::ListBox::default();
         let mut theme_caption = nwg::Label::default();
         let mut theme_combo: nwg::ComboBox<String> = nwg::ComboBox::default();
         let mut skip_dialog_check = nwg::CheckBox::default();
@@ -1281,17 +1297,21 @@ pub fn spawn_preferences(
         let current_locale = cfg
             .get_string("locale_name")
             .filter(|l| !l.is_empty())
-            .unwrap_or_else(|| String::from("en-US"));
+            .unwrap_or_else(|| String::from(crate::DEFAULT_LOCALE));
         let lang_index = languages
             .iter()
             .position(|(loc, _)| loc.eq_ignore_ascii_case(&current_locale))
             .unwrap_or(0);
-        nwg::ComboBox::builder()
+        // A LIST, not a combo box. A Win32 drop-down shows a minimum of 30
+        // items and takes its scroll range from the height it was created
+        // with, which left the top of a 41-entry list unreachable however it
+        // was sized. A list box just scrolls. ~184px shows 10 languages.
+        nwg::ListBox::builder()
             .parent(&tab_general)
             .collection(languages.iter().map(|(_, n)| n.clone()).collect())
             .selected_index(Some(lang_index))
             .position((160, 14))
-            .size((200, 24))
+            .size((200, 170))
             .build(&mut lang_combo)
             .unwrap();
 
@@ -1299,7 +1319,7 @@ pub fn spawn_preferences(
             .background_color(Some(label_bg()))
             .parent(&tab_general)
             .text(&tr.i18n("theme"))
-            .position((12, 48))
+            .position((12, 208))
             .size((140, 20))
             .font(Some(&bold))
             .build(&mut theme_caption)
@@ -1317,7 +1337,7 @@ pub fn spawn_preferences(
             .parent(&tab_general)
             .collection(themes.iter().map(|t| t.to_string()).collect())
             .selected_index(Some(theme_index))
-            .position((160, 46))
+            .position((160, 206))
             .size((200, 24))
             .build(&mut theme_combo)
             .unwrap();
@@ -1344,14 +1364,14 @@ pub fn spawn_preferences(
         checkbox(
             &tab_general,
             &tr.i18n("skip_add_torrent_dialog"),
-            84,
+            244,
             cfg.get_bool("skip_add_torrent_dialog"),
             &mut skip_dialog_check,
         );
         checkbox(
             &tab_general,
             &tr.i18n("show_picotorrent_in_notification_area"),
-            112,
+            272,
             cfg.get_bool("show_in_notification_area"),
             &mut show_tray_check,
         );
@@ -1360,7 +1380,7 @@ pub fn spawn_preferences(
             .background_color(Some(label_bg()))
             .parent(&tab_general)
             .text(&tr.i18n("close_action_label"))
-            .position((12, 142))
+            .position((12, 302))
             .size((160, 20))
             .font(Some(&bold))
             .build(&mut close_action_caption)
@@ -1378,7 +1398,7 @@ pub fn spawn_preferences(
                 String::from("Exit"),
             ])
             .selected_index(Some(close_action_idx))
-            .position((180, 140))
+            .position((180, 300))
             .size((180, 24))
             .build(&mut close_action_combo)
             .unwrap();
@@ -1386,7 +1406,7 @@ pub fn spawn_preferences(
         checkbox(
             &tab_general,
             &tr.i18n("minimize_to_notification_area"),
-            168,
+            328,
             cfg.get_bool("minimize_to_notification_area"),
             &mut min_tray_check,
         );
@@ -1397,10 +1417,11 @@ pub fn spawn_preferences(
         nwg::Button::builder()
             .parent(&tab_general)
             .text(&tr.i18n("set_default_associations"))
-            .position((12, 204))
-            .size((320, 28))
+            .position((12, 364))
+            .size((320, 46))
             .build(&mut assoc_btn)
             .unwrap();
+        super::set_button_multiline(&assoc_btn);
 
         // --- Downloads page ------------------------------------------------
         let mut save_path_caption = nwg::Label::default();
@@ -1833,14 +1854,14 @@ pub fn spawn_preferences(
         nwg::Button::builder()
             .parent(&window)
             .text(&tr.i18n("ok"))
-            .position((320, 410))
+            .position((320, 480))
             .size((90, 28))
             .build(&mut ok_btn)
             .unwrap();
         nwg::Button::builder()
             .parent(&window)
             .text(&tr.i18n("cancel"))
-            .position((418, 410))
+            .position((418, 480))
             .size((90, 28))
             .build(&mut cancel_btn)
             .unwrap();
@@ -1849,7 +1870,7 @@ pub fn spawn_preferences(
             .parent(&window)
             // Settings are applied live now (the session is rebuilt on OK).
             .text(&tr.i18n("changes_applied_on_ok"))
-            .position((10, 414))
+            .position((10, 484))
             .size((300, 40))
             .build(&mut restart_label)
             .unwrap();
@@ -1900,6 +1921,7 @@ pub fn spawn_preferences(
         let cfg2 = cfg.clone();
         let tr2 = tr.clone();
         let languages2 = languages.clone();
+        let current_locale2 = current_locale.clone();
 
         let c = (
             lang_combo.clone(),
@@ -1998,9 +2020,13 @@ pub fn spawn_preferences(
                     let checked =
                         |cb: &nwg::CheckBox| cb.check_state() == nwg::CheckBoxState::Checked;
 
+                    // The UI is built from the translator at startup, so a
+                    // language change only takes full effect on a restart.
+                    let mut locale_changed = false;
                     if let Some(idx) = c.0.selection()
                         && let Some((locale, _)) = languages2.get(idx)
                     {
+                        locale_changed = !locale.eq_ignore_ascii_case(&current_locale2);
                         cfg2.set("locale_name", locale);
                     }
                     if let Some(idx) = c.1.selection() {
@@ -2083,7 +2109,11 @@ pub fn spawn_preferences(
                     cfg2.set("libtorrent.proxy_hostnames", &checked(&c.33));
                     cfg2.set("libtorrent.anonymous_mode", &checked(&c.34));
 
-                    *result_ref.borrow_mut() = DialogResult::PreferencesSaved;
+                    *result_ref.borrow_mut() = if locale_changed {
+                        DialogResult::PreferencesSavedLanguageChanged
+                    } else {
+                        DialogResult::PreferencesSaved
+                    };
                     nwg::stop_thread_dispatch();
                 }
                 nwg::Event::OnButtonClick if handle == cancel_handle => {

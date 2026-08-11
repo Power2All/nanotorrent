@@ -1,13 +1,24 @@
 // Port of src/picotorrent/ui/translator.{hpp,cpp}
 //
 // The original embedded the lang/*.json files into a SQLite database at
-// build time; this port reads the very same JSON files from the lang/
-// directory at startup. en-US is compiled in as fallback.
+// build time; this port compiles the very same JSON files straight into the
+// .exe, so it runs standalone with every translation available. A lang/
+// directory next to the executable still wins per-locale, which keeps
+// translations editable without a rebuild.
 
 use std::collections::HashMap;
 use std::path::Path;
 
-const EN_US: &str = include_str!("../../lang/en-US.json");
+// pub static EMBEDDED_LANGS: &[(&str, &str)] - locale -> file contents, built
+// from lang/*.json by build.rs.
+include!(concat!(env!("OUT_DIR"), "/lang_table.rs"));
+
+fn embedded(locale: &str) -> Option<&'static str> {
+    EMBEDDED_LANGS
+        .iter()
+        .find(|(l, _)| l.eq_ignore_ascii_case(locale))
+        .map(|(_, json)| *json)
+}
 
 #[derive(Clone)]
 pub struct Language {
@@ -24,6 +35,10 @@ pub struct Translator {
 }
 
 fn parse_lang(json: &str) -> HashMap<String, String> {
+    // serde_json rejects a leading UTF-8 BOM, and some of the original
+    // language files carry one (es-ES) - without this they silently parse to
+    // nothing and the UI falls back to English.
+    let json = json.trim_start_matches('\u{feff}');
     serde_json::from_str::<HashMap<String, serde_json::Value>>(json)
         .map(|m| {
             m.into_iter()
@@ -40,10 +55,14 @@ fn parse_lang(json: &str) -> HashMap<String, String> {
 
 impl Translator {
     pub fn load(lang_dir: &Path, locale: &str) -> Translator {
-        let english = parse_lang(EN_US);
-        let mut languages = Vec::new();
-        let mut strings = HashMap::new();
+        let english = parse_lang(embedded("en-US").unwrap_or("{}"));
 
+        // Start from what is compiled in, so a missing lang/ folder is fine.
+        let mut locales: Vec<String> = EMBEDDED_LANGS.iter().map(|(l, _)| l.to_string()).collect();
+        let mut strings = embedded(locale).map(parse_lang).unwrap_or_default();
+
+        // A lang/ directory on disk overrides the embedded copy per locale and
+        // may add locales that did not ship with this build.
         if let Ok(entries) = std::fs::read_dir(lang_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -55,10 +74,9 @@ impl Translator {
                     continue;
                 };
 
-                languages.push(Language {
-                    locale: loc.to_string(),
-                    name: loc.to_string(),
-                });
+                if !locales.iter().any(|l| l.eq_ignore_ascii_case(loc)) {
+                    locales.push(loc.to_string());
+                }
 
                 if loc.eq_ignore_ascii_case(locale)
                     && let Ok(contents) = std::fs::read_to_string(&path)
@@ -68,7 +86,21 @@ impl Translator {
             }
         }
 
-        languages.sort_by(|a, b| a.locale.cmp(&b.locale));
+        let mut languages: Vec<Language> = locales
+            .into_iter()
+            .map(|loc| Language {
+                name: loc.clone(),
+                locale: loc,
+            })
+            .collect();
+        // English first (it is the default and the fallback every other locale
+        // resolves missing keys against), then the rest by locale code.
+        languages.sort_by_key(|l| {
+            (
+                !l.locale.eq_ignore_ascii_case(crate::DEFAULT_LOCALE),
+                l.locale.clone(),
+            )
+        });
 
         Translator {
             selected_locale: locale.to_string(),
@@ -145,6 +177,61 @@ mod tests {
         let m = parse_lang(r#"{"a": "x", "n": 5, "o": {"k": "v"}}"#);
         assert_eq!(m.len(), 1);
         assert!(m.contains_key("a"));
+    }
+
+    #[test]
+    fn every_language_is_embedded_and_parses() {
+        // No lang/ dir needed: the whole set is compiled in.
+        assert!(EMBEDDED_LANGS.len() >= 40, "only {} embedded", EMBEDDED_LANGS.len());
+        assert!(embedded("en-US").is_some());
+        assert_eq!(tr().languages().len(), EMBEDDED_LANGS.len());
+
+        // af-ZA and da-DK ship upstream as empty `{}` placeholders; everything
+        // else must yield strings. Catches a BOM or a truncated file turning a
+        // translation into a silent English fallback.
+        for (locale, json) in EMBEDDED_LANGS {
+            let n = parse_lang(json).len();
+            if matches!(*locale, "af-ZA" | "da-DK") {
+                continue;
+            }
+            assert!(n > 0, "{locale} parsed to nothing");
+        }
+    }
+
+    #[test]
+    fn bom_prefixed_language_file_still_parses() {
+        assert_eq!(parse_lang("\u{feff}{\"a\": \"x\"}").get("a").map(String::as_str), Some("x"));
+        // es-ES is the one that actually carries a BOM on disk.
+        assert!(parse_lang(embedded("es-ES").unwrap()).len() > 100);
+    }
+
+    #[test]
+    fn english_is_first_in_the_language_list() {
+        let t = tr();
+        let langs = t.languages();
+        assert_eq!(langs[0].locale, "en-US");
+        // Everything after it stays sorted, and nothing is lost or duplicated.
+        let rest: Vec<&str> = langs[1..].iter().map(|l| l.locale.as_str()).collect();
+        let mut sorted = rest.clone();
+        sorted.sort_unstable();
+        assert_eq!(rest, sorted);
+        assert_eq!(langs.len(), EMBEDDED_LANGS.len());
+    }
+
+    #[test]
+    fn default_locale_starts_in_english() {
+        // A fresh install must come up in English regardless of the OS locale.
+        let t = Translator::load(Path::new("no-such-lang-dir"), crate::DEFAULT_LOCALE);
+        assert_eq!(t.get_locale(), "en-US");
+        assert_eq!(t.i18n("state_downloading"), "Downloading");
+    }
+
+    #[test]
+    fn embedded_locale_resolves_without_a_lang_dir() {
+        let t = Translator::load(Path::new("no-such-lang-dir"), "nl-NL");
+        assert_eq!(t.get_locale(), "nl-NL");
+        // A real Dutch string, so this fails if the table were English-only.
+        assert_eq!(t.i18n("state_downloading"), "Downloaden");
     }
 
     #[test]

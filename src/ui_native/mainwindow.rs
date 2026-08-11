@@ -20,6 +20,7 @@ use crate::ui::translator::Translator;
 
 use super::darkmode;
 use super::dialogs::{self, DialogHandle, DialogResult};
+use super::flags;
 
 pub(crate) const APP_ICON: &[u8] = include_bytes!("../../res/app.ico");
 
@@ -118,6 +119,8 @@ pub struct MainWindow {
     piece_bar: nwg::Label,
     files_list: nwg::ListView,
     peers_list: nwg::ListView,
+    /// Country flag icons; None if the image list could not be created.
+    flags: Option<flags::Flags>,
     trackers_list: nwg::ListView,
     status: nwg::StatusBar,
     timer: nwg::AnimationTimer,
@@ -607,6 +610,30 @@ impl MainWindow {
         }
         peers_list.set_headers_enabled(true);
 
+        // Country flags in the peers list. Sub-item images are off by default
+        // and nwg's ex_flags does not expose LVS_EX_SUBITEMIMAGES, so set it
+        // straight on the control - without it a flag would only ever render
+        // in column 0.
+        let dpi = unsafe { nwg::dpi() } as u32;
+        let flags = flags::Flags::new(dpi).ok();
+        if let Some(flags) = &flags {
+            use winapi::um::commctrl::{
+                LVM_SETEXTENDEDLISTVIEWSTYLE, LVS_EX_FULLROWSELECT, LVS_EX_SUBITEMIMAGES,
+            };
+            peers_list.set_image_list(
+                Some(flags.image_list()),
+                nwg::ListViewImageListType::Small,
+            );
+            unsafe {
+                winapi::um::winuser::SendMessageW(
+                    peers_list.handle.hwnd().unwrap(),
+                    LVM_SETEXTENDEDLISTVIEWSTYLE,
+                    (LVS_EX_SUBITEMIMAGES | LVS_EX_FULLROWSELECT) as usize,
+                    (LVS_EX_SUBITEMIMAGES | LVS_EX_FULLROWSELECT) as isize,
+                );
+            }
+        }
+
         // Trackers list (port of torrentdetailstrackerspanel.cpp)
         let mut trackers_list = nwg::ListView::default();
         nwg::ListView::builder()
@@ -873,6 +900,7 @@ impl MainWindow {
             piece_bar,
             files_list,
             peers_list,
+            flags,
             trackers_list,
             status,
             timer,
@@ -1119,7 +1147,13 @@ impl MainWindow {
             self.layout();
             self.refresh();
         } else if handle == self.mi_exit.handle || handle == self.tray_exit.handle {
-            self.exiting.set(true);
+            // The tray's Exit bypasses the close prompt: it is reached from an
+            // icon whose whole purpose is the tray, so "minimize to tray?" is a
+            // non-question there. File > Exit goes through the normal close
+            // path, so it asks like the window's X does.
+            if handle == self.tray_exit.handle {
+                self.exiting.set(true);
+            }
             self.window.close();
         } else if handle == self.mi_details_panel.handle {
             let show = !self.show_details.get();
@@ -1157,7 +1191,18 @@ impl MainWindow {
                 .tr
                 .languages()
                 .iter()
-                .map(|l| (l.locale.clone(), l.name.clone()))
+                .map(|l| {
+                    // l.name is the bare locale code; show the real language
+                    // name, with the code kept as a hint ("Nederlands
+                    // (Nederland) - nl-NL").
+                    let display = super::locale_display_name(&l.locale);
+                    let label = if display == l.locale {
+                        display
+                    } else {
+                        format!("{display} - {}", l.locale)
+                    };
+                    (l.locale.clone(), label)
+                })
                 .collect();
             let dlg = dialogs::spawn_preferences(
                 self.tr.clone(),
@@ -1566,6 +1611,31 @@ impl MainWindow {
             .unwrap_or(0)
     }
 
+    /// Relaunches the app. The new instance is started by a detached shell that
+    /// waits a moment first: this process is single-instance, so a launch that
+    /// overlapped our exit would just surface the OLD window and do nothing.
+    fn restart(&self) {
+        if let Ok(exe) = std::env::current_exe() {
+            use std::os::windows::process::CommandExt;
+            // Hides the console cmd would otherwise flash up.
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+            // raw_arg, NOT arg/args: Command quotes each argument, which turned
+            // the nested quotes `start "" "<exe>"` needs into `\` and made
+            // Windows report it could not find '\'. raw_arg passes the command
+            // line through untouched.
+            let line = format!(
+                "/C ping -n 3 127.0.0.1 >nul & start \"\" \"{}\"",
+                exe.display()
+            );
+            let _ = std::process::Command::new("cmd")
+                .raw_arg(&line)
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn();
+        }
+        nwg::stop_thread_dispatch();
+    }
+
     fn on_dialog_finished(&self) {
         while let Ok(result) = self.dialog_rx.try_recv() {
             match result {
@@ -1584,7 +1654,24 @@ impl MainWindow {
                     // the outcome from the slot.
                     self.session.create_torrent(params, self.create_slot.clone());
                 }
-                DialogResult::PreferencesSaved => {
+                r @ (DialogResult::PreferencesSaved
+                | DialogResult::PreferencesSavedLanguageChanged) => {
+                    // Captions were all built from the translator at startup,
+                    // so a new language only takes hold on a restart.
+                    if matches!(r, DialogResult::PreferencesSavedLanguageChanged) {
+                        let params = nwg::MessageParams {
+                            title: &self.tr.i18n("preferences"),
+                            content: "The language change takes effect after a restart.
+
+Restart NanoTorrent now?",
+                            buttons: nwg::MessageButtons::YesNo,
+                            icons: nwg::MessageIcons::Question,
+                        };
+                        if nwg::modal_message(&self.window, &params) == nwg::MessageChoice::Yes {
+                            self.restart();
+                            return;
+                        }
+                    }
                     *self.labels.borrow_mut() = self.cfg.get_labels();
                     self.rebuild_label_menus();
                     // Labels (and their auto-apply filters) may have changed.
@@ -2485,9 +2572,21 @@ impl MainWindow {
                     });
                 }
                 for (i, peer) in peers.iter().enumerate() {
+                    let (iso, country) = match self.geoip.lookup(&peer.addr) {
+                        Some((iso, name)) => (iso, name),
+                        None => (None, String::new()),
+                    };
+                    // Flag for the country column; None leaves the cell
+                    // text-only (unknown IP, or a code we have no flag for).
+                    let flag = self
+                        .flags
+                        .as_ref()
+                        .zip(iso.as_deref())
+                        .and_then(|(f, iso)| f.index_of(iso));
+
                     let cells = [
                         peer.addr.clone(),
-                        self.geoip.country(&peer.addr).unwrap_or_default(),
+                        country,
                         peer.state.clone(),
                         utils::to_human_file_size(peer.fetched_bytes as i64),
                         peer.pieces.to_string(),
@@ -2499,7 +2598,7 @@ impl MainWindow {
                                 index: Some(i as i32),
                                 column_index: col as i32,
                                 text: Some(text),
-                                image: None,
+                                image: if col == 1 { flag } else { None },
                             },
                         );
                     }

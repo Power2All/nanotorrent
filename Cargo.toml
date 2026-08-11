@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
 license = "MIT"
@@ -21,8 +21,8 @@ sha2 = "0.11"
 rand = "0.10"
 librqbit = "8.1.1"
 maxminddb = "0.30"
-native-windows-gui = { version = "1.0.13", optional = true, features = ["list-view", "tabs", "tray-notification", "menu", "combobox", "textbox", "file-dialog", "animation-timer", "notice", "message-window", "flexbox", "progress-bar", "image-decoder", "cursor", "high-dpi", "clipboard"] }
-winapi = { version = "0.3.9", optional = true, features = ["commctrl", "winuser", "windef", "wingdi", "dwmapi", "uxtheme", "winreg", "libloaderapi", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "winerror"] }
+native-windows-gui = { version = "1.0.13", optional = true, features = ["list-view", "image-list", "image-decoder", "tabs", "tray-notification", "menu", "combobox", "textbox", "file-dialog", "animation-timer", "notice", "message-window", "flexbox", "progress-bar", "cursor", "high-dpi", "clipboard"] }
+winapi = { version = "0.3.9", optional = true, features = ["commctrl", "winuser", "windef", "winnls", "wingdi", "dwmapi", "uxtheme", "winreg", "libloaderapi", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "winerror"] }
 open = "5.4.1"
 reqwest = { version = "0.13.4", features = ["json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }

@@ -25,6 +25,10 @@ mod updatechecker;
 
 use std::sync::{Arc, Mutex};
 
+/// The language a fresh install comes up in. The OS locale deliberately does
+/// not influence this - see the note where the startup locale is resolved.
+pub const DEFAULT_LOCALE: &str = "en-US";
+
 use crate::core::configuration::Configuration;
 use crate::core::database::Database;
 use crate::core::environment::Environment;
@@ -99,11 +103,17 @@ fn main() -> anyhow::Result<()> {
 
     let cfg = Arc::new(Configuration::new(db.clone()));
 
-    // Locale: explicit setting or the OS locale, like the original.
+    // Locale: whatever the user picked in Preferences, otherwise English.
+    //
+    // Deliberately NOT the OS locale (which is what the original did): a first
+    // run always comes up in English and the user changes it if they want to.
+    // This also matches the Preferences dialog, which already fell back to
+    // en-US - so an unset locale_name used to start the app in the system
+    // language while the picker claimed English was selected.
     let locale = cfg
         .get_string("locale_name")
         .filter(|l| !l.is_empty())
-        .unwrap_or_else(Environment::get_current_locale);
+        .unwrap_or_else(|| String::from(DEFAULT_LOCALE));
     let translator = Translator::load(&env.get_lang_path(), &locale);
 
     let session = Arc::new(bittorrent::session::Session::new(&env, db.clone(), &cfg)?);

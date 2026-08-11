@@ -57,16 +57,25 @@ impl GeoIp {
 
     /// Country name for a peer address ("ip:port"), if known.
     pub fn country(&self, addr: &str) -> Option<String> {
+        self.lookup(addr).map(|(_, name)| name)
+    }
+
+    /// ISO 3166-1 alpha-2 code and display name, for the flag icon plus its
+    /// label. The code is what the flag table is keyed by; either half can be
+    /// missing from the database, so both are optional.
+    pub fn lookup(&self, addr: &str) -> Option<(Option<String>, String)> {
         let ip = addr.parse::<SocketAddr>().ok()?.ip();
         let reader = self.reader.lock().ok()?;
         let lookup = reader.as_ref()?.lookup(ip).ok()?;
         let country = lookup.decode::<maxminddb::geoip2::Country>().ok()??;
         let country = country.country;
-        country
+        let iso = country.iso_code.map(str::to_string);
+        let name = country
             .names
             .english
-            .or(country.iso_code)
             .map(str::to_string)
+            .or_else(|| iso.clone())?;
+        Some((iso, name))
     }
 }
 

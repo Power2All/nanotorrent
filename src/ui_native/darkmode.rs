@@ -1164,6 +1164,13 @@ unsafe extern "system" fn prepare_dialog_child(hwnd: HWND, lparam: LPARAM) -> i3
                 // Vertically center the text (single-line edits top-align it).
                 center_single_line_edit(hwnd);
             }
+            // The interior colors come from WM_CTLCOLORLISTBOX at the parent;
+            // this is only for the scrollbar, which would otherwise render
+            // light against a dark list (the language picker always scrolls).
+            "ListBox" if dark => {
+                let theme = to_wide("DarkMode_Explorer");
+                SetWindowTheme(hwnd, theme.as_ptr(), std::ptr::null());
+            }
             "ComboBox" if dark => {
                 let theme = to_wide("DarkMode_CFD");
                 SetWindowTheme(hwnd, theme.as_ptr(), std::ptr::null());

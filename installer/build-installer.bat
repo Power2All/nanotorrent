@@ -49,5 +49,12 @@ echo [5/5] Compiling installer with "!MAKENSIS!"...
 if errorlevel 1 ( echo   makensis failed & exit /b 1 )
 
 echo.
-echo Done: %~dp0NanoTorrent-Setup.exe
+rem The output name carries the version (${APP}-${VER}-Setup.exe in the .nsi),
+rem so report whichever one was just written rather than a hardcoded name.
+for /f "delims=" %%F in ('dir /b /o-d "%~dp0*-Setup.exe" 2^>nul') do (
+  echo Done: %~dp0%%F
+  goto :reported
+)
+echo Done ^(no *-Setup.exe found?^)
+:reported
 endlocal

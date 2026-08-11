@@ -20,6 +20,8 @@ const APP_MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="y
 
 fn main() {
     verify_librqbit_patches();
+    embed_language_files();
+    embed_flag_images();
 
     // Embed the app icon into the .exe as a Win32 resource so Explorer and the
     // taskbar show it for the executable file itself.
@@ -36,6 +38,12 @@ fn main() {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("res/app.ico");
         res.set_manifest(APP_MANIFEST);
+        // Without these the exe's properties sheet shows the lowercase crate
+        // name for both the product and the description, and no copyright.
+        // FileVersion / ProductVersion come from CARGO_PKG_VERSION already.
+        res.set("ProductName", "NanoTorrent");
+        res.set("FileDescription", "NanoTorrent");
+        res.set("LegalCopyright", "Power2All");
         if let Err(e) = res.compile() {
             println!("cargo:warning=failed to embed exe icon/manifest: {e}");
         }
@@ -44,6 +52,12 @@ fn main() {
     // Build timestamp for the window title, so it's always obvious which
     // build is actually running (the app is single-instance: launching a
     // new exe while an old instance runs shows the OLD instance's window).
+    //
+    // This MUST re-run when any source file changes. Declaring the asset paths
+    // above narrows cargo's rerun set to exactly those, which froze the stamp
+    // across every code-only rebuild - the title then reports an older build
+    // than the one actually running, defeating the whole point of having it.
+    println!("cargo:rerun-if-changed=src");
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -70,6 +84,62 @@ fn main() {
         "cargo:rustc-env=PT_BUILD_STAMP={:04}-{:02}-{:02} {:02}:{:02} UTC",
         y, m, d, hh, mm
     );
+}
+
+/// Generates the `include_str!` table for `lang/*.json` so every translation
+/// ships inside the .exe. Generated rather than hand-written so adding a
+/// language file is all it takes - no list to forget to update.
+fn embed_language_files() {
+    println!("cargo:rerun-if-changed=lang");
+
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("lang");
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .collect();
+    files.sort();
+
+    let mut out = String::from("pub static EMBEDDED_LANGS: &[(&str, &str)] = &[\n");
+    for path in &files {
+        let locale = path.file_stem().unwrap().to_str().unwrap();
+        // Forward slashes: include_str! takes them on Windows and it keeps the
+        // generated file free of backslash-escaping.
+        let full = path.to_str().unwrap().replace('\\', "/");
+        out.push_str(&format!("    (\"{locale}\", include_str!(\"{full}\")),\n"));
+    }
+    out.push_str("];\n");
+
+    let dest = std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("lang_table.rs");
+    std::fs::write(&dest, out).expect("failed to write lang table");
+}
+
+/// Generates the `include_bytes!` table for `res/flags/*.png` (32x24 country
+/// flags, keyed by ISO 3166-1 alpha-2). Same generated-table approach as the
+/// language files, for the same reason: nothing to hand-maintain.
+fn embed_flag_images() {
+    println!("cargo:rerun-if-changed=res/flags");
+
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/flags");
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "png"))
+        .collect();
+    files.sort();
+
+    let mut out = String::from("pub static FLAG_PNGS: &[(&str, &[u8])] = &[\n");
+    for path in &files {
+        let code = path.file_stem().unwrap().to_str().unwrap();
+        let full = path.to_str().unwrap().replace('\\', "/");
+        out.push_str(&format!("    (\"{code}\", include_bytes!(\"{full}\")),\n"));
+    }
+    out.push_str("];\n");
+
+    let dest = std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("flag_table.rs");
+    std::fs::write(&dest, out).expect("failed to write flag table");
 }
 
 /// Guard: the vendored librqbit must carry the NanoTorrent visibility
