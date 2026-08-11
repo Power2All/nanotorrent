@@ -24,6 +24,10 @@
 //!
 
 #![warn(clippy::cast_possible_truncation)]
+// NanoTorrent: crates.io deps get `--cap-lints allow`, but a `[patch.crates-io]`
+// path dep is treated as local, so upstream's style lints surface in our builds.
+// Restores the quiet-dependency behavior; drop when upstream clears the lint.
+#![allow(mismatched_lifetime_syntaxes)]
 
 macro_rules! aframe {
     ($e:expr) => {{

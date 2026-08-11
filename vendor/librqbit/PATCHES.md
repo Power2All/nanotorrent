@@ -98,6 +98,15 @@ This one spans TWO crates:
   on startup a torrent is re-announced more than once and a fresh insert orphans
   the map the live announcer writes to (UI stuck on "Updating").
 
+## 0009 - quiet upstream lints
+
+`0009-quiet-upstream-lints.patch` - adds `#![allow(mismatched_lifetime_syntaxes)]`
+to `src/lib.rs`. Not a visibility patch and not behavioral: crates.io
+dependencies are compiled with `--cap-lints allow`, but a `[patch.crates-io]`
+*path* dependency counts as local, so upstream's style-lint warnings appear in
+every NanoTorrent build. This restores the normal quiet-dependency behavior.
+Delete the patch once upstream builds clean on current rustc.
+
 NOTE: `tools/update-librqbit.ps1` only re-vendors `librqbit`. The
 `librqbit-tracker-comms` crate is vendored separately (copied from the cargo
 registry, wired via a second `[patch.crates-io]` entry) and must be

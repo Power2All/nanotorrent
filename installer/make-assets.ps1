@@ -1,8 +1,8 @@
 # Generates the two assets the NSIS script needs but can't consume directly:
 #   installer.bmp - the welcome/finish image, drawn from res/app.png (NSIS can't
 #                   use PNG; it wants a 164x314 BMP).
-#   readme.txt    - README.md flattened to plain scrollable text (NSIS can't
-#                   render Markdown).
+#   readme.rtf    - README.md converted to RTF for the About page (NSIS can't
+#                   render Markdown, but its RichEdit control renders RTF).
 # Called by build-installer.bat. Kept ASCII-only (glyph patterns use \uXXXX) so
 # Windows PowerShell 5.1, which reads .ps1 as the system codepage, parses it.
 
@@ -26,16 +26,111 @@ $font.Dispose(); $g.Dispose()
 $bmp.Save((Join-Path $Out 'installer.bmp'), [System.Drawing.Imaging.ImageFormat]::Bmp)
 $png.Dispose(); $bmp.Dispose()
 
-# --- readme.txt from README.md (strip Markdown, ASCII-ize a few glyphs) ---
-$md = Get-Content -Raw (Join-Path $Root 'README.md')
-$t = $md `
-    -replace '(?m)^\s{0,3}#{1,6}\s*', '' `
-    -replace '(?m)^\s{0,3}>\s?', '' `
-    -replace '\*\*', '' `
-    -replace '`', '' `
-    -replace '\[([^\]]+)\]\([^)]+\)', '$1'
-# UTF-8 with BOM (PowerShell 5.1's utf8) - NSIS Unicode renders it, arrows and
-# dashes included, so no glyph substitution is needed.
-Set-Content -Path (Join-Path $Out 'readme.txt') -Value $t -Encoding utf8
+# --- readme.rtf from README.md ---
+# RTF, not plain text: the RichEdit control NSIS uses for that page renders RTF
+# directly, and RTF is pure 7-bit ASCII on disk - every non-ASCII character
+# becomes a \uNNNN? escape. That sidesteps the encoding guess that mangled the
+# em dashes / arrows in the old readme.txt, and gives real formatting.
 
-Write-Host "Generated installer.bmp and readme.txt"
+# Inline markup -> RTF. Order matters: RTF's own specials are escaped FIRST,
+# so the control words inserted afterwards survive.
+function ConvertTo-RtfInline([string]$s) {
+    $s = $s.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}')
+    $s = [regex]::Replace($s, '\[([^\]]+)\]\([^)]+\)', '$1')   # [text](url) -> text
+    $s = [regex]::Replace($s, '<((?:https?|mailto):[^>]+)>', '$1')
+    $s = [regex]::Replace($s, '\*\*([^*]+)\*\*', '{\b $1}')
+    $s = [regex]::Replace($s, '`([^`]+)`', '{\f1 $1}')
+    $s
+}
+
+# Non-ASCII -> \uNNNN? (\uc1 in the header says one fallback char follows).
+function ConvertTo-RtfAscii([string]$s) {
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($ch in $s.ToCharArray()) {
+        $c = [int]$ch
+        if ($c -gt 127) { [void]$sb.Append('\u').Append($c).Append('?') }
+        else            { [void]$sb.Append($ch) }
+    }
+    $sb.ToString()
+}
+
+$rtf = New-Object System.Text.StringBuilder
+[void]$rtf.AppendLine('{\rtf1\ansi\ansicpg1252\deff0\uc1')
+[void]$rtf.AppendLine('{\fonttbl{\f0\fswiss\fcharset0 Segoe UI;}{\f1\fmodern\fcharset0 Consolas;}}')
+[void]$rtf.AppendLine('\viewkind4\f0\fs18')
+
+# -Encoding UTF8 is REQUIRED: PowerShell 5.1's Get-Content defaults to the
+# system ANSI codepage, which turns every em dash into "a<euro>" mojibake
+# before any of the conversion below runs.
+$lines = (Get-Content -Raw -Encoding UTF8 (Join-Path $Root 'README.md')) -split "\r?\n"
+
+# Pass 1: fold Markdown's hard-wrapped lines into logical blocks, so a bullet
+# or paragraph that spans three source lines stays ONE RTF paragraph.
+$blocks = New-Object System.Collections.ArrayList
+$inCode = $false
+$cur = $null
+function Close-Block { if ($script:cur) { [void]$script:blocks.Add($script:cur); $script:cur = $null } }
+
+foreach ($line in $lines) {
+    if ($line -match '^\s*```') {
+        Close-Block
+        $inCode = -not $inCode
+        continue
+    }
+    if ($inCode)                    { Close-Block; [void]$blocks.Add(@{ Kind = 'code';  Text = $line }); continue }
+    if ($line -match '^\s*$')       { Close-Block; continue }
+    if ($line -match '^\s*\|')      { Close-Block; [void]$blocks.Add(@{ Kind = 'table'; Text = $line.Trim() }); continue }
+    if ($line -match '^(#{1,6})\s+(.*)') {
+        Close-Block
+        [void]$blocks.Add(@{ Kind = "h$($Matches[1].Length)"; Text = $Matches[2].Trim() })
+        continue
+    }
+    if ($line -match '^\s*>\s?(.*)')      { Close-Block; $cur = @{ Kind = 'quote';  Text = $Matches[1].Trim() }; continue }
+    if ($line -match '^\s*[-*]\s+(.*)')   { Close-Block; $cur = @{ Kind = 'bullet'; Text = $Matches[1].Trim() }; continue }
+    # Anything else continues the open block, or starts a paragraph.
+    if ($cur) { $cur.Text += ' ' + $line.Trim() } else { $cur = @{ Kind = 'para'; Text = $line.Trim() } }
+}
+Close-Block
+
+# Pass 2: blocks -> RTF.
+$tableHeader = @()
+foreach ($b in $blocks) {
+    if ($b.Kind -ne 'table') { $tableHeader = @() }
+    switch ($b.Kind) {
+        'code' {
+            $code = $b.Text.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}')
+            [void]$rtf.AppendLine("\pard\li280\f1\fs16 $code\par\pard\f0\fs18")
+        }
+        'table' {
+            # The separator row (|---|---|) is dropped; the header row is
+            # remembered and used to label each cell, so a wide comparison
+            # table still reads top-to-bottom in a narrow installer window.
+            # ponytail: label-per-cell instead of a real RTF \trowd table -
+            # upgrade if a table ever needs to be read column-wise.
+            $cells = @(($b.Text -replace '^\||\|$', '') -split '\s*\|\s*' | ForEach-Object { $_.Trim() })
+            if (($cells -join '') -match '^[-: ]*$') { break }
+            if ($tableHeader.Count -eq 0) { $tableHeader = $cells; break }
+            [void]$rtf.AppendLine("\pard\sa40{\b $(ConvertTo-RtfInline $cells[0])}\par")
+            for ($i = 1; $i -lt $cells.Count; $i++) {
+                $label = if ($i -lt $tableHeader.Count) { ConvertTo-RtfInline $tableHeader[$i] } else { '' }
+                [void]$rtf.AppendLine("\pard\li280\sa40{\i $label}:  $(ConvertTo-RtfInline $cells[$i])\par")
+            }
+        }
+        'h1'     { [void]$rtf.AppendLine("\pard\sa120{\b\fs32 $(ConvertTo-RtfInline $b.Text)}\par") }
+        'h2'     { [void]$rtf.AppendLine("\pard\sa100{\b\fs24 $(ConvertTo-RtfInline $b.Text)}\par") }
+        'quote'  { [void]$rtf.AppendLine("\pard\li280\sa60{\i $(ConvertTo-RtfInline $b.Text)}\par") }
+        'bullet' { [void]$rtf.AppendLine("\pard\li280\fi-140\sa60\bullet\tab $(ConvertTo-RtfInline $b.Text)\par") }
+        'para'   { [void]$rtf.AppendLine("\pard\sa80 $(ConvertTo-RtfInline $b.Text)\par") }
+        default  { [void]$rtf.AppendLine("\pard\sa80{\b $(ConvertTo-RtfInline $b.Text)}\par") }   # h3-h6
+    }
+}
+
+[void]$rtf.AppendLine('}')
+
+# ASCII-only output, so no BOM and no codepage guessing anywhere in the chain.
+[System.IO.File]::WriteAllText(
+    (Join-Path $Out 'readme.rtf'),
+    (ConvertTo-RtfAscii $rtf.ToString()),
+    (New-Object System.Text.ASCIIEncoding))
+
+Write-Host "Generated installer.bmp and readme.rtf"
