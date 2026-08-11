@@ -1,0 +1,136 @@
+; NanoTorrent NSIS installer.
+; Compiled by build-installer.bat (which also generates installer.bmp from
+; res/app.png and readme.txt from README.md). Requires NSIS 3.x.
+
+Unicode true
+!include "MUI2.nsh"
+
+!define APP "NanoTorrent"
+!define VER "0.1.0"
+!define EXE "nanotorrent.exe"
+!define PUBLISHER "Power2All"
+!define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP}"
+
+Name "${APP}"
+OutFile "${APP}-Setup.exe"
+InstallDir "$PROGRAMFILES64\${APP}"
+InstallDirRegKey HKLM "Software\${APP}" "InstallDir"
+RequestExecutionLevel admin
+SetCompressor /SOLID lzma
+
+VIProductVersion "0.1.0.0"
+VIAddVersionKey "ProductName" "${APP}"
+VIAddVersionKey "FileVersion" "${VER}"
+VIAddVersionKey "FileDescription" "${APP} Setup"
+VIAddVersionKey "LegalCopyright" "${PUBLISHER}"
+
+; --- Branding: app.png (converted to installer.bmp) + app.ico ---
+!define MUI_ICON "..\res\app.ico"
+!define MUI_UNICON "..\res\app.ico"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "installer.bmp"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "installer.bmp"
+
+; --- README shown as a scrollable page (license page, button renamed) ---
+!define MUI_LICENSEPAGE_TEXT_TOP "About ${APP} - scroll to read, then click Next."
+!define MUI_LICENSEPAGE_TEXT_BOTTOM " "
+!define MUI_LICENSEPAGE_BUTTON "Next"
+
+!define MUI_FINISHPAGE_RUN "$INSTDIR\${EXE}"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch ${APP}"
+
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE "readme.txt"
+!insertmacro MUI_PAGE_COMPONENTS
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+!insertmacro MUI_LANGUAGE "English"
+
+Section "!${APP} (required)" SecCore
+  SectionIn RO
+  SetOutPath "$INSTDIR"
+  File "..\target\release\${EXE}"
+  SetOutPath "$INSTDIR\lang"
+  File "..\lang\*.json"
+  SetOutPath "$INSTDIR"
+
+  CreateDirectory "$SMPROGRAMS\${APP}"
+  CreateShortcut "$SMPROGRAMS\${APP}\${APP}.lnk" "$INSTDIR\${EXE}"
+  CreateShortcut "$SMPROGRAMS\${APP}\Uninstall ${APP}.lnk" "$INSTDIR\uninstall.exe"
+
+  WriteUninstaller "$INSTDIR\uninstall.exe"
+  WriteRegStr HKLM "Software\${APP}" "InstallDir" "$INSTDIR"
+
+  WriteRegStr HKLM "${UNINSTKEY}" "DisplayName" "${APP}"
+  WriteRegStr HKLM "${UNINSTKEY}" "DisplayVersion" "${VER}"
+  WriteRegStr HKLM "${UNINSTKEY}" "Publisher" "${PUBLISHER}"
+  WriteRegStr HKLM "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\${EXE},0"
+  WriteRegStr HKLM "${UNINSTKEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
+  WriteRegStr HKLM "${UNINSTKEY}" "InstallLocation" "$INSTDIR"
+  WriteRegDWORD HKLM "${UNINSTKEY}" "NoModify" 1
+  WriteRegDWORD HKLM "${UNINSTKEY}" "NoRepair" 1
+SectionEnd
+
+Section "Set as default for .torrent files and magnet links" SecAssoc
+  ; .torrent ProgID + extension
+  WriteRegStr HKLM "Software\Classes\${APP}.Torrent" "" "BitTorrent Document"
+  WriteRegStr HKLM "Software\Classes\${APP}.Torrent\DefaultIcon" "" "$INSTDIR\${EXE},0"
+  WriteRegStr HKLM "Software\Classes\${APP}.Torrent\shell\open\command" "" '"$INSTDIR\${EXE}" "%1"'
+  WriteRegStr HKLM "Software\Classes\.torrent" "" "${APP}.Torrent"
+  WriteRegStr HKLM "Software\Classes\.torrent" "Content Type" "application/x-bittorrent"
+  WriteRegStr HKLM "Software\Classes\.torrent\OpenWithProgids" "${APP}.Torrent" ""
+
+  ; magnet ProgID + protocol handler
+  WriteRegStr HKLM "Software\Classes\${APP}.Magnet" "" "Magnet URI"
+  WriteRegStr HKLM "Software\Classes\${APP}.Magnet" "URL Protocol" ""
+  WriteRegStr HKLM "Software\Classes\${APP}.Magnet\DefaultIcon" "" "$INSTDIR\${EXE},0"
+  WriteRegStr HKLM "Software\Classes\${APP}.Magnet\shell\open\command" "" '"$INSTDIR\${EXE}" "%1"'
+  WriteRegStr HKLM "Software\Classes\magnet" "" "URL:magnet protocol"
+  WriteRegStr HKLM "Software\Classes\magnet" "URL Protocol" ""
+  WriteRegStr HKLM "Software\Classes\magnet\shell\open\command" "" '"$INSTDIR\${EXE}" "%1"'
+
+  ; Application capabilities so it appears in Settings > Default apps and is
+  ; OFFERED for both the file type and the protocol.
+  WriteRegStr HKLM "Software\${APP}\Capabilities" "ApplicationName" "${APP}"
+  WriteRegStr HKLM "Software\${APP}\Capabilities" "ApplicationDescription" "A tiny, hackable BitTorrent client."
+  WriteRegStr HKLM "Software\${APP}\Capabilities\FileAssociations" ".torrent" "${APP}.Torrent"
+  WriteRegStr HKLM "Software\${APP}\Capabilities\URLAssociations" "magnet" "${APP}.Magnet"
+  WriteRegStr HKLM "Software\RegisteredApplications" "${APP}" "Software\${APP}\Capabilities"
+
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
+SectionEnd
+
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "The ${APP} program and its language files."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecAssoc} "Register ${APP} for .torrent files and magnet: links. Windows may still ask you to confirm the default the first time."
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
+
+Section "Uninstall"
+  Delete "$INSTDIR\${EXE}"
+  Delete "$INSTDIR\uninstall.exe"
+  RMDir /r "$INSTDIR\lang"
+  RMDir "$INSTDIR"
+
+  Delete "$SMPROGRAMS\${APP}\${APP}.lnk"
+  Delete "$SMPROGRAMS\${APP}\Uninstall ${APP}.lnk"
+  RMDir "$SMPROGRAMS\${APP}"
+
+  ; Only drop the shared .torrent / magnet defaults if they still point to us.
+  ReadRegStr $0 HKLM "Software\Classes\.torrent" ""
+  StrCmp $0 "${APP}.Torrent" 0 +2
+    DeleteRegValue HKLM "Software\Classes\.torrent" ""
+  ReadRegStr $0 HKLM "Software\Classes\magnet\shell\open\command" ""
+  StrCmp $0 '"$INSTDIR\${EXE}" "%1"' 0 +2
+    DeleteRegKey HKLM "Software\Classes\magnet\shell"
+
+  DeleteRegKey HKLM "Software\Classes\${APP}.Torrent"
+  DeleteRegKey HKLM "Software\Classes\${APP}.Magnet"
+  DeleteRegValue HKLM "Software\RegisteredApplications" "${APP}"
+  DeleteRegKey HKLM "Software\${APP}"
+  DeleteRegKey HKLM "${UNINSTKEY}"
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
+SectionEnd

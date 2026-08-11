@@ -1,0 +1,163 @@
+diff --git a/src/stream_connect.rs b/src/stream_connect.rs
+index fed786d..1f11a4b 100644
+--- a/src/stream_connect.rs
++++ b/src/stream_connect.rs
+@@ -1,6 +1,25 @@
+ use std::net::SocketAddr;
++use std::sync::Arc;
+ 
+ use anyhow::Context;
++use librqbit_core::hash_id::Id20;
++
++pub type BoxAsyncRead = Box<dyn tokio::io::AsyncRead + Send + Unpin>;
++pub type BoxAsyncWrite = Box<dyn tokio::io::AsyncWrite + Send + Unpin>;
++
++/// A pluggable transform applied to every outgoing peer stream right after
++/// the TCP (or proxy) connection is established, before the BitTorrent
++/// handshake. Lets the embedding application wrap connections (e.g. with
++/// protocol encryption) without modifying the engine.
++pub trait StreamTransform: Send + Sync + std::fmt::Debug {
++    fn transform(
++        &self,
++        addr: SocketAddr,
++        info_hash: Id20,
++        read: BoxAsyncRead,
++        write: BoxAsyncWrite,
++    ) -> futures::future::BoxFuture<'_, anyhow::Result<(BoxAsyncRead, BoxAsyncWrite)>>;
++}
+ 
+ #[derive(Debug, Clone)]
+ pub(crate) struct SocksProxyConfig {
+@@ -58,31 +77,49 @@ impl SocksProxyConfig {
+ #[derive(Debug, Default)]
+ pub(crate) struct StreamConnector {
+     proxy_config: Option<SocksProxyConfig>,
++    transform: Option<Arc<dyn StreamTransform>>,
+ }
+ 
+ impl From<Option<SocksProxyConfig>> for StreamConnector {
+     fn from(proxy_config: Option<SocksProxyConfig>) -> Self {
+-        Self { proxy_config }
++        Self {
++            proxy_config,
++            transform: None,
++        }
+     }
+ }
+ 
+ impl StreamConnector {
++    pub fn new(
++        proxy_config: Option<SocksProxyConfig>,
++        transform: Option<Arc<dyn StreamTransform>>,
++    ) -> Self {
++        Self {
++            proxy_config,
++            transform,
++        }
++    }
++
+     pub async fn connect(
+         &self,
+         addr: SocketAddr,
+-    ) -> anyhow::Result<(
+-        Box<dyn tokio::io::AsyncRead + Send + Unpin>,
+-        Box<dyn tokio::io::AsyncWrite + Send + Unpin>,
+-    )> {
+-        if let Some(proxy) = self.proxy_config.as_ref() {
+-            let (r, w) = proxy.connect(addr).await?;
+-            return Ok((Box::new(r), Box::new(w)));
+-        }
++        info_hash: Id20,
++    ) -> anyhow::Result<(BoxAsyncRead, BoxAsyncWrite)> {
++        let (read, write): (BoxAsyncRead, BoxAsyncWrite) =
++            if let Some(proxy) = self.proxy_config.as_ref() {
++                let (r, w) = proxy.connect(addr).await?;
++                (Box::new(r), Box::new(w))
++            } else {
++                let (r, w) = tokio::net::TcpStream::connect(addr)
++                    .await
++                    .context("error connecting")?
++                    .into_split();
++                (Box::new(r), Box::new(w))
++            };
+ 
+-        let (r, w) = tokio::net::TcpStream::connect(addr)
+-            .await
+-            .context("error connecting")?
+-            .into_split();
+-        Ok((Box::new(r), Box::new(w)))
++        match self.transform.as_ref() {
++            Some(t) => t.transform(addr, info_hash, read, write).await,
++            None => Ok((read, write)),
++        }
+     }
+ }
+diff --git a/src/session.rs b/src/session.rs
+index f0edb50..e3488e8 100644
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -23,7 +23,7 @@ use crate::{
+     storage::{
+         filesystem::FilesystemStorageFactory, BoxStorageFactory, StorageFactoryExt, TorrentStorage,
+     },
+-    stream_connect::{SocksProxyConfig, StreamConnector},
++    stream_connect::{SocksProxyConfig, StreamConnector, StreamTransform},
+     torrent_state::{
+         initializing::TorrentStateInitializing, ManagedTorrentHandle, ManagedTorrentLocked,
+         ManagedTorrentOptions, ManagedTorrentState, TorrentMetadata, TorrentStateLive,
+@@ -428,6 +428,10 @@ pub struct SessionOptions {
+     // The list of tracker URLs to always use for each torrent.
+     pub trackers: HashSet<url::Url>,
+ 
++    /// Optional transform applied to every outgoing peer stream (e.g. for
++    /// protocol encryption). See [`StreamTransform`].
++    pub stream_transform: Option<Arc<dyn StreamTransform>>,
++
+     #[cfg(feature = "disable-upload")]
+     pub disable_upload: bool,
+ }
+@@ -618,7 +622,7 @@ impl Session {
+                 builder.build().context("error building HTTP(S) client")?
+             };
+ 
+-            let stream_connector = Arc::new(StreamConnector::from(proxy_config));
++            let stream_connector = Arc::new(StreamConnector::new(proxy_config, opts.stream_transform));
+ 
+             let blocklist: blocklist::Blocklist = if let Some(blocklist_url) = opts.blocklist_url {
+                 blocklist::Blocklist::load_from_url(&blocklist_url)
+diff --git a/src/peer_connection.rs b/src/peer_connection.rs
+index ad3dfe6..928c544 100644
+--- a/src/peer_connection.rs
++++ b/src/peer_connection.rs
+@@ -193,7 +193,10 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
+ 
+         let now = Instant::now();
+         let (mut read, mut write) =
+-            with_timeout(connect_timeout, self.connector.connect(self.addr))
++            with_timeout(
++                connect_timeout,
++                self.connector.connect(self.addr, self.info_hash),
++            )
+                 .await
+                 .context("error connecting")?;
+         self.handler.on_connected(now.elapsed());
+diff --git a/src/lib.rs b/src/lib.rs
+index ef2e96b..fde3781 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -84,6 +84,7 @@ pub use session::{
+     SessionPersistenceConfig, SUPPORTED_SCHEMES,
+ };
+ pub use spawn_utils::spawn as librqbit_spawn;
++pub use stream_connect::{BoxAsyncRead, BoxAsyncWrite, StreamTransform};
+ pub use torrent_state::{
+     ManagedTorrent, ManagedTorrentShared, ManagedTorrentState, TorrentMetadata, TorrentStats,
+     TorrentStatsState,
+@@ -92,6 +93,7 @@ pub use type_aliases::FileInfos;
+ 
+ pub use buffers::*;
+ pub use clone_to_owned::CloneToOwned;
++pub use librqbit_core::hash_id::Id20;
+ pub use librqbit_core::magnet::*;
+ pub use librqbit_core::peer_id::*;
+ pub use librqbit_core::torrent_metainfo::*;

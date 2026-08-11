@@ -1,0 +1,76 @@
+diff --git a/src/session.rs b/src/session.rs
+index e3488e8..c91e980 100644
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -124,6 +124,7 @@ pub struct Session {
+     persistence: Option<Arc<dyn SessionPersistenceStore>>,
+     disk_write_tx: Option<DiskWorkQueueSender>,
+     trackers: HashSet<url::Url>,
++    disable_pex: bool,
+ 
+     // Limits and throttling
+     pub(crate) concurrent_initialize_semaphore: Arc<tokio::sync::Semaphore>,
+@@ -432,6 +433,10 @@ pub struct SessionOptions {
+     /// protocol encryption). See [`StreamTransform`].
+     pub stream_transform: Option<Arc<dyn StreamTransform>>,
+ 
++    /// Turn on to disable PeX (peer exchange): stop sending our peer list to
++    /// other peers and ignore peer lists they send us.
++    pub disable_pex: bool,
++
+     #[cfg(feature = "disable-upload")]
+     pub disable_upload: bool,
+ }
+@@ -662,6 +667,7 @@ impl Session {
+                 udp_tracker_client,
+                 ratelimits: Limits::new(opts.ratelimits),
+                 trackers: opts.trackers,
++                disable_pex: opts.disable_pex,
+                 #[cfg(feature = "disable-upload")]
+                 _disable_upload: opts.disable_upload,
+                 blocklist,
+@@ -1171,6 +1177,7 @@ impl Session {
+                     disk_write_queue: self.disk_write_tx.clone(),
+                     ratelimits: opts.ratelimits,
+                     initial_peers: opts.initial_peers.clone().unwrap_or_default(),
++                    disable_pex: self.disable_pex,
+                     #[cfg(feature = "disable-upload")]
+                     _disable_upload: self._disable_upload,
+                 },
+diff --git a/src/torrent_state/mod.rs b/src/torrent_state/mod.rs
+index a24cbcb..89be483 100644
+--- a/src/torrent_state/mod.rs
++++ b/src/torrent_state/mod.rs
+@@ -118,6 +118,7 @@ pub(crate) struct ManagedTorrentOptions {
+     pub disk_write_queue: Option<DiskWorkQueueSender>,
+     pub ratelimits: LimitsConfig,
+     pub initial_peers: Vec<SocketAddr>,
++    pub disable_pex: bool,
+     #[cfg(feature = "disable-upload")]
+     pub _disable_upload: bool,
+ }
+diff --git a/src/torrent_state/live/mod.rs b/src/torrent_state/live/mod.rs
+index e72015f..bdd559d 100644
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -1019,7 +1019,7 @@ impl PeerConnectionHandler for &PeerHandler {
+                 }
+             }
+             Message::Extended(ExtendedMessage::UtPex(pex)) => {
+-                if self.state.metadata.info.private {
++                if self.state.metadata.info.private || self.state.shared.options.disable_pex {
+                     warn!(
+                         "recieved noncompliant PEX message from {}, ignoring",
+                         self.addr
+@@ -1064,7 +1064,10 @@ impl PeerConnectionHandler for &PeerHandler {
+     }
+ 
+     fn on_extended_handshake(&self, hs: &ExtendedHandshake<ByteBuf>) -> anyhow::Result<()> {
+-        if !self.state.metadata.info.private && hs.ut_pex().is_some() {
++        if !self.state.metadata.info.private
++            && !self.state.shared.options.disable_pex
++            && hs.ut_pex().is_some()
++        {
+             self.state.clone().spawn(
+                 error_span!(
+                     parent: self.state.shared.span.clone(),

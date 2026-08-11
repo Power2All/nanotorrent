@@ -1,0 +1,192 @@
+diff --git a/src/stream_connect.rs b/src/stream_connect.rs
+index 1f11a4b..314bfce 100644
+--- a/src/stream_connect.rs
++++ b/src/stream_connect.rs
+@@ -21,6 +21,22 @@ pub trait StreamTransform: Send + Sync + std::fmt::Debug {
+     ) -> futures::future::BoxFuture<'_, anyhow::Result<(BoxAsyncRead, BoxAsyncWrite)>>;
+ }
+ 
++/// The incoming counterpart of [`StreamTransform`], applied to every accepted
++/// peer stream before the BitTorrent handshake is read. Unlike the outgoing
++/// side, the info-hash is not yet known, so the candidate info-hashes of all
++/// active torrents are passed in for the transform to resolve (e.g. an MSE
++/// responder matching the peer's SKEY). Lets the application add inbound
++/// protocol encryption without modifying the engine.
++pub trait IncomingStreamTransform: Send + Sync + std::fmt::Debug {
++    fn transform(
++        &self,
++        addr: SocketAddr,
++        info_hashes: Vec<Id20>,
++        read: BoxAsyncRead,
++        write: BoxAsyncWrite,
++    ) -> futures::future::BoxFuture<'_, anyhow::Result<(BoxAsyncRead, BoxAsyncWrite)>>;
++}
++
+ #[derive(Debug, Clone)]
+ pub(crate) struct SocksProxyConfig {
+     pub host: String,
+diff --git a/src/lib.rs b/src/lib.rs
+index fde3781..bc8d7fc 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -84,7 +84,9 @@ pub use session::{
+     SessionPersistenceConfig, SUPPORTED_SCHEMES,
+ };
+ pub use spawn_utils::spawn as librqbit_spawn;
+-pub use stream_connect::{BoxAsyncRead, BoxAsyncWrite, StreamTransform};
++pub use stream_connect::{
++    BoxAsyncRead, BoxAsyncWrite, IncomingStreamTransform, StreamTransform,
++};
+ pub use torrent_state::{
+     ManagedTorrent, ManagedTorrentShared, ManagedTorrentState, TorrentMetadata, TorrentStats,
+     TorrentStatsState,
+diff --git a/src/session.rs b/src/session.rs
+index c91e980..b2e8094 100644
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -23,7 +23,10 @@ use crate::{
+     storage::{
+         filesystem::FilesystemStorageFactory, BoxStorageFactory, StorageFactoryExt, TorrentStorage,
+     },
+-    stream_connect::{SocksProxyConfig, StreamConnector, StreamTransform},
++    stream_connect::{
++        BoxAsyncRead, BoxAsyncWrite, IncomingStreamTransform, SocksProxyConfig, StreamConnector,
++        StreamTransform,
++    },
+     torrent_state::{
+         initializing::TorrentStateInitializing, ManagedTorrentHandle, ManagedTorrentLocked,
+         ManagedTorrentOptions, ManagedTorrentState, TorrentMetadata, TorrentStateLive,
+@@ -110,6 +113,7 @@ pub struct Session {
+     tcp_listen_port: Option<u16>,
+     dht: Option<Dht>,
+     pub(crate) connector: Arc<StreamConnector>,
++    incoming_transform: Option<Arc<dyn IncomingStreamTransform>>,
+     reqwest_client: reqwest::Client,
+     udp_tracker_client: UdpTrackerClient,
+ 
+@@ -433,6 +437,11 @@ pub struct SessionOptions {
+     /// protocol encryption). See [`StreamTransform`].
+     pub stream_transform: Option<Arc<dyn StreamTransform>>,
+ 
++    /// Optional transform applied to every incoming (accepted) peer stream
++    /// before the handshake (e.g. an MSE responder). See
++    /// [`IncomingStreamTransform`].
++    pub incoming_transform: Option<Arc<dyn IncomingStreamTransform>>,
++
+     /// Turn on to disable PeX (peer exchange): stop sending our peer list to
+     /// other peers and ignore peer lists they send us.
+     pub disable_pex: bool,
+@@ -476,7 +485,10 @@ fn torrent_file_from_info_bytes(info_bytes: &[u8], trackers: &[url::Url]) -> any
+ 
+ pub(crate) struct CheckedIncomingConnection {
+     pub addr: SocketAddr,
+-    pub stream: tokio::net::TcpStream,
++    // Boxed halves rather than a raw TcpStream: an optional incoming transform
++    // (e.g. an MSE responder) may have wrapped the socket in a cipher layer.
++    pub read: BoxAsyncRead,
++    pub write: BoxAsyncWrite,
+     pub read_buf: ReadBuf,
+     pub handshake: Handshake<ByteBufOwned>,
+ }
+@@ -659,6 +671,7 @@ impl Session {
+                 default_storage_factory: opts.default_storage_factory,
+                 reqwest_client,
+                 connector: stream_connector,
++                incoming_transform: opts.incoming_transform,
+                 root_span: opts.root_span,
+                 stats: SessionStats::new(),
+                 concurrent_initialize_semaphore: Arc::new(tokio::sync::Semaphore::new(
+@@ -748,7 +761,7 @@ impl Session {
+     async fn check_incoming_connection(
+         self: Arc<Self>,
+         addr: SocketAddr,
+-        mut stream: TcpStream,
++        stream: TcpStream,
+     ) -> anyhow::Result<(Arc<TorrentStateLive>, CheckedIncomingConnection)> {
+         let rwtimeout = self
+             .peer_opts
+@@ -760,9 +773,27 @@ impl Session {
+             bail!("Incoming ip {incoming_ip} is in blocklist");
+         }
+ 
++        let (r, w) = stream.into_split();
++        let mut read: BoxAsyncRead = Box::new(r);
++        let mut write: BoxAsyncWrite = Box::new(w);
++
++        // Optional accept-path transform (e.g. MSE responder). The info-hash is
++        // not known yet, so pass every active torrent's info-hash for the
++        // transform to resolve the peer's SKEY against.
++        if let Some(transform) = self.incoming_transform.as_ref() {
++            let info_hashes: Vec<Id20> =
++                self.db.read().torrents.iter().map(|(_, t)| t.info_hash()).collect();
++            let (r, w) = transform
++                .transform(addr, info_hashes, read, write)
++                .await
++                .context("incoming stream transform failed")?;
++            read = r;
++            write = w;
++        }
++
+         let mut read_buf = ReadBuf::new();
+         let h = read_buf
+-            .read_handshake(&mut stream, rwtimeout)
++            .read_handshake(&mut read, rwtimeout)
+             .await
+             .context("error reading handshake")?;
+         trace!("received handshake from {addr}: {:?}", h);
+@@ -789,7 +820,8 @@ impl Session {
+                 live,
+                 CheckedIncomingConnection {
+                     addr,
+-                    stream,
++                    read,
++                    write,
+                     handshake,
+                     read_buf,
+                 },
+diff --git a/src/peer_connection.rs b/src/peer_connection.rs
+index 928c544..4e1eadb 100644
+--- a/src/peer_connection.rs
++++ b/src/peer_connection.rs
+@@ -126,7 +126,8 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
+         outgoing_chan: tokio::sync::mpsc::UnboundedReceiver<WriterRequest>,
+         read_buf: ReadBuf,
+         handshake: Handshake<ByteBufOwned>,
+-        mut conn: tokio::net::TcpStream,
++        read: crate::stream_connect::BoxAsyncRead,
++        mut write: crate::stream_connect::BoxAsyncWrite,
+         have_broadcast: tokio::sync::broadcast::Receiver<ValidPieceIndex>,
+     ) -> anyhow::Result<()> {
+         use tokio::io::AsyncWriteExt;
+@@ -152,7 +153,7 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
+         let mut write_buf = Vec::<u8>::with_capacity(PIECE_MESSAGE_DEFAULT_LEN);
+         let handshake = Handshake::new(self.info_hash, self.peer_id);
+         handshake.serialize(&mut write_buf);
+-        with_timeout(rwtimeout, conn.write_all(&write_buf))
++        with_timeout(rwtimeout, write.write_all(&write_buf))
+             .await
+             .context("error writing handshake")?;
+         write_buf.clear();
+@@ -161,8 +162,6 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
+ 
+         self.handler.on_handshake(handshake)?;
+ 
+-        let (read, write) = conn.into_split();
+-
+         self.manage_peer(ManagePeerArgs {
+             handshake_supports_extended,
+             read_buf,
+diff --git a/src/torrent_state/live/mod.rs b/src/torrent_state/live/mod.rs
+index bdd559d..6340857 100644
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -488,7 +488,8 @@ impl TorrentStateLive {
+                 rx,
+                 checked_peer.read_buf,
+                 checked_peer.handshake,
+-                checked_peer.stream,
++                checked_peer.read,
++                checked_peer.write,
+                 self.have_broadcast_tx.subscribe()
+             ) => {r}
+         };

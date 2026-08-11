@@ -1,0 +1,68 @@
+diff --git a/src/session.rs b/src/session.rs
+index 7da165f..0d13395 100644
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -129,6 +129,7 @@ pub struct Session {
+     disk_write_tx: Option<DiskWorkQueueSender>,
+     trackers: HashSet<url::Url>,
+     disable_pex: bool,
++    anonymize: bool,
+ 
+     // Limits and throttling
+     pub(crate) concurrent_initialize_semaphore: Arc<tokio::sync::Semaphore>,
+@@ -456,6 +457,11 @@ pub struct SessionOptions {
+     /// other peers and ignore peer lists they send us.
+     pub disable_pex: bool,
+ 
++    /// Anonymous mode: suppress the client version ("v") in the extended
++    /// handshake so peers can't fingerprint the client. (The peer id is
++    /// anonymised separately by the embedder.)
++    pub anonymize: bool,
++
+     #[cfg(feature = "disable-upload")]
+     pub disable_upload: bool,
+ }
+@@ -701,6 +707,7 @@ impl Session {
+                 ratelimits: Limits::new(opts.ratelimits),
+                 trackers: opts.trackers,
+                 disable_pex: opts.disable_pex,
++                anonymize: opts.anonymize,
+                 #[cfg(feature = "disable-upload")]
+                 _disable_upload: opts.disable_upload,
+                 blocklist,
+@@ -1230,6 +1237,7 @@ impl Session {
+                     ratelimits: opts.ratelimits,
+                     initial_peers: opts.initial_peers.clone().unwrap_or_default(),
+                     disable_pex: self.disable_pex,
++                    anonymize: self.anonymize,
+                     #[cfg(feature = "disable-upload")]
+                     _disable_upload: self._disable_upload,
+                 },
+diff --git a/src/torrent_state/mod.rs b/src/torrent_state/mod.rs
+index 89be483..bf21dd7 100644
+--- a/src/torrent_state/mod.rs
++++ b/src/torrent_state/mod.rs
+@@ -119,6 +119,7 @@ pub(crate) struct ManagedTorrentOptions {
+     pub ratelimits: LimitsConfig,
+     pub initial_peers: Vec<SocketAddr>,
+     pub disable_pex: bool,
++    pub anonymize: bool,
+     #[cfg(feature = "disable-upload")]
+     pub _disable_upload: bool,
+ }
+diff --git a/src/torrent_state/live/mod.rs b/src/torrent_state/live/mod.rs
+index 6340857..75550ea 100644
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -1127,6 +1127,11 @@ impl PeerConnectionHandler for &PeerHandler {
+                 handshake.metadata_size = Some(len);
+             }
+         }
++        // Anonymous mode: don't advertise the client version so peers can't
++        // fingerprint us by it.
++        if self.state.shared.options.anonymize {
++            handshake.v = None;
++        }
+         Ok(())
+     }
+ }

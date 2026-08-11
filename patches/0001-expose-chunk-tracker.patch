@@ -1,0 +1,15 @@
+diff --git a/src/torrent_state/mod.rs b/src/torrent_state/mod.rs
+index 5181609..a24cbcb 100644
+--- a/src/torrent_state/mod.rs
++++ b/src/torrent_state/mod.rs
+@@ -250,7 +250,9 @@ impl ManagedTorrent {
+         f(&mut self.locked.write().state)
+     }
+ 
+-    pub(crate) fn with_chunk_tracker<R>(
++    // NanoTorrent visibility patch: was pub(crate). No behavior change -
++    // exposes read access to the chunk tracker (piece haves) for the UI.
++    pub fn with_chunk_tracker<R>(
+         &self,
+         f: impl FnOnce(&ChunkTracker) -> R,
+     ) -> anyhow::Result<R> {
