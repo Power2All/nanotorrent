@@ -275,6 +275,22 @@ fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptio
     }
 }
 
+/// Clear the UDP port the DHT persisted in `dht.json`, keeping the routing
+/// table and peer store. Port 0 makes librqbit bind an OS-assigned one.
+fn reset_dht_port(path: &std::path::Path) {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return;
+    };
+    let Some(obj) = json.as_object_mut() else {
+        return;
+    };
+    obj.insert("addr".into(), "0.0.0.0:0".into());
+    let _ = std::fs::write(path, json.to_string());
+}
+
 /// Move every file of a torrent from one folder to another, keeping the
 /// relative structure. Uses rename, falling back to copy+delete for
 /// cross-drive moves.
@@ -493,7 +509,26 @@ impl Session {
 
         let opts = build_session_options(cfg, env);
 
-        let inner = rt.block_on(RqbitSession::new_with_opts(default_save_path, opts))?;
+        let inner = match rt.block_on(RqbitSession::new_with_opts(
+            default_save_path.clone(),
+            opts,
+        )) {
+            Ok(session) => session,
+            Err(err) => {
+                // The DHT remembers the exact UDP port it last bound and binds
+                // it again verbatim. Windows hands out chunks of the ephemeral
+                // range to Hyper-V/WSL on every boot, so a port that worked
+                // yesterday can come back "forbidden by its access permissions"
+                // and take startup down with it. Forget the port (the routing
+                // table stays) and let the OS pick a free one.
+                tracing::warn!("session startup failed ({err:#}) - retrying on a fresh DHT port");
+                reset_dht_port(&env.get_application_data_path().join("dht.json"));
+                rt.block_on(RqbitSession::new_with_opts(
+                    default_save_path,
+                    build_session_options(cfg, env),
+                ))?
+            }
+        };
         let api = Api::new(inner.clone(), None);
 
         let session = Session {

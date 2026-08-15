@@ -48,7 +48,43 @@ pub struct AppContext {
     pub geoip: Arc<core::geoip::GeoIp>,
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
+    if let Err(err) = run() {
+        // The release build is a GUI subsystem binary, so a returned Err would
+        // be printed to a stderr nobody is attached to and the process would
+        // just vanish. Put it on screen instead.
+        tracing::error!("startup failed: {err:#}");
+        fatal_error(&format!("{err:#}"));
+        std::process::exit(1);
+    }
+}
+
+/// Show a startup failure before the UI exists (nwg isn't initialised yet).
+fn fatal_error(msg: &str) {
+    #[cfg(windows)]
+    unsafe {
+        use std::os::windows::ffi::OsStrExt;
+        let wide = |s: &str| -> Vec<u16> {
+            std::ffi::OsStr::new(s)
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect()
+        };
+        let text = wide(msg);
+        let caption = wide("NanoTorrent could not start");
+        winapi::um::winuser::MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            winapi::um::winuser::MB_OK
+                | winapi::um::winuser::MB_ICONERROR
+                | winapi::um::winuser::MB_SETFOREGROUND
+                | winapi::um::winuser::MB_TOPMOST,
+        );
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     // Port of the IPC single-instance handling in main.cpp.

@@ -1,5 +1,12 @@
 // Port of the update checker (src/picotorrent/updatechecker.cpp) and
 // bittorrent/semver.hpp version comparison.
+//
+// The original polled api.picotorrent.org for `{version, url}`. That host is
+// gone, so the endpoint (`update_checks.url`) now points at this project's
+// GitHub releases API and we read GitHub's shape instead: `tag_name` and
+// `html_url`. `/releases/latest` never returns drafts or prereleases, so
+// anything it hands back is a real release. Pointing the setting at another
+// repo's `/releases/latest` works unchanged.
 
 use std::sync::{Arc, Mutex};
 
@@ -68,21 +75,37 @@ pub fn check(
             Err(_) => return,
         };
 
-        let Ok(response) = client.get(&url).send().await else {
+        let Ok(response) = client
+            .get(&url)
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await
+        else {
             return;
         };
+
+        // A repo with no releases yet answers 404, and an over-quota client gets
+        // 403 - both come back as JSON that would otherwise parse into "no new
+        // version", which is right but silent. Say which it was.
+        if !response.status().is_success() {
+            tracing::info!("update check: {} returned {}", url, response.status());
+            return;
+        }
 
         let Ok(json) = response.json::<serde_json::Value>().await else {
             return;
         };
 
+        // Release tags are conventionally "v0.1.2"; carry the bare number so the
+        // UI's own "v" prefix doesn't double up.
         let version = json
-            .get("version")
+            .get("tag_name")
             .and_then(|v| v.as_str())
             .unwrap_or_default()
+            .trim_start_matches('v')
             .to_string();
         let dl_url = json
-            .get("url")
+            .get("html_url")
             .and_then(|v| v.as_str())
             .unwrap_or("https://www.nanotorrent.org")
             .to_string();
@@ -91,10 +114,33 @@ pub fn check(
             && version != ignored
             && is_newer(&version, crate::buildinfo::version())
         {
+            tracing::info!("update available: {version} ({dl_url})");
             *slot.lock().unwrap() = Some(UpdateInfo {
                 version,
                 url: dl_url,
             });
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_newer;
+
+    #[test]
+    fn compares_releases() {
+        assert!(is_newer("0.1.2", "0.1.1"));
+        assert!(is_newer("0.2.0", "0.1.9"));
+        assert!(is_newer("1.0.0", "0.99.99"));
+        assert!(!is_newer("0.1.1", "0.1.1"));
+        assert!(!is_newer("0.1.0", "0.1.1"));
+
+        // GitHub tags carry a "v"; a shorter tag is not automatically older.
+        assert!(is_newer("v0.1.2", "0.1.1"));
+        assert!(is_newer("0.2", "0.1.9"));
+        assert!(!is_newer("0.1", "0.1.0"));
+
+        // Trailing junk on a component must not read as a bump.
+        assert!(!is_newer("0.1.1-rc1", "0.1.1"));
+    }
 }

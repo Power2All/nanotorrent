@@ -112,6 +112,33 @@ NOTE: `tools/update-librqbit.ps1` only re-vendors `librqbit`. The
 registry, wired via a second `[patch.crates-io]` entry) and must be
 re-vendored + re-patched by hand until this is submitted upstream.
 
+## 0010 - Windows short-read/short-write fix (behavioral, a real bug fix)
+
+`0010-windows-pread-pwrite-exact.patch` - the only patch here that changes
+engine behavior, because the Windows path was wrong.
+
+`FilesystemStorage::pread_exact` called `File::seek_read` (a single `ReadFile`)
+and **threw away the byte count**. At or past EOF that returns `Ok(0)` rather
+than failing, so a read of a file with no data yet reported success and left
+the caller's buffer untouched - nothing like the `read_exact_at` the unix
+branch uses. Consequences:
+
+- `FileOps::initial_check` never saw a file as missing/empty, so it never set
+  `is_broken` and hash-checked **every piece of the torrent**. Adding a fresh
+  6.5 GiB torrent spent ~11s SHA-1'ing files that held nothing. Now the first
+  read of an empty file errors, the file is marked broken, and its pieces are
+  skipped - the check finishes in milliseconds.
+- Any short read (a partially downloaded file) hashed, streamed, or *served to
+  a peer* whatever stale bytes were already in the buffer.
+
+`pwrite_all` had the sibling bug: it re-wrote the whole `buf` at the same
+`offset` every pass while subtracting the written count from `remaining`, so a
+partial write duplicated data and could underflow `remaining`.
+
+Both now loop, advancing buffer and offset, and turn `Ok(0)` into
+`UnexpectedEof` / `WriteZero`. Covered by `#[cfg(test)] mod tests` at the
+bottom of `src/storage/filesystem/fs.rs`. Send this one upstream.
+
 ## Updating to a new librqbit release
 
 One command - it downloads the published crate, replaces this folder,

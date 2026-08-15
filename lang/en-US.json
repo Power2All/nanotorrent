@@ -97,7 +97,7 @@
     "picotorrent_v_available": "PicoTorrent %s available",
     "no_update_available": "No update available",
     "show_on_github": "Show on GitHub",
-    "new_version_available": "A newer version of PicoTorrent is available.",
+    "new_version_available": "A newer version of NanoTorrent is available.",
     "ignore_update": "Ignore this update",
     "confirm_remove_description": "This will remove any downloaded files for this torrent.",
     "confirm_remove": "Confirm remove",

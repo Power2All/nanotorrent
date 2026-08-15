@@ -1646,13 +1646,25 @@ pub fn spawn_preferences(
             cfg.get_bool("libtorrent.enable_dht"),
             &mut dht_check,
         );
+        // LSD has no librqbit 8 equivalent, so this one is stored and never
+        // applied. Show it greyed out rather than letting it imply a feature
+        // that isn't there; librqbit 9 exposes it and this goes live again.
+        // The saved value still round-trips - the disabled box keeps whatever
+        // state it was built with, so nobody's stored preference is lost.
         checkbox(
             &tab_connection,
-            &tr.i18n("enable_lsd"),
+            &format!("{} (requires librqbit 9)", tr.i18n("enable_lsd")),
             108,
             cfg.get_bool("libtorrent.enable_lsd"),
             &mut lsd_check,
         );
+        // NOT nwg's set_enabled: that pokes the WS_DISABLED style bit straight
+        // in with SetWindowLong, so the control stops taking input but never
+        // gets WM_ENABLE and keeps painting itself as live - a checkbox that
+        // looks clickable and silently isn't. EnableWindow tells it properly.
+        if let Some(hwnd) = lsd_check.handle.hwnd() {
+            unsafe { winapi::um::winuser::EnableWindow(hwnd, 0) };
+        }
         checkbox(
             &tab_connection,
             &tr.i18n("enable_pex"),

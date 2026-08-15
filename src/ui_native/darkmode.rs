@@ -263,11 +263,24 @@ pub fn apply_to_listview(hwnd: HWND, dark: bool) {
     use winapi::um::uxtheme::SetWindowTheme;
     use winapi::um::winuser::{InvalidateRect, SendMessageW};
 
+    use winapi::um::commctrl::{LVM_SETEXTENDEDLISTVIEWSTYLE, LVS_EX_DOUBLEBUFFER};
+
     const LVM_FIRST: u32 = 0x1000;
     const LVM_GETHEADER: u32 = LVM_FIRST + 31;
 
     unsafe {
         let header = SendMessageW(hwnd, LVM_GETHEADER, 0, 0) as HWND;
+
+        // Paint through an offscreen bitmap. The Explorer theme hot-tracks the
+        // row under the cursor, so moving over the list repaints rows - and our
+        // custom draw fills the row and then draws each cell straight onto the
+        // screen DC, which shows as a flicker. Harmless in light mode too.
+        SendMessageW(
+            hwnd,
+            LVM_SETEXTENDEDLISTVIEWSTYLE,
+            LVS_EX_DOUBLEBUFFER as usize,
+            LVS_EX_DOUBLEBUFFER as isize,
+        );
 
         if dark {
             // Modern dark scrollbars.
@@ -1007,16 +1020,19 @@ unsafe fn paint_checkbox(hwnd: HWND) {
     };
     use winapi::um::wingdi::{SelectObject, SetBkMode, SetTextColor, TRANSPARENT};
     use winapi::um::winuser::{
-        BeginPaint, DFC_BUTTON, DFCS_BUTTONCHECK, DFCS_CHECKED, DT_LEFT, DT_SINGLELINE,
-        DT_VCENTER, DrawFrameControl, DrawTextW, EndPaint, FillRect, GetClientRect,
-        GetWindowTextLengthW, GetWindowTextW, PAINTSTRUCT, SendMessageW, WM_GETFONT,
+        BeginPaint, DFC_BUTTON, DFCS_BUTTONCHECK, DFCS_CHECKED, DFCS_INACTIVE, DT_LEFT,
+        DT_SINGLELINE, DT_VCENTER, DrawFrameControl, DrawTextW, EndPaint, FillRect,
+        GetClientRect, GetWindowTextLengthW, GetWindowTextW, IsWindowEnabled, PAINTSTRUCT,
+        SendMessageW, WM_GETFONT,
     };
 
     const BM_GETCHECK: u32 = 0x00F0;
     const BST_CHECKED: isize = 1;
     const BP_CHECKBOX: i32 = 3;
     const CBS_UNCHECKEDNORMAL: i32 = 1;
+    const CBS_UNCHECKEDDISABLED: i32 = 4;
     const CBS_CHECKEDNORMAL: i32 = 5;
+    const CBS_CHECKEDDISABLED: i32 = 8;
 
     unsafe {
         let mut ps: PAINTSTRUCT = std::mem::zeroed();
@@ -1030,10 +1046,15 @@ unsafe fn paint_checkbox(hwnd: HWND) {
         FillRect(hdc, &rc, bg_brush());
 
         let checked = SendMessageW(hwnd, BM_GETCHECK, 0, 0) == BST_CHECKED;
-        let state = if checked {
-            CBS_CHECKEDNORMAL
-        } else {
-            CBS_UNCHECKEDNORMAL
+        // This replaces the control's own drawing wholesale, so unless the
+        // disabled parts are asked for by name a greyed-out checkbox paints
+        // exactly like a live one - it looks clickable and silently isn't.
+        let enabled = IsWindowEnabled(hwnd) != 0;
+        let state = match (checked, enabled) {
+            (true, true) => CBS_CHECKEDNORMAL,
+            (true, false) => CBS_CHECKEDDISABLED,
+            (false, true) => CBS_UNCHECKEDNORMAL,
+            (false, false) => CBS_UNCHECKEDDISABLED,
         };
 
         // Glyph: DarkMode_Explorer is set on the control, so opening the
@@ -1067,7 +1088,9 @@ unsafe fn paint_checkbox(hwnd: HWND) {
             CloseThemeData(theme);
         } else {
             // No theme available - classic glyph as a fallback.
-            let flags = DFCS_BUTTONCHECK | if checked { DFCS_CHECKED } else { 0 };
+            let flags = DFCS_BUTTONCHECK
+                | if checked { DFCS_CHECKED } else { 0 }
+                | if enabled { 0 } else { DFCS_INACTIVE };
             DrawFrameControl(hdc, &mut glyph_rc, DFC_BUTTON, flags);
         }
 
@@ -1080,7 +1103,7 @@ unsafe fn paint_checkbox(hwnd: HWND) {
         };
 
         SetBkMode(hdc, TRANSPARENT as i32);
-        SetTextColor(hdc, rgb(FG));
+        SetTextColor(hdc, rgb(if enabled { FG } else { FG_DISABLED }));
 
         let len = GetWindowTextLengthW(hwnd);
         if len > 0 {

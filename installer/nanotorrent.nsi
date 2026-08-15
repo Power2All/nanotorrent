@@ -1,24 +1,30 @@
 ; NanoTorrent NSIS installer.
 ; Compiled by build-installer.bat (which also generates installer.bmp from
-; res/app.png and readme.rtf from README.md). Requires NSIS 3.x.
+; res/app.png, readme.rtf from README.md, and version.nsh from Cargo.toml).
+; Requires NSIS 3.x.
 
 Unicode true
 !include "MUI2.nsh"
 
+; VER / VER_FILE, generated from Cargo.toml by make-assets.ps1 - the wizard
+; states the version it installs, so it must not be a second hand-kept copy.
+!include "version.nsh"
+
 !define APP "NanoTorrent"
-!define VER "0.1.1"
 !define EXE "nanotorrent.exe"
 !define PUBLISHER "Power2All"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP}"
 
-Name "${APP}"
+; Versioned: MUI substitutes this into the caption and the Welcome / Finish /
+; uninstall-confirm page headings, so every screen says which version this is.
+Name "${APP} ${VER}"
 OutFile "${APP}-${VER}-Setup.exe"
 InstallDir "$PROGRAMFILES64\${APP}"
 InstallDirRegKey HKLM "Software\${APP}" "InstallDir"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 
-VIProductVersion "0.1.1.0"
+VIProductVersion "${VER_FILE}"
 VIAddVersionKey "ProductName" "${APP}"
 VIAddVersionKey "FileVersion" "${VER}"
 VIAddVersionKey "ProductVersion" "${VER}"

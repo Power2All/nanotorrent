@@ -130,6 +130,11 @@ pub struct MainWindow {
     tray_menu: nwg::Menu,
     tray_show: nwg::MenuItem,
     tray_exit: nwg::MenuItem,
+    /// Release page for the balloon currently on screen, so clicking an
+    /// "update available" balloon opens it. Set by every `tray.show` caller
+    /// (`None` for balloons that are not click-throughs) so a later balloon
+    /// can never inherit an older one's link.
+    balloon_url: RefCell<Option<String>>,
 
     // context menu - port of torrentcontextmenu.cpp
     ctx_menu: nwg::Menu,
@@ -914,6 +919,7 @@ impl MainWindow {
             ctx_pause,
             ctx_resume,
             ctx_recheck,
+            balloon_url: RefCell::new(None),
             ctx_move,
             ctx_queue_menu,
             ctx_queue_up,
@@ -1045,6 +1051,13 @@ impl MainWindow {
                     if handle == me.tray.handle =>
                 {
                     me.restore_from_tray();
+                }
+                // Clicking the "update available" balloon opens its release
+                // page. Other balloons leave balloon_url empty and do nothing.
+                nwg::Event::OnTrayNotificationUserClose if handle == me.tray.handle => {
+                    if let Some(url) = me.balloon_url.borrow_mut().take() {
+                        let _ = open::that(url);
+                    }
                 }
                 // Splitter between list and details panel.
                 nwg::Event::OnMouseMove if handle == me.window.handle => {
@@ -2042,6 +2055,7 @@ Restart NanoTorrent now?",
                         },
                     );
                 }
+                *self.balloon_url.borrow_mut() = None;
                 self.tray.show(
                     &name,
                     Some(&self.tr.i18n("create_torrent")),
@@ -2085,6 +2099,7 @@ Restart NanoTorrent now?",
             .ok()
             .and_then(|mut slot| slot.take());
         if let Some(update) = update {
+            *self.balloon_url.borrow_mut() = Some(update.url);
             self.tray.show(
                 &format!("{} v{}", self.tr.i18n("new_version_available"), update.version),
                 Some("NanoTorrent"),

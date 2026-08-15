@@ -196,6 +196,11 @@ fn verify_librqbit_patches() {
             "patches/0008-tracker-stats.patch (tracker tiers, librqbit side)",
         ),
         (
+            "vendor/librqbit/src/storage/filesystem/fs.rs",
+            "while !buf.is_empty()",
+            "patches/0010-windows-pread-pwrite-exact.patch",
+        ),
+        (
             "vendor/librqbit-tracker-comms/src/tracker_comms.rs",
             "pub struct TrackerStat",
             "patches/0008-tracker-stats.patch (tracker-comms side; this crate is \

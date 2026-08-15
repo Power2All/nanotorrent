@@ -104,20 +104,38 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   English is the first entry; changing the language offers to restart, since
   the UI is built from the translator at startup. The UI text is localized
   with an embedded en-US fallback.
+- **Update check** — asks GitHub for this repo's latest release on startup
+  (`/releases/latest`, so never a draft or prerelease) and shows a tray balloon
+  when its tag beats the running version; clicking the balloon opens the
+  release page. Endpoint and the enabled/ignored-version toggles live in
+  `update_checks.*`, so it can be pointed at a fork.
 - **Crash log** — a panic hook writes a backtrace to the logs folder (the
-  original used Crashpad; there is no upload).
+  original used Crashpad; there is no upload). A failure during startup, before
+  the window exists, is shown in a message box rather than lost to the GUI
+  subsystem's absent stderr.
 
 ## Known differences / not yet ported
 
-- **uTP peer transport** is deferred — there is no production-ready async Rust
-  uTP crate. UDP trackers and DHT work; only µTP peer connections are missing.
-- **LSD** does not exist in librqbit, and it does not attribute peer counts to
-  a discovery source, so the DHT/LSD/PeX tracker rows are status-only (no
-  seeds/leeches numbers there).
-- A few `libtorrent.*` advanced settings are stored but have no librqbit
-  equivalent to apply (documented as dead).
+- **uTP peer transport** is deferred until librqbit 9 ships a stable release,
+  at which point it will be implemented. librqbit 9 integrates
+  [librqbit-utp](https://crates.io/crates/librqbit-utp) (BEP 29) and configures
+  it through `SessionOptions.listen`, so this becomes an engine upgrade rather
+  than a transport to write — but 9.x is currently a prerelease (9.0.0-rc.0),
+  its restructured transport layer is exactly where the MSE stream-transform
+  patches (0003 / 0005) sit, and upstream has not yet enabled uTP by default.
+  The vendored 8.1.1 is stable, so we wait. UDP trackers and DHT work today;
+  only µTP peer connections are missing.
+- **LSD** is deferred to the same librqbit 9 upgrade as uTP above — 9.x
+  configures it through `SessionOptions.disable_local_service_discovery`; 8.1.1
+  has no equivalent. Its Preferences checkbox is disabled until then, and
+  `libtorrent.enable_lsd` is the one and only setting the dialog stores without
+  applying. Separately, librqbit does not attribute peer counts to a discovery
+  source, so the DHT/LSD/PeX tracker rows are status-only (no seeds/leeches
+  numbers there) — that part is unchanged by the upgrade.
 - Windows will not let an app force-set the **magnet** protocol default when
   another client registered it system-wide (anti-hijacking); the associations
   button registers NanoTorrent and opens Settings ▸ Default apps so you can
   confirm it.
-- The update checker retains the original's endpoint, which may be defunct.
+- Language files other than `en-US.json` are PicoTorrent's original
+  translations and still name that product in a few strings; `en-US` is the
+  fallback and has been corrected.
