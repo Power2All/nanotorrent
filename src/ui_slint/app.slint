@@ -73,15 +73,17 @@ component Cell inherits Rectangle {
 component MenuRow inherits Rectangle {
     in property <string> label;
     callback activated;
-    height: 30px;
+    // 24px, near the ~22px Windows uses. 30px looked padded out next to a
+    // 13px font and made the panel taller than its content needed.
+    height: 24px;
     background: touch.has-hover ? Palette.accent-background : transparent;
     touch := TouchArea {
         clicked => { root.activated(); }
     }
     Text {
         text: root.label;
-        x: 14px;
-        width: parent.width - 28px;
+        x: 12px;
+        width: parent.width - 24px;
         height: parent.height;
         vertical-alignment: center;
         overflow: elide;
@@ -91,8 +93,8 @@ component MenuRow inherits Rectangle {
 }
 
 component MenuSep inherits Rectangle {
-    height: 9px;
-    Rectangle { y: 4px; height: 1px; background: Palette.border; }
+    height: 7px;
+    Rectangle { y: 3px; height: 1px; background: Palette.border; }
 }
 
 // One "Name: value" pair in the Overview grid.
@@ -177,8 +179,12 @@ export component MainWindow inherits Window {
     ctx-popup := PopupWindow {
         x: root.menu-x;
         y: root.menu-y;
-        width: 280px;
-        height: 396px;
+        // Sized to fit the longest label ("Remove torrent and files") rather
+        // than to a round number.
+        width: 210px;
+        // Bound to the layout instead of hardcoded, so adding or removing an
+        // item cannot leave dead space at the bottom or clip the last row.
+        height: menu-layout.preferred-height;
         // A Slint PopupWindow captures the pointer while it is open, whatever
         // the close policy, so a click on another row never reaches that row.
         // no-auto-close was tried and only added the risk of a menu that will
@@ -198,7 +204,7 @@ export component MainWindow inherits Window {
             border-width: 1px;
             border-radius: 6px;
 
-            VerticalLayout {
+            menu-layout := VerticalLayout {
                 padding: 4px;
                 spacing: 0px;
                 MenuRow { label: "Pause"; activated => { root.action("pause"); ctx-popup.close(); } }
