@@ -121,6 +121,11 @@ export component MainWindow inherits Window {
     in-out property <bool> show-details: true;
     in-out property <bool> show-status: true;
 
+    // The list, not the panel: `tabs` lives inside an `if`, whose ids are not
+    // in scope out here. Equivalent probe - the window height is fixed, so
+    // whatever the details panel gains the list must lose.
+    out property <length> measured-list-height: scroll.height;
+
     callback sort(int);
     callback row-pressed(int, bool, bool);
     callback context-menu(int);
@@ -341,7 +346,13 @@ export component MainWindow inherits Window {
 
         // --- details panel ---------------------------------------------------
         if root.show-details: TabWidget {
-            height: root.details-height;
+            // NOT `height:`. A VerticalLayout assigns its children's geometry,
+            // so an explicit height competes with the layout rather than
+            // constraining it - which is why dragging the splitter changed
+            // details-height and nothing moved. Pinning min == max is how a
+            // layout child is given a fixed size.
+            min-height: root.details-height;
+            max-height: root.details-height;
 
             Tab {
                 title: "Overview";

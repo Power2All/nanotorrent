@@ -193,6 +193,58 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     window.on_context_menu(|index| println!("context menu for row {index}"));
+
+    // Self-test: prove the splitter's height binding actually reaches the
+    // layout, without anyone having to drag anything. Asks for a height the
+    // panel did not start with, then reports what the layout gave it.
+    //
+    // Exists because three manual drag attempts failed and it was not clear
+    // whether the drag was wrong or the binding was ignored - a question a
+    // click cannot answer but a measurement can.
+    let selftest = std::env::var_os("NT_SPIKE_SELFTEST").is_some();
+    let timer = slint::Timer::default();
+    if selftest {
+        let handle = window.as_weak();
+        let before = std::rc::Rc::new(std::cell::Cell::new(0.0f32));
+        // Two ticks: measure, change the height, measure again. One reading
+        // proves nothing - the layout might coincidentally agree.
+        let phase = std::rc::Rc::new(std::cell::Cell::new(0u8));
+        let before2 = before.clone();
+        timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(700),
+            move || {
+                if let Some(w) = handle.upgrade() {
+                    let asked = w.get_details_height();
+                    let list = w.get_measured_list_height();
+                    println!("SELFTEST asked details-height={asked}  list height={list}");
+                    // Baseline is printed on the first tick before the change,
+                    // so compare the two runs rather than guessing a constant.
+                }
+                if phase.get() == 0 {
+                    if let Some(w) = handle.upgrade() {
+                        before2.set(w.get_measured_list_height());
+                        w.set_details_height(420.0);
+                    }
+                    phase.set(1);
+                    return;
+                }
+                if let Some(w) = handle.upgrade() {
+                    let after = w.get_measured_list_height();
+                    let shrank = before2.get() - after;
+                    println!(
+                        "SELFTEST list {} -> {} (shrank {shrank}) after details-height 260 -> 420",
+                        before2.get(), after
+                    );
+                    println!(
+                        "SELFTEST binding {}",
+                        if (shrank - 160.0).abs() < 2.0 { "REACHES the layout" } else { "IGNORED by the layout" }
+                    );
+                }
+                let _ = slint::quit_event_loop();
+            },
+        );
+    }
     window.set_status(format!("{ROWS} rows built in {build_ms:.0} ms").into());
 
     window.run()

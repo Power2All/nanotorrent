@@ -92,7 +92,7 @@ All verified by running it, not by reading docs:
 | **Detail tabs** (Overview / Files / Peers / Trackers) | `TabWidget`. Works, but see the caveat below. |
 | **Overview fields** | `GridLayout` of label/value pairs, matching the two-column Win32 layout. |
 | **Status bar** | No widget; a `Rectangle` with a `HorizontalLayout`. Trivial. |
-| **Splitter** | **No widget. Hand-rolled, and harder than it looks - see below.** |
+| **Splitter** | No widget. Hand-rolled - works, but see the trap below. |
 
 ### The tabs do not look like the Win32 ones
 
@@ -102,24 +102,41 @@ difference between the spike and the baseline, and matching it means either
 styling `TabWidget` or building a tab strip out of `TouchArea`s - the same
 choice the list forced.
 
-### The splitter is not free
+### The splitter is hand-rolled, and the trap is not where it looks
 
 Slint has no splitter widget, so the divider between the list and the details
 panel is hand-rolled - which is also what the Win32 frame does
-(`MainWindow::splitter_dragging`, `details_height`). Getting the drag right is
-fiddlier than its six pixels suggest, and **it is not working in this spike
-after three attempts**. Recorded as an open item rather than papered over.
+(`MainWindow::splitter_dragging`, `details_height`). It works, but it took
+finding two separate problems, and only one of them was in the drag.
 
-The trap, which is real and worth knowing before Phase 2 hits it: the obvious
-handler is
+**The real bug was the layout, not the drag.** The panel was written as
+
+    TabWidget { height: root.details-height; }
+
+and a `VerticalLayout` assigns its children's geometry, so an explicit `height`
+competes with the layout instead of constraining it. Dragging updated
+`details-height` correctly and nothing moved, which looks exactly like a broken
+drag handler. Pinning `min-height` and `max-height` to the same value is how a
+layout child is given a fixed size:
+
+    TabWidget {
+        min-height: root.details-height;
+        max-height: root.details-height;
+    }
+
+Three manual drag attempts failed before this was found. What settled it was
+making the app measure itself instead of guessing - `NT_SPIKE_SELFTEST=1` asks
+for a different height, waits a tick, and reports whether the list actually
+shrank by the same amount. It did not; after the fix it shrank by exactly 160px.
+That self-test is still in `main.rs` and costs a 1.5-second window flash.
+
+**The drag itself has a smaller trap.** The obvious handler is
 
     moved => { details-height = details-height - (self.mouse-y - self.pressed-y); }
 
-and it does nothing, because the `TouchArea` sits on top of the panel it
-resizes. Change the height and the TouchArea moves, so `mouse-y` moves with it
-and the delta cancels itself out. Anchoring to `absolute-position.y + mouse-y`
-captured at press is the shape of the fix - the current code does that and
-still does not resize, so something further is wrong. Budget real time for it.
+which drifts, because the `TouchArea` sits on top of the panel it resizes: the
+height changes, the TouchArea moves, and `mouse-y` moves with it. Anchor to
+`absolute-position.y + mouse-y` captured at press instead.
 
 ## What this means for Phase 2
 
@@ -128,8 +145,9 @@ The list is a custom widget rather than a drop-in, which is more work than
 it buys per-cell control the Win32 version only gets by owner-drawing.
 
 The frame is mostly free - menu bar, tabs, status bar and the details grid all
-came together quickly and match the baseline closely. Two pieces are not: the
-tab strip does not look like the Win32 one, and the splitter needs real work.
+came together quickly and match the baseline closely. One piece is not: the tab
+strip does not look like the Win32 one. The splitter works, but budget time for
+it; the failure mode there is silent and points at the wrong file.
 
 Still unanswered, and smaller: the Files tab needs a tree and Slint has no tree
 widget (flatten it yourself), and the desktop furniture - tray icon, native
