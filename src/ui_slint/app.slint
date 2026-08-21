@@ -14,6 +14,31 @@
 
 import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette } from "std-widgets.slint";
 
+export struct FileEntryRow {
+    name: string,
+    size: string,
+    progress: float,
+    included: bool,
+}
+
+export struct PeerEntryRow {
+    addr: string,
+    country: string,
+    status: string,
+    downloaded: string,
+    pieces: string,
+}
+
+export struct TrackerEntryRow {
+    url: string,
+    status: string,
+    seeds: string,
+    leeches: string,
+    fails: string,
+    next-announce: string,
+    indented: bool,
+}
+
 export struct Row {
     name: string,
     queue: string,
@@ -143,6 +168,15 @@ export component MainWindow inherits Window {
     in property <string> d-added: "-";
     in property <string> d-completed: "-";
     in property <float> d-progress: 0;
+
+    // Detail tabs. Only the visible one is refreshed - see current-tab.
+    in property <[FileEntryRow]> detail-files;
+    in property <[PeerEntryRow]> detail-peers;
+    in property <[TrackerEntryRow]> detail-trackers;
+    // in-out and bound from inside the TabWidget, not `tabs.current-index`:
+    // the widget lives inside an `if`, and ids declared in a conditional are
+    // not in scope out here.
+    in-out property <int> current-tab;
 
     // Splitter position - the Win32 frame keeps the same thing in
     // MainWindow::details_height.
@@ -434,6 +468,7 @@ export component MainWindow inherits Window {
 
         // --- details panel ---------------------------------------------------
         if root.show-details: TabWidget {
+            current-index <=> root.current-tab;
             // NOT `height:`. A VerticalLayout assigns its children's geometry,
             // so an explicit height competes with the layout rather than
             // constraining it - which is why dragging the splitter changed
@@ -491,38 +526,121 @@ export component MainWindow inherits Window {
 
             Tab {
                 title: "Files";
-                // Slint has no tree widget, so the real port has to flatten the
-                // file tree into indented rows itself. Flat here on purpose.
+                // ponytail: flat, not a tree. Slint has no tree widget and the
+                // metainfo gives paths, so grouping by directory means building
+                // one here. Worth doing; not worth doing first.
                 VerticalLayout {
-                    padding: 10px;
-                    spacing: 2px;
-                    Text { text: "Name                                    Size        Progress   Priority"; font-size: 13px; font-weight: 700; }
-                    Text { text: "  Sample.Video.1080p.mkv                24.00 MB    100.0 %    Normal"; font-size: 13px; }
-                    Text { text: "  Sample.Video.1080p.nfo                 2.00 KB    100.0 %    Normal"; font-size: 13px; }
-                    Rectangle { vertical-stretch: 1; }
+                    padding: 0px;
+                    Rectangle {
+                        height: 24px;
+                        background: Palette.alternate-background;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 12px;
+                            Text { text: "Name"; font-weight: 700; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; }
+                            Text { text: "Size"; font-weight: 700; font-size: 12px; width: 110px; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: "Progress"; font-weight: 700; font-size: 12px; width: 110px; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: "Included"; font-weight: 700; font-size: 12px; width: 90px; vertical-alignment: center; }
+                        }
+                    }
+                    ListView {
+                        for f[i] in root.detail-files: Rectangle {
+                            height: 22px;
+                            background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                spacing: 12px;
+                                Text { text: f.name; font-size: 12px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+                                Text { text: f.size; font-size: 12px; width: 110px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: round(f.progress * 1000) / 10 + " %"; font-size: 12px; width: 110px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: f.included ? "Yes" : "No"; font-size: 12px; width: 90px; vertical-alignment: center; }
+                            }
+                        }
+                    }
                 }
             }
 
             Tab {
                 title: "Peers";
                 VerticalLayout {
-                    padding: 10px;
-                    spacing: 2px;
-                    Text { text: "IP                     Client               Flags   DL         UL"; font-size: 13px; font-weight: 700; }
-                    Text { text: "203.0.113.7:51413      qBittorrent 4.6.5    DUE     1.2 MB/s   0 B/s"; font-size: 13px; }
-                    Rectangle { vertical-stretch: 1; }
+                    padding: 0px;
+                    Rectangle {
+                        height: 24px;
+                        background: Palette.alternate-background;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 12px;
+                            Text { text: "Address"; font-weight: 700; font-size: 12px; width: 190px; vertical-alignment: center; }
+                            Text { text: "Country"; font-weight: 700; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; }
+                            Text { text: "Status"; font-weight: 700; font-size: 12px; width: 130px; vertical-alignment: center; }
+                            Text { text: "Downloaded"; font-weight: 700; font-size: 12px; width: 120px; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: "Pieces"; font-weight: 700; font-size: 12px; width: 80px; horizontal-alignment: right; vertical-alignment: center; }
+                        }
+                    }
+                    ListView {
+                        for p[i] in root.detail-peers: Rectangle {
+                            height: 22px;
+                            background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                spacing: 12px;
+                                Text { text: p.addr; font-size: 12px; width: 190px; overflow: elide; vertical-alignment: center; }
+                                // ponytail: country name only, no flag icon.
+                                // res/flags is already compiled in and ui_native
+                                // draws them; this needs the PNGs decoded into
+                                // slint Images first.
+                                Text { text: p.country; font-size: 12px; horizontal-stretch: 1; overflow: elide; vertical-alignment: center; }
+                                Text { text: p.status; font-size: 12px; width: 130px; overflow: elide; vertical-alignment: center; }
+                                Text { text: p.downloaded; font-size: 12px; width: 120px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: p.pieces; font-size: 12px; width: 80px; horizontal-alignment: right; vertical-alignment: center; }
+                            }
+                        }
+                    }
                 }
             }
 
             Tab {
                 title: "Trackers";
                 VerticalLayout {
-                    padding: 10px;
-                    spacing: 2px;
-                    Text { text: "URL                              Status                Seeds  Leeches  Fails"; font-size: 13px; font-weight: 700; }
-                    Text { text: "DHT                              Working (105 nodes)   N/A    N/A      N/A"; font-size: 13px; }
-                    Text { text: "udp://tracker.invalid:6969       No such host is kno.  -      -        3"; font-size: 13px; }
-                    Rectangle { vertical-stretch: 1; }
+                    padding: 0px;
+                    Rectangle {
+                        height: 24px;
+                        background: Palette.alternate-background;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 12px;
+                            Text { text: "URL"; font-weight: 700; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; }
+                            Text { text: "Status"; font-weight: 700; font-size: 12px; width: 220px; vertical-alignment: center; }
+                            Text { text: "Seeds"; font-weight: 700; font-size: 12px; width: 80px; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: "Leeches"; font-weight: 700; font-size: 12px; width: 80px; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: "Fails"; font-weight: 700; font-size: 12px; width: 70px; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: "Next announce"; font-weight: 700; font-size: 12px; width: 130px; vertical-alignment: center; }
+                        }
+                    }
+                    ListView {
+                        for t[i] in root.detail-trackers: Rectangle {
+                            height: 22px;
+                            background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                            HorizontalLayout {
+                                // Tracker rows sit under their tier heading, as
+                                // the Win32 list indents them.
+                                padding-left: t.indented ? 26px : 8px;
+                                padding-right: 8px;
+                                spacing: 12px;
+                                Text { text: t.url; font-size: 12px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+                                Text { text: t.status; font-size: 12px; width: 220px; overflow: elide; vertical-alignment: center; }
+                                Text { text: t.seeds; font-size: 12px; width: 80px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: t.leeches; font-size: 12px; width: 80px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: t.fails; font-size: 12px; width: 70px; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { text: t.next-announce; font-size: 12px; width: 130px; vertical-alignment: center; }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -660,6 +778,8 @@ export component AddTorrentDialog inherits Window {
                     background: Palette.alternate-background;
                     HorizontalLayout {
                         padding-left: 8px;
+                        padding-right: 8px;
+                        spacing: 12px;
                         Text { text: "Include"; font-weight: 700; font-size: 12px; width: 70px; vertical-alignment: center; }
                         Text { text: "Name"; font-weight: 700; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; }
                         Text { text: "Size"; font-weight: 700; font-size: 12px; width: 100px; horizontal-alignment: right; vertical-alignment: center; }
@@ -671,6 +791,8 @@ export component AddTorrentDialog inherits Window {
                         background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
                         HorizontalLayout {
                             padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 12px;
                             CheckBox {
                                 width: 70px;
                                 checked: f.included;

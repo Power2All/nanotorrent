@@ -65,6 +65,9 @@ struct Ui {
     rows: RefCell<Vec<TorrentStatus>>,
     /// Arguments forwarded by a second instance, polled on the refresh tick.
     ipc: Option<crate::ipc::Server>,
+    /// Peer country lookups, loaded in the background at startup - the same
+    /// database the Win32 peers list uses.
+    geoip: Arc<crate::core::geoip::GeoIp>,
     /// Kept alive while open. Hidden rather than dropped when dismissed -
     /// dropping a window from inside its own callback is asking for trouble,
     /// and the next open replaces it anyway.
@@ -161,6 +164,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         anchor: RefCell::new(0),
         rows: RefCell::new(Vec::new()),
         ipc: ctx.ipc,
+        geoip: ctx.geoip.clone(),
         magnet_dialog: RefCell::new(None),
         torrent_dialog: RefCell::new(None),
         pending: RefCell::new(Vec::new()),
@@ -274,11 +278,100 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     // Details follow the first selected row, matching the Win32 panel.
     if let Some(first) = rows.iter().find(|r| selected.contains(&r.info_hash)) {
         set_details(window, first, &ui.tr);
+        refresh_detail_tab(window, ui, &first.info_hash);
     } else if selected.is_empty() {
         clear_details(window);
+        clear_detail_tabs(window);
     }
 
     *ui.rows.borrow_mut() = rows;
+}
+
+/// Fill in whichever detail tab is on screen.
+///
+/// Only the visible one: peers() and tracker_rows() are per-torrent queries and
+/// this runs every second, so filling all three would pay for two nobody is
+/// looking at. Tab order matches the TabWidget - Overview, Files, Peers,
+/// Trackers.
+fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
+    match window.get_current_tab() {
+        1 => {
+            let rows: Vec<FileEntryRow> = ui
+                .session
+                .files(hash)
+                .into_iter()
+                .map(|f| FileEntryRow {
+                    name: f.name.as_str().into(),
+                    size: utils::to_human_file_size(f.length as i64).into(),
+                    progress: f.progress,
+                    included: f.included,
+                })
+                .collect();
+            window.set_detail_files(ModelRc::new(VecModel::from(rows)));
+        }
+        2 => {
+            let rows: Vec<PeerEntryRow> = ui
+                .session
+                .peers(hash)
+                .into_iter()
+                .map(|p| {
+                    // Same GeoIP database the Win32 peers list uses; an
+                    // unknown address just leaves the column blank.
+                    let country = ui
+                        .geoip
+                        .lookup(&p.addr)
+                        .map(|(_iso, name)| name)
+                        .unwrap_or_default();
+                    PeerEntryRow {
+                        addr: p.addr.as_str().into(),
+                        country: country.as_str().into(),
+                        status: p.state.as_str().into(),
+                        downloaded: utils::to_human_file_size(p.fetched_bytes as i64).into(),
+                        pieces: p.pieces.to_string().into(),
+                    }
+                })
+                .collect();
+            window.set_detail_peers(ModelRc::new(VecModel::from(rows)));
+        }
+        3 => {
+            let rows: Vec<TrackerEntryRow> = ui
+                .session
+                .tracker_rows(hash, &ui.tr)
+                .into_iter()
+                .map(|t| TrackerEntryRow {
+                    url: t.label.as_str().into(),
+                    status: t.status.as_str().into(),
+                    seeds: t.seeders.map_or_else(|| String::from("-"), |v| v.to_string()).into(),
+                    leeches: t.leechers.map_or_else(|| String::from("-"), |v| v.to_string()).into(),
+                    fails: t.fails.to_string().into(),
+                    next_announce: format_next_announce(t.next_announce).into(),
+                    indented: matches!(t.kind, crate::bittorrent::session::TrackerRowKind::Tracker),
+                })
+                .collect();
+            window.set_detail_trackers(ModelRc::new(VecModel::from(rows)));
+        }
+        // Overview needs nothing beyond what set_details already wrote.
+        _ => {}
+    }
+}
+
+fn clear_detail_tabs(window: &MainWindow) {
+    window.set_detail_files(ModelRc::new(VecModel::from(Vec::<FileEntryRow>::new())));
+    window.set_detail_peers(ModelRc::new(VecModel::from(Vec::<PeerEntryRow>::new())));
+    window.set_detail_trackers(ModelRc::new(VecModel::from(Vec::<TrackerEntryRow>::new())));
+}
+
+/// "in 4m", or a dash when the tracker has not scheduled one.
+fn format_next_announce(at: Option<std::time::SystemTime>) -> String {
+    let Some(at) = at else {
+        return String::from("-");
+    };
+    match at.duration_since(std::time::SystemTime::now()) {
+        Ok(left) if left.as_secs() >= 60 => format!("in {}m", left.as_secs() / 60),
+        Ok(left) => format!("in {}s", left.as_secs()),
+        // Already due; the announce is in flight or about to be.
+        Err(_) => String::from("now"),
+    }
 }
 
 fn set_details(window: &MainWindow, t: &TorrentStatus, tr: &Translator) {
