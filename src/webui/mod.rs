@@ -29,6 +29,7 @@
 
 mod auth;
 pub mod cli;
+mod fs;
 pub mod tls;
 
 use std::collections::HashMap;
@@ -37,12 +38,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::dev::ServerHandle;
+use actix_web::error::{ErrorBadRequest, ErrorNotFound};
 use actix_web::middleware::from_fn;
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use anyhow::{Context, Result};
-use serde::Serialize;
+use base64::Engine;
+use serde::{Deserialize, Serialize};
 
-use crate::bittorrent::session::Session;
+use crate::bittorrent::session::{AddParams, AddTorrentSource, Session};
 use crate::bittorrent::torrentstatus::{State, TorrentStatus};
 use crate::core::configuration::Configuration;
 use crate::core::environment::Environment;
@@ -252,6 +255,210 @@ async fn h_torrents(state: web::Data<AppState>) -> actix_web::Result<impl Respon
     Ok(web::Json(rows))
 }
 
+/// Drains the session's error queue.
+///
+/// Draining, not peeking, and that is the contract: adds are fire-and-forget,
+/// so this is where a failed magnet or a rejected .torrent surfaces, and two
+/// clients polling it will each see a subset. One poller.
+async fn h_errors(state: web::Data<AppState>) -> actix_web::Result<impl Responder> {
+    let st = state.clone();
+    let errors = web::block(move || st.session.take_errors()).await?;
+    Ok(web::Json(serde_json::json!({ "errors": errors })))
+}
+
+// --- mutating handlers ------------------------------------------------------
+
+fn default_start() -> bool {
+    true
+}
+
+#[derive(Deserialize)]
+struct AddRequest {
+    magnet: Option<String>,
+    /// base64-encoded `.torrent` contents. Base64 inside JSON rather than
+    /// multipart: torrent files are kilobytes, and it saves a dependency and a
+    /// second request shape.
+    torrent_file: Option<String>,
+    save_path: Option<String>,
+    #[serde(default = "default_start")]
+    start: bool,
+    label_id: Option<i32>,
+    only_files: Option<Vec<usize>>,
+}
+
+async fn h_add(
+    state: web::Data<AppState>,
+    body: web::Json<AddRequest>,
+) -> actix_web::Result<impl Responder> {
+    let req = body.into_inner();
+
+    let source = match (req.magnet, req.torrent_file) {
+        (Some(magnet), None) => {
+            // Magnet scheme only. librqbit's from_url happily fetches http(s)
+            // too, which would turn "add a torrent" into "make the server
+            // issue a request to any URL I name" - including hosts only it can
+            // reach. Support that deliberately or not at all.
+            if !magnet.starts_with("magnet:") {
+                return Err(ErrorBadRequest("magnet must start with 'magnet:'"));
+            }
+            AddTorrentSource::MagnetUri(magnet)
+        }
+        (None, Some(encoded)) => {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(encoded.trim())
+                .map_err(|e| ErrorBadRequest(format!("torrent_file is not valid base64: {e}")))?;
+            if bytes.is_empty() {
+                return Err(ErrorBadRequest("torrent_file decoded to zero bytes"));
+            }
+            AddTorrentSource::TorrentFileBytes(bytes)
+        }
+        _ => {
+            return Err(ErrorBadRequest(
+                "provide exactly one of 'magnet' or 'torrent_file'",
+            ));
+        }
+    };
+
+    let params = AddParams {
+        save_path: req.save_path,
+        start_torrent: req.start,
+        only_files: req.only_files,
+        label_id: req.label_id,
+    };
+
+    let st = state.clone();
+    web::block(move || st.session.add_torrent(source, params)).await?;
+
+    // 202, not 200: add_torrent returns before the torrent exists. Resolving a
+    // magnet's metadata can take minutes, or never finish. Poll /api/torrents
+    // for arrival and /api/errors for failure.
+    Ok(HttpResponse::Accepted().json(serde_json::json!({ "status": "accepted" })))
+}
+
+/// Run `op` against a torrent, 404ing if that hash is not in the session.
+///
+/// The `Session` mutators silently do nothing for an unknown hash - fine for
+/// the UI, which can only pass hashes it just listed, but over HTTP a typo
+/// would look exactly like success.
+async fn with_torrent<F>(
+    state: &web::Data<AppState>,
+    hash: String,
+    op: F,
+) -> actix_web::Result<HttpResponse>
+where
+    F: FnOnce(&Session, &str) + Send + 'static,
+{
+    let st = state.clone();
+    let found = web::block(move || {
+        if !st.session.exists(&hash) {
+            return false;
+        }
+        op(&st.session, &hash);
+        true
+    })
+    .await?;
+
+    if found {
+        Ok(HttpResponse::NoContent().finish())
+    } else {
+        Err(ErrorNotFound("no torrent with that info hash"))
+    }
+}
+
+async fn h_pause(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+) -> actix_web::Result<HttpResponse> {
+    with_torrent(&state, hash.into_inner(), |s, h| s.pause(h)).await
+}
+
+async fn h_resume(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+) -> actix_web::Result<HttpResponse> {
+    with_torrent(&state, hash.into_inner(), |s, h| s.resume(h)).await
+}
+
+async fn h_recheck(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+) -> actix_web::Result<HttpResponse> {
+    with_torrent(&state, hash.into_inner(), |s, h| s.recheck(h)).await
+}
+
+#[derive(Deserialize)]
+struct RemoveQuery {
+    /// Defaults to false. Deleting data is the destructive option, so it has
+    /// to be asked for by name rather than being the default for a DELETE.
+    #[serde(default)]
+    delete_files: bool,
+}
+
+async fn h_remove(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    query: web::Query<RemoveQuery>,
+) -> actix_web::Result<HttpResponse> {
+    let delete_files = query.delete_files;
+    with_torrent(&state, hash.into_inner(), move |s, h| {
+        s.remove(h, delete_files)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct MoveRequest {
+    path: String,
+}
+
+async fn h_move(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<MoveRequest>,
+) -> actix_web::Result<HttpResponse> {
+    let path = body.into_inner().path;
+    if !std::path::Path::new(&path).is_absolute() {
+        return Err(ErrorBadRequest("path must be absolute"));
+    }
+    with_torrent(&state, hash.into_inner(), move |s, h| {
+        s.move_storage(h, &path)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct LabelRequest {
+    /// null clears the label.
+    label_id: Option<i32>,
+}
+
+async fn h_label(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<LabelRequest>,
+) -> actix_web::Result<HttpResponse> {
+    let label_id = body.into_inner().label_id;
+    with_torrent(&state, hash.into_inner(), move |s, h| s.set_label(h, label_id)).await
+}
+
+// --- filesystem handlers ----------------------------------------------------
+
+async fn h_fs_roots() -> actix_web::Result<impl Responder> {
+    Ok(web::Json(web::block(fs::roots).await?))
+}
+
+async fn h_fs_list(query: web::Query<fs::PathRequest>) -> actix_web::Result<impl Responder> {
+    let path = query.into_inner().path;
+    let listing = web::block(move || fs::list(&path)).await?.map_err(ErrorBadRequest)?;
+    Ok(web::Json(listing))
+}
+
+async fn h_fs_mkdir(body: web::Json<fs::PathRequest>) -> actix_web::Result<impl Responder> {
+    let path = body.into_inner().path;
+    let listing = web::block(move || fs::mkdir(&path)).await?.map_err(ErrorBadRequest)?;
+    Ok(HttpResponse::Created().json(listing))
+}
+
 // --- server -----------------------------------------------------------------
 
 /// Start the web interface if it is enabled and configured.
@@ -359,11 +566,27 @@ fn build(
             .app_data(state.clone())
             .app_data(creds.clone())
             .wrap(from_fn(auth::require_auth))
+            // A .torrent with thousands of files runs to a few MB once
+            // base64'd; actix's 2 KB default would reject them. Still a cap,
+            // because an unbounded body is free memory for anyone with the
+            // password.
+            .app_data(web::JsonConfig::default().limit(8 * 1024 * 1024))
             .service(
                 web::scope("/api")
                     .route("/health", web::get().to(h_health))
                     .route("/session", web::get().to(h_session))
-                    .route("/torrents", web::get().to(h_torrents)),
+                    .route("/errors", web::get().to(h_errors))
+                    .route("/torrents", web::get().to(h_torrents))
+                    .route("/torrents", web::post().to(h_add))
+                    .route("/torrents/{hash}", web::delete().to(h_remove))
+                    .route("/torrents/{hash}/pause", web::post().to(h_pause))
+                    .route("/torrents/{hash}/resume", web::post().to(h_resume))
+                    .route("/torrents/{hash}/recheck", web::post().to(h_recheck))
+                    .route("/torrents/{hash}/move", web::post().to(h_move))
+                    .route("/torrents/{hash}/label", web::post().to(h_label))
+                    .route("/fs/roots", web::get().to(h_fs_roots))
+                    .route("/fs/list", web::get().to(h_fs_list))
+                    .route("/fs/mkdir", web::post().to(h_fs_mkdir)),
             )
     })
     // Actix's defaults are tuned for a public server; these are for a personal

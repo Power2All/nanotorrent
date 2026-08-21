@@ -96,7 +96,7 @@ tauri-winrt-notification = "0.8"
 # startup message box in main.rs all need winapi under plain cfg(windows),
 # whichever UI (or none) is built. Gating it on the feature is what stopped
 # --no-default-features from compiling.
-winapi = { version = "0.3.9", features = ["commctrl", "winuser", "windef", "winnls", "wingdi", "dwmapi", "uxtheme", "winreg", "libloaderapi", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "winerror", "wincon"] }
+winapi = { version = "0.3.9", features = ["commctrl", "winuser", "windef", "winnls", "wingdi", "dwmapi", "uxtheme", "winreg", "libloaderapi", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "winerror"] }
 native-windows-gui = { version = "1.0.13", optional = true, features = ["list-view", "image-list", "image-decoder", "tabs", "tray-notification", "menu", "combobox", "textbox", "file-dialog", "animation-timer", "notice", "message-window", "flexbox", "progress-bar", "cursor", "high-dpi", "clipboard"] }
 
 [patch.crates-io]

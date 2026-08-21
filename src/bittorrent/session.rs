@@ -1232,6 +1232,16 @@ impl Session {
         }
     }
 
+    /// Whether a torrent with this info hash is in the session.
+    ///
+    /// The mutating methods below silently do nothing for an unknown hash,
+    /// which is right for the UI (it can only ever pass hashes it just listed)
+    /// but wrong for the web API, where a typo would otherwise look like a
+    /// success. Cheaper than scanning `torrents()` just to find out.
+    pub fn exists(&self, hash: &str) -> bool {
+        self.find(hash).is_some()
+    }
+
     fn find(&self, hash: &str) -> Option<Arc<ManagedTorrent>> {
         let id = librqbit::api::TorrentIdOrHash::parse(hash).ok()?;
         self.rq().get(id)

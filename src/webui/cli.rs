@@ -24,6 +24,19 @@ NanoTorrent web interface setup:
   nanotorrent --webui on|off        enable or disable the web interface
   nanotorrent --set-web-password    read a new password from stdin
   nanotorrent --webui-status        show the current settings
+  nanotorrent --webui-set KEY VALUE change one setting
+
+Settings for --webui-set:
+
+  bind_address    127.0.0.1 (default) or 0.0.0.0 to reach it from the LAN
+  port            1-65535, default 8443
+  username        default 'nanotorrent'
+  tls_mode        self-signed (default) | custom | off
+  tls_cert_path   PEM certificate, for tls_mode=custom
+  tls_key_path    PEM private key, for tls_mode=custom
+
+tls_mode=off is refused at startup on anything but 127.0.0.1, because Basic
+auth credentials would then cross the network in clear text.
 
 Setting a password without a terminal echoing it:
 
@@ -36,7 +49,10 @@ pub fn handle(args: &[String]) -> Result<bool> {
     let Some(flag) = args.first().map(String::as_str) else {
         return Ok(false);
     };
-    if !matches!(flag, "--webui" | "--set-web-password" | "--webui-status") {
+    if !matches!(
+        flag,
+        "--webui" | "--set-web-password" | "--webui-status" | "--webui-set"
+    ) {
         return Ok(false);
     }
 
@@ -85,6 +101,14 @@ pub fn handle(args: &[String]) -> Result<bool> {
             println!("Web interface password updated. Restart NanoTorrent for it to take effect.");
         }
 
+        "--webui-set" => {
+            let (Some(key), Some(value)) = (args.get(1), args.get(2)) else {
+                anyhow::bail!("{USAGE}");
+            };
+            set_setting(&cfg, key, value)?;
+            println!("webui.{key} = {value}. Restart NanoTorrent for it to take effect.");
+        }
+
         "--webui-status" => {
             let wc = super::WebConfig::load(&cfg);
             println!("enabled      : {}", wc.enabled);
@@ -102,6 +126,62 @@ pub fn handle(args: &[String]) -> Result<bool> {
     }
 
     Ok(true)
+}
+
+/// Whitelisted rather than a generic key/value setter over the settings table.
+/// A typo would otherwise write a key nothing ever reads and report success,
+/// which is the worst possible outcome for a security-relevant setting.
+fn set_setting(cfg: &Configuration, key: &str, value: &str) -> Result<()> {
+    match key {
+        "port" => {
+            let port: i64 = value
+                .parse()
+                .ok()
+                .filter(|p| (1..=65535).contains(p))
+                .context("port must be a number between 1 and 65535")?;
+            cfg.set("webui.port", &port);
+        }
+        "tls_mode" => {
+            anyhow::ensure!(
+                matches!(value, "self-signed" | "custom" | "off"),
+                "tls_mode must be one of: self-signed, custom, off"
+            );
+            if value == "off" {
+                // Not refused here - it is legitimate on loopback, and startup
+                // is where the bind address is known. Say so now rather than
+                // letting it fail confusingly later.
+                println!(
+                    "Note: with tls_mode=off the interface will only start on 127.0.0.1."
+                );
+            }
+            cfg.set("webui.tls_mode", &value);
+        }
+        "bind_address" => {
+            anyhow::ensure!(!value.trim().is_empty(), "bind_address must not be empty");
+            if value != "127.0.0.1" && value != "::1" {
+                println!(
+                    "Note: {value} is reachable from outside this machine. \
+                     Make sure the password is one you are happy exposing."
+                );
+            }
+            cfg.set("webui.bind_address", &value);
+        }
+        "username" => {
+            anyhow::ensure!(!value.trim().is_empty(), "username must not be empty");
+            cfg.set("webui.username", &value);
+        }
+        "tls_cert_path" | "tls_key_path" => {
+            // Checked now rather than at startup, where a typo would only show
+            // up as the interface silently not coming back after a restart.
+            anyhow::ensure!(
+                std::path::Path::new(value).is_file(),
+                "{value} is not an existing file"
+            );
+            cfg.set(&format!("webui.{key}"), &value);
+        }
+        _ => anyhow::bail!("unknown setting '{key}'\n\n{USAGE}"),
+    }
+    Ok(())
 }
 
 fn read_password() -> Result<String> {
@@ -142,7 +222,7 @@ mod tests {
                     assert!(
                         matches!(
                             flag.as_str(),
-                            "--webui" | "--set-web-password" | "--webui-status"
+                            "--webui" | "--set-web-password" | "--webui-status" | "--webui-set"
                         ),
                         "USAGE mentions {flag} but handle() does not match it"
                     );

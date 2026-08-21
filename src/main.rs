@@ -89,18 +89,18 @@ fn fatal_error(msg: &str) {
     // Free, and the right channel whenever anyone is attached to it.
     eprintln!("NanoTorrent could not start: {msg}");
 
-    #[cfg(windows)]
+    // The cfg here MUST stay identical to the `windows_subsystem` attribute at
+    // the top of this file: that build, and only that build, has nowhere for
+    // the eprintln above to go, which is the entire reason a dialog exists.
+    //
+    // This was briefly a runtime `GetConsoleWindow()` check, which is wrong.
+    // MinTTY (Git Bash, and any terminal not using a Win32 console) talks over
+    // pipes, so that call returns NULL while stderr works perfectly - and a
+    // headless build would put up a modal box that blocks forever waiting for
+    // a click nobody is there to make. A compile-time fact deserves a
+    // compile-time test.
+    #[cfg(all(not(debug_assertions), feature = "ui-native", windows))]
     unsafe {
-        // ONLY when there is no console. The message box exists because a GUI
-        // subsystem binary has no stderr and would otherwise vanish silently -
-        // but a headless build is console subsystem, and a modal dialog there
-        // blocks the process forever waiting for a click nobody will make.
-        // Testing the console rather than the build config also covers a GUI
-        // build launched from a terminal.
-        if !winapi::um::wincon::GetConsoleWindow().is_null() {
-            return;
-        }
-
         use std::os::windows::ffi::OsStrExt;
         let wide = |s: &str| -> Vec<u16> {
             std::ffi::OsStr::new(s)
