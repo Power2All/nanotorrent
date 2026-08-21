@@ -13,7 +13,27 @@ default = ["ui-native"]
 ui-native = ["dep:native-windows-gui"]
 
 [dependencies]
+# Actix rather than axum for the web API, chosen for its connection layer, not
+# its routing. actix-http runs a 5s client_request_timeout by default and
+# actix-server caps concurrent connections; axum::serve wires up neither, and
+# hyper's equivalents are all opt-in. Those protections live inside actix-http's
+# dispatcher, which owns the socket, codec and timers together - there is no
+# seam to lift them out through and bolt onto hyper, so this is an
+# either/or. Costs ~74 crates against axum's ~17 (measured) because Actix ships
+# its own HTTP stack instead of reusing the hyper/tower already here for
+# reqwest. Worth it: hand-rolled accept loops and timeout wrappers are exactly
+# the code not to write yourself.
+#
+# Defaults minus compress-brotli, compress-zstd, cookies and ws: this serves
+# JSON and one small HTML page, so gzip covers it, and zstd-sys is a C build
+# for nothing. Basic auth needs no cookies. Re-add ws if live stats ever want
+# a socket rather than SSE.
+actix-web = { version = "4", default-features = false, features = ["macros", "compress-gzip", "http2", "unicode", "compat", "rustls-0_23"] }
 anyhow = "1.0.104"
+# Password hashing for the web API. A slow KDF, not sha2 (already present):
+# people reuse passwords, and the settings DB is a plain file.
+argon2 = "0.5"
+base64 = "0.22"
 bencode = { version = "3.1", package = "librqbit-bencode", default-features = false }
 chrono = "0.4.45"
 flate2 = "1.1.9"
@@ -48,10 +68,21 @@ rand = "0.10"
 librqbit = { version = "8.1.1", default-features = false, features = ["rust-tls"] }
 maxminddb = "0.30"
 open = "5.4.1"
+# Generates the self-signed certificate for the web API on first use, so HTTPS
+# works out of the box without asking anyone to run openssl.
+rcgen = "0.13"
 reqwest = { version = "0.13.4", features = ["json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
+# Default features deliberately: that selects aws-lc-rs, which the tree already
+# resolves rustls to. Picking `ring` here would compile a second crypto library.
+rustls = "0.23"
+rustls-pemfile = "2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# Constant-time comparison for the auth username. argon2 already compares the
+# password hash in constant time; the username needs the same treatment or it
+# leaks through timing.
+subtle = "2.6"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "signal"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
@@ -65,7 +96,7 @@ tauri-winrt-notification = "0.8"
 # startup message box in main.rs all need winapi under plain cfg(windows),
 # whichever UI (or none) is built. Gating it on the feature is what stopped
 # --no-default-features from compiling.
-winapi = { version = "0.3.9", features = ["commctrl", "winuser", "windef", "winnls", "wingdi", "dwmapi", "uxtheme", "winreg", "libloaderapi", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "winerror"] }
+winapi = { version = "0.3.9", features = ["commctrl", "winuser", "windef", "winnls", "wingdi", "dwmapi", "uxtheme", "winreg", "libloaderapi", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "winerror", "wincon"] }
 native-windows-gui = { version = "1.0.13", optional = true, features = ["list-view", "image-list", "image-decoder", "tabs", "tray-notification", "menu", "combobox", "textbox", "file-dialog", "animation-timer", "notice", "message-window", "flexbox", "progress-bar", "cursor", "high-dpi", "clipboard"] }
 
 [patch.crates-io]

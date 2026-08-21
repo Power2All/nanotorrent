@@ -53,6 +53,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     migration!("20260714000000_add_torrent_timestamps"),
     migration!("20260716000000_reinstate_geoip_settings"),
     migration!("20260815000000_github_release_update_check"),
+    migration!("20260821000000_web_api_settings"),
 ];
 
 pub struct Database {

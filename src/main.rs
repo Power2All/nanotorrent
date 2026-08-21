@@ -37,6 +37,12 @@ mod ui;
 #[cfg(all(feature = "ui-native", windows))]
 mod ui_native;
 mod updatechecker;
+mod webui;
+
+/// True when no native UI is compiled in. The web interface is then the only
+/// way to reach this process, which makes failing to start it fatal rather
+/// than a degraded-but-usable state.
+const HEADLESS: bool = !cfg!(all(feature = "ui-native", windows));
 
 use std::sync::{Arc, Mutex};
 
@@ -80,8 +86,21 @@ fn main() {
 
 /// Show a startup failure before the UI exists (nwg isn't initialised yet).
 fn fatal_error(msg: &str) {
+    // Free, and the right channel whenever anyone is attached to it.
+    eprintln!("NanoTorrent could not start: {msg}");
+
     #[cfg(windows)]
     unsafe {
+        // ONLY when there is no console. The message box exists because a GUI
+        // subsystem binary has no stderr and would otherwise vanish silently -
+        // but a headless build is console subsystem, and a modal dialog there
+        // blocks the process forever waiting for a click nobody will make.
+        // Testing the console rather than the build config also covers a GUI
+        // build launched from a terminal.
+        if !winapi::um::wincon::GetConsoleWindow().is_null() {
+            return;
+        }
+
         use std::os::windows::ffi::OsStrExt;
         let wide = |s: &str| -> Vec<u16> {
             std::ffi::OsStr::new(s)
@@ -104,7 +123,19 @@ fn fatal_error(msg: &str) {
 }
 
 fn run() -> anyhow::Result<()> {
+    // Before ANY TLS happens - reqwest (update check, GeoIP) and the web
+    // interface both reach for rustls, which panics rather than erroring if no
+    // provider has been chosen. See the function for why it cannot self-select.
+    webui::tls::ensure_crypto_provider();
+
     let args: Vec<String> = std::env::args().skip(1).collect();
+
+    // BEFORE the IPC check below, which forwards argv to a running instance and
+    // exits - a --set-web-password would otherwise be handed to the running
+    // window as though it were a torrent to open.
+    if webui::cli::handle(&args)? {
+        return Ok(());
+    }
 
     // Port of the IPC single-instance handling in main.cpp.
     let server = match ipc::init(&args) {
@@ -180,6 +211,23 @@ fn run() -> anyhow::Result<()> {
     // GeoIP database for peer countries, loaded in the background.
     let geoip = core::geoip::GeoIp::new();
     geoip.spawn_load(&session.handle(), &env, &cfg);
+
+    // Optional web interface (off unless webui.enabled). Held for the lifetime
+    // of the process; the server runs on its own thread and its System is torn
+    // down at exit.
+    // ponytail: no graceful stop on shutdown - in-flight requests are cut when
+    // the process exits. Wire ServerHandle::stop through run_ui if that starts
+    // mattering (it will once prefs can restart the server in place).
+    let _web = match webui::spawn(session.clone(), cfg.clone(), env.clone()) {
+        Ok(handle) => handle,
+        Err(err) if HEADLESS => {
+            return Err(err.context("the web interface is the only interface on this build"));
+        }
+        Err(err) => {
+            tracing::error!("web interface did not start: {err:#}");
+            None
+        }
+    };
 
     let ctx = AppContext {
         env,
