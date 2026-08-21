@@ -1,9 +1,14 @@
-# Slint spike: the torrent list
+# Slint spike: the main window
 
 Answers one question before Phase 2 commits to a toolkit: **can Slint carry
-NanoTorrent's torrent list?** That screen is the hardest and most
-representative in the app - 16 columns, sortable, multi-select, in-cell
-progress bar, right-click context menu - so it is the one worth building first.
+NanoTorrent's main window?**
+
+It started as the torrent list alone - the hardest and most representative
+screen, 16 columns, sortable, multi-select, in-cell progress bar, right-click
+context menu. That answered the list question and said nothing about the
+frame, so it now covers the whole window: menu bar, the splitter, the four
+detail tabs and the status bar. Compare against
+`docs/ui-baseline/03-main-rows.png` and `04-tab-overview.png`.
 
 Standalone (`[workspace]` in its own `Cargo.toml`), so it costs the shipping
 binary nothing.
@@ -79,16 +84,57 @@ All verified by running it, not by reading docs:
    not pick up the dark palette the rest of the app follows. Cosmetic, but
    visible, and worth resolving before the port ships.
 
+## The frame
+
+| Piece | Result |
+|---|---|
+| **Menu bar** (File / View / Help, sub-menus, separators) | `MenuBar` builtin. Native on macOS - it goes to the top of the screen - and Slint-drawn elsewhere. Supports `shortcut: @keys(Control + N)`. |
+| **Detail tabs** (Overview / Files / Peers / Trackers) | `TabWidget`. Works, but see the caveat below. |
+| **Overview fields** | `GridLayout` of label/value pairs, matching the two-column Win32 layout. |
+| **Status bar** | No widget; a `Rectangle` with a `HorizontalLayout`. Trivial. |
+| **Splitter** | **No widget. Hand-rolled, and harder than it looks - see below.** |
+
+### The tabs do not look like the Win32 ones
+
+Slint's `TabWidget` stretches its tabs to fill the full width. The Win32 tab
+control keeps them compact and left-aligned. This is the most visible
+difference between the spike and the baseline, and matching it means either
+styling `TabWidget` or building a tab strip out of `TouchArea`s - the same
+choice the list forced.
+
+### The splitter is not free
+
+Slint has no splitter widget, so the divider between the list and the details
+panel is hand-rolled - which is also what the Win32 frame does
+(`MainWindow::splitter_dragging`, `details_height`). Getting the drag right is
+fiddlier than its six pixels suggest, and **it is not working in this spike
+after three attempts**. Recorded as an open item rather than papered over.
+
+The trap, which is real and worth knowing before Phase 2 hits it: the obvious
+handler is
+
+    moved => { details-height = details-height - (self.mouse-y - self.pressed-y); }
+
+and it does nothing, because the `TouchArea` sits on top of the panel it
+resizes. Change the height and the TouchArea moves, so `mouse-y` moves with it
+and the delta cancels itself out. Anchoring to `absolute-position.y + mouse-y`
+captured at press is the shape of the fix - the current code does that and
+still does not resize, so something further is wrong. Budget real time for it.
+
 ## What this means for Phase 2
 
 The list is a custom widget rather than a drop-in, which is more work than
 "use the table widget" - but it is ordinary declarative code, not a fight, and
 it buys per-cell control the Win32 version only gets by owner-drawing.
 
-Two things still unanswered, both smaller than this one: the Files tab needs a
-tree, and Slint has no tree widget (flatten it yourself), and the desktop
-furniture - tray icon, native file dialogs, notifications, `magnet:`
-registration - is assembled from separate crates rather than provided.
+The frame is mostly free - menu bar, tabs, status bar and the details grid all
+came together quickly and match the baseline closely. Two pieces are not: the
+tab strip does not look like the Win32 one, and the splitter needs real work.
+
+Still unanswered, and smaller: the Files tab needs a tree and Slint has no tree
+widget (flatten it yourself), and the desktop furniture - tray icon, native
+file dialogs, notifications, `magnet:` registration - is assembled from
+separate crates rather than provided.
 
 Licensing is unchanged and still the deciding factor for shipping: Slint is
 GPLv3 / commercial / royalty-free-with-conditions against this project's MIT.

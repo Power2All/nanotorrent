@@ -1,16 +1,16 @@
-// Spike: can Slint carry NanoTorrent's torrent list?
+// Spike: can Slint carry NanoTorrent's MAIN WINDOW?
 //
-// StandardTableView cannot, and that is settled rather than suspected - its
-// only selection property is `current-row: int` (no multi-select), and its
-// cells are StandardListViewItem, which renders text and nothing else. The
-// Win32 list needs both: multi-select drives the context menu, and the
-// Progress column owner-draws a bar.
+// Started as a list-only spike. That answered the list question but said
+// nothing about the frame, so it now covers the whole thing: menu bar, the
+// splitter between list and details, the four detail tabs, and the status bar.
+// Compare against docs/ui-baseline/03-main-rows.png.
 //
-// So the real question is the one below: does a custom row over ListView carry
-// them without fighting the toolkit? 16 columns, a real progress bar in a
-// cell, ctrl/shift multi-select, right-click context menu, sortable headers.
+// The list findings still stand. StandardTableView cannot be used - its only
+// selection property is `current-row: int` (no multi-select) and its cells are
+// StandardListViewItem, which renders text and nothing else. The Win32 list
+// needs both: multi-select drives the context menu, and Progress draws a bar.
 
-import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, Palette } from "std-widgets.slint";
+import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, Palette } from "std-widgets.slint";
 
 export struct Row {
     name: string,
@@ -45,6 +45,8 @@ global Cols {
     out property <length> total: 1524px;
 }
 
+// A Rectangle wrapping a Text, not a Text: `padding-left` is not a Text
+// property, so right-aligned values ran straight into the next column.
 component Cell inherits Rectangle {
     in property <length> w;
     in property <string> text;
@@ -64,36 +66,122 @@ component Cell inherits Rectangle {
     }
 }
 
+// One "Name: value" pair in the Overview grid.
+component Field inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 8px;
+    Text {
+        text: root.label;
+        font-weight: 700;
+        font-size: 13px;
+        width: 110px;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.value;
+        font-size: 13px;
+        overflow: elide;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+}
+
 export component MainWindow inherits Window {
-    title: "NanoTorrent - Slint list spike";
+    title: "NanoTorrent - Slint main window spike";
     preferred-width: 1280px;
-    preferred-height: 720px;
+    preferred-height: 800px;
     background: Palette.background;
 
     in property <[Row]> rows;
     in property <string> status;
     in property <int> selected-count;
+    in property <string> dht-nodes: "105";
+    in property <string> session-rates: "DL: 0 bytes/s, UL: 0 bytes/s";
+
+    // Details of the selected torrent.
+    in property <string> d-name: "-";
+    in property <string> d-hash: "-";
+    in property <string> d-save-path: "-";
+    in property <string> d-status: "-";
+    in property <string> d-downloaded: "-";
+    in property <string> d-uploaded: "-";
+    in property <string> d-ratio: "-";
+    in property <string> d-peers: "-";
+    in property <string> d-added: "-";
+    in property <string> d-completed: "-";
+    in property <float> d-progress: 0;
+
+    // Splitter position - the Win32 frame keeps the same thing in
+    // MainWindow::details_height.
+    in-out property <length> details-height: 260px;
+    // Captured when the splitter is grabbed - see the note on its TouchArea.
+    private property <length> drag-start-height;
+    private property <length> drag-start-y;
+    in-out property <bool> show-details: true;
+    in-out property <bool> show-status: true;
 
     callback sort(int);
-    callback row-pressed(int, bool, bool);   // index, ctrl, shift
+    callback row-pressed(int, bool, bool);
     callback context-menu(int);
+    callback menu-action(string);
 
-    VerticalBox {
+    // Native on macOS (top of the screen), Slint-drawn elsewhere. Port of the
+    // menu bar built in mainwindow.rs.
+    MenuBar {
+        Menu {
+            title: "File";
+            MenuItem { title: "Add torrent"; activated => { root.menu-action("add-torrent"); } }
+            MenuItem { title: "Add magnet link(s)"; activated => { root.menu-action("add-magnet"); } }
+            MenuItem { title: "Create torrent"; activated => { root.menu-action("create"); } }
+            MenuSeparator { }
+            MenuItem { title: "Exit"; activated => { root.menu-action("exit"); } }
+        }
+        Menu {
+            title: "View";
+            Menu {
+                title: "Filters";
+                MenuItem { title: "None"; }
+                MenuItem { title: "Downloading"; }
+                MenuItem { title: "Completed"; }
+            }
+            Menu {
+                title: "Labels";
+                MenuItem { title: "None"; }
+                MenuItem { title: "Movies"; }
+                MenuItem { title: "TV"; }
+            }
+            MenuSeparator { }
+            MenuItem {
+                title: "Details panel";
+                activated => { root.show-details = !root.show-details; }
+            }
+            MenuItem {
+                title: "Status bar";
+                activated => { root.show-status = !root.show-status; }
+            }
+            MenuSeparator { }
+            Menu {
+                title: "Theme";
+                MenuItem { title: "Auto"; }
+                MenuItem { title: "Light"; }
+                MenuItem { title: "Dark"; }
+            }
+            MenuSeparator { }
+            MenuItem { title: "Preferences"; activated => { root.menu-action("preferences"); } }
+        }
+        Menu {
+            title: "Help";
+            MenuItem { title: "Documentation"; }
+            MenuItem { title: "About"; }
+        }
+    }
+
+    VerticalLayout {
         padding: 0px;
         spacing: 0px;
 
-        HorizontalBox {
-            padding: 6px;
-            height: 40px;
-            Button { text: "Add torrent"; }
-            Button { text: "Pause"; enabled: root.selected-count > 0; }
-            Button { text: "Resume"; enabled: root.selected-count > 0; }
-            Rectangle { horizontal-stretch: 1; }
-            Text { text: root.status; vertical-alignment: center; color: #888; }
-        }
-
-        // Header and body share one horizontal scroll offset, so the columns
-        // stay aligned when scrolled sideways.
+        // --- torrent list ---------------------------------------------------
         scroll := ScrollView {
             vertical-stretch: 1;
             viewport-width: Cols.total;
@@ -122,8 +210,8 @@ export component MainWindow inherits Window {
 
                 menu := ContextMenuArea {
                   list := ListView {
-                    // ListView culls to the viewport, so 5,000 rows costs the
-                    // same as 50. That is the thing the Win32 list does NOT do.
+                    // ListView culls to the viewport, so 5,000 rows cost the
+                    // same as 50. That is what the Win32 list does NOT do.
                     for row[i] in root.rows: Rectangle {
                         height: 26px;
                         background: row.selected
@@ -135,10 +223,9 @@ export component MainWindow inherits Window {
                                 if (e.kind == PointerEventKind.down) {
                                     if (e.button == PointerEventButton.right) {
                                         root.context-menu(i);
-                                        // The TouchArea above swallows the
-                                        // right-click, so ContextMenuArea never
-                                        // sees it - show it by hand, in ITS
-                                        // coordinate space.
+                                        // The TouchArea swallows the right-click,
+                                        // so ContextMenuArea never sees it - show
+                                        // it by hand, in ITS coordinate space.
                                         menu.show({
                                             x: ta.absolute-position.x + ta.mouse-x - menu.absolute-position.x,
                                             y: ta.absolute-position.y + ta.mouse-y - menu.absolute-position.y,
@@ -148,10 +235,9 @@ export component MainWindow inherits Window {
                                     }
                                 }
                             }
-                            // No `clicked` handler: pointer-event above already
-                            // fires on press AND carries the modifiers, so a
-                            // second handler here just overwrote every
-                            // ctrl-click with a plain one.
+                            // No `clicked` handler: pointer-event already fires on
+                            // press AND carries the modifiers, so a second handler
+                            // overwrote every ctrl-click with a plain one.
                         }
 
                         HorizontalLayout {
@@ -164,7 +250,7 @@ export component MainWindow inherits Window {
                             // The cell StandardTableView could never draw.
                             Rectangle {
                                 width: Cols.w[5];
-                                bar := Rectangle {
+                                Rectangle {
                                     x: 4px;
                                     width: parent.width - 8px;
                                     height: 14px;
@@ -203,11 +289,8 @@ export component MainWindow inherits Window {
                     }
                   }
 
-                  // A ContextMenuArea shows this itself on right-click over
-                  // its area - no show() call and no position to guess at.
-                  // Port of torrentcontextmenu.cpp.
                   Menu {
-                      MenuItem { title: "Pause"; activated => { root.context-menu(-1); } }
+                      MenuItem { title: "Pause"; activated => { root.menu-action("pause"); } }
                       MenuItem { title: "Resume"; }
                       MenuItem { title: "Force recheck"; }
                       MenuSeparator { }
@@ -227,18 +310,137 @@ export component MainWindow inherits Window {
             }
         }
 
-        Rectangle {
+        // --- splitter --------------------------------------------------------
+        // Slint has no splitter widget, so this is hand-rolled - which is also
+        // what the Win32 frame does (MainWindow::splitter_dragging).
+        if root.show-details: Rectangle {
+            height: 6px;
+            background: Palette.border;
+            TouchArea {
+                mouse-cursor: row-resize;
+                // Anchored to the position at press, in ABSOLUTE coordinates.
+                // The obvious `details-height - (mouse-y - pressed-y)` does not
+                // work: this TouchArea sits on top of the panel it resizes, so
+                // it moves as the height changes and mouse-y moves with it,
+                // cancelling the delta out. The drag appears to do nothing.
+                pointer-event(e) => {
+                    if (e.kind == PointerEventKind.down) {
+                        root.drag-start-height = root.details-height;
+                        root.drag-start-y = self.absolute-position.y + self.mouse-y;
+                    }
+                }
+                moved => {
+                    root.details-height = min(
+                        max(root.drag-start-height
+                            - ((self.absolute-position.y + self.mouse-y) - root.drag-start-y),
+                            120px),
+                        root.height - 220px);
+                }
+            }
+        }
+
+        // --- details panel ---------------------------------------------------
+        if root.show-details: TabWidget {
+            height: root.details-height;
+
+            Tab {
+                title: "Overview";
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+
+                    Text { text: "Pieces"; font-weight: 700; font-size: 13px; }
+                    Rectangle {
+                        height: 18px;
+                        background: #00000022;
+                        border-radius: 3px;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * root.d-progress;
+                            height: parent.height;
+                            background: #2f6fb5;
+                            border-radius: 3px;
+                        }
+                    }
+
+                    GridLayout {
+                        spacing: 6px;
+                        Row {
+                            Field { label: "Name"; value: root.d-name; }
+                            Field { label: "Info hash"; value: root.d-hash; }
+                        }
+                        Row {
+                            Field { label: "Save path"; value: root.d-save-path; }
+                            Field { label: "Status"; value: root.d-status; }
+                        }
+                        Row {
+                            Field { label: "Downloaded"; value: root.d-downloaded; }
+                            Field { label: "Uploaded"; value: root.d-uploaded; }
+                        }
+                        Row {
+                            Field { label: "Ratio"; value: root.d-ratio; }
+                            Field { label: "Peers"; value: root.d-peers; }
+                        }
+                        Row {
+                            Field { label: "Added on"; value: root.d-added; }
+                            Field { label: "Completed on"; value: root.d-completed; }
+                        }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Tab {
+                title: "Files";
+                // Slint has no tree widget, so the real port has to flatten the
+                // file tree into indented rows itself. Flat here on purpose.
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 2px;
+                    Text { text: "Name                                    Size        Progress   Priority"; font-size: 13px; font-weight: 700; }
+                    Text { text: "  Sample.Video.1080p.mkv                24.00 MB    100.0 %    Normal"; font-size: 13px; }
+                    Text { text: "  Sample.Video.1080p.nfo                 2.00 KB    100.0 %    Normal"; font-size: 13px; }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Tab {
+                title: "Peers";
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 2px;
+                    Text { text: "IP                     Client               Flags   DL         UL"; font-size: 13px; font-weight: 700; }
+                    Text { text: "203.0.113.7:51413      qBittorrent 4.6.5    DUE     1.2 MB/s   0 B/s"; font-size: 13px; }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Tab {
+                title: "Trackers";
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 2px;
+                    Text { text: "URL                              Status                Seeds  Leeches  Fails"; font-size: 13px; font-weight: 700; }
+                    Text { text: "DHT                              Working (105 nodes)   N/A    N/A      N/A"; font-size: 13px; }
+                    Text { text: "udp://tracker.invalid:6969       No such host is kno.  -      -        3"; font-size: 13px; }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+        }
+
+        // --- status bar ------------------------------------------------------
+        if root.show-status: Rectangle {
             height: 26px;
             background: Palette.alternate-background;
             HorizontalLayout {
                 padding-left: 8px;
-                Text {
-                    text: root.selected-count + " selected of " + root.rows.length;
-                    vertical-alignment: center;
-                    font-size: 12px;
-                }
+                padding-right: 8px;
+                spacing: 24px;
+                Text { text: root.rows.length + " torrent(s)"; vertical-alignment: center; font-size: 12px; width: 150px; }
+                Text { text: "DHT: " + root.dht-nodes + " node(s)"; vertical-alignment: center; font-size: 12px; width: 190px; }
+                Text { text: root.session-rates; vertical-alignment: center; font-size: 12px; horizontal-stretch: 1; }
+                Text { text: root.status; vertical-alignment: center; font-size: 12px; color: #888; }
             }
         }
     }
-
 }

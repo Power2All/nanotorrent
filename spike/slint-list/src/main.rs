@@ -132,6 +132,22 @@ fn main() -> Result<(), slint::PlatformError> {
                 .count();
             if let Some(w) = handle.upgrade() {
                 w.set_selected_count(count as i32);
+
+                // Details follow the row just pressed. With several selected
+                // the Win32 version shows the first; same idea here.
+                if let Some(r) = model.row_data(index) {
+                    w.set_d_name(r.name.clone());
+                    w.set_d_hash(format!("{:040x}", index * 0x9E3779B9usize).into());
+                    w.set_d_save_path(r"C:\Users\you\Downloads".into());
+                    w.set_d_status(r.status.clone());
+                    w.set_d_downloaded(r.size.clone());
+                    w.set_d_uploaded(r.ul.clone());
+                    w.set_d_ratio(r.ratio.clone());
+                    w.set_d_peers(r.peers.clone());
+                    w.set_d_added(r.added.clone());
+                    w.set_d_completed(r.completed.clone());
+                    w.set_d_progress(r.progress);
+                }
                 w.set_status(
                     format!("selection updated in {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0)
                         .into(),
