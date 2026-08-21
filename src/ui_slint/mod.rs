@@ -72,6 +72,8 @@ struct Ui {
     /// dropping a window from inside its own callback is asking for trouble,
     /// and the next open replaces it anyway.
     magnet_dialog: RefCell<Option<AddMagnetDialog>>,
+    prefs_dialog: RefCell<Option<PreferencesDialog>>,
+    env: Arc<crate::core::environment::Environment>,
     torrent_dialog: RefCell<Option<AddTorrentDialog>>,
     /// The .torrent currently in the Add dialog, and any queued behind it.
     /// argv can name several, and ui_native shows one dialog at a time too.
@@ -166,6 +168,8 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         ipc: ctx.ipc,
         geoip: ctx.geoip.clone(),
         magnet_dialog: RefCell::new(None),
+        prefs_dialog: RefCell::new(None),
+        env: ctx.env.clone(),
         torrent_dialog: RefCell::new(None),
         pending: RefCell::new(Vec::new()),
     });
@@ -538,6 +542,7 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
             }
             "add-magnet" => open_add_magnet(&u),
             "add-torrent" => pick_and_queue_torrents(&u),
+            "preferences" => open_preferences(&u),
             "exit" => {
                 let _ = slint::quit_event_loop();
             }
@@ -753,4 +758,255 @@ fn show_next_pending(ui: &Rc<Ui>) {
 
     let _ = dialog.show();
     *ui.torrent_dialog.borrow_mut() = Some(dialog);
+}
+
+/// Themes and close actions, in the order the combo boxes show them. Kept
+/// beside the load/save pair so an index cannot mean one thing going in and
+/// another coming out.
+const THEMES: [&str; 3] = ["system", "light", "dark"];
+const CLOSE_ACTIONS: [&str; 3] = ["ask", "minimize", "exit"];
+
+/// Port of ui_native/dialogs.rs::spawn_preferences.
+fn open_preferences(ui: &Rc<Ui>) {
+    if let Some(existing) = ui.prefs_dialog.borrow().as_ref() {
+        let _ = existing.show();
+        return;
+    }
+
+    let dialog = match PreferencesDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the preferences dialog: {err}");
+            return;
+        }
+    };
+
+    load_preferences(&dialog, ui);
+
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_accepted(move || {
+            let Some(d) = weak.upgrade() else { return };
+            save_preferences(&d, &u);
+            // Rebuild the librqbit session with the new settings, exactly as
+            // mainwindow.rs does after its dialog closes.
+            u.session.apply_settings(&u.env, &u.cfg);
+            let _ = d.hide();
+        });
+    }
+    {
+        let weak = dialog.as_weak();
+        dialog.on_cancelled(move || {
+            if let Some(d) = weak.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+    {
+        let weak = dialog.as_weak();
+        dialog.on_browse_save_path(move || {
+            if let Some(dir) = rfd::FileDialog::new().set_title("Save path").pick_folder()
+                && let Some(d) = weak.upgrade()
+            {
+                d.set_save_path(dir.to_string_lossy().as_ref().into());
+            }
+        });
+    }
+    {
+        let weak = dialog.as_weak();
+        dialog.on_browse_ipfilter(move || {
+            if let Some(file) = rfd::FileDialog::new().set_title("IP filter").pick_file()
+                && let Some(d) = weak.upgrade()
+            {
+                d.set_ipfilter_path(file.to_string_lossy().as_ref().into());
+            }
+        });
+    }
+    dialog.on_set_associations(|| match crate::core::file_assoc::register_torrent() {
+        Ok(()) => tracing::info!("registered .torrent and magnet associations"),
+        Err(err) => tracing::error!("could not register associations: {err:#}"),
+    });
+
+    let _ = dialog.show();
+    *ui.prefs_dialog.borrow_mut() = Some(dialog);
+}
+
+fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
+    let cfg = &ui.cfg;
+
+    // Translator::languages(), not EMBEDDED_LANGS: that is raw alphabetical
+    // (build.rs sorts the filenames), whereas this is the order ui_native shows
+    // - English first, the rest sorted - so the two dialogs agree.
+    //
+    // ponytail: locale tags, not native display names. ui_native gets those
+    // from GetLocaleInfoEx, which is Win32-only; this needs a cross-platform
+    // source or a table before it reads nicely.
+    let langs: Vec<SharedString> = ui
+        .tr
+        .languages()
+        .iter()
+        .map(|l| SharedString::from(l.locale.as_str()))
+        .collect();
+    let current = cfg
+        .get_string("locale_name")
+        .unwrap_or_else(|| String::from(crate::DEFAULT_LOCALE));
+    let index = langs.iter().position(|l| *l == current).unwrap_or(0);
+    d.set_language_index(index as i32);
+    // Scroll it into view, or a non-English selection sits below the fold and
+    // the list looks like nothing is selected.
+    d.set_language_scroll(-(index as f32) * 24.0);
+    d.set_languages(ModelRc::new(VecModel::from(langs)));
+
+    d.set_themes(ModelRc::new(VecModel::from(
+        THEMES
+            .iter()
+            .map(|t| SharedString::from(*t))
+            .collect::<Vec<_>>(),
+    )));
+    let theme = cfg
+        .get_string("theme_id")
+        .unwrap_or_else(|| String::from("system"));
+    d.set_theme_index(THEMES.iter().position(|t| *t == theme).unwrap_or(0) as i32);
+
+    d.set_close_actions(ModelRc::new(VecModel::from(
+        ["Ask every time", "Minimize", "Exit"]
+            .iter()
+            .map(|t| SharedString::from(*t))
+            .collect::<Vec<_>>(),
+    )));
+    // close_action is persistent - it survives restore-defaults, unlike the rest.
+    let close = cfg.get_persistent("ui.close_action").unwrap_or_default();
+    d.set_close_action_index(CLOSE_ACTIONS.iter().position(|a| *a == close).unwrap_or(0) as i32);
+
+    d.set_skip_add_dialog(cfg.get_bool("skip_add_torrent_dialog"));
+    d.set_show_in_tray(cfg.get_bool("show_in_notification_area"));
+    d.set_minimize_to_tray(cfg.get_bool("minimize_to_notification_area"));
+    d.set_can_associate(cfg!(windows));
+
+    d.set_save_path(cfg.get_string("default_save_path").unwrap_or_default().into());
+    d.set_pause_on_low_disk(cfg.get_bool("pause_on_low_disk_space"));
+    d.set_low_disk_limit(num(cfg.get_int("pause_on_low_disk_space_limit")));
+    d.set_active_limit(num(cfg.get_int("libtorrent.active_limit")));
+    d.set_active_downloads(num(cfg.get_int("libtorrent.active_downloads")));
+    d.set_active_seeds(num(cfg.get_int("libtorrent.active_seeds")));
+    d.set_limit_download(cfg.get_bool("libtorrent.enable_download_rate_limit"));
+    d.set_download_limit(num(cfg.get_int("libtorrent.download_rate_limit")));
+    d.set_limit_upload(cfg.get_bool("libtorrent.enable_upload_rate_limit"));
+    d.set_upload_limit(num(cfg.get_int("libtorrent.upload_rate_limit")));
+
+    // Listen interfaces are rows in their own table; the dialog edits the
+    // first, which is what the Win32 one does too.
+    let iface = cfg.get_listen_interfaces().into_iter().next();
+    d.set_listen_address(
+        iface
+            .as_ref()
+            .map(|i| i.address.clone())
+            .unwrap_or_else(|| String::from("0.0.0.0"))
+            .into(),
+    );
+    d.set_listen_port(num(iface.as_ref().map(|i| i.port as i64)));
+
+    d.set_enable_dht(cfg.get_bool("libtorrent.enable_dht"));
+    d.set_enable_lsd(cfg.get_bool("libtorrent.enable_lsd"));
+    d.set_enable_pex(cfg.get_bool("libtorrent.enable_pex"));
+    d.set_enable_geoip(cfg.get_bool("geoip.enabled"));
+    d.set_enable_ipfilter(cfg.get_bool("ipfilter.enabled"));
+    d.set_ipfilter_path(cfg.get_string("ipfilter.file_path").unwrap_or_default().into());
+    d.set_require_outgoing_encryption(cfg.get_bool("libtorrent.require_outgoing_encryption"));
+    d.set_require_incoming_encryption(cfg.get_bool("libtorrent.require_incoming_encryption"));
+    d.set_anonymous_mode(cfg.get_bool("libtorrent.anonymous_mode"));
+
+    d.set_proxy_types(ModelRc::new(VecModel::from(
+        ["None", "SOCKS4", "SOCKS5", "SOCKS5 (auth)", "HTTP", "HTTP (auth)"]
+            .iter()
+            .map(|t| SharedString::from(*t))
+            .collect::<Vec<_>>(),
+    )));
+    d.set_proxy_type_index(cfg.get_int("libtorrent.proxy_type").unwrap_or(0) as i32);
+    d.set_proxy_host(cfg.get_string("libtorrent.proxy_host").unwrap_or_default().into());
+    d.set_proxy_port(num(cfg.get_int("libtorrent.proxy_port")));
+    d.set_proxy_hostnames(cfg.get_bool("libtorrent.proxy_hostnames"));
+    d.set_proxy_peers(cfg.get_bool("libtorrent.proxy_peers"));
+    d.set_proxy_trackers(cfg.get_bool("libtorrent.proxy_trackers"));
+}
+
+fn save_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
+    let cfg = &ui.cfg;
+
+    if let Some(lang) = ui.tr.languages().get(d.get_language_index().max(0) as usize) {
+        cfg.set("locale_name", &lang.locale);
+    }
+    cfg.set(
+        "theme_id",
+        &THEMES[(d.get_theme_index().max(0) as usize).min(THEMES.len() - 1)],
+    );
+    cfg.set_persistent(
+        "ui.close_action",
+        CLOSE_ACTIONS[(d.get_close_action_index().max(0) as usize).min(CLOSE_ACTIONS.len() - 1)],
+    );
+
+    cfg.set("skip_add_torrent_dialog", &d.get_skip_add_dialog());
+    cfg.set("show_in_notification_area", &d.get_show_in_tray());
+    cfg.set("minimize_to_notification_area", &d.get_minimize_to_tray());
+
+    cfg.set("default_save_path", &d.get_save_path().to_string());
+    cfg.set("pause_on_low_disk_space", &d.get_pause_on_low_disk());
+    set_num(cfg, "pause_on_low_disk_space_limit", &d.get_low_disk_limit());
+    set_num(cfg, "libtorrent.active_limit", &d.get_active_limit());
+    set_num(cfg, "libtorrent.active_downloads", &d.get_active_downloads());
+    set_num(cfg, "libtorrent.active_seeds", &d.get_active_seeds());
+    cfg.set(
+        "libtorrent.enable_download_rate_limit",
+        &d.get_limit_download(),
+    );
+    set_num(cfg, "libtorrent.download_rate_limit", &d.get_download_limit());
+    cfg.set("libtorrent.enable_upload_rate_limit", &d.get_limit_upload());
+    set_num(cfg, "libtorrent.upload_rate_limit", &d.get_upload_limit());
+
+    if let Some(mut iface) = cfg.get_listen_interfaces().into_iter().next() {
+        iface.address = d.get_listen_address().to_string();
+        if let Ok(port) = d.get_listen_port().trim().parse::<i32>() {
+            iface.port = port;
+        }
+        cfg.upsert_listen_interface(&iface);
+    }
+
+    cfg.set("libtorrent.enable_dht", &d.get_enable_dht());
+    // Written back unchanged: the checkbox is disabled because librqbit 8
+    // cannot apply it, but dropping the stored value would lose the preference.
+    cfg.set("libtorrent.enable_lsd", &d.get_enable_lsd());
+    cfg.set("libtorrent.enable_pex", &d.get_enable_pex());
+    cfg.set("geoip.enabled", &d.get_enable_geoip());
+    cfg.set("ipfilter.enabled", &d.get_enable_ipfilter());
+    cfg.set("ipfilter.file_path", &d.get_ipfilter_path().to_string());
+    cfg.set(
+        "libtorrent.require_outgoing_encryption",
+        &d.get_require_outgoing_encryption(),
+    );
+    cfg.set(
+        "libtorrent.require_incoming_encryption",
+        &d.get_require_incoming_encryption(),
+    );
+    cfg.set("libtorrent.anonymous_mode", &d.get_anonymous_mode());
+
+    cfg.set("libtorrent.proxy_type", &(d.get_proxy_type_index() as i64));
+    cfg.set("libtorrent.proxy_host", &d.get_proxy_host().to_string());
+    set_num(cfg, "libtorrent.proxy_port", &d.get_proxy_port());
+    cfg.set("libtorrent.proxy_hostnames", &d.get_proxy_hostnames());
+    cfg.set("libtorrent.proxy_peers", &d.get_proxy_peers());
+    cfg.set("libtorrent.proxy_trackers", &d.get_proxy_trackers());
+}
+
+fn num(value: Option<i64>) -> SharedString {
+    value.map(|v| v.to_string()).unwrap_or_default().into()
+}
+
+/// Write a numeric setting, ignoring input that is not a number.
+///
+/// Ignoring rather than zeroing: a field someone cleared or mistyped should
+/// leave the stored value alone, not silently set a rate limit to 0.
+fn set_num(cfg: &crate::core::configuration::Configuration, key: &str, text: &str) {
+    if let Ok(value) = text.trim().parse::<i64>() {
+        cfg.set(key, &value);
+    }
 }

@@ -1,0 +1,311 @@
+// Port of ui_native/dialogs.rs::spawn_preferences.
+//
+// Same four tabs and the same settings, so the two UIs configure one app
+// rather than two. Compare against docs/ui-baseline/07-prefs-*.png.
+//
+// Every value is an in-out property: Rust fills them when the dialog opens and
+// reads them back on Ok. Nothing is written to the database as it is typed -
+// the Win32 dialog applies on Ok too, and a half-edited port number should not
+// take effect the moment a digit lands.
+
+import { TabWidget, Button, CheckBox, ComboBox, LineEdit, ListView, Palette } from "std-widgets.slint";
+
+// A left-aligned bold caption with its control beside it, which is the shape
+// almost every row in this dialog takes.
+component Labelled inherits HorizontalLayout {
+    in property <string> label;
+    in property <length> label-width: 190px;
+    spacing: 10px;
+    Text {
+        text: root.label;
+        font-weight: 700;
+        font-size: 13px;
+        width: root.label-width;
+        vertical-alignment: center;
+    }
+    @children
+}
+
+export component PreferencesDialog inherits Window {
+    title: "Preferences";
+    preferred-width: 700px;
+    preferred-height: 620px;
+    background: Palette.background;
+
+    // --- General ---------------------------------------------------------
+    in property <[string]> languages;
+    in-out property <int> language-index;
+    /// Set by Rust so the current language is visible without scrolling.
+    in-out property <length> language-scroll;
+    in property <[string]> themes;
+    in-out property <int> theme-index;
+    in-out property <bool> skip-add-dialog;
+    in-out property <bool> show-in-tray;
+    in property <[string]> close-actions;
+    in-out property <int> close-action-index;
+    in-out property <bool> minimize-to-tray;
+    /// File associations are a Windows concept; the button hides elsewhere.
+    in property <bool> can-associate;
+
+    // --- Downloads -------------------------------------------------------
+    in-out property <string> save-path;
+    in-out property <bool> pause-on-low-disk;
+    in-out property <string> low-disk-limit;
+    in-out property <string> active-limit;
+    in-out property <string> active-downloads;
+    in-out property <string> active-seeds;
+    in-out property <bool> limit-download;
+    in-out property <string> download-limit;
+    in-out property <bool> limit-upload;
+    in-out property <string> upload-limit;
+
+    // --- Connection ------------------------------------------------------
+    in-out property <string> listen-address;
+    in-out property <string> listen-port;
+    in-out property <bool> enable-dht;
+    in-out property <bool> enable-lsd;
+    in-out property <bool> enable-pex;
+    in-out property <bool> enable-geoip;
+    in-out property <bool> enable-ipfilter;
+    in-out property <string> ipfilter-path;
+    in-out property <bool> require-outgoing-encryption;
+    in-out property <bool> require-incoming-encryption;
+    in-out property <bool> anonymous-mode;
+
+    // --- Proxy -----------------------------------------------------------
+    in property <[string]> proxy-types;
+    in-out property <int> proxy-type-index;
+    in-out property <string> proxy-host;
+    in-out property <string> proxy-port;
+    in-out property <bool> proxy-hostnames;
+    in-out property <bool> proxy-peers;
+    in-out property <bool> proxy-trackers;
+
+    callback accepted();
+    callback cancelled();
+    callback browse-save-path();
+    callback browse-ipfilter();
+    callback set-associations();
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        TabWidget {
+            vertical-stretch: 1;
+
+            Tab {
+                title: "General";
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+
+                    HorizontalLayout {
+                        spacing: 10px;
+                        Text {
+                            text: "Language";
+                            font-weight: 700;
+                            font-size: 13px;
+                            width: 190px;
+                            vertical-alignment: top;
+                        }
+                        Rectangle {
+                            height: 160px;
+                            border-color: Palette.border;
+                            border-width: 1px;
+                            border-radius: 4px;
+                            ListView {
+                                viewport-y <=> root.language-scroll;
+                                for name[i] in root.languages: Rectangle {
+                                    height: 24px;
+                                    background: i == root.language-index
+                                        ? Palette.selection-background
+                                        : transparent;
+                                    TouchArea { clicked => { root.language-index = i; } }
+                                    Text {
+                                        text: name;
+                                        x: 8px;
+                                        height: parent.height;
+                                        vertical-alignment: center;
+                                        font-size: 13px;
+                                        color: i == root.language-index
+                                            ? Palette.selection-foreground
+                                            : Palette.foreground;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Labelled {
+                        label: "Theme";
+                        ComboBox {
+                            model: root.themes;
+                            current-index <=> root.theme-index;
+                            width: 220px;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+
+                    CheckBox { text: "Skip 'Add torrent' dialog"; checked <=> root.skip-add-dialog; }
+                    CheckBox { text: "Show NanoTorrent in notification area"; checked <=> root.show-in-tray; }
+
+                    Labelled {
+                        label: "When closing the window";
+                        ComboBox {
+                            model: root.close-actions;
+                            current-index <=> root.close-action-index;
+                            width: 220px;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+
+                    CheckBox { text: "Minimize to notification area"; checked <=> root.minimize-to-tray; }
+
+                    if root.can-associate: Button {
+                        text: "Set as default for .torrent files & magnet links";
+                        clicked => { root.set-associations(); }
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Tab {
+                title: "Downloads";
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+
+                    Labelled {
+                        label: "Save path";
+                        LineEdit { text <=> root.save-path; horizontal-stretch: 1; }
+                        Button { text: "Browse..."; clicked => { root.browse-save-path(); } }
+                    }
+
+                    CheckBox {
+                        text: "Pause torrents on low disk space";
+                        checked <=> root.pause-on-low-disk;
+                    }
+                    Labelled {
+                        label: "    ...below (%)";
+                        LineEdit { text <=> root.low-disk-limit; width: 100px; enabled: root.pause-on-low-disk; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+
+                    Labelled {
+                        label: "Total active";
+                        LineEdit { text <=> root.active-limit; width: 100px; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    Labelled {
+                        label: "Active downloads";
+                        LineEdit { text <=> root.active-downloads; width: 100px; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    Labelled {
+                        label: "Active seeds";
+                        LineEdit { text <=> root.active-seeds; width: 100px; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+
+                    CheckBox { text: "Limit download rate (KB/s)"; checked <=> root.limit-download; }
+                    Labelled {
+                        label: "    Download limit";
+                        LineEdit { text <=> root.download-limit; width: 100px; enabled: root.limit-download; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    CheckBox { text: "Limit upload rate (KB/s)"; checked <=> root.limit-upload; }
+                    Labelled {
+                        label: "    Upload limit";
+                        LineEdit { text <=> root.upload-limit; width: 100px; enabled: root.limit-upload; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Tab {
+                title: "Connection";
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+
+                    Labelled {
+                        label: "Listen interface";
+                        LineEdit { text <=> root.listen-address; horizontal-stretch: 1; }
+                        LineEdit { text <=> root.listen-port; width: 110px; }
+                    }
+
+                    CheckBox { text: "Enable DHT"; checked <=> root.enable-dht; }
+                    CheckBox {
+                        // No librqbit 8 equivalent, so the value round-trips but
+                        // never reaches the session. Disabled rather than left
+                        // looking functional - same as the Win32 dialog.
+                        text: "Enable LSD (requires librqbit 9)";
+                        checked <=> root.enable-lsd;
+                        enabled: false;
+                    }
+                    CheckBox { text: "Enable PeX"; checked <=> root.enable-pex; }
+                    CheckBox { text: "Resolve peer countries (GeoIP)"; checked <=> root.enable-geoip; }
+
+                    CheckBox { text: "IP filter"; checked <=> root.enable-ipfilter; }
+                    Labelled {
+                        label: "    Filter file";
+                        LineEdit { text <=> root.ipfilter-path; horizontal-stretch: 1; enabled: root.enable-ipfilter; }
+                        Button { text: "Browse..."; enabled: root.enable-ipfilter; clicked => { root.browse-ipfilter(); } }
+                    }
+
+                    CheckBox { text: "Require outgoing peer encryption (MSE/PE)"; checked <=> root.require-outgoing-encryption; }
+                    CheckBox { text: "Require incoming peer encryption (MSE/PE)"; checked <=> root.require-incoming-encryption; }
+                    CheckBox { text: "Anonymous mode (hide client identity)"; checked <=> root.anonymous-mode; }
+
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Tab {
+                title: "Proxy";
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+
+                    Labelled {
+                        label: "Type";
+                        ComboBox {
+                            model: root.proxy-types;
+                            current-index <=> root.proxy-type-index;
+                            width: 220px;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    Labelled {
+                        label: "Host";
+                        LineEdit { text <=> root.proxy-host; horizontal-stretch: 1; enabled: root.proxy-type-index > 0; }
+                        LineEdit { text <=> root.proxy-port; width: 110px; enabled: root.proxy-type-index > 0; }
+                    }
+
+                    CheckBox { text: "Proxy hostname lookups"; checked <=> root.proxy-hostnames; enabled: root.proxy-type-index > 0; }
+                    CheckBox { text: "Proxy peer connections"; checked <=> root.proxy-peers; enabled: root.proxy-type-index > 0; }
+                    CheckBox { text: "Proxy tracker connections"; checked <=> root.proxy-trackers; enabled: root.proxy-type-index > 0; }
+
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: "Changes are applied when you press Ok.";
+                font-size: 12px;
+                color: Palette.foreground;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Button { text: "Cancel"; clicked => { root.cancelled(); } }
+            Button { text: "Ok"; primary: true; clicked => { root.accepted(); } }
+        }
+    }
+}
