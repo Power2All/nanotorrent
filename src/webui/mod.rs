@@ -216,6 +216,32 @@ async fn h_health() -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({ "status": "ok" }))
 }
 
+/// The web remote itself - one file, compiled in.
+///
+/// Embedded rather than served from disk for the same reason `lang/*.json` is:
+/// a single executable with nothing beside it to lose, and no path to get
+/// wrong on three platforms.
+async fn h_index() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        // Everything is inline, so 'unsafe-inline' is unavoidable - but the
+        // rest still matters: default-src 'self' blocks loading or exfiltrating
+        // to any other origin, which is the half of XSS that hurts. The page
+        // itself never innerHTMLs server data; torrent names are attacker-
+        // controlled and go in via textContent.
+        .insert_header((
+            "Content-Security-Policy",
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; \
+             script-src 'self' 'unsafe-inline'; img-src 'self' data:; \
+             form-action 'none'; frame-ancestors 'none'; base-uri 'none'",
+        ))
+        .insert_header(("X-Content-Type-Options", "nosniff"))
+        // The remote shows filesystem paths and torrent names; keep them out
+        // of any Referer sent to a site someone clicks through to.
+        .insert_header(("Referrer-Policy", "no-referrer"))
+        .body(include_str!("index.html"))
+}
+
 async fn h_session(state: web::Data<AppState>) -> actix_web::Result<impl Responder> {
     let st = state.clone();
     // web::block, not a direct call: see the threading note at the top.
@@ -571,6 +597,7 @@ fn build(
             // because an unbounded body is free memory for anyone with the
             // password.
             .app_data(web::JsonConfig::default().limit(8 * 1024 * 1024))
+            .route("/", web::get().to(h_index))
             .service(
                 web::scope("/api")
                     .route("/health", web::get().to(h_health))

@@ -1,0 +1,502 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NanoTorrent</title>
+<!--
+  The web remote. One file, no build step, embedded in the binary with
+  include_str! - same approach as lang/*.json and res/flags/*.png.
+
+  Deliberately a REMOTE, not a second full client: add, watch, pause, resume,
+  remove, and pick a folder on the machine NanoTorrent runs on. The desktop UI
+  keeps the things that only make sense sitting in front of it.
+
+  Two rules worth keeping if you edit this:
+
+  1. Never innerHTML anything that came from the server. Torrent names come out
+     of .torrent files written by strangers, so every one of them is hostile
+     input. textContent everywhere.
+  2. No external resources. This has to work on a LAN with no internet, and the
+     CSP below blocks them anyway.
+-->
+<style>
+/* Light is the base palette; dark redefines only the tokens. Three states, to
+   mirror the desktop's View > Theme menu: no data-theme attribute follows the
+   OS, and an explicit one wins in both directions. */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff; --fg: #1a1a1a; --muted: #6a6a6a; --line: #e0e0e0;
+  --panel: #f6f6f6; --accent: #0a66c2; --bar: #0a66c2; --bar-bg: #e4e4e4;
+  --danger: #b3261e; --ok: #1a7f37;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #1e1e1e; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333;
+    --panel: #262626; --accent: #4da3ff; --bar: #2f6fb5; --bar-bg: #3a3a3a;
+    --danger: #f2705f; --ok: #4ac26b;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1e1e1e; --fg: #e8e8e8; --muted: #9a9a9a; --line: #333;
+  --panel: #262626; --accent: #4da3ff; --bar: #2f6fb5; --bar-bg: #3a3a3a;
+  --danger: #f2705f; --ok: #4ac26b;
+}
+:root[data-theme="light"] { color-scheme: light; }
+select {
+  font: inherit; padding: .3rem .4rem; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); color: var(--fg);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.45 system-ui, "Segoe UI", sans-serif;
+}
+header {
+  display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: center;
+  padding: .7rem 1rem; border-bottom: 1px solid var(--line); background: var(--panel);
+  position: sticky; top: 0; z-index: 5;
+}
+h1 { font-size: 1.05rem; margin: 0 auto 0 0; font-weight: 600; }
+.stat { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.stat b { color: var(--fg); font-weight: 600; }
+button {
+  font: inherit; padding: .35rem .7rem; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { color: #fff; filter: brightness(1.1); }
+button.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+/* Phone width: the title takes its own line so the stats and controls have
+   room to wrap. Without this the nowrap stats overflow the header and the
+   whole page scrolls sideways, which is exactly what .tablewrap exists to
+   prevent for the table. */
+@media (max-width: 620px) {
+  h1 { width: 100%; margin: 0; }
+  header { gap: .5rem .9rem; padding: .6rem .7rem; }
+  .stat { font-size: .85rem; }
+  /* No margin-left:auto here. Pushing the button to the far right of a flex
+     line that is already full makes it overflow instead of wrapping - let it
+     flow after the theme picker and drop to its own line when it must. */
+}
+
+main { padding: 1rem; }
+/* Wide content scrolls in its own box - the page body never scrolls sideways. */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; min-width: 720px; }
+th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); }
+th { background: var(--panel); font-weight: 600; position: sticky; top: 0; }
+tr:last-child td { border-bottom: 0; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.name { max-width: 30rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty { padding: 3rem 1rem; text-align: center; color: var(--muted); }
+
+.bar { position: relative; width: 8rem; height: 1.1rem; background: var(--bar-bg); border-radius: 4px; overflow: hidden; }
+.bar > i { position: absolute; inset: 0 auto 0 0; background: var(--bar); display: block; }
+/* The label sits over both the grey track and the coloured fill, so neither a
+   light nor a dark colour is readable everywhere. A halo in the page
+   background keeps it legible over both, in both themes. */
+.bar > span {
+  position: relative; display: block; text-align: center;
+  font-size: .75rem; line-height: 1.1rem;
+  text-shadow: 0 0 2px var(--bg), 0 0 2px var(--bg), 0 0 3px var(--bg);
+}
+.state { font-size: .8rem; color: var(--muted); }
+.state.err { color: var(--danger); }
+.state.up { color: var(--ok); }
+.actions { display: flex; gap: .3rem; }
+
+dialog {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+  color: var(--fg); padding: 0; max-width: min(38rem, 94vw); width: 100%;
+}
+dialog::backdrop { background: #0008; }
+.dlg-head { padding: .8rem 1rem; border-bottom: 1px solid var(--line); font-weight: 600; }
+.dlg-body { padding: 1rem; display: grid; gap: .8rem; }
+.dlg-foot { padding: .8rem 1rem; border-top: 1px solid var(--line); display: flex; gap: .5rem; justify-content: flex-end; }
+label { display: grid; gap: .3rem; font-size: .85rem; color: var(--muted); }
+input[type=text], input[type=file] {
+  font: inherit; padding: .45rem .55rem; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--panel); color: var(--fg); width: 100%;
+}
+.row { display: flex; gap: .5rem; align-items: end; }
+.row > label { flex: 1; }
+.check { display: flex; gap: .4rem; align-items: center; color: var(--fg); font-size: .9rem; }
+
+#browser-list { max-height: 45vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; }
+#browser-list button {
+  display: block; width: 100%; text-align: left; border: 0; border-radius: 0;
+  border-bottom: 1px solid var(--line); padding: .4rem .6rem; background: none;
+}
+#browser-list button:last-child { border-bottom: 0; }
+#browser-path { font-family: ui-monospace, Consolas, monospace; font-size: .8rem; color: var(--muted); word-break: break-all; }
+
+#toasts { position: fixed; right: 1rem; bottom: 1rem; display: grid; gap: .5rem; z-index: 10; max-width: min(28rem, 92vw); }
+.toast { padding: .6rem .8rem; border-radius: 8px; border: 1px solid var(--danger); background: var(--panel); color: var(--danger); font-size: .85rem; }
+.toast.info { border-color: var(--accent); color: var(--accent); }
+</style>
+
+<header>
+  <h1>NanoTorrent <span class="stat" id="version"></span></h1>
+  <span class="stat">&darr; <b id="dl">0 B/s</b></span>
+  <span class="stat">&uarr; <b id="ul">0 B/s</b></span>
+  <span class="stat">DHT <b id="dht">-</b></span>
+  <span class="stat"><b id="count">0</b> torrents</span>
+  <select id="theme" title="Theme" aria-label="Theme">
+    <option value="auto">Auto</option>
+    <option value="light">Light</option>
+    <option value="dark">Dark</option>
+  </select>
+  <button class="primary" id="btn-add">Add torrent</button>
+</header>
+
+<main>
+  <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th>Name</th><th>Size</th><th>Progress</th><th>Status</th>
+        <th class="num">&darr;</th><th class="num">&uarr;</th>
+        <th class="num">Peers</th><th class="num">Ratio</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="empty" id="empty" hidden>No torrents yet.</div>
+</main>
+
+<dialog id="add">
+  <form method="dialog">
+    <div class="dlg-head">Add torrent</div>
+    <div class="dlg-body">
+      <label>Magnet link
+        <input type="text" id="add-magnet" placeholder="magnet:?xt=urn:btih:...">
+      </label>
+      <label>...or a .torrent file
+        <input type="file" id="add-file" accept=".torrent,application/x-bittorrent">
+      </label>
+      <div class="row">
+        <label>Save to
+          <input type="text" id="add-path" placeholder="server default">
+        </label>
+        <button type="button" id="add-browse">Browse...</button>
+      </div>
+      <label class="check"><input type="checkbox" id="add-start" checked> Start immediately</label>
+    </div>
+    <div class="dlg-foot">
+      <button value="cancel">Cancel</button>
+      <button class="primary" id="add-ok" value="ok">Add</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="browser">
+  <div class="dlg-head">Choose a folder on the NanoTorrent machine</div>
+  <div class="dlg-body">
+    <div id="browser-path"></div>
+    <div class="row">
+      <button type="button" id="browser-up">Up</button>
+      <button type="button" id="browser-mkdir">New folder</button>
+    </div>
+    <div id="browser-list"></div>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" id="browser-cancel">Cancel</button>
+    <button type="button" class="primary" id="browser-pick">Use this folder</button>
+  </div>
+</dialog>
+
+<div id="toasts"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+// --- formatting -------------------------------------------------------------
+const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];
+function bytes(n) {
+  if (n === null || n === undefined || n < 0) return "-";
+  let u = 0;
+  while (n >= 1024 && u < UNITS.length - 1) { n /= 1024; u++; }
+  return (u === 0 ? n : n.toFixed(2)) + " " + UNITS[u];
+}
+const speed = (n) => (n > 0 ? bytes(n) + "/s" : "-");
+function eta(s) {
+  if (s === null || s === undefined) return "-";
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m";
+  if (s < 86400) return Math.floor(s / 3600) + "h";
+  return Math.floor(s / 86400) + "d";
+}
+const STATES = {
+  downloading: "Downloading", downloading_paused: "Paused", downloading_metadata: "Metadata",
+  downloading_checking: "Checking", downloading_queued: "Queued",
+  uploading: "Seeding", uploading_paused: "Paused", uploading_queued: "Queued",
+  checking_files: "Checking", checking_resume_data: "Checking", error: "Error", unknown: "Unknown",
+};
+
+function toast(message, kind) {
+  const el = document.createElement("div");
+  el.className = "toast" + (kind === "info" ? " info" : "");
+  el.textContent = message;                       // never innerHTML - see header
+  $("toasts").append(el);
+  setTimeout(() => el.remove(), 8000);
+}
+
+// --- api --------------------------------------------------------------------
+// Credentials come from the browser's own Basic auth prompt, triggered by the
+// 401 the server sends. No login form to build, and no token to store.
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body !== undefined) {
+    opts.headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    let detail = await res.text().catch(() => "");
+    throw new Error(detail.trim() || (res.status + " " + res.statusText));
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// --- torrent list -----------------------------------------------------------
+function actionButton(text, cls, onClick) {
+  const b = document.createElement("button");
+  b.textContent = text;
+  if (cls) b.className = cls;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function cell(row, text, cls) {
+  const td = row.insertCell();
+  if (cls) td.className = cls;
+  if (text !== undefined) td.textContent = text;
+  return td;
+}
+
+async function act(fn) {
+  try { await fn(); await refresh(); }
+  catch (e) { toast(e.message); }
+}
+
+function renderRows(list) {
+  const body = $("rows");
+  body.textContent = "";
+  $("empty").hidden = list.length > 0;
+
+  for (const t of list) {
+    const row = body.insertRow();
+    const name = cell(row, t.name, "name");
+    name.title = t.name + "\n" + t.save_path;
+
+    cell(row, bytes(t.size), "num");
+
+    const prog = cell(row);
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    const fill = document.createElement("i");
+    fill.style.width = Math.round(t.progress * 100) + "%";
+    const label = document.createElement("span");
+    label.textContent = (t.progress * 100).toFixed(1) + "%";
+    bar.append(fill, label);
+    prog.append(bar);
+
+    const state = cell(row);
+    const s = document.createElement("div");
+    s.className = "state" + (t.error ? " err" : t.state === "uploading" ? " up" : "");
+    s.textContent = t.error ? "Error" : STATES[t.state] || t.state;
+    if (t.error) s.title = t.error;
+    state.append(s);
+    if (!t.paused && t.eta_seconds !== null) {
+      const e = document.createElement("div");
+      e.className = "state";
+      e.textContent = "ETA " + eta(t.eta_seconds);
+      state.append(e);
+    }
+
+    cell(row, speed(t.download_rate), "num");
+    cell(row, speed(t.upload_rate), "num");
+    cell(row, t.peers + " (" + t.peers_total + ")", "num");
+    cell(row, t.ratio.toFixed(2), "num");
+
+    const actions = cell(row);
+    const box = document.createElement("div");
+    box.className = "actions";
+    box.append(
+      t.paused
+        ? actionButton("Resume", "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/resume`)))
+        : actionButton("Pause", "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/pause`))),
+      actionButton("Remove", "danger", () => {
+        // Two questions, because the second one is unrecoverable.
+        if (!confirm(`Remove "${t.name}" from NanoTorrent?`)) return;
+        const withData = confirm("Also DELETE the downloaded files from disk?\n\nOK = delete files, Cancel = keep them.");
+        act(() => api("DELETE", `/api/torrents/${t.info_hash}?delete_files=${withData}`));
+      }),
+    );
+    actions.append(box);
+  }
+}
+
+// --- polling ----------------------------------------------------------------
+let failures = 0;
+async function refresh() {
+  try {
+    const [info, list, errs] = await Promise.all([
+      api("GET", "/api/session"),
+      api("GET", "/api/torrents"),
+      api("GET", "/api/errors"),
+    ]);
+    $("version").textContent = "v" + info.version;
+    $("dl").textContent = speed(info.download_rate);
+    $("ul").textContent = speed(info.upload_rate);
+    $("dht").textContent = info.dht_nodes === null ? "-" : info.dht_nodes;
+    $("count").textContent = info.torrents;
+    renderRows(list);
+    // The session error queue drains on read, so anything here is new.
+    for (const e of errs.errors) toast(e);
+    failures = 0;
+  } catch (e) {
+    // Only complain once per outage, or a closed laptop lid produces a wall
+    // of identical toasts.
+    if (failures++ === 0) toast("Lost contact with NanoTorrent: " + e.message);
+  }
+}
+
+// --- folder browser ---------------------------------------------------------
+let browsingPath = null;
+let onFolderPicked = null;
+
+async function browseTo(path) {
+  try {
+    const listing = await api("GET", "/api/fs/list?path=" + encodeURIComponent(path));
+    browsingPath = listing.path;
+    $("browser-path").textContent = listing.path;
+    $("browser-up").disabled = !listing.parent;
+    $("browser-up").dataset.parent = listing.parent || "";
+
+    const box = $("browser-list");
+    box.textContent = "";
+    const dirs = listing.entries.filter((e) => e.is_dir);
+    if (!dirs.length) {
+      const none = document.createElement("div");
+      none.style.padding = ".6rem";
+      none.style.color = "var(--muted)";
+      none.textContent = "No subfolders here.";
+      box.append(none);
+    }
+    for (const d of dirs) {
+      box.append(actionButton("\u{1F4C1}  " + d.name, "", () => browseTo(d.path)));
+    }
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function openBrowser(startPath, cb) {
+  onFolderPicked = cb;
+  $("browser").showModal();
+  if (startPath) { await browseTo(startPath); return; }
+  try {
+    const roots = await api("GET", "/api/fs/roots");
+    await browseTo(roots.downloads);
+  } catch (e) { toast(e.message); }
+}
+
+$("browser-up").addEventListener("click", (e) => {
+  const parent = e.currentTarget.dataset.parent;
+  if (parent) browseTo(parent);
+});
+$("browser-mkdir").addEventListener("click", async () => {
+  const name = prompt("Name for the new folder:");
+  if (!name) return;
+  try {
+    const sep = browsingPath.includes("\\") ? "\\" : "/";
+    const target = browsingPath.replace(/[\\/]$/, "") + sep + name;
+    const listing = await api("POST", "/api/fs/mkdir", { path: target });
+    await browseTo(listing.path);
+    toast("Created " + listing.path, "info");
+  } catch (e) { toast(e.message); }
+});
+$("browser-cancel").addEventListener("click", () => $("browser").close());
+$("browser-pick").addEventListener("click", () => {
+  if (onFolderPicked && browsingPath) onFolderPicked(browsingPath);
+  $("browser").close();
+});
+
+// --- add dialog -------------------------------------------------------------
+$("btn-add").addEventListener("click", () => {
+  $("add-magnet").value = "";
+  $("add-file").value = "";
+  $("add-path").value = "";
+  $("add-start").checked = true;
+  $("add").showModal();
+});
+
+$("add-browse").addEventListener("click", () => {
+  openBrowser($("add-path").value || null, (p) => { $("add-path").value = p; });
+});
+
+const readAsBase64 = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  // The data: URL carries a "...;base64," prefix the API must not receive.
+  r.onload = () => resolve(String(r.result).split(",", 2)[1]);
+  r.onerror = () => reject(new Error("could not read " + file.name));
+  r.readAsDataURL(file);
+});
+
+$("add").addEventListener("close", async () => {
+  if ($("add").returnValue !== "ok") return;
+  const magnet = $("add-magnet").value.trim();
+  const file = $("add-file").files[0];
+  const savePath = $("add-path").value.trim();
+
+  if (!magnet && !file) { toast("Give a magnet link or choose a .torrent file."); return; }
+  if (magnet && file) { toast("Give a magnet link or a file, not both."); return; }
+
+  const body = { start: $("add-start").checked };
+  if (savePath) body.save_path = savePath;
+  try {
+    if (magnet) body.magnet = magnet;
+    else body.torrent_file = await readAsBase64(file);
+    await api("POST", "/api/torrents", body);
+    // 202: accepted, not added. A magnet has to resolve its metadata first,
+    // so say "queued" rather than claiming it is downloading.
+    toast(magnet ? "Magnet queued - resolving metadata..." : "Torrent added.", "info");
+    await refresh();
+  } catch (e) { toast(e.message); }
+});
+
+// --- theme ------------------------------------------------------------------
+// Mirrors the desktop's View > Theme: auto follows the OS, light and dark
+// override it. `?theme=` wins for one page load without touching the stored
+// preference, which is what makes both palettes screenshot-testable.
+function applyTheme(value) {
+  if (value === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", value);
+}
+{
+  const stored = localStorage.getItem("theme") || "auto";
+  const forced = new URLSearchParams(location.search).get("theme");
+  const initial = ["auto", "light", "dark"].includes(forced) ? forced : stored;
+  $("theme").value = initial;
+  applyTheme(initial);
+  $("theme").addEventListener("change", (e) => {
+    applyTheme(e.target.value);
+    localStorage.setItem("theme", e.target.value);
+  });
+}
+
+// Poll interval in seconds; `?refresh=0` freezes the page on one snapshot.
+//
+// That switch is also what makes this page testable headlessly: Chromium's
+// --virtual-time-budget waits for the network to fall idle before capturing,
+// and a page that re-polls every two seconds never does, so a screenshot run
+// hangs until it is killed.
+const REFRESH = Number(new URLSearchParams(location.search).get("refresh") ?? 2);
+refresh();
+if (REFRESH > 0) setInterval(refresh, REFRESH * 1000);
+</script>
