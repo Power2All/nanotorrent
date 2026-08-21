@@ -12,6 +12,19 @@
 //! loop is a plain thread, exactly as the Win32 message loop is. Calling
 //! `session.pause()` straight from a callback is correct.
 //!
+//! # Known limitation: the context menu
+//!
+//! Right-clicking a second torrent while the menu is open dismisses the menu
+//! rather than moving it there, so it takes a second right-click. Windows moves
+//! it in one. A Slint `PopupWindow` captures the pointer while open, whatever
+//! its close policy, so the click never reaches the other row - `no-auto-close`
+//! was tried and only risked a menu that would not go away.
+//!
+//! Matching Windows means making the popup window-sized with a transparent
+//! scrim over everything, catching the click there, and mapping its y back to a
+//! row index through the ListView's `viewport-y` and the 26px row height. That
+//! is worth doing, and it is not worth doing before the dialogs exist.
+//!
 //! # Refresh
 //!
 //! A 1 s `slint::Timer`, mirroring the `AnimationTimer` in mainwindow.rs. The

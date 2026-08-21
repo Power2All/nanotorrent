@@ -68,6 +68,33 @@ component Cell inherits Rectangle {
     }
 }
 
+// One row of the context menu, drawn by Slint rather than by the platform -
+// see the note on ctx-popup for why that is not a style choice.
+component MenuRow inherits Rectangle {
+    in property <string> label;
+    callback activated;
+    height: 30px;
+    background: touch.has-hover ? Palette.accent-background : transparent;
+    touch := TouchArea {
+        clicked => { root.activated(); }
+    }
+    Text {
+        text: root.label;
+        x: 14px;
+        width: parent.width - 28px;
+        height: parent.height;
+        vertical-alignment: center;
+        overflow: elide;
+        font-size: 13px;
+        color: touch.has-hover ? Palette.accent-foreground : Palette.foreground;
+    }
+}
+
+component MenuSep inherits Rectangle {
+    height: 9px;
+    Rectangle { y: 4px; height: 1px; background: Palette.border; }
+}
+
 // One "Name: value" pair in the Overview grid.
 component Field inherits HorizontalLayout {
     in property <string> label;
@@ -128,34 +155,70 @@ export component MainWindow inherits Window {
     private property <length> menu-x;
     private property <length> menu-y;
 
-    // Opening the menu is deferred by one frame ON PURPOSE.
+    // The context menu is drawn by Slint, not by the platform, and that is not
+    // a style choice.
     //
-    // Slint uses native menus on Windows (muda -> TrackPopupMenu), which run a
-    // NESTED MODAL MESSAGE LOOP: show() does not return until the menu closes,
-    // and no frame is painted in between. Selecting a row and calling show() in
-    // the same event therefore leaves the row unhighlighted until the menu is
-    // dismissed - the model was updated, it just never got drawn.
+    // Slint's Menu / ContextMenuArea use native menus on Windows (muda ->
+    // TrackPopupMenu), which run a NESTED MODAL MESSAGE LOOP. Two things follow,
+    // both observed rather than theorised:
     //
-    // Doing the select on button-down and the show on button-up hides this for
-    // an isolated right-click (two events, a render between them) but not for a
-    // right-click while another menu is open: that press is eaten dismissing the
-    // old menu, so the new select and show land back-to-back again.
+    //  1. No frame is painted between updating the selection and the menu
+    //     appearing, so the row highlighted was whichever was selected before.
+    //  2. A right-click while a menu is open is consumed dismissing it and then
+    //     re-delivered to the row that OPENED it - so right-clicking a second
+    //     torrent reported the first row's index and reopened the menu in the
+    //     first row's position.
     //
-    // A timer breaks it properly, because it fires on a later event-loop
-    // iteration whatever the pointer did.
-    //
-    // ponytail: 200ms is a WORKAROUND, not a fix. It was measured, not guessed -
-    // 16ms (one frame) still showed the stale highlight, 200ms does not - but it
-    // is a race, and a slow enough machine could lose it again. The real fix is
-    // to stop using a native menu here and draw the context menu in Slint: no
-    // modal loop, no timing dependency, and it would also solve the menu
-    // rendering light against a dark window (see spike/slint-list/README.md).
-    menu-timer := Timer {
-        interval: 200ms;
-        running: false;
-        triggered => {
-            self.running = false;
-            menu.show({ x: root.menu-x, y: root.menu-y });
+    // Deferring the show with a timer papered over (1) and could not touch (2);
+    // the callback never saw the second row at all. A Slint-drawn PopupWindow
+    // has no modal loop, so the selection paints normally and every click lands
+    // where it was aimed. It also follows the Palette, which the native menu
+    // did not - that rendered light on a dark window.
+    ctx-popup := PopupWindow {
+        x: root.menu-x;
+        y: root.menu-y;
+        width: 280px;
+        height: 396px;
+        // A Slint PopupWindow captures the pointer while it is open, whatever
+        // the close policy, so a click on another row never reaches that row.
+        // no-auto-close was tried and only added the risk of a menu that will
+        // not go away; close-on-click-outside at least always dismisses.
+        //
+        // Consequence, and it is a real one: right-clicking a second torrent
+        // while the menu is open dismisses it rather than moving the menu
+        // there, so it takes a second right-click. Windows moves it in one.
+        // Matching that needs a window-sized popup with a transparent scrim
+        // that catches the click and maps its y back to a row - see the note
+        // in the module docs.
+        close-policy: PopupClosePolicy.close-on-click-outside;
+
+        Rectangle {
+            background: Palette.alternate-background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 6px;
+
+            VerticalLayout {
+                padding: 4px;
+                spacing: 0px;
+                MenuRow { label: "Pause"; activated => { root.action("pause"); ctx-popup.close(); } }
+                MenuRow { label: "Resume"; activated => { root.action("resume"); ctx-popup.close(); } }
+                MenuRow { label: "Force recheck"; activated => { root.action("recheck"); ctx-popup.close(); } }
+                MenuSep { }
+                // ponytail: flattened from the Win32 "Queue position" sub-menu.
+                // A nested PopupWindow is all that is missing for parity, and
+                // two extra rows are not worth it while the list is being
+                // brought up.
+                MenuRow { label: "Queue position up"; activated => { root.action("queue-up"); ctx-popup.close(); } }
+                MenuRow { label: "Queue position down"; activated => { root.action("queue-down"); ctx-popup.close(); } }
+                MenuSep { }
+                MenuRow { label: "Remove torrent"; activated => { root.action("remove"); ctx-popup.close(); } }
+                MenuRow { label: "Remove torrent and files"; activated => { root.action("remove-files"); ctx-popup.close(); } }
+                MenuSep { }
+                MenuRow { label: "Copy info hash"; activated => { root.action("copy-hash"); ctx-popup.close(); } }
+                MenuRow { label: "Magnet link(s)"; activated => { root.action("copy-magnet"); ctx-popup.close(); } }
+                MenuRow { label: "Open in Explorer"; activated => { root.action("open-folder"); ctx-popup.close(); } }
+            }
         }
     }
 
@@ -251,7 +314,6 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                menu := ContextMenuArea {
                   list := ListView {
                     // ListView culls to the viewport, so 5,000 rows cost the
                     // same as 50. That is what the Win32 list does NOT do.
@@ -265,13 +327,14 @@ export component MainWindow inherits Window {
                             pointer-event(e) => {
                                 if (e.kind == PointerEventKind.down) {
                                     if (e.button == PointerEventButton.right) {
-                                        // Select now, open the menu one tick
-                                        // later - see menu-timer for why the
-                                        // two cannot happen in the same event.
+                                        // Select and show in the same event -
+                                        // there is no modal loop to work around
+                                        // now. The popup positions relative to
+                                        // the window, hence absolute coords.
                                         root.context-menu(i);
-                                        root.menu-x = ta.absolute-position.x + ta.mouse-x - menu.absolute-position.x;
-                                        root.menu-y = ta.absolute-position.y + ta.mouse-y - menu.absolute-position.y;
-                                        menu-timer.running = true;
+                                        root.menu-x = ta.absolute-position.x + ta.mouse-x;
+                                        root.menu-y = ta.absolute-position.y + ta.mouse-y;
+                                        ctx-popup.show();
                                     } else {
                                         root.row-pressed(i, e.modifiers.control, e.modifiers.shift);
                                     }
@@ -331,25 +394,6 @@ export component MainWindow inherits Window {
                     }
                   }
 
-                  Menu {
-                      MenuItem { title: "Pause"; activated => { root.action("pause"); } }
-                      MenuItem { title: "Resume"; activated => { root.action("resume"); } }
-                      MenuItem { title: "Force recheck"; activated => { root.action("recheck"); } }
-                      MenuSeparator { }
-                      Menu {
-                          title: "Queue position";
-                          MenuItem { title: "Up"; activated => { root.action("queue-up"); } }
-                          MenuItem { title: "Down"; activated => { root.action("queue-down"); } }
-                      }
-                      MenuSeparator { }
-                      MenuItem { title: "Remove torrent"; activated => { root.action("remove"); } }
-                      MenuItem { title: "Remove torrent and files"; activated => { root.action("remove-files"); } }
-                      MenuSeparator { }
-                      MenuItem { title: "Copy info hash"; activated => { root.action("copy-hash"); } }
-                      MenuItem { title: "Magnet link(s)"; activated => { root.action("copy-magnet"); } }
-                      MenuItem { title: "Open in Explorer"; activated => { root.action("open-folder"); } }
-                  }
-                }
             }
         }
 
