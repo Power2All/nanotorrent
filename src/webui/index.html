@@ -122,6 +122,14 @@ input[type=text], input[type=file] {
   font: inherit; padding: .45rem .55rem; border: 1px solid var(--line);
   border-radius: 6px; background: var(--panel); color: var(--fg); width: 100%;
 }
+/* The file input's inner button is a native control and keeps the browser's
+   own light styling on a dark page unless it is styled by name. */
+input[type=file]::file-selector-button {
+  font: inherit; margin-right: .6rem; padding: .3rem .6rem; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 5px;
+  background: var(--bg); color: var(--fg);
+}
+input[type=file]::file-selector-button:hover { border-color: var(--accent); color: var(--accent); }
 .row { display: flex; gap: .5rem; align-items: end; }
 .row > label { flex: 1; }
 .check { display: flex; gap: .4rem; align-items: center; color: var(--fg); font-size: .9rem; }
