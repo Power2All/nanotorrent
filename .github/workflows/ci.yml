@@ -39,19 +39,36 @@ jobs:
           - name: macos (headless)
             os: macos-latest
             args: --no-default-features
+          # The cross-platform GUI. Built on the platforms it is FOR - a
+          # Windows-only check proves nothing about it, and this is the
+          # configuration that will eventually be the default there.
+          - name: linux (slint UI)
+            os: ubuntu-latest
+            args: --no-default-features --features ui-slint
+            apt: libfontconfig1-dev
+          - name: macos (slint UI)
+            os: macos-latest
+            args: --no-default-features --features ui-slint
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: System packages
+        if: matrix.apt != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
 
       - uses: dtolnay/rust-toolchain@stable
 
       # aws-lc-sys is a slow C build and cargo re-links it constantly otherwise.
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.os }}
+          # matrix.name, not matrix.os: two jobs now share each OS with different
+          # feature sets, and one cache key for both would thrash.
+          key: ${{ matrix.name }}
 
       - name: Build
         run: cargo build --locked ${{ matrix.args }}
 
+      # Tests are headless; nothing here opens a window.
       - name: Test
         run: cargo test --locked ${{ matrix.args }}
