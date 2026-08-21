@@ -51,12 +51,12 @@ pub fn speed_text(rate: i64) -> String {
     }
 }
 
-#[cfg_attr(not(all(feature = "ui-native", windows)), allow(dead_code))]
+#[cfg_attr(not(any(all(feature = "ui-native", windows), feature = "ui-slint")), allow(dead_code))]
 pub fn date_text(dt: &chrono::DateTime<chrono::Local>) -> String {
     dt.format("%Y-%m-%d %H:%M").to_string()
 }
 
-#[cfg_attr(not(all(feature = "ui-native", windows)), allow(dead_code))]
+#[cfg_attr(not(any(all(feature = "ui-native", windows), feature = "ui-slint")), allow(dead_code))]
 pub fn opt_date_text(dt: &Option<chrono::DateTime<chrono::Local>>) -> String {
     dt.as_ref().map(date_text).unwrap_or_else(|| String::from("-"))
 }

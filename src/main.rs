@@ -24,7 +24,7 @@
 // core::utils) with nothing calling it yet, which buries real warnings under ~27
 // dead-code ones. The HTTP API is what consumes these, so this comes back out in
 // Phase 1 rather than growing per-item attributes now.
-#![cfg_attr(not(all(feature = "ui-native", windows)), allow(dead_code))]
+#![cfg_attr(not(any(all(feature = "ui-native", windows), feature = "ui-slint")), allow(dead_code))]
 
 mod bittorrent;
 mod buildinfo;
@@ -36,13 +36,16 @@ mod ui;
 // headless arm instead of failing to compile.
 #[cfg(all(feature = "ui-native", windows))]
 mod ui_native;
+#[cfg(feature = "ui-slint")]
+mod ui_slint;
 mod updatechecker;
 mod webui;
 
 /// True when no native UI is compiled in. The web interface is then the only
 /// way to reach this process, which makes failing to start it fatal rather
 /// than a degraded-but-usable state.
-const HEADLESS: bool = !cfg!(all(feature = "ui-native", windows));
+const HEADLESS: bool =
+    !cfg!(any(all(feature = "ui-native", windows), feature = "ui-slint"));
 
 use std::sync::{Arc, Mutex};
 
@@ -60,7 +63,7 @@ use crate::updatechecker::UpdateInfo;
 // A headless build reads almost none of these yet - the HTTP API is what will
 // consume them. Keeping them assembled means that lands as an addition rather
 // than a rework of startup.
-#[cfg_attr(not(all(feature = "ui-native", windows)), allow(dead_code))]
+#[cfg_attr(not(any(all(feature = "ui-native", windows), feature = "ui-slint")), allow(dead_code))]
 pub struct AppContext {
     pub env: Arc<Environment>,
     pub db: Arc<Database>,
@@ -264,6 +267,14 @@ fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
     ui_native::run(ctx)
 }
 
+/// The cross-platform UI. Reached when ui-native is not available - which is
+/// every non-Windows build, and a Windows build asked for it explicitly with
+/// `--no-default-features --features ui-slint`.
+#[cfg(all(feature = "ui-slint", not(all(feature = "ui-native", windows))))]
+fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
+    ui_slint::run(ctx)
+}
+
 /// Headless: this target has no UI yet (Linux/macOS, or a Windows build with
 /// --no-default-features). Keep the session running until asked to stop, then
 /// shut it down cleanly so fastresume state is flushed - a torrent client that
@@ -271,7 +282,7 @@ fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
 ///
 /// This is the loop the HTTP API will attach to, so it is deliberately a real
 /// run loop rather than a stub that returns.
-#[cfg(not(all(feature = "ui-native", windows)))]
+#[cfg(not(any(all(feature = "ui-native", windows), feature = "ui-slint")))]
 fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
     tracing::info!("no UI on this target - running headless, Ctrl-C to stop");
 

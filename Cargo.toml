@@ -11,6 +11,15 @@ default = ["ui-native"]
 # `all(feature = "ui-native", windows)` - so leaving it on by default costs
 # nothing on Linux/macOS, where those builds simply come up headless.
 ui-native = ["dep:native-windows-gui"]
+# The cross-platform UI, and eventually the only one. Not default yet: it is
+# built alongside ui-native rather than replacing it, so Windows keeps shipping
+# a UI that works while this one catches up.
+#
+#   cargo run --no-default-features --features ui-slint
+#
+# ui-native wins if both are on, because `default` still names it - see the
+# dispatch in main.rs::run_ui.
+ui-slint = ["dep:slint", "dep:slint-build"]
 
 [dependencies]
 # Actix rather than axum for the web API, chosen for its connection layer, not
@@ -79,6 +88,8 @@ rustls = "0.23"
 rustls-pemfile = "2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# The cross-platform UI toolkit. Optional until it replaces ui_native.
+slint = { version = "1", optional = true }
 # Constant-time comparison for the auth username. argon2 already compares the
 # password hash in constant time; the username needs the same treatment or it
 # leaks through timing.
@@ -86,6 +97,11 @@ subtle = "2.6"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "signal"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
+
+[build-dependencies]
+# Compiles src/ui_slint/*.slint. Optional so a ui-native-only build does not
+# pay for it; build.rs gates the call on the same feature.
+slint-build = { version = "1", optional = true }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1.31"

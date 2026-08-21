@@ -22,6 +22,7 @@ fn main() {
     verify_librqbit_patches();
     embed_language_files();
     embed_flag_images();
+    compile_slint_ui();
 
     // Embed the app icon into the .exe as a Win32 resource so Explorer and the
     // taskbar show it for the executable file itself.
@@ -84,6 +85,19 @@ fn main() {
         "cargo:rustc-env=PT_BUILD_STAMP={:04}-{:02}-{:02} {:02}:{:02} UTC",
         y, m, d, hh, mm
     );
+}
+
+/// Compiles the Slint UI when the `ui-slint` feature is on.
+///
+/// Gated so a Windows-only ui-native build neither compiles slint-build nor
+/// needs the .slint sources to parse - the two UIs are independent until
+/// ui_native is retired.
+fn compile_slint_ui() {
+    #[cfg(feature = "ui-slint")]
+    {
+        println!("cargo:rerun-if-changed=src/ui_slint");
+        slint_build::compile("src/ui_slint/app.slint").expect("failed to compile the Slint UI");
+    }
 }
 
 /// Generates the `include_str!` table for `lang/*.json` so every translation
