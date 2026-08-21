@@ -96,6 +96,11 @@ function Get-TargetWindows {
 }
 
 # --- resolve the target process -------------------------------------------
+# A whole-screen grab has no target, so do not demand one - requiring a running
+# nanotorrent.exe to photograph a popup menu is exactly backwards.
+if ($Screen -and $ProcessId -eq 0) {
+    $ProcessId = $PID
+}
 if ($ProcessId -eq 0) {
     $proc = Get-Process nanotorrent -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $proc) { throw "nanotorrent.exe is not running (start it, or pass -ProcessId)" }

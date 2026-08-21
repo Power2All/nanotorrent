@@ -1,0 +1,15 @@
+# Standalone on purpose: an empty [workspace] keeps this out of the main crate's
+# build, so evaluating Slint costs the shipping binary nothing.
+[package]
+name = "slint-list-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+slint = "1"
+
+[build-dependencies]
+slint-build = "1"

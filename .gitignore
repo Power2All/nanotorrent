@@ -1,2 +1,5 @@
 /target/
 .idea
+
+# Spike crates build independently of the main workspace.
+/spike/*/target/

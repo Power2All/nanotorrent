@@ -1,0 +1,244 @@
+// Spike: can Slint carry NanoTorrent's torrent list?
+//
+// StandardTableView cannot, and that is settled rather than suspected - its
+// only selection property is `current-row: int` (no multi-select), and its
+// cells are StandardListViewItem, which renders text and nothing else. The
+// Win32 list needs both: multi-select drives the context menu, and the
+// Progress column owner-draws a bar.
+//
+// So the real question is the one below: does a custom row over ListView carry
+// them without fighting the toolkit? 16 columns, a real progress bar in a
+// cell, ctrl/shift multi-select, right-click context menu, sortable headers.
+
+import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, Palette } from "std-widgets.slint";
+
+export struct Row {
+    name: string,
+    queue: string,
+    size: string,
+    remaining: string,
+    status: string,
+    progress: float,          // 0..1, drawn as a bar rather than printed
+    eta: string,
+    dl: string,
+    ul: string,
+    availability: string,
+    ratio: string,
+    seeds: string,
+    peers: string,
+    added: string,
+    completed: string,
+    label: string,
+    selected: bool,
+}
+
+// One place for the column widths, so the header and the rows cannot drift.
+global Cols {
+    out property <[length]> w: [
+        260px, 44px, 90px, 120px, 110px, 80px, 70px, 90px,
+        90px, 90px, 60px, 80px, 80px, 130px, 130px, 100px,
+    ];
+    out property <[string]> titles: [
+        "Name", "#", "Size", "Size (remaining)", "Status", "Progress", "ETA", "DL",
+        "UL", "Availability", "Ratio", "Seeds", "Peers", "Added on", "Completed on", "Label",
+    ];
+    out property <length> total: 1524px;
+}
+
+component Cell inherits Rectangle {
+    in property <length> w;
+    in property <string> text;
+    in property <TextHorizontalAlignment> align: left;
+    in property <color> fg: Palette.foreground;
+    width: w;
+    Text {
+        text: root.text;
+        color: root.fg;
+        x: 6px;
+        width: parent.width - 12px;
+        height: parent.height;
+        vertical-alignment: center;
+        horizontal-alignment: root.align;
+        overflow: elide;
+        font-size: 13px;
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "NanoTorrent - Slint list spike";
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    background: Palette.background;
+
+    in property <[Row]> rows;
+    in property <string> status;
+    in property <int> selected-count;
+
+    callback sort(int);
+    callback row-pressed(int, bool, bool);   // index, ctrl, shift
+    callback context-menu(int);
+
+    VerticalBox {
+        padding: 0px;
+        spacing: 0px;
+
+        HorizontalBox {
+            padding: 6px;
+            height: 40px;
+            Button { text: "Add torrent"; }
+            Button { text: "Pause"; enabled: root.selected-count > 0; }
+            Button { text: "Resume"; enabled: root.selected-count > 0; }
+            Rectangle { horizontal-stretch: 1; }
+            Text { text: root.status; vertical-alignment: center; color: #888; }
+        }
+
+        // Header and body share one horizontal scroll offset, so the columns
+        // stay aligned when scrolled sideways.
+        scroll := ScrollView {
+            vertical-stretch: 1;
+            viewport-width: Cols.total;
+            // The ListView inside owns vertical scrolling; two of them fight.
+            vertical-scrollbar-policy: always-off;
+
+            VerticalLayout {
+                header := Rectangle {
+                    height: 28px;
+                    background: Palette.alternate-background;
+                    HorizontalLayout {
+                        for title[i] in Cols.titles: TouchArea {
+                            width: Cols.w[i];
+                            clicked => { root.sort(i); }
+                            Text {
+                                text: title;
+                                font-size: 13px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                x: 6px;
+                            }
+                        }
+                    }
+                }
+
+                menu := ContextMenuArea {
+                  list := ListView {
+                    // ListView culls to the viewport, so 5,000 rows costs the
+                    // same as 50. That is the thing the Win32 list does NOT do.
+                    for row[i] in root.rows: Rectangle {
+                        height: 26px;
+                        background: row.selected
+                            ? Palette.selection-background
+                            : (mod(i, 2) == 0 ? transparent : Palette.alternate-background);
+
+                        ta := TouchArea {
+                            pointer-event(e) => {
+                                if (e.kind == PointerEventKind.down) {
+                                    if (e.button == PointerEventButton.right) {
+                                        root.context-menu(i);
+                                        // The TouchArea above swallows the
+                                        // right-click, so ContextMenuArea never
+                                        // sees it - show it by hand, in ITS
+                                        // coordinate space.
+                                        menu.show({
+                                            x: ta.absolute-position.x + ta.mouse-x - menu.absolute-position.x,
+                                            y: ta.absolute-position.y + ta.mouse-y - menu.absolute-position.y,
+                                        });
+                                    } else {
+                                        root.row-pressed(i, e.modifiers.control, e.modifiers.shift);
+                                    }
+                                }
+                            }
+                            // No `clicked` handler: pointer-event above already
+                            // fires on press AND carries the modifiers, so a
+                            // second handler here just overwrote every
+                            // ctrl-click with a plain one.
+                        }
+
+                        HorizontalLayout {
+                            Cell { w: Cols.w[0]; text: row.name; fg: row.selected ? Palette.selection-foreground : Palette.foreground; }
+                            Cell { w: Cols.w[1]; text: row.queue; align: right; }
+                            Cell { w: Cols.w[2]; text: row.size; align: right; }
+                            Cell { w: Cols.w[3]; text: row.remaining; align: right; }
+                            Cell { w: Cols.w[4]; text: row.status; }
+
+                            // The cell StandardTableView could never draw.
+                            Rectangle {
+                                width: Cols.w[5];
+                                bar := Rectangle {
+                                    x: 4px;
+                                    width: parent.width - 8px;
+                                    height: 14px;
+                                    y: (parent.height - self.height) / 2;
+                                    background: #00000022;
+                                    border-radius: 3px;
+                                    Rectangle {
+                                        x: 0;
+                                        width: parent.width * row.progress;
+                                        height: parent.height;
+                                        background: #2f6fb5;
+                                        border-radius: 3px;
+                                    }
+                                    Text {
+                                        text: round(row.progress * 1000) / 10 + " %";
+                                        font-size: 11px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+
+                            Cell { w: Cols.w[6]; text: row.eta; align: right; }
+                            Cell { w: Cols.w[7]; text: row.dl; align: right; }
+                            Cell { w: Cols.w[8]; text: row.ul; align: right; }
+                            Cell { w: Cols.w[9]; text: row.availability; align: right; }
+                            Cell { w: Cols.w[10]; text: row.ratio; align: right; }
+                            Cell { w: Cols.w[11]; text: row.seeds; align: right; }
+                            Cell { w: Cols.w[12]; text: row.peers; align: right; }
+                            Cell { w: Cols.w[13]; text: row.added; }
+                            Cell { w: Cols.w[14]; text: row.completed; }
+                            Cell { w: Cols.w[15]; text: row.label; }
+                        }
+                    }
+                  }
+
+                  // A ContextMenuArea shows this itself on right-click over
+                  // its area - no show() call and no position to guess at.
+                  // Port of torrentcontextmenu.cpp.
+                  Menu {
+                      MenuItem { title: "Pause"; activated => { root.context-menu(-1); } }
+                      MenuItem { title: "Resume"; }
+                      MenuItem { title: "Force recheck"; }
+                      MenuSeparator { }
+                      Menu {
+                          title: "Queue position";
+                          MenuItem { title: "Up"; }
+                          MenuItem { title: "Down"; }
+                      }
+                      MenuSeparator { }
+                      MenuItem { title: "Remove torrent"; }
+                      MenuItem { title: "Remove torrent and files"; }
+                      MenuSeparator { }
+                      MenuItem { title: "Copy info hash"; }
+                      MenuItem { title: "Open in Explorer"; }
+                  }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 26px;
+            background: Palette.alternate-background;
+            HorizontalLayout {
+                padding-left: 8px;
+                Text {
+                    text: root.selected-count + " selected of " + root.rows.length;
+                    vertical-alignment: center;
+                    font-size: 12px;
+                }
+            }
+        }
+    }
+
+}
