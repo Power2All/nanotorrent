@@ -1,14 +1,16 @@
-// Spike: can Slint carry NanoTorrent's MAIN WINDOW?
+// NanoTorrent's cross-platform UI.
 //
-// Started as a list-only spike. That answered the list question but said
-// nothing about the frame, so it now covers the whole thing: menu bar, the
-// splitter between list and details, the four detail tabs, and the status bar.
-// Compare against docs/ui-baseline/03-main-rows.png.
+// Grown from spike/slint-list, which worked the shape out the hard way; that
+// README records the traps and the ones that bite here are marked in place.
 //
-// The list findings still stand. StandardTableView cannot be used - its only
-// selection property is `current-row: int` (no multi-select) and its cells are
-// StandardListViewItem, which renders text and nothing else. The Win32 list
-// needs both: multi-select drives the context menu, and Progress draws a bar.
+// The list is a custom row over ListView rather than StandardTableView, which
+// can do neither of the two things it must: its only selection property is
+// `current-row: int` (no multi-select, and multi-select drives the context
+// menu), and its cells are StandardListViewItem, which renders text and so
+// could never draw the Progress bar.
+//
+// Layout mirrors src/ui_native/mainwindow.rs - docs/ui-baseline/ is what it is
+// being matched against.
 
 import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, Palette } from "std-widgets.slint";
 
@@ -122,6 +124,41 @@ export component MainWindow inherits Window {
     in-out property <bool> show-details: true;
     in-out property <bool> show-status: true;
 
+    // Where the pending context menu should open, stashed by the press.
+    private property <length> menu-x;
+    private property <length> menu-y;
+
+    // Opening the menu is deferred by one frame ON PURPOSE.
+    //
+    // Slint uses native menus on Windows (muda -> TrackPopupMenu), which run a
+    // NESTED MODAL MESSAGE LOOP: show() does not return until the menu closes,
+    // and no frame is painted in between. Selecting a row and calling show() in
+    // the same event therefore leaves the row unhighlighted until the menu is
+    // dismissed - the model was updated, it just never got drawn.
+    //
+    // Doing the select on button-down and the show on button-up hides this for
+    // an isolated right-click (two events, a render between them) but not for a
+    // right-click while another menu is open: that press is eaten dismissing the
+    // old menu, so the new select and show land back-to-back again.
+    //
+    // A timer breaks it properly, because it fires on a later event-loop
+    // iteration whatever the pointer did.
+    //
+    // ponytail: 200ms is a WORKAROUND, not a fix. It was measured, not guessed -
+    // 16ms (one frame) still showed the stale highlight, 200ms does not - but it
+    // is a race, and a slow enough machine could lose it again. The real fix is
+    // to stop using a native menu here and draw the context menu in Slint: no
+    // modal loop, no timing dependency, and it would also solve the menu
+    // rendering light against a dark window (see spike/slint-list/README.md).
+    menu-timer := Timer {
+        interval: 200ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            menu.show({ x: root.menu-x, y: root.menu-y });
+        }
+    }
+
     callback sort(int);
     callback row-pressed(int, bool, bool);
     // Fired before the context menu opens so the Rust side can make the
@@ -228,30 +265,16 @@ export component MainWindow inherits Window {
                             pointer-event(e) => {
                                 if (e.kind == PointerEventKind.down) {
                                     if (e.button == PointerEventButton.right) {
-                                        // Select on PRESS, open the menu on
-                                        // RELEASE below. Doing both here left
-                                        // the row unhighlighted until the menu
-                                        // was dismissed: show() puts a popup up
-                                        // in the same event, before the parent
-                                        // window repaints the selection the
-                                        // callback just changed.
-                                        //
-                                        // It also matches the platform: Windows
-                                        // raises WM_CONTEXTMENU after the button
-                                        // comes up, not when it goes down.
+                                        // Select now, open the menu one tick
+                                        // later - see menu-timer for why the
+                                        // two cannot happen in the same event.
                                         root.context-menu(i);
+                                        root.menu-x = ta.absolute-position.x + ta.mouse-x - menu.absolute-position.x;
+                                        root.menu-y = ta.absolute-position.y + ta.mouse-y - menu.absolute-position.y;
+                                        menu-timer.running = true;
                                     } else {
                                         root.row-pressed(i, e.modifiers.control, e.modifiers.shift);
                                     }
-                                }
-                                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
-                                    // The TouchArea swallows the right-click, so
-                                    // ContextMenuArea never sees it - show it by
-                                    // hand, in ITS coordinate space.
-                                    menu.show({
-                                        x: ta.absolute-position.x + ta.mouse-x - menu.absolute-position.x,
-                                        y: ta.absolute-position.y + ta.mouse-y - menu.absolute-position.y,
-                                    });
                                 }
                             }
                             // No `clicked` handler: pointer-event already fires on

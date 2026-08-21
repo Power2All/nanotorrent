@@ -329,6 +329,15 @@ fn repaint_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>
     } else {
         clear_details(window);
     }
+
+    // Ask for a frame explicitly. Mutating the model marks it dirty, but the
+    // context-menu path then hands control to a NATIVE menu (muda ->
+    // TrackPopupMenu on Windows), which runs a nested modal message loop - and
+    // a dirty model that has not been drawn yet stays undrawn for as long as
+    // that loop owns the thread. The result is a selection that is correct in
+    // memory and a row that is still highlighted somewhere else on screen.
+    window.window().request_redraw();
+
 }
 
 /// Menu and context-menu commands, dispatched by name.
