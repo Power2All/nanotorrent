@@ -19,7 +19,7 @@ ui-native = ["dep:native-windows-gui"]
 #
 # ui-native wins if both are on, because `default` still names it - see the
 # dispatch in main.rs::run_ui.
-ui-slint = ["dep:slint", "dep:slint-build"]
+ui-slint = ["dep:slint", "dep:slint-build", "dep:rfd"]
 
 [dependencies]
 # Actix rather than axum for the web API, chosen for its connection layer, not
@@ -80,6 +80,11 @@ open = "5.4.1"
 # Generates the self-signed certificate for the web API on first use, so HTTPS
 # works out of the box without asking anyone to run openssl.
 rcgen = "0.13"
+# Native file/folder pickers for the Slint UI - Slint has none of its own.
+# xdg-portal rather than the default GTK3 backend: a torrent client should not
+# drag GTK into a Linux build to show one Open dialog, and the portal is what
+# Flatpak/Wayland expect anyway.
+rfd = { version = "0.15", optional = true, default-features = false, features = ["xdg-portal", "tokio"] }
 reqwest = { version = "0.13.4", features = ["json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
 # Default features deliberately: that selects aws-lc-rs, which the tree already

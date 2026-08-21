@@ -69,6 +69,10 @@ struct Ui {
     /// dropping a window from inside its own callback is asking for trouble,
     /// and the next open replaces it anyway.
     magnet_dialog: RefCell<Option<AddMagnetDialog>>,
+    torrent_dialog: RefCell<Option<AddTorrentDialog>>,
+    /// The .torrent currently in the Add dialog, and any queued behind it.
+    /// argv can name several, and ui_native shows one dialog at a time too.
+    pending: RefCell<Vec<Vec<u8>>>,
 }
 
 impl Ui {
@@ -158,6 +162,8 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         rows: RefCell::new(Vec::new()),
         ipc: ctx.ipc,
         magnet_dialog: RefCell::new(None),
+        torrent_dialog: RefCell::new(None),
+        pending: RefCell::new(Vec::new()),
     });
 
     let model: Rc<VecModel<Row>> = Rc::new(VecModel::from(Vec::new()));
@@ -211,9 +217,9 @@ fn default_add_params() -> AddParams {
 /// Handle `.torrent` paths and `magnet:` links from argv, or forwarded by a
 /// second instance.
 ///
-/// ponytail: adds straight away with defaults, where the Win32 UI opens the
-/// Add-torrent dialog for a file so the save path and file selection can be
-/// chosen. Wire that here once the dialog exists.
+/// Magnets are added straight away - there is nothing to choose until their
+/// metadata resolves. Files go through the Add dialog, as ui_native does, so
+/// the save path and file selection can be set before anything is written.
 fn handle_params(ui: &Rc<Ui>, args: &[String]) {
     for arg in args {
         if arg.starts_with("magnet:") {
@@ -221,14 +227,13 @@ fn handle_params(ui: &Rc<Ui>, args: &[String]) {
                 .add_torrent(AddTorrentSource::MagnetUri(arg.clone()), default_add_params());
         } else if arg.to_lowercase().ends_with(".torrent") {
             match std::fs::read(arg) {
-                Ok(bytes) => ui
-                    .session
-                    .add_torrent(AddTorrentSource::TorrentFileBytes(bytes), default_add_params()),
+                Ok(bytes) => ui.pending.borrow_mut().push(bytes),
                 // Not fatal: one unreadable path should not stop the others.
                 Err(err) => tracing::error!("cannot read {arg}: {err}"),
             }
         }
     }
+    show_next_pending(ui);
 }
 
 /// Pull the session's current state into the model.
@@ -439,6 +444,7 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
                 }
             }
             "add-magnet" => open_add_magnet(&u),
+            "add-torrent" => pick_and_queue_torrents(&u),
             "exit" => {
                 let _ = slint::quit_event_loop();
             }
@@ -510,4 +516,148 @@ fn open_add_magnet(ui: &Rc<Ui>) {
 
     let _ = dialog.show();
     *ui.magnet_dialog.borrow_mut() = Some(dialog);
+}
+
+/// File > Add torrent: pick one or more `.torrent` files, then run them
+/// through the Add dialog one at a time.
+///
+/// `rfd` gives the native picker Slint does not have. It blocks the event loop
+/// while open, which is what a modal file dialog is supposed to do.
+fn pick_and_queue_torrents(ui: &Rc<Ui>) {
+    let Some(paths) = rfd::FileDialog::new()
+        .add_filter("Torrent files", &["torrent"])
+        .set_title("Add torrent(s)")
+        .pick_files()
+    else {
+        return; // cancelled
+    };
+
+    for path in paths {
+        match std::fs::read(&path) {
+            Ok(bytes) => ui.pending.borrow_mut().push(bytes),
+            Err(err) => tracing::error!("cannot read {}: {err}", path.display()),
+        }
+    }
+    show_next_pending(ui);
+}
+
+/// Show the Add dialog for the next queued `.torrent`, if any and if one is
+/// not already up.
+fn show_next_pending(ui: &Rc<Ui>) {
+    if ui.torrent_dialog.borrow().is_some() {
+        return; // one at a time, like ui_native's add_torrent_queue
+    }
+    let Some(bytes) = ui.pending.borrow_mut().pop() else {
+        return;
+    };
+
+    let parsed = match crate::ui::torrentfile::parse(&bytes) {
+        Ok(p) => p,
+        Err(err) => {
+            // Skip it and carry on - one bad file should not strand the queue.
+            tracing::error!("{err}");
+            show_next_pending(ui);
+            return;
+        }
+    };
+
+    let dialog = match AddTorrentDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the add-torrent dialog: {err}");
+            return;
+        }
+    };
+
+    dialog.set_torrent_name(parsed.name.as_str().into());
+    dialog.set_torrent_size(utils::to_human_file_size(parsed.total_size).into());
+    dialog.set_save_path(
+        ui.cfg
+            .get_string("default_save_path")
+            .unwrap_or_default()
+            .into(),
+    );
+
+    let files: Rc<VecModel<FileRow>> = Rc::new(VecModel::from(
+        parsed
+            .files
+            .iter()
+            .map(|(name, size)| FileRow {
+                name: name.as_str().into(),
+                size: utils::to_human_file_size(*size as i64).into(),
+                included: true,
+            })
+            .collect::<Vec<_>>(),
+    ));
+    dialog.set_files(ModelRc::from(files.clone()));
+
+    {
+        let f = files.clone();
+        dialog.on_toggle_file(move |index| {
+            let index = index.max(0) as usize;
+            if let Some(mut row) = f.row_data(index) {
+                row.included = !row.included;
+                f.set_row_data(index, row);
+            }
+        });
+    }
+
+    {
+        let weak = dialog.as_weak();
+        dialog.on_browse(move || {
+            let Some(dir) = rfd::FileDialog::new()
+                .set_title("Save torrent to")
+                .pick_folder()
+            else {
+                return;
+            };
+            if let Some(d) = weak.upgrade() {
+                d.set_save_path(dir.to_string_lossy().as_ref().into());
+            }
+        });
+    }
+
+    {
+        let (weak, u, f) = (dialog.as_weak(), ui.clone(), files.clone());
+        let bytes = bytes.clone();
+        dialog.on_accepted(move || {
+            let Some(d) = weak.upgrade() else { return };
+
+            let included: Vec<usize> = (0..f.row_count())
+                .filter(|&i| f.row_data(i).is_some_and(|r| r.included))
+                .collect();
+            // None means "everything", which is not the same as an explicit
+            // list of all of them - keep the distinction the session expects.
+            let only_files = (included.len() != f.row_count()).then_some(included);
+
+            let save_path = d.get_save_path().to_string();
+            u.session.add_torrent(
+                AddTorrentSource::TorrentFileBytes(bytes.clone()),
+                AddParams {
+                    save_path: (!save_path.trim().is_empty()).then_some(save_path),
+                    start_torrent: d.get_start_torrent(),
+                    only_files,
+                    label_id: None,
+                },
+            );
+
+            let _ = d.hide();
+            *u.torrent_dialog.borrow_mut() = None;
+            show_next_pending(&u);
+        });
+    }
+
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_cancelled(move || {
+            if let Some(d) = weak.upgrade() {
+                let _ = d.hide();
+            }
+            *u.torrent_dialog.borrow_mut() = None;
+            show_next_pending(&u);
+        });
+    }
+
+    let _ = dialog.show();
+    *ui.torrent_dialog.borrow_mut() = Some(dialog);
 }

@@ -12,7 +12,7 @@
 // Layout mirrors src/ui_native/mainwindow.rs - docs/ui-baseline/ is what it is
 // being matched against.
 
-import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, Palette } from "std-widgets.slint";
+import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette } from "std-widgets.slint";
 
 export struct Row {
     name: string,
@@ -586,6 +586,109 @@ export component AddMagnetDialog inherits Window {
                 primary: true;
                 clicked => { root.accepted(); }
             }
+        }
+    }
+}
+
+
+export struct FileRow {
+    name: string,
+    size: string,
+    included: bool,
+}
+
+// Port of ui_native/dialogs.rs::spawn_add_torrent.
+export component AddTorrentDialog inherits Window {
+    title: "Add torrent(s)";
+    preferred-width: 640px;
+    preferred-height: 540px;
+    background: Palette.background;
+
+    in property <string> torrent-name;
+    in property <string> torrent-size;
+    in-out property <string> save-path;
+    in-out property <bool> start-torrent: true;
+    in property <[FileRow]> files;
+
+    callback accepted();
+    callback cancelled();
+    callback browse();
+    callback toggle-file(int);
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        GridLayout {
+            spacing: 8px;
+            Row {
+                Text { text: "Name"; font-weight: 700; font-size: 13px; width: 90px; vertical-alignment: center; }
+                Text { text: root.torrent-name; font-size: 13px; overflow: elide; vertical-alignment: center; }
+            }
+            Row {
+                Text { text: "Size"; font-weight: 700; font-size: 13px; width: 90px; vertical-alignment: center; }
+                Text { text: root.torrent-size; font-size: 13px; vertical-alignment: center; }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: "Save to"; font-weight: 700; font-size: 13px; width: 90px; vertical-alignment: center; }
+            LineEdit {
+                text <=> root.save-path;
+                horizontal-stretch: 1;
+                placeholder-text: "server default";
+            }
+            Button { text: "Browse..."; clicked => { root.browse(); } }
+        }
+
+        CheckBox {
+            text: "Start torrent";
+            checked <=> root.start-torrent;
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 4px;
+
+            VerticalLayout {
+                padding: 1px;
+                Rectangle {
+                    height: 26px;
+                    background: Palette.alternate-background;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        Text { text: "Include"; font-weight: 700; font-size: 12px; width: 70px; vertical-alignment: center; }
+                        Text { text: "Name"; font-weight: 700; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; }
+                        Text { text: "Size"; font-weight: 700; font-size: 12px; width: 100px; horizontal-alignment: right; vertical-alignment: center; }
+                    }
+                }
+                ListView {
+                    for f[i] in root.files: Rectangle {
+                        height: 24px;
+                        background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            CheckBox {
+                                width: 70px;
+                                checked: f.included;
+                                toggled => { root.toggle-file(i); }
+                            }
+                            Text { text: f.name; font-size: 12px; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+                            Text { text: f.size; font-size: 12px; width: 100px; horizontal-alignment: right; vertical-alignment: center; }
+                        }
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Rectangle { horizontal-stretch: 1; }
+            Button { text: "Cancel"; clicked => { root.cancelled(); } }
+            Button { text: "Add"; primary: true; clicked => { root.accepted(); } }
         }
     }
 }
