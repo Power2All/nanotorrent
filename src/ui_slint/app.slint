@@ -228,17 +228,30 @@ export component MainWindow inherits Window {
                             pointer-event(e) => {
                                 if (e.kind == PointerEventKind.down) {
                                     if (e.button == PointerEventButton.right) {
+                                        // Select on PRESS, open the menu on
+                                        // RELEASE below. Doing both here left
+                                        // the row unhighlighted until the menu
+                                        // was dismissed: show() puts a popup up
+                                        // in the same event, before the parent
+                                        // window repaints the selection the
+                                        // callback just changed.
+                                        //
+                                        // It also matches the platform: Windows
+                                        // raises WM_CONTEXTMENU after the button
+                                        // comes up, not when it goes down.
                                         root.context-menu(i);
-                                        // The TouchArea swallows the right-click,
-                                        // so ContextMenuArea never sees it - show
-                                        // it by hand, in ITS coordinate space.
-                                        menu.show({
-                                            x: ta.absolute-position.x + ta.mouse-x - menu.absolute-position.x,
-                                            y: ta.absolute-position.y + ta.mouse-y - menu.absolute-position.y,
-                                        });
                                     } else {
                                         root.row-pressed(i, e.modifiers.control, e.modifiers.shift);
                                     }
+                                }
+                                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
+                                    // The TouchArea swallows the right-click, so
+                                    // ContextMenuArea never sees it - show it by
+                                    // hand, in ITS coordinate space.
+                                    menu.show({
+                                        x: ta.absolute-position.x + ta.mouse-x - menu.absolute-position.x,
+                                        y: ta.absolute-position.y + ta.mouse-y - menu.absolute-position.y,
+                                    });
                                 }
                             }
                             // No `clicked` handler: pointer-event already fires on
