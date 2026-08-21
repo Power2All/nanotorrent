@@ -1,0 +1,57 @@
+# Proves the portability claim rather than inferring it.
+#
+# Development happens on Windows, where the only thing a local build can show is
+# that nothing outside src/ui_native depends on native-windows-gui. Whether the
+# Linux and macOS arms of the cfg(windows) / cfg(target_os) branches actually
+# compile is a question only those platforms can answer, so they answer it here.
+#
+# The runners already ship cmake and a C compiler, which aws-lc-sys needs. No
+# OpenSSL is required: the librqbit rust-tls feature (see Cargo.toml) keeps
+# libssl out of the tree entirely.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Without this a Linux failure would cancel the macOS job, hiding whether
+      # the problem is one platform or both.
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows (Win32 UI)
+            os: windows-latest
+            # Default features: ui-native, the only platform that has it.
+            args: ""
+          - name: linux (headless)
+            os: ubuntu-latest
+            args: --no-default-features
+          - name: macos (headless)
+            os: macos-latest
+            args: --no-default-features
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # aws-lc-sys is a slow C build and cargo re-links it constantly otherwise.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Build
+        run: cargo build --locked ${{ matrix.args }}
+
+      - name: Test
+        run: cargo test --locked ${{ matrix.args }}

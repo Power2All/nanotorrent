@@ -7,7 +7,10 @@ license = "MIT"
 
 [features]
 default = ["ui-native"]
-ui-native = ["dep:native-windows-gui", "dep:winapi"]
+# The Win32 UI. Only ever builds on Windows - every gate for it is
+# `all(feature = "ui-native", windows)` - so leaving it on by default costs
+# nothing on Linux/macOS, where those builds simply come up headless.
+ui-native = ["dep:native-windows-gui"]
 
 [dependencies]
 anyhow = "1.0.104"
@@ -19,16 +22,37 @@ num-bigint = "0.5"
 sha1 = "0.11"
 sha2 = "0.11"
 rand = "0.10"
-librqbit = "8.1.1"
+# rust-tls rather than the default default-tls. On Linux the default drags in
+# OpenSSL TWICE: once as native-tls for the tracker/UPnP HTTP client, and once
+# as crypto-hash for librqbit's SHA-1 piece hashing. rust-tls replaces the first
+# with rustls and the second with aws-lc-rs (the feature is named sha1-ring, but
+# sha1w 4.x maps it to aws-lc-rs).
+#
+# aws-lc-sys was ALREADY being compiled (rustls 0.23 uses it as its default
+# crypto provider), so this adds no build requirement - it points SHA-1 at a
+# library the build already produces, and drops 16 crates including the whole
+# openssl / native-tls / commoncrypto chain. Static, so no per-distro libssl to
+# version-match when shipping AppImage/.deb/.dmg.
+#
+# One behaviour change: reqwest's rustls-tls verifies with bundled webpki-roots
+# rather than the OS trust store, so a private CA on an HTTPS tracker would no
+# longer be trusted. The update check is unaffected - it goes through this
+# crate's own reqwest, which uses rustls-platform-verifier.
+#
+# Measured cost, so nobody re-runs the A/B in a panic: the release exe goes from
+# 16.46 MB to 17.11 MB, i.e. +0.62 MB. aws-lc was already linked for rustls, so
+# SHA-1 only adds its digest code. (The ~4.9 MB figure people remember is the
+# UPX-packed installer payload, not the linker's output.)
+#
+# The other default feature, http-api-client, is unused here.
+librqbit = { version = "8.1.1", default-features = false, features = ["rust-tls"] }
 maxminddb = "0.30"
-native-windows-gui = { version = "1.0.13", optional = true, features = ["list-view", "image-list", "image-decoder", "tabs", "tray-notification", "menu", "combobox", "textbox", "file-dialog", "animation-timer", "notice", "message-window", "flexbox", "progress-bar", "cursor", "high-dpi", "clipboard"] }
-winapi = { version = "0.3.9", optional = true, features = ["commctrl", "winuser", "windef", "winnls", "wingdi", "dwmapi", "uxtheme", "winreg", "libloaderapi", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "winerror"] }
 open = "5.4.1"
 reqwest = { version = "0.13.4", features = ["json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-tokio = { version = "1.53.1", features = ["rt-multi-thread"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "signal"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
@@ -37,6 +61,12 @@ winresource = "0.1.31"
 
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.8"
+# NOT tied to the ui-native feature: core/toast.rs, core/file_assoc.rs and the
+# startup message box in main.rs all need winapi under plain cfg(windows),
+# whichever UI (or none) is built. Gating it on the feature is what stopped
+# --no-default-features from compiling.
+winapi = { version = "0.3.9", features = ["commctrl", "winuser", "windef", "winnls", "wingdi", "dwmapi", "uxtheme", "winreg", "libloaderapi", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "winerror"] }
+native-windows-gui = { version = "1.0.13", optional = true, features = ["list-view", "image-list", "image-decoder", "tabs", "tray-notification", "menu", "combobox", "textbox", "file-dialog", "animation-timer", "notice", "message-window", "flexbox", "progress-bar", "cursor", "high-dpi", "clipboard"] }
 
 [patch.crates-io]
 librqbit = { path = "vendor/librqbit" }

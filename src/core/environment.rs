@@ -40,11 +40,41 @@ impl Environment {
             return app_path;
         }
 
-        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            return PathBuf::from(local).join("NanoTorrent");
+        Self::user_data_dir().unwrap_or(app_path)
+    }
+
+    /// Per-user data directory, following each platform's own convention.
+    ///
+    /// Hand-rolled rather than pulling in `directories`: it is three rules, and
+    /// the crate would be a dependency carried on every platform to answer a
+    /// question each one answers differently anyway.
+    fn user_data_dir() -> Option<PathBuf> {
+        #[cfg(windows)]
+        {
+            std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("NanoTorrent"))
         }
 
-        app_path
+        #[cfg(target_os = "macos")]
+        {
+            std::env::var_os("HOME")
+                .map(|h| PathBuf::from(h).join("Library/Application Support/NanoTorrent"))
+        }
+
+        #[cfg(not(any(windows, target_os = "macos")))]
+        {
+            // Lowercased on Linux, where a capitalised directory in ~/.local/share
+            // would look out of place next to every other application's.
+            //
+            // The XDG spec says a relative XDG_DATA_HOME must be IGNORED rather
+            // than resolved against the cwd, hence the is_absolute filter - a
+            // torrent client that put its database somewhere relative would move
+            // it every time it was launched from a different directory.
+            std::env::var_os("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .filter(|p| p.is_absolute())
+                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+                .map(|d| d.join("nanotorrent"))
+        }
     }
 
     pub fn get_database_file_path(&self) -> PathBuf {
@@ -153,5 +183,45 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Guards the per-platform branching in `user_data_dir`. Only the host's
+    /// arm is compiled, so CI on each OS is what covers the other two - the
+    /// point here is that whichever arm ships is absolute (a relative data
+    /// path would relocate the database per working directory) and actually
+    /// lands in an app-specific folder rather than the bare data root.
+    #[test]
+    fn user_data_dir_is_absolute_and_app_specific() {
+        let dir = Environment::user_data_dir().expect("no per-user data dir on this platform");
+        assert!(dir.is_absolute(), "{dir:?} is not absolute");
+
+        let leaf = dir.file_name().expect("no final component").to_string_lossy().into_owned();
+        assert!(
+            leaf.eq_ignore_ascii_case("nanotorrent"),
+            "{dir:?} does not end in an app-specific folder"
+        );
+    }
+
+    /// Portable mode must win over the per-user directory, otherwise a
+    /// portable install silently writes to the profile it was meant to avoid.
+    /// Worth pinning because `user_data_dir` is now consulted right below that
+    /// branch - reorder the two and portable mode fails silently.
+    #[test]
+    fn portable_marker_overrides_user_data_dir() {
+        // SAFETY: cargo runs tests on multiple threads, so this is only sound
+        // because NANOTORRENT_PORTABLE is read nowhere else in the suite - the
+        // rest of the code reaches Environment via get_downloads_path, which
+        // does not consult it. Anything else that reads it needs a lock here.
+        unsafe { std::env::set_var("NANOTORRENT_PORTABLE", "1") };
+        let env = Environment::create();
+        let data = env.get_application_data_path();
+        unsafe { std::env::remove_var("NANOTORRENT_PORTABLE") };
+
+        assert_eq!(data, env.get_application_path());
     }
 }

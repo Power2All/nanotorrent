@@ -12,14 +12,29 @@
 // The UI is the native Win32 one (ui_native), matching the original's
 // wxWidgets-over-Win32 look.
 
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// GUI builds detach from the console; headless ones must NOT. Without a console
+// a Windows process gets no CTRL_C_EVENT, so the headless run loop below could
+// never be stopped cleanly - it would sit invisible in Task Manager and only die
+// by being killed, which is exactly the unclean exit that forces a full recheck.
+#![cfg_attr(
+    all(not(debug_assertions), feature = "ui-native", windows),
+    windows_subsystem = "windows"
+)]
+// A headless build compiles the whole UI-support layer (ui::format, ui::filters,
+// core::utils) with nothing calling it yet, which buries real warnings under ~27
+// dead-code ones. The HTTP API is what consumes these, so this comes back out in
+// Phase 1 rather than growing per-item attributes now.
+#![cfg_attr(not(all(feature = "ui-native", windows)), allow(dead_code))]
 
 mod bittorrent;
 mod buildinfo;
 mod core;
 mod ipc;
 mod ui;
-#[cfg(feature = "ui-native")]
+// `windows` as well as the feature: ui-native is on by default, but the Win32
+// UI only exists on Windows. Linux/macOS builds fall through to run_ui's
+// headless arm instead of failing to compile.
+#[cfg(all(feature = "ui-native", windows))]
 mod ui_native;
 mod updatechecker;
 
@@ -36,6 +51,10 @@ use crate::ui::translator::Translator;
 use crate::updatechecker::UpdateInfo;
 
 /// Everything the UI layer needs, assembled during startup.
+// A headless build reads almost none of these yet - the HTTP API is what will
+// consume them. Keeping them assembled means that lands as an addition rather
+// than a rework of startup.
+#[cfg_attr(not(all(feature = "ui-native", windows)), allow(dead_code))]
 pub struct AppContext {
     pub env: Arc<Environment>,
     pub db: Arc<Database>,
@@ -192,12 +211,32 @@ fn install_panic_hook(log_dir: std::path::PathBuf) {
     }));
 }
 
-#[cfg(feature = "ui-native")]
+#[cfg(all(feature = "ui-native", windows))]
 fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
     ui_native::run(ctx)
 }
 
-#[cfg(not(feature = "ui-native"))]
-fn run_ui(_ctx: AppContext) -> anyhow::Result<()> {
-    compile_error!("enable the ui-native cargo feature");
+/// Headless: this target has no UI yet (Linux/macOS, or a Windows build with
+/// --no-default-features). Keep the session running until asked to stop, then
+/// shut it down cleanly so fastresume state is flushed - a torrent client that
+/// exits without that makes every torrent recheck on next start.
+///
+/// This is the loop the HTTP API will attach to, so it is deliberately a real
+/// run loop rather than a stub that returns.
+#[cfg(not(all(feature = "ui-native", windows)))]
+fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
+    tracing::info!("no UI on this target - running headless, Ctrl-C to stop");
+
+    // Handle::block_on, not a nested runtime: the session already owns one and
+    // main() is not itself a runtime thread.
+    ctx.session.handle().block_on(async {
+        if let Err(err) = tokio::signal::ctrl_c().await {
+            tracing::warn!("could not listen for Ctrl-C ({err}) - parking instead");
+            std::future::pending::<()>().await;
+        }
+    });
+
+    tracing::info!("shutting down");
+    ctx.session.stop();
+    Ok(())
 }
