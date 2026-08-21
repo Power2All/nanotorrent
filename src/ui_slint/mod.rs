@@ -41,7 +41,7 @@ use std::sync::Arc;
 use slint::{Model, ModelRc, SharedString, VecModel};
 
 use crate::AppContext;
-use crate::bittorrent::session::Session;
+use crate::bittorrent::session::{AddParams, AddTorrentSource, Session};
 use crate::bittorrent::torrentstatus::{State, TorrentStatus};
 use crate::core::utils;
 use crate::ui::format;
@@ -63,6 +63,12 @@ struct Ui {
     /// The rows behind what is on screen, so a callback can map an index to a
     /// torrent without asking the session again.
     rows: RefCell<Vec<TorrentStatus>>,
+    /// Arguments forwarded by a second instance, polled on the refresh tick.
+    ipc: Option<crate::ipc::Server>,
+    /// Kept alive while open. Hidden rather than dropped when dismissed -
+    /// dropping a window from inside its own callback is asking for trouble,
+    /// and the next open replaces it anyway.
+    magnet_dialog: RefCell<Option<AddMagnetDialog>>,
 }
 
 impl Ui {
@@ -150,6 +156,8 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         selected: RefCell::new(HashSet::new()),
         anchor: RefCell::new(0),
         rows: RefCell::new(Vec::new()),
+        ipc: ctx.ipc,
+        magnet_dialog: RefCell::new(None),
     });
 
     let model: Rc<VecModel<Row>> = Rc::new(VecModel::from(Vec::new()));
@@ -157,6 +165,10 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
 
     wire_selection(&window, &ui, &model);
     wire_actions(&window, &ui);
+
+    // Torrents named on the command line, before the first paint so they are
+    // already in the list when it appears.
+    handle_params(&ui, &ctx.args);
 
     // Populate before the first paint so the window never flashes empty.
     refresh(&window, &ui, &model);
@@ -168,6 +180,11 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
             slint::TimerMode::Repeated,
             std::time::Duration::from_secs(1),
             move || {
+                // A second instance forwards its argv here rather than
+                // opening a second window - see ipc::init.
+                if let Some(forwarded) = ui.ipc.as_ref().and_then(|s| s.try_recv()) {
+                    handle_params(&ui, &forwarded);
+                }
                 if let Some(window) = w.upgrade() {
                     refresh(&window, &ui, &model);
                 }
@@ -178,6 +195,40 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     window
         .run()
         .map_err(|e| anyhow::anyhow!("Slint event loop failed: {e}"))
+}
+
+/// Defaults for a torrent added without a dialog: the session's own save path,
+/// started, no label.
+fn default_add_params() -> AddParams {
+    AddParams {
+        save_path: None,
+        start_torrent: true,
+        only_files: None,
+        label_id: None,
+    }
+}
+
+/// Handle `.torrent` paths and `magnet:` links from argv, or forwarded by a
+/// second instance.
+///
+/// ponytail: adds straight away with defaults, where the Win32 UI opens the
+/// Add-torrent dialog for a file so the save path and file selection can be
+/// chosen. Wire that here once the dialog exists.
+fn handle_params(ui: &Rc<Ui>, args: &[String]) {
+    for arg in args {
+        if arg.starts_with("magnet:") {
+            ui.session
+                .add_torrent(AddTorrentSource::MagnetUri(arg.clone()), default_add_params());
+        } else if arg.to_lowercase().ends_with(".torrent") {
+            match std::fs::read(arg) {
+                Ok(bytes) => ui
+                    .session
+                    .add_torrent(AddTorrentSource::TorrentFileBytes(bytes), default_add_params()),
+                // Not fatal: one unreadable path should not stop the others.
+                Err(err) => tracing::error!("cannot read {arg}: {err}"),
+            }
+        }
+    }
 }
 
 /// Pull the session's current state into the model.
@@ -387,6 +438,7 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
                     utils::open_and_select(std::path::Path::new(&row.save_path));
                 }
             }
+            "add-magnet" => open_add_magnet(&u),
             "exit" => {
                 let _ = slint::quit_event_loop();
             }
@@ -402,4 +454,60 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
     window.on_sort(|column| {
         tracing::info!("sort by column {column} is not implemented yet");
     });
+}
+
+/// Open the Add magnet link(s) dialog.
+///
+/// The dialog is a separate `Window`, which is what the Win32 build does and
+/// what the platform expects. It is stashed on `Ui` so it stays alive while
+/// shown; dismissing hides it rather than dropping it, because dropping a
+/// window from inside its own callback is asking for trouble.
+fn open_add_magnet(ui: &Rc<Ui>) {
+    // Reuse the window if it is already up, so a second File > Add magnet does
+    // not stack dialogs.
+    if let Some(existing) = ui.magnet_dialog.borrow().as_ref() {
+        let _ = existing.show();
+        return;
+    }
+
+    let dialog = match AddMagnetDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the add-magnet dialog: {err}");
+            return;
+        }
+    };
+
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_accepted(move || {
+            let Some(d) = weak.upgrade() else { return };
+            // Shared with the Win32 dialog, so both accept bare info hashes.
+            let links = crate::ui::torrentfile::parse_magnet_links(&d.get_links());
+            if links.is_empty() {
+                // Nothing recognisable - leave the dialog up rather than
+                // closing it and silently doing nothing.
+                tracing::info!("add magnet: no magnet links or info hashes in the input");
+                return;
+            }
+            for magnet in links {
+                u.session
+                    .add_torrent(AddTorrentSource::MagnetUri(magnet), default_add_params());
+            }
+            d.set_links(SharedString::new());
+            let _ = d.hide();
+        });
+    }
+
+    {
+        let weak = dialog.as_weak();
+        dialog.on_cancelled(move || {
+            if let Some(d) = weak.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+
+    let _ = dialog.show();
+    *ui.magnet_dialog.borrow_mut() = Some(dialog);
 }

@@ -10,8 +10,6 @@ use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use std::thread::JoinHandle;
 
-use librqbit::ByteBufOwned;
-use librqbit::torrent_from_bytes;
 
 use crate::bittorrent::session::{AddParams, CreateTorrentParams};
 use crate::core::configuration::{Configuration, Label};
@@ -266,24 +264,6 @@ pub fn spawn_about(
 
 // Add magnet link(s) - port of addmagnetlinkdialog.cpp
 
-pub fn parse_magnet_links(text: &str) -> Vec<String> {
-    text.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .filter(|line| {
-            line.starts_with("magnet:")
-                || line.len() == 40 && line.chars().all(|c| c.is_ascii_hexdigit())
-        })
-        .map(|line| {
-            if line.starts_with("magnet:") {
-                line.to_string()
-            } else {
-                format!("magnet:?xt=urn:btih:{line}")
-            }
-        })
-        .collect()
-}
-
 pub fn spawn_add_magnet(
     tr: Translator,
     parent: usize,
@@ -341,7 +321,7 @@ pub fn spawn_add_magnet(
         // Pre-fill from the clipboard if it already holds a magnet link (or a
         // bare info-hash), so pasting is one less step.
         if let Some(clip) = nwg::Clipboard::data_text(&window) {
-            let magnets = parse_magnet_links(&clip);
+            let magnets = crate::ui::torrentfile::parse_magnet_links(&clip);
             if !magnets.is_empty() {
                 text_box.set_text(&magnets.join("\r\n"));
             }
@@ -361,7 +341,7 @@ pub fn spawn_add_magnet(
         let handler = nwg::full_bind_event_handler(&window_handle, move |evt, _data, handle| {
             match evt {
                 nwg::Event::OnButtonClick if handle == add_handle => {
-                    let links = parse_magnet_links(&text_box_ref.text());
+                    let links = crate::ui::torrentfile::parse_magnet_links(&text_box_ref.text());
                     if !links.is_empty() {
                         *result_ref.borrow_mut() = DialogResult::Magnets(links);
                     }
@@ -846,44 +826,6 @@ pub fn spawn_create_torrent(
 
 // Add torrent - port of addtorrentdialog.cpp
 
-struct ParsedTorrent {
-    name: String,
-    total_size: i64,
-    files: Vec<(String, u64)>,
-}
-
-fn parse_torrent(bytes: &[u8]) -> Result<ParsedTorrent, String> {
-    let torrent = torrent_from_bytes::<ByteBufOwned>(bytes)
-        .map_err(|err| format!("Failed to parse torrent file: {err:#}"))?;
-
-    let name = torrent
-        .info
-        .name
-        .as_ref()
-        .map(|b| String::from_utf8_lossy(b.as_ref()).into_owned())
-        .unwrap_or_else(|| String::from("(unnamed torrent)"));
-
-    let mut files = Vec::new();
-    if let Ok(details) = torrent.info.iter_file_details() {
-        for fd in details {
-            files.push((
-                fd.filename
-                    .to_string()
-                    .unwrap_or_else(|_| String::from("(invalid name)")),
-                fd.len,
-            ));
-        }
-    }
-
-    let total_size = files.iter().map(|f| f.1 as i64).sum();
-
-    Ok(ParsedTorrent {
-        name,
-        total_size,
-        files,
-    })
-}
-
 pub fn spawn_add_torrent(
     tr: Translator,
     bytes: Vec<u8>,
@@ -894,7 +836,7 @@ pub fn spawn_add_torrent(
     notice: nwg::NoticeSender,
 ) -> DialogHandle {
     std::thread::spawn(move || {
-        let parsed = match parse_torrent(&bytes) {
+        let parsed = match crate::ui::torrentfile::parse(&bytes) {
             Ok(p) => p,
             Err(err) => {
                 nwg::error_message(&tr.i18n("error"), &err);
