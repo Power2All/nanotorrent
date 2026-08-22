@@ -1,0 +1,83 @@
+// Port of ui_native/dialogs.rs::spawn_about.
+
+import { Button, Palette } from "std-widgets.slint";
+
+export component AboutDialog inherits Window {
+    title: "About NanoTorrent";
+    preferred-width: 460px;
+    preferred-height: 300px;
+    background: Palette.background;
+
+    in property <string> version;
+    in property <string> build-stamp;
+    in property <string> website;
+
+    callback open-website();
+    callback closed();
+
+    VerticalLayout {
+        padding: 20px;
+        spacing: 8px;
+
+        Text {
+            text: "NanoTorrent";
+            font-size: 26px;
+            font-weight: 700;
+            color: Palette.foreground;
+        }
+        Text {
+            text: "Version " + root.version;
+            font-size: 13px;
+            color: Palette.foreground;
+        }
+        Text {
+            text: "Build " + root.build-stamp;
+            font-size: 12px;
+            color: #888;
+        }
+
+        Rectangle { height: 6px; }
+
+        Text {
+            text: "A tiny, hackable BitTorrent client.";
+            font-size: 13px;
+            color: Palette.foreground;
+        }
+
+        // Styled as a link and clickable. Slint has no hyperlink widget, so
+        // this is a TouchArea over coloured text - which is all the Win32
+        // dialog does too.
+        TouchArea {
+            height: 22px;
+            mouse-cursor: pointer;
+            clicked => { root.open-website(); }
+            Text {
+                text: root.website;
+                font-size: 13px;
+                color: Palette.accent-background;
+                vertical-alignment: center;
+                // The TouchArea is full width, so without this the link
+                // centres itself while everything above is left-aligned.
+                horizontal-alignment: left;
+                width: parent.width;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        Text {
+            text: "A Rust port of PicoTorrent, built on librqbit.";
+            font-size: 12px;
+            color: #888;
+        }
+
+        HorizontalLayout {
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: "Close";
+                primary: true;
+                clicked => { root.closed(); }
+            }
+        }
+    }
+}

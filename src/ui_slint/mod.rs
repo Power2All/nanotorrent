@@ -60,6 +60,8 @@ struct Ui {
     selected: RefCell<HashSet<String>>,
     /// Anchor for shift-extend, as an index into the last rendered order.
     anchor: RefCell<usize>,
+    /// Sort column and direction; None means the session's own order.
+    sort: RefCell<Option<(usize, bool)>>,
     /// The rows behind what is on screen, so a callback can map an index to a
     /// torrent without asking the session again.
     rows: RefCell<Vec<TorrentStatus>>,
@@ -73,6 +75,7 @@ struct Ui {
     /// and the next open replaces it anyway.
     magnet_dialog: RefCell<Option<AddMagnetDialog>>,
     prefs_dialog: RefCell<Option<PreferencesDialog>>,
+    about_dialog: RefCell<Option<AboutDialog>>,
     env: Arc<crate::core::environment::Environment>,
     torrent_dialog: RefCell<Option<AddTorrentDialog>>,
     /// The .torrent currently in the Add dialog, and any queued behind it.
@@ -164,11 +167,13 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         tr: ctx.translator.clone(),
         selected: RefCell::new(HashSet::new()),
         anchor: RefCell::new(0),
+        sort: RefCell::new(None),
         rows: RefCell::new(Vec::new()),
         ipc: ctx.ipc,
         geoip: ctx.geoip.clone(),
         magnet_dialog: RefCell::new(None),
         prefs_dialog: RefCell::new(None),
+        about_dialog: RefCell::new(None),
         env: ctx.env.clone(),
         torrent_dialog: RefCell::new(None),
         pending: RefCell::new(Vec::new()),
@@ -246,7 +251,13 @@ fn handle_params(ui: &Rc<Ui>, args: &[String]) {
 
 /// Pull the session's current state into the model.
 fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
-    let rows = ui.session.torrents(&ui.labels());
+    let mut rows = ui.session.torrents(&ui.labels());
+
+    // Before anything indexes into rows: selection and the context menu map a
+    // row index to a torrent, so they must see the same order the list shows.
+    if let Some((column, ascending)) = *ui.sort.borrow() {
+        sort_rows(&mut rows, column, ascending);
+    }
 
     // Drop selections for torrents that are gone, or the count in the status
     // bar drifts upwards every time one is removed.
@@ -543,6 +554,12 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
             "add-magnet" => open_add_magnet(&u),
             "add-torrent" => pick_and_queue_torrents(&u),
             "preferences" => open_preferences(&u),
+            "about" => open_about(&u),
+            "docs" => {
+                if let Err(err) = open::that(WEBSITE) {
+                    tracing::error!("cannot open {WEBSITE}: {err}");
+                }
+            }
             "exit" => {
                 let _ = slint::quit_event_loop();
             }
@@ -552,11 +569,24 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
     });
 
     // Sorting is the model's job - `ListView` has no opinion about order.
-    // ponytail: string-order on the rendered cell, not typed comparators, so
-    // "99 MB" sorts above "500 MB". Fine while the list is being brought up;
-    // needs per-column keys before this UI replaces ui_native.
-    window.on_sort(|column| {
-        tracing::info!("sort by column {column} is not implemented yet");
+    let (w, u) = (window.as_weak(), ui.clone());
+    window.on_sort(move |column| {
+        let column = column.max(0) as usize;
+        let next = match *u.sort.borrow() {
+            // Clicking the sorted column flips it; a third click would
+            // conventionally clear the sort, but the Win32 list does not do
+            // that either, so it just toggles.
+            Some((c, ascending)) if c == column => Some((column, !ascending)),
+            _ => Some((column, true)),
+        };
+        *u.sort.borrow_mut() = next;
+
+        if let Some(window) = w.upgrade()
+            && let Some((c, ascending)) = next
+        {
+            window.set_sort_column(c as i32);
+            window.set_sort_ascending(ascending);
+        }
     });
 }
 
@@ -1009,4 +1039,189 @@ fn set_num(cfg: &crate::core::configuration::Configuration, key: &str, text: &st
     if let Ok(value) = text.trim().parse::<i64>() {
         cfg.set(key, &value);
     }
+}
+
+/// Order the list by a column.
+///
+/// Compares the underlying `TorrentStatus` values, never the rendered cell
+/// text. Sorting the strings is what the spike did and it is wrong the moment a
+/// unit changes: "99.00 MB" sorts above "500.00 MB", and "9m" above "10m".
+///
+/// Column indices match `Cols.titles` in app.slint.
+fn sort_rows(rows: &mut [TorrentStatus], column: usize, ascending: bool) {
+    use std::cmp::Ordering;
+
+    // Total order over f32 without unwrapping a partial_cmp that NaN can fail:
+    // availability and ratio are computed, and a NaN would panic a sort.
+    fn f(a: f32, b: f32) -> Ordering {
+        a.partial_cmp(&b).unwrap_or(Ordering::Equal)
+    }
+    fn s(a: &str, b: &str) -> Ordering {
+        a.to_lowercase().cmp(&b.to_lowercase())
+    }
+
+    rows.sort_by(|a, b| {
+        let ord = match column {
+            0 => s(&a.name, &b.name),
+            1 => a.queue_position.cmp(&b.queue_position),
+            2 => a.total_wanted.cmp(&b.total_wanted),
+            3 => a.total_wanted_remaining.cmp(&b.total_wanted_remaining),
+            4 => s(&format!("{:?}", a.state), &format!("{:?}", b.state)),
+            5 => f(a.progress, b.progress),
+            // No ETA sorts last ascending, which is where "unknown" belongs.
+            6 => match (a.eta, b.eta) {
+                (Some(x), Some(y)) => x.cmp(&y),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            },
+            7 => a.download_payload_rate.cmp(&b.download_payload_rate),
+            8 => a.upload_payload_rate.cmp(&b.upload_payload_rate),
+            9 => f(a.availability, b.availability),
+            10 => f(a.ratio, b.ratio),
+            11 => a.seeds_current.cmp(&b.seeds_current),
+            12 => a.peers_current.cmp(&b.peers_current),
+            13 => a.added_on.cmp(&b.added_on),
+            14 => a.completed_on.cmp(&b.completed_on),
+            15 => s(&a.label_name, &b.label_name),
+            _ => Ordering::Equal,
+        };
+        // Name breaks ties, so equal values do not shuffle between ticks -
+        // the whole model is rebuilt every second and an unstable order would
+        // make rows jump under the cursor.
+        let ord = ord.then_with(|| s(&a.name, &b.name));
+        if ascending { ord } else { ord.reverse() }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bittorrent::torrentstatus::State;
+
+    fn status(name: &str, size: i64, ratio: f32) -> TorrentStatus {
+        TorrentStatus {
+            added_on: chrono::Local::now(),
+            all_time_download: 0,
+            all_time_upload: 0,
+            availability: 0.0,
+            completed_on: None,
+            download_payload_rate: 0,
+            error: String::new(),
+            eta: None,
+            info_hash: name.to_string(),
+            label_id: None,
+            label_name: String::new(),
+            name: name.to_string(),
+            paused: false,
+            peers_current: 0,
+            peers_total: 0,
+            progress: 0.0,
+            queue_position: 0,
+            ratio,
+            save_path: String::new(),
+            seeds_current: 0,
+            seeds_total: 0,
+            state: State::Downloading,
+            total_wanted: size,
+            total_wanted_remaining: 0,
+            upload_payload_rate: 0,
+        }
+    }
+
+    /// The bug this exists to prevent: sorting the rendered text puts
+    /// "99.00 MB" above "500.00 MB" because it compares "9" with "5".
+    #[test]
+    fn size_sorts_numerically_not_as_text() {
+        let mut rows = vec![
+            status("small", 99 * 1024 * 1024, 0.0),
+            status("big", 500 * 1024 * 1024, 0.0),
+        ];
+        sort_rows(&mut rows, 2, true);
+        assert_eq!(rows[0].name, "small");
+        assert_eq!(rows[1].name, "big");
+    }
+
+    #[test]
+    fn direction_reverses() {
+        let mut rows = vec![status("b", 2, 0.0), status("a", 1, 0.0)];
+        sort_rows(&mut rows, 0, true);
+        assert_eq!(rows[0].name, "a");
+        sort_rows(&mut rows, 0, false);
+        assert_eq!(rows[0].name, "b");
+    }
+
+    #[test]
+    fn equal_values_keep_a_stable_order() {
+        // Every tick rebuilds the model; without a tiebreak, rows with equal
+        // values could swap places under the pointer.
+        let mut rows = vec![
+            status("charlie", 10, 1.0),
+            status("alpha", 10, 1.0),
+            status("bravo", 10, 1.0),
+        ];
+        sort_rows(&mut rows, 2, true);
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["alpha", "bravo", "charlie"]);
+    }
+
+    #[test]
+    fn a_nan_does_not_panic() {
+        // availability is computed and can be NaN; sort_by with a comparator
+        // that unwrapped partial_cmp would abort here.
+        let mut rows = vec![status("a", 1, f32::NAN), status("b", 1, 1.0)];
+        sort_rows(&mut rows, 10, true);
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn missing_eta_sorts_last_when_ascending() {
+        let mut with = status("has-eta", 1, 0.0);
+        with.eta = Some(std::time::Duration::from_secs(60));
+        let mut rows = vec![status("no-eta", 1, 0.0), with];
+        sort_rows(&mut rows, 6, true);
+        assert_eq!(rows[0].name, "has-eta");
+    }
+}
+
+/// The project's own site, shown in About and opened when it is clicked.
+const WEBSITE: &str = "https://www.nanotorrent.org";
+
+/// Port of ui_native/dialogs.rs::spawn_about.
+fn open_about(ui: &Rc<Ui>) {
+    if let Some(existing) = ui.about_dialog.borrow().as_ref() {
+        let _ = existing.show();
+        return;
+    }
+
+    let dialog = match AboutDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the about dialog: {err}");
+            return;
+        }
+    };
+
+    dialog.set_version(crate::buildinfo::version().into());
+    dialog.set_build_stamp(crate::buildinfo::build_stamp().into());
+    dialog.set_website(WEBSITE.into());
+
+    dialog.on_open_website(|| {
+        // `open` picks the platform's handler, so this is the one place the
+        // three OSes need no branching.
+        if let Err(err) = open::that(WEBSITE) {
+            tracing::error!("cannot open {WEBSITE}: {err}");
+        }
+    });
+    {
+        let weak = dialog.as_weak();
+        dialog.on_closed(move || {
+            if let Some(d) = weak.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+
+    let _ = dialog.show();
+    *ui.about_dialog.borrow_mut() = Some(dialog);
 }

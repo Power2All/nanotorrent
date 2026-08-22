@@ -13,7 +13,8 @@
 // being matched against.
 
 import { PreferencesDialog } from "preferences.slint";
-export { PreferencesDialog }
+import { AboutDialog } from "about.slint";
+export { PreferencesDialog, AboutDialog }
 
 import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette } from "std-widgets.slint";
 
@@ -154,6 +155,10 @@ export component MainWindow inherits Window {
     background: Palette.background;
 
     in property <[Row]> rows;
+    // Which column the list is sorted by, and which way, so the header can say
+    // so. -1 means the session's own order.
+    in property <int> sort-column: -1;
+    in property <bool> sort-ascending: true;
     in property <string> status;
     in property <int> selected-count;
     in property <string> dht-nodes: "105";
@@ -321,8 +326,8 @@ export component MainWindow inherits Window {
         }
         Menu {
             title: "Help";
-            MenuItem { title: "Documentation"; }
-            MenuItem { title: "About"; }
+            MenuItem { title: "Documentation"; activated => { root.action("docs"); } }
+            MenuItem { title: "About"; activated => { root.action("about"); } }
         }
     }
 
@@ -346,7 +351,12 @@ export component MainWindow inherits Window {
                             width: Cols.w[i];
                             clicked => { root.sort(i); }
                             Text {
-                                text: title;
+                                // The arrow goes in the caption rather than a
+                                // separate element so it cannot drift out of
+                                // the column when widths change.
+                                text: i == root.sort-column
+                                    ? title + (root.sort-ascending ? "  ^" : "  v")
+                                    : title;
                                 font-size: 13px;
                                 font-weight: 600;
                                 vertical-alignment: center;
