@@ -76,6 +76,9 @@ struct Ui {
     magnet_dialog: RefCell<Option<AddMagnetDialog>>,
     prefs_dialog: RefCell<Option<PreferencesDialog>>,
     about_dialog: RefCell<Option<AboutDialog>>,
+    create_dialog: RefCell<Option<CreateTorrentDialog>>,
+    /// Where a background create-torrent run leaves its result.
+    create_slot: Arc<std::sync::Mutex<Option<crate::bittorrent::session::CreateTorrentOutcome>>>,
     env: Arc<crate::core::environment::Environment>,
     torrent_dialog: RefCell<Option<AddTorrentDialog>>,
     /// The .torrent currently in the Add dialog, and any queued behind it.
@@ -174,6 +177,8 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         magnet_dialog: RefCell::new(None),
         prefs_dialog: RefCell::new(None),
         about_dialog: RefCell::new(None),
+        create_dialog: RefCell::new(None),
+        create_slot: Arc::new(std::sync::Mutex::new(None)),
         env: ctx.env.clone(),
         torrent_dialog: RefCell::new(None),
         pending: RefCell::new(Vec::new()),
@@ -204,6 +209,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
                 if let Some(forwarded) = ui.ipc.as_ref().and_then(|s| s.try_recv()) {
                     handle_params(&ui, &forwarded);
                 }
+                poll_create_torrent(&ui);
                 if let Some(window) = w.upgrade() {
                     refresh(&window, &ui, &model);
                 }
@@ -555,6 +561,7 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
             "add-torrent" => pick_and_queue_torrents(&u),
             "preferences" => open_preferences(&u),
             "about" => open_about(&u),
+            "create" => open_create_torrent(&u),
             "docs" => {
                 if let Err(err) = open::that(WEBSITE) {
                     tracing::error!("cannot open {WEBSITE}: {err}");
@@ -1224,4 +1231,177 @@ fn open_about(ui: &Rc<Ui>) {
 
     let _ = dialog.show();
     *ui.about_dialog.borrow_mut() = Some(dialog);
+}
+
+/// Piece sizes offered by the Create dialog, and the values behind them.
+/// `None` is "let the builder choose from the total size".
+const PIECE_LENGTHS: [(&str, Option<u32>); 7] = [
+    ("Auto", None),
+    ("64 KB", Some(64 * 1024)),
+    ("128 KB", Some(128 * 1024)),
+    ("256 KB", Some(256 * 1024)),
+    ("512 KB", Some(512 * 1024)),
+    ("1 MB", Some(1024 * 1024)),
+    ("2 MB", Some(2 * 1024 * 1024)),
+];
+
+/// Port of ui_native/dialogs.rs::spawn_create_torrent.
+fn open_create_torrent(ui: &Rc<Ui>) {
+    if let Some(existing) = ui.create_dialog.borrow().as_ref() {
+        let _ = existing.show();
+        return;
+    }
+
+    let dialog = match CreateTorrentDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the create-torrent dialog: {err}");
+            return;
+        }
+    };
+
+    dialog.set_piece_lengths(ModelRc::new(VecModel::from(
+        PIECE_LENGTHS
+            .iter()
+            .map(|(label, _)| SharedString::from(*label))
+            .collect::<Vec<_>>(),
+    )));
+    dialog.set_versions(ModelRc::new(VecModel::from(
+        ["v1", "v2", "Hybrid (v1 + v2)"]
+            .iter()
+            .map(|v| SharedString::from(*v))
+            .collect::<Vec<_>>(),
+    )));
+
+    {
+        let weak = dialog.as_weak();
+        dialog.on_pick_file(move || {
+            if let Some(path) = rfd::FileDialog::new().set_title("Source file").pick_file()
+                && let Some(d) = weak.upgrade()
+            {
+                d.set_source(path.to_string_lossy().as_ref().into());
+            }
+        });
+    }
+    {
+        let weak = dialog.as_weak();
+        dialog.on_pick_folder(move || {
+            if let Some(path) = rfd::FileDialog::new().set_title("Source folder").pick_folder()
+                && let Some(d) = weak.upgrade()
+            {
+                d.set_source(path.to_string_lossy().as_ref().into());
+            }
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_accepted(move || {
+            let Some(d) = weak.upgrade() else { return };
+
+            let source = std::path::PathBuf::from(d.get_source().to_string());
+            if !source.exists() {
+                d.set_status(format!("{} does not exist", source.display()).into());
+                return;
+            }
+
+            // Where to write it. Asking now rather than after hashing: a
+            // multi-minute run that then pops a Save dialog is a good way to
+            // lose the result to an idle timeout.
+            let default_name = source
+                .file_name()
+                .map(|n| format!("{}.torrent", n.to_string_lossy()))
+                .unwrap_or_else(|| String::from("torrent.torrent"));
+            let Some(output) = rfd::FileDialog::new()
+                .set_title("Save torrent as")
+                .set_file_name(&default_name)
+                .add_filter("Torrent files", &["torrent"])
+                .save_file()
+            else {
+                return; // cancelled at the save prompt
+            };
+
+            let params = crate::bittorrent::session::CreateTorrentParams {
+                source,
+                trackers: d
+                    .get_trackers()
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+                comment: d.get_comment().to_string(),
+                private: d.get_private(),
+                piece_length: PIECE_LENGTHS
+                    .get(d.get_piece_length_index().max(0) as usize)
+                    .and_then(|(_, v)| *v),
+                version: crate::bittorrent::torrent_create::TorrentVersion::from_index(
+                    d.get_version_index().max(0) as usize,
+                ),
+                output,
+                add_to_session: d.get_add_to_session(),
+            };
+
+            d.set_busy(true);
+            d.set_status("hashing...".into());
+            // Runs on the session runtime and reports back through the slot,
+            // which the refresh tick drains - hashing a large folder takes far
+            // too long to block the UI thread on.
+            u.session.create_torrent(params, u.create_slot.clone());
+        });
+    }
+    {
+        let weak = dialog.as_weak();
+        dialog.on_cancelled(move || {
+            if let Some(d) = weak.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+
+    let _ = dialog.show();
+    *ui.create_dialog.borrow_mut() = Some(dialog);
+}
+
+/// Drain a finished create-torrent run. Called from the refresh tick.
+fn poll_create_torrent(ui: &Rc<Ui>) {
+    let outcome = ui.create_slot.lock().ok().and_then(|mut slot| slot.take());
+    let Some(outcome) = outcome else { return };
+
+    match outcome {
+        crate::bittorrent::session::CreateTorrentOutcome::Created {
+            name,
+            bytes,
+            save_path,
+            add_to_session,
+        } => {
+            if add_to_session {
+                // save_path is the folder the source data already lives in, so
+                // the new torrent seeds in place instead of re-downloading it.
+                ui.session.add_torrent(
+                    AddTorrentSource::TorrentFileBytes(bytes),
+                    AddParams {
+                        save_path,
+                        start_torrent: true,
+                        only_files: None,
+                        label_id: None,
+                    },
+                );
+            }
+            tracing::info!("created torrent: {name}");
+            if let Some(d) = ui.create_dialog.borrow().as_ref() {
+                d.set_busy(false);
+                d.set_status(SharedString::new());
+                let _ = d.hide();
+            }
+        }
+        crate::bittorrent::session::CreateTorrentOutcome::Failed(err) => {
+            tracing::error!("create torrent failed: {err}");
+            // Left open with the error showing, so the settings that produced
+            // it are still there to correct.
+            if let Some(d) = ui.create_dialog.borrow().as_ref() {
+                d.set_busy(false);
+                d.set_status(err.as_str().into());
+            }
+        }
+    }
 }

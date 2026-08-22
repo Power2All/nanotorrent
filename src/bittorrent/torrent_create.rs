@@ -145,7 +145,12 @@ struct SrcFile {
 
 /// Collect the files to include, sorted by path. For a single file the one
 /// component is its name; for a directory, paths are relative to it.
-fn collect_files(source: &Path) -> Result<(String, Vec<SrcFile>)> {
+///
+/// The third element says whether the SOURCE was a single file. That is not
+/// the same as "there is one file": a directory holding exactly one entry also
+/// yields one file, but its torrent name is the directory, so it must still be
+/// laid out as a multi-file torrent.
+fn collect_files(source: &Path) -> Result<(String, Vec<SrcFile>, bool)> {
     let name = source
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -160,6 +165,7 @@ fn collect_files(source: &Path) -> Result<(String, Vec<SrcFile>)> {
                 abs: source.to_path_buf(),
                 length,
             }],
+            true,
         ));
     }
 
@@ -168,7 +174,7 @@ fn collect_files(source: &Path) -> Result<(String, Vec<SrcFile>)> {
     // Deterministic order (bencode also requires sorted keys; this keeps the
     // v1 `files` list and v2 tree consistent).
     files.sort_by(|a, b| a.components.cmp(&b.components));
-    Ok((name, files))
+    Ok((name, files, false))
 }
 
 fn walk(dir: &Path, prefix: &mut Vec<String>, out: &mut Vec<SrcFile>) -> Result<()> {
@@ -400,14 +406,21 @@ pub fn validate_piece_length(pl: u32) -> Result<u32> {
 /// Build a v2 or hybrid torrent. (v1 stays on librqbit; call this only for
 /// `V2`/`Hybrid`.)
 pub fn build(input: &CreateInput) -> Result<Built> {
-    let (name, files) = collect_files(input.source)?;
+    let (name, files, source_is_file) = collect_files(input.source)?;
     if files.is_empty() {
         bail!("no files to add");
     }
     let total: u64 = files.iter().map(|f| f.length).sum();
     let piece_length =
         validate_piece_length(input.piece_length.unwrap_or_else(|| auto_piece_length(total)))?;
-    let single = files.len() == 1 && files[0].components.len() == 1;
+    // Whether the SOURCE was one file, not whether one file was found. A
+    // directory containing a single entry used to satisfy the old
+    // `files.len() == 1 && components.len() == 1` test and produced a hybrid
+    // torrent that contradicted itself: v1 declared a single file named after
+    // the DIRECTORY while the v2 file tree held the real filename inside it.
+    // librqbit then tried to open the directory as a file and refused with
+    // "Access is denied".
+    let single = source_is_file;
     let hybrid = input.version == TorrentVersion::Hybrid;
 
     // --- v2: file tree + piece layers ------------------------------------
@@ -551,6 +564,48 @@ mod tests {
         let p = dir.join(name);
         File::create(&p).unwrap().write_all(bytes).unwrap();
         p
+    }
+
+
+    /// A directory holding exactly ONE file must still be a multi-file torrent.
+    ///
+    /// It used to come out as a single-file one named after the directory,
+    /// while the v2 file tree carried the real filename - a hybrid torrent that
+    /// contradicted itself. librqbit then tried to open the directory as a file
+    /// and refused with "Access is denied", so the torrent could be created but
+    /// never seeded.
+    #[test]
+    fn a_directory_with_one_file_is_still_multi_file() {
+        let dir = std::env::temp_dir().join(format!("nt-tc-onefile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        File::create(dir.join("inner.bin"))
+            .unwrap()
+            .write_all(&vec![7u8; 40_000])
+            .unwrap();
+
+        let (name, files, source_is_file) = collect_files(&dir).unwrap();
+        assert_eq!(name, dir.file_name().unwrap().to_string_lossy());
+        assert_eq!(files.len(), 1);
+        assert!(
+            !source_is_file,
+            "a directory source must never be treated as a single file"
+        );
+        // The one file keeps its own name, which is what the v2 tree uses -
+        // so v1 must list it too rather than collapsing to `length`.
+        assert_eq!(files[0].components, vec![String::from("inner.bin")]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The other half of the same rule: a real single-file source stays single.
+    #[test]
+    fn a_file_source_is_single() {
+        let path = write_temp("solo.bin", &vec![3u8; 1000]);
+        let (name, files, source_is_file) = collect_files(&path).unwrap();
+        assert!(source_is_file);
+        assert_eq!(name, "solo.bin");
+        assert_eq!(files[0].components, vec![String::from("solo.bin")]);
     }
 
     #[test]

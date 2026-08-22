@@ -1,0 +1,126 @@
+// Port of ui_native/dialogs.rs::spawn_create_torrent.
+
+import { Button, CheckBox, ComboBox, LineEdit, TextEdit, Palette } from "std-widgets.slint";
+
+export component CreateTorrentDialog inherits Window {
+    title: "Create torrent";
+    preferred-width: 620px;
+    preferred-height: 520px;
+    background: Palette.background;
+
+    in-out property <string> source;
+    in-out property <string> trackers;
+    in-out property <string> comment;
+    in-out property <bool> private;
+    in property <[string]> piece-lengths;
+    in-out property <int> piece-length-index;
+    in property <[string]> versions;
+    in-out property <int> version-index: 2;
+    in-out property <bool> add-to-session: true;
+    /// Set while hashing, so the button cannot be pressed twice for what may
+    /// be a multi-gigabyte run.
+    in property <bool> busy;
+    in property <string> status;
+
+    callback accepted();
+    callback cancelled();
+    callback pick-file();
+    callback pick-folder();
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        Text {
+            text: "Source";
+            font-weight: 700;
+            font-size: 13px;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            LineEdit {
+                text <=> root.source;
+                horizontal-stretch: 1;
+                placeholder-text: "a file or a folder";
+            }
+            Button { text: "File..."; clicked => { root.pick-file(); } }
+            Button { text: "Folder..."; clicked => { root.pick-folder(); } }
+        }
+
+        Text {
+            text: "Trackers (one per line)";
+            font-weight: 700;
+            font-size: 13px;
+        }
+        TextEdit {
+            vertical-stretch: 1;
+            text <=> root.trackers;
+            wrap: no-wrap;
+        }
+
+        Text {
+            text: "Comment";
+            font-weight: 700;
+            font-size: 13px;
+        }
+        LineEdit { text <=> root.comment; }
+
+        HorizontalLayout {
+            spacing: 10px;
+            Text {
+                text: "Piece size";
+                font-weight: 700;
+                font-size: 13px;
+                width: 90px;
+                vertical-alignment: center;
+            }
+            ComboBox {
+                model: root.piece-lengths;
+                current-index <=> root.piece-length-index;
+                width: 160px;
+            }
+            Text {
+                text: "Format";
+                font-weight: 700;
+                font-size: 13px;
+                width: 70px;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+            }
+            ComboBox {
+                model: root.versions;
+                current-index <=> root.version-index;
+                width: 160px;
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        CheckBox { text: "Private torrent"; checked <=> root.private; }
+        CheckBox { text: "Add to session and start seeding"; checked <=> root.add-to-session; }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: root.status;
+                font-size: 12px;
+                color: #888;
+                vertical-alignment: center;
+                // Elide and stretch, rather than sizing to the text: a long
+                // error (a rejected path, say) otherwise widens the whole
+                // dialog to fit it.
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            Button { text: "Cancel"; clicked => { root.cancelled(); } }
+            Button {
+                // Hashing runs in the background and can take minutes on a
+                // large folder; disabling is what stops a second run being
+                // queued on top of the first.
+                text: root.busy ? "Creating..." : "Create";
+                primary: true;
+                enabled: !root.busy && root.source != "";
+                clicked => { root.accepted(); }
+            }
+        }
+    }
+}
