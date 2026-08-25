@@ -10,10 +10,10 @@
 
 name: CI
 
+# Manual only: run it from Actions > CI > Run workflow when a change is worth
+# checking on the other two platforms.
 on:
-  push:
-    branches: [master]
-  pull_request:
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -51,7 +51,7 @@ jobs:
             args: --no-default-features
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: System packages
         if: matrix.apt != ''

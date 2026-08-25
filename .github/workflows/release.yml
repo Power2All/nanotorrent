@@ -42,7 +42,7 @@ jobs:
     outputs:
       version: ${{ steps.get.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: get
         # [package] is the first table in Cargo.toml and dependencies spell
         # their versions inline, so the first line-anchored `version =` is ours.
@@ -57,7 +57,7 @@ jobs:
     needs: version
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -103,7 +103,7 @@ jobs:
           }
           "{0:N1} MB" -f ((Get-Item $exe).Length / 1MB)
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe
           path: installer/NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe
@@ -117,7 +117,7 @@ jobs:
     # anything older. glibc is backward compatible, not forward.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: System packages
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
@@ -156,7 +156,7 @@ jobs:
           sudo dpkg -i "nanotorrent-${{ needs.version.outputs.version }}.deb"
           nanotorrent --version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: nanotorrent-${{ needs.version.outputs.version }}-linux
           path: |
@@ -169,7 +169,7 @@ jobs:
     needs: version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -249,7 +249,7 @@ jobs:
             "nanotorrent-${{ needs.version.outputs.version }}.dmg"
           hdiutil verify "nanotorrent-${{ needs.version.outputs.version }}.dmg"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: nanotorrent-${{ needs.version.outputs.version }}.dmg
           path: nanotorrent-${{ needs.version.outputs.version }}.dmg
@@ -263,10 +263,12 @@ jobs:
     # Only this job writes anything back to the repo.
     permissions:
       contents: write
+      # Deleting this run's artifacts once they are attached to the release.
+      actions: write
     steps:
       # No name filter: takes all four artifacts. merge-multiple flattens them
       # into one directory instead of one subdirectory each.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true
@@ -274,6 +276,10 @@ jobs:
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job never checks the repo out - it only needs the artifacts -
+          # so gh has no git remote to infer the repo from. Naming it is
+          # cheaper than cloning the tree just to run one command.
+          GH_REPO: ${{ github.repository }}
           TAG: v${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
@@ -299,3 +305,18 @@ jobs:
           fi
 
           gh release view "$TAG" --json url -q .url
+
+      # Only reached when the step above succeeded, so the files are never
+      # dropped until the release actually holds them. Skipping the release
+      # (draft unchecked) skips this job entirely and the artifacts stay put.
+      - name: Drop the now-duplicate artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate --jq '.artifacts[].id' |
+          while read -r id; do
+            gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$id" --silent
+            echo "deleted artifact $id"
+          done
