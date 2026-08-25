@@ -103,7 +103,7 @@ jobs:
           }
           "{0:N1} MB" -f ((Get-Item $exe).Length / 1MB)
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe
           path: installer/NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe
@@ -156,7 +156,7 @@ jobs:
           sudo dpkg -i "nanotorrent-${{ needs.version.outputs.version }}.deb"
           nanotorrent --version
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: nanotorrent-${{ needs.version.outputs.version }}-linux
           path: |
@@ -249,7 +249,7 @@ jobs:
             "nanotorrent-${{ needs.version.outputs.version }}.dmg"
           hdiutil verify "nanotorrent-${{ needs.version.outputs.version }}.dmg"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: nanotorrent-${{ needs.version.outputs.version }}.dmg
           path: nanotorrent-${{ needs.version.outputs.version }}.dmg

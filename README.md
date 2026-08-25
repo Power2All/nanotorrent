@@ -31,8 +31,8 @@ On first run NanoTorrent does a one-time copy of an existing
 
 ## Installing
 
-Grab an installer from the **Release** workflow's artifacts (Actions ▸ Release
-▸ Run workflow), or build one yourself:
+Download an installer from [Releases](https://github.com/Power2All/nanotorrent/releases),
+or build one yourself:
 
 | Platform | File | Built by |
 | --- | --- | --- |
