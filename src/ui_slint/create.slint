@@ -1,11 +1,13 @@
-// Port of ui_native/dialogs.rs::spawn_create_torrent.
+// Torrent creation: v1, v2 or hybrid, with tracker, comment and private options.
 
 import { Button, CheckBox, ComboBox, LineEdit, TextEdit, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
 
 export component CreateTorrentDialog inherits Window {
-    title: "Create torrent";
-    preferred-width: 620px;
-    preferred-height: 520px;
+    icon: @image-url("../../res/app.png");
+    title: L.s(L.revision, "create_torrent");
+    preferred-width: 600px;
+    preferred-height: 430px;
     background: Palette.background;
 
     in-out property <string> source;
@@ -32,7 +34,7 @@ export component CreateTorrentDialog inherits Window {
         spacing: 10px;
 
         Text {
-            text: "Source";
+            text: L.s(L.revision, "source");
             font-weight: 700;
             font-size: 13px;
         }
@@ -41,25 +43,28 @@ export component CreateTorrentDialog inherits Window {
             LineEdit {
                 text <=> root.source;
                 horizontal-stretch: 1;
-                placeholder-text: "a file or a folder";
+                placeholder-text: L.s(L.revision, "source_placeholder");
             }
-            Button { text: "File..."; clicked => { root.pick-file(); } }
-            Button { text: "Folder..."; clicked => { root.pick-folder(); } }
+            Button { text: L.s(L.revision, "choose_file"); clicked => { root.pick-file(); } }
+            Button { text: L.s(L.revision, "choose_folder"); clicked => { root.pick-folder(); } }
         }
 
         Text {
-            text: "Trackers (one per line)";
+            text: L.s(L.revision, "trackers_input_per_line");
             font-weight: 700;
             font-size: 13px;
         }
         TextEdit {
             vertical-stretch: 1;
+            // Enough for a handful of trackers without the box dominating the
+            // dialog; it still grows if the window is resized.
+            min-height: 90px;
             text <=> root.trackers;
             wrap: no-wrap;
         }
 
         Text {
-            text: "Comment";
+            text: L.s(L.revision, "comment");
             font-weight: 700;
             font-size: 13px;
         }
@@ -68,7 +73,7 @@ export component CreateTorrentDialog inherits Window {
         HorizontalLayout {
             spacing: 10px;
             Text {
-                text: "Piece size";
+                text: L.s(L.revision, "piece_size");
                 font-weight: 700;
                 font-size: 13px;
                 width: 90px;
@@ -80,7 +85,7 @@ export component CreateTorrentDialog inherits Window {
                 width: 160px;
             }
             Text {
-                text: "Format";
+                text: L.s(L.revision, "torrent_version");
                 font-weight: 700;
                 font-size: 13px;
                 width: 70px;
@@ -95,8 +100,8 @@ export component CreateTorrentDialog inherits Window {
             Rectangle { horizontal-stretch: 1; }
         }
 
-        CheckBox { text: "Private torrent"; checked <=> root.private; }
-        CheckBox { text: "Add to session and start seeding"; checked <=> root.add-to-session; }
+        CheckBox { text: L.s(L.revision, "private"); checked <=> root.private; }
+        CheckBox { text: L.s(L.revision, "add_to_session_and_seed"); checked <=> root.add-to-session; }
 
         HorizontalLayout {
             spacing: 8px;
@@ -111,12 +116,12 @@ export component CreateTorrentDialog inherits Window {
                 overflow: elide;
                 horizontal-stretch: 1;
             }
-            Button { text: "Cancel"; clicked => { root.cancelled(); } }
+            Button { text: L.s(L.revision, "cancel"); clicked => { root.cancelled(); } }
             Button {
                 // Hashing runs in the background and can take minutes on a
                 // large folder; disabling is what stops a second run being
                 // queued on top of the first.
-                text: root.busy ? "Creating..." : "Create";
+                text: root.busy ? L.s(L.revision, "creating") : L.s(L.revision, "create");
                 primary: true;
                 enabled: !root.busy && root.source != "";
                 clicked => { root.accepted(); }

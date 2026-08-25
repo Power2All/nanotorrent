@@ -1,4 +1,4 @@
-// Port of ui_native/dialogs.rs::spawn_preferences.
+// Preferences.
 //
 // Same four tabs and the same settings, so the two UIs configure one app
 // rather than two. Compare against docs/ui-baseline/07-prefs-*.png.
@@ -9,9 +9,19 @@
 // take effect the moment a digit lands.
 
 import { TabWidget, Button, CheckBox, ComboBox, LineEdit, ListView, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
 
 // A left-aligned bold caption with its control beside it, which is the shape
 // almost every row in this dialog takes.
+/// A label or a saved filter, as the list edits it. `id` is -1 for a row that
+/// has not been saved yet, which is what the upsert calls treat as an insert.
+export struct NamedRule {
+    id: int,
+    name: string,
+    /// The PQL expression for a filter, or a label's save path.
+    rule: string,
+}
+
 component Labelled inherits HorizontalLayout {
     in property <string> label;
     in property <length> label-width: 190px;
@@ -27,16 +37,17 @@ component Labelled inherits HorizontalLayout {
 }
 
 export component PreferencesDialog inherits Window {
-    title: "Preferences";
+    icon: @image-url("../../res/app.png");
+    title: L.s(L.revision, "preferences");
     preferred-width: 700px;
-    preferred-height: 620px;
+    // Sized to the tallest tab (Connection). General used to force 620 on its
+    // own and left the bottom third of every other tab empty.
+    preferred-height: 470px;
     background: Palette.background;
 
     // --- General ---------------------------------------------------------
     in property <[string]> languages;
     in-out property <int> language-index;
-    /// Set by Rust so the current language is visible without scrolling.
-    in-out property <length> language-scroll;
     in property <[string]> themes;
     in-out property <int> theme-index;
     in-out property <bool> skip-add-dialog;
@@ -44,6 +55,7 @@ export component PreferencesDialog inherits Window {
     in property <[string]> close-actions;
     in-out property <int> close-action-index;
     in-out property <bool> minimize-to-tray;
+    in-out property <bool> notify-complete;
     /// File associations are a Windows concept; the button hides elsewhere.
     in property <bool> can-associate;
 
@@ -87,6 +99,52 @@ export component PreferencesDialog inherits Window {
     callback browse-ipfilter();
     callback set-associations();
 
+    // --- Labels & filters -------------------------------------------------
+    in property <[NamedRule]> labels;
+    in property <[NamedRule]> filters;
+    in-out property <int> label-index: -1;
+    in-out property <int> filter-index: -1;
+    // Edited in place by the fields below and committed by save-label /
+    // save-filter, so a half-typed name never reaches the database.
+    in-out property <string> edit-label-name;
+    in-out property <string> edit-label-path;
+    in-out property <string> edit-filter-name;
+    in-out property <string> edit-filter-rule;
+    // False while the expression does not parse - the same signal the console
+    // gives, and Save stays disabled until it does.
+    in property <bool> filter-valid: true;
+    callback pick-label(int);
+    callback pick-filter(int);
+    callback save-label();
+    callback delete-label();
+    callback save-filter();
+    callback delete-filter();
+    callback filter-rule-changed(string);
+    callback browse-label-path();
+
+    // --- Web interface ----------------------------------------------------
+    in-out property <bool> web-enabled;
+    in-out property <string> web-bind;
+    in-out property <string> web-port;
+    in-out property <string> web-username;
+    /// Typed fresh each time; never populated from the stored hash, which
+    /// cannot be reversed. Empty on Ok means "leave the existing one alone".
+    in-out property <string> web-password;
+    in property <bool> web-password-set;
+    in property <[string]> web-tls-modes;
+    in-out property <int> web-tls-index;
+    in-out property <string> web-cert-path;
+    in-out property <string> web-key-path;
+    /// Filled in by Rust: why the current combination would be refused at
+    /// startup, or empty when it is fine.
+    in property <string> web-warning;
+    /// What the running server is doing, filled in by Rust.
+    in property <string> web-status;
+    in property <bool> web-status-ok;
+    callback browse-web-cert();
+    callback browse-web-key();
+    callback web-changed();
+
     VerticalLayout {
         padding: 12px;
         spacing: 10px;
@@ -95,50 +153,27 @@ export component PreferencesDialog inherits Window {
             vertical-stretch: 1;
 
             Tab {
-                title: "General";
+                title: L.s(L.revision, "general");
                 VerticalLayout {
                     padding: 12px;
                     spacing: 10px;
 
-                    HorizontalLayout {
-                        spacing: 10px;
-                        Text {
-                            text: "Language";
-                            font-weight: 700;
-                            font-size: 13px;
-                            width: 190px;
-                            vertical-alignment: top;
+                    Labelled {
+                        // A ComboBox, not the 160px list this used to be: with
+                        // ~50 locales the list could never show enough of them
+                        // to be worth the height, and it made the tab tall
+                        // enough to leave the rest of the dialog empty.
+                        label: L.s(L.revision, "language");
+                        ComboBox {
+                            model: root.languages;
+                            current-index <=> root.language-index;
+                            width: 220px;
                         }
-                        Rectangle {
-                            height: 160px;
-                            border-color: Palette.border;
-                            border-width: 1px;
-                            border-radius: 4px;
-                            ListView {
-                                viewport-y <=> root.language-scroll;
-                                for name[i] in root.languages: Rectangle {
-                                    height: 24px;
-                                    background: i == root.language-index
-                                        ? Palette.selection-background
-                                        : transparent;
-                                    TouchArea { clicked => { root.language-index = i; } }
-                                    Text {
-                                        text: name;
-                                        x: 8px;
-                                        height: parent.height;
-                                        vertical-alignment: center;
-                                        font-size: 13px;
-                                        color: i == root.language-index
-                                            ? Palette.selection-foreground
-                                            : Palette.foreground;
-                                    }
-                                }
-                            }
-                        }
+                        Rectangle { horizontal-stretch: 1; }
                     }
 
                     Labelled {
-                        label: "Theme";
+                        label: L.s(L.revision, "theme");
                         ComboBox {
                             model: root.themes;
                             current-index <=> root.theme-index;
@@ -147,11 +182,11 @@ export component PreferencesDialog inherits Window {
                         Rectangle { horizontal-stretch: 1; }
                     }
 
-                    CheckBox { text: "Skip 'Add torrent' dialog"; checked <=> root.skip-add-dialog; }
-                    CheckBox { text: "Show NanoTorrent in notification area"; checked <=> root.show-in-tray; }
+                    CheckBox { text: L.s(L.revision, "skip_add_torrent_dialog"); checked <=> root.skip-add-dialog; }
+                    CheckBox { text: L.s(L.revision, "show_picotorrent_in_notification_area"); checked <=> root.show-in-tray; }
 
                     Labelled {
-                        label: "When closing the window";
+                        label: L.s(L.revision, "close_action_label");
                         ComboBox {
                             model: root.close-actions;
                             current-index <=> root.close-action-index;
@@ -160,11 +195,17 @@ export component PreferencesDialog inherits Window {
                         Rectangle { horizontal-stretch: 1; }
                     }
 
-                    CheckBox { text: "Minimize to notification area"; checked <=> root.minimize-to-tray; }
+                    CheckBox { text: L.s(L.revision, "minimize_to_notification_area"); checked <=> root.minimize-to-tray; }
+                    CheckBox { text: L.s(L.revision, "notify_download_complete"); checked <=> root.notify-complete; }
 
-                    if root.can-associate: Button {
-                        text: "Set as default for .torrent files & magnet links";
-                        clicked => { root.set-associations(); }
+                    if root.can-associate: HorizontalLayout {
+                        Button {
+                            text: L.s(L.revision, "set_default_associations");
+                            clicked => { root.set-associations(); }
+                        }
+                        // Keeps the button its natural width instead of
+                        // stretching it across the dialog.
+                        Rectangle { horizontal-stretch: 1; }
                     }
 
                     Rectangle { vertical-stretch: 1; }
@@ -172,52 +213,52 @@ export component PreferencesDialog inherits Window {
             }
 
             Tab {
-                title: "Downloads";
+                title: L.s(L.revision, "downloads");
                 VerticalLayout {
                     padding: 12px;
                     spacing: 10px;
 
                     Labelled {
-                        label: "Save path";
+                        label: L.s(L.revision, "save_path");
                         LineEdit { text <=> root.save-path; horizontal-stretch: 1; }
-                        Button { text: "Browse..."; clicked => { root.browse-save-path(); } }
+                        Button { text: L.s(L.revision, "browse"); clicked => { root.browse-save-path(); } }
                     }
 
                     CheckBox {
-                        text: "Pause torrents on low disk space";
+                        text: L.s(L.revision, "pause_on_low_disk_space");
                         checked <=> root.pause-on-low-disk;
                     }
                     Labelled {
-                        label: "    ...below (%)";
+                        label: "    " + L.s(L.revision, "pause_on_low_disk_space_limit");
                         LineEdit { text <=> root.low-disk-limit; width: 100px; enabled: root.pause-on-low-disk; }
                         Rectangle { horizontal-stretch: 1; }
                     }
 
                     Labelled {
-                        label: "Total active";
+                        label: L.s(L.revision, "active_limit");
                         LineEdit { text <=> root.active-limit; width: 100px; }
                         Rectangle { horizontal-stretch: 1; }
                     }
                     Labelled {
-                        label: "Active downloads";
+                        label: L.s(L.revision, "active_downloads");
                         LineEdit { text <=> root.active-downloads; width: 100px; }
                         Rectangle { horizontal-stretch: 1; }
                     }
                     Labelled {
-                        label: "Active seeds";
+                        label: L.s(L.revision, "active_seeds");
                         LineEdit { text <=> root.active-seeds; width: 100px; }
                         Rectangle { horizontal-stretch: 1; }
                     }
 
-                    CheckBox { text: "Limit download rate (KB/s)"; checked <=> root.limit-download; }
+                    CheckBox { text: L.s(L.revision, "enable_dl_rate_limit"); checked <=> root.limit-download; }
                     Labelled {
-                        label: "    Download limit";
+                        label: "    " + L.s(L.revision, "dl_rate_limit");
                         LineEdit { text <=> root.download-limit; width: 100px; enabled: root.limit-download; }
                         Rectangle { horizontal-stretch: 1; }
                     }
-                    CheckBox { text: "Limit upload rate (KB/s)"; checked <=> root.limit-upload; }
+                    CheckBox { text: L.s(L.revision, "enable_ul_rate_limit"); checked <=> root.limit-upload; }
                     Labelled {
-                        label: "    Upload limit";
+                        label: "    " + L.s(L.revision, "ul_rate_limit");
                         LineEdit { text <=> root.upload-limit; width: 100px; enabled: root.limit-upload; }
                         Rectangle { horizontal-stretch: 1; }
                     }
@@ -227,52 +268,52 @@ export component PreferencesDialog inherits Window {
             }
 
             Tab {
-                title: "Connection";
+                title: L.s(L.revision, "connection");
                 VerticalLayout {
                     padding: 12px;
                     spacing: 10px;
 
                     Labelled {
-                        label: "Listen interface";
+                        label: L.s(L.revision, "listen_interface");
                         LineEdit { text <=> root.listen-address; horizontal-stretch: 1; }
                         LineEdit { text <=> root.listen-port; width: 110px; }
                     }
 
-                    CheckBox { text: "Enable DHT"; checked <=> root.enable-dht; }
+                    CheckBox { text: L.s(L.revision, "enable_dht"); checked <=> root.enable-dht; }
                     CheckBox {
                         // No librqbit 8 equivalent, so the value round-trips but
                         // never reaches the session. Disabled rather than left
                         // looking functional - same as the Win32 dialog.
-                        text: "Enable LSD (requires librqbit 9)";
+                        text: L.s(L.revision, "enable_lsd_unavailable");
                         checked <=> root.enable-lsd;
                         enabled: false;
                     }
-                    CheckBox { text: "Enable PeX"; checked <=> root.enable-pex; }
-                    CheckBox { text: "Resolve peer countries (GeoIP)"; checked <=> root.enable-geoip; }
+                    CheckBox { text: L.s(L.revision, "enable_pex"); checked <=> root.enable-pex; }
+                    CheckBox { text: L.s(L.revision, "resolve_peer_countries"); checked <=> root.enable-geoip; }
 
-                    CheckBox { text: "IP filter"; checked <=> root.enable-ipfilter; }
+                    CheckBox { text: L.s(L.revision, "ip_filter"); checked <=> root.enable-ipfilter; }
                     Labelled {
-                        label: "    Filter file";
+                        label: "    " + L.s(L.revision, "filter_file");
                         LineEdit { text <=> root.ipfilter-path; horizontal-stretch: 1; enabled: root.enable-ipfilter; }
-                        Button { text: "Browse..."; enabled: root.enable-ipfilter; clicked => { root.browse-ipfilter(); } }
+                        Button { text: L.s(L.revision, "browse"); enabled: root.enable-ipfilter; clicked => { root.browse-ipfilter(); } }
                     }
 
-                    CheckBox { text: "Require outgoing peer encryption (MSE/PE)"; checked <=> root.require-outgoing-encryption; }
-                    CheckBox { text: "Require incoming peer encryption (MSE/PE)"; checked <=> root.require-incoming-encryption; }
-                    CheckBox { text: "Anonymous mode (hide client identity)"; checked <=> root.anonymous-mode; }
+                    CheckBox { text: L.s(L.revision, "require_encryption_outgoing"); checked <=> root.require-outgoing-encryption; }
+                    CheckBox { text: L.s(L.revision, "require_encryption_incoming"); checked <=> root.require-incoming-encryption; }
+                    CheckBox { text: L.s(L.revision, "anonymous_mode"); checked <=> root.anonymous-mode; }
 
                     Rectangle { vertical-stretch: 1; }
                 }
             }
 
             Tab {
-                title: "Proxy";
+                title: L.s(L.revision, "proxy");
                 VerticalLayout {
                     padding: 12px;
                     spacing: 10px;
 
                     Labelled {
-                        label: "Type";
+                        label: L.s(L.revision, "type");
                         ComboBox {
                             model: root.proxy-types;
                             current-index <=> root.proxy-type-index;
@@ -281,16 +322,276 @@ export component PreferencesDialog inherits Window {
                         Rectangle { horizontal-stretch: 1; }
                     }
                     Labelled {
-                        label: "Host";
+                        label: L.s(L.revision, "host");
                         LineEdit { text <=> root.proxy-host; horizontal-stretch: 1; enabled: root.proxy-type-index > 0; }
                         LineEdit { text <=> root.proxy-port; width: 110px; enabled: root.proxy-type-index > 0; }
                     }
 
-                    CheckBox { text: "Proxy hostname lookups"; checked <=> root.proxy-hostnames; enabled: root.proxy-type-index > 0; }
-                    CheckBox { text: "Proxy peer connections"; checked <=> root.proxy-peers; enabled: root.proxy-type-index > 0; }
-                    CheckBox { text: "Proxy tracker connections"; checked <=> root.proxy-trackers; enabled: root.proxy-type-index > 0; }
+                    CheckBox { text: L.s(L.revision, "proxy_hostnames"); checked <=> root.proxy-hostnames; enabled: root.proxy-type-index > 0; }
+                    CheckBox { text: L.s(L.revision, "proxy_peers"); checked <=> root.proxy-peers; enabled: root.proxy-type-index > 0; }
+                    CheckBox { text: L.s(L.revision, "proxy_trackers"); checked <=> root.proxy-trackers; enabled: root.proxy-type-index > 0; }
 
                     Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Tab {
+                title: L.s(L.revision, "web_interface");
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+
+                    CheckBox {
+                        text: L.s(L.revision, "enable_web_interface");
+                        checked <=> root.web-enabled;
+                        toggled => { root.web-changed(); }
+                    }
+                    Labelled {
+                        label: L.s(L.revision, "listen_interface");
+                        LineEdit {
+                            text <=> root.web-bind;
+                            horizontal-stretch: 1;
+                            enabled: root.web-enabled;
+                            edited => { root.web-changed(); }
+                        }
+                        LineEdit {
+                            text <=> root.web-port;
+                            width: 110px;
+                            enabled: root.web-enabled;
+                            edited => { root.web-changed(); }
+                        }
+                    }
+                    Labelled {
+                        label: L.s(L.revision, "username");
+                        LineEdit { text <=> root.web-username; horizontal-stretch: 1; enabled: root.web-enabled; }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    Labelled {
+                        label: L.s(L.revision, "password");
+                        LineEdit {
+                            text <=> root.web-password;
+                            input-type: password;
+                            horizontal-stretch: 1;
+                            enabled: root.web-enabled;
+                            // Says whether one is already stored without
+                            // implying the box should show it - the hash
+                            // cannot be turned back into a password.
+                            placeholder-text: root.web-password-set
+                                ? L.s(L.revision, "password_unchanged")
+                                : L.s(L.revision, "password_required");
+                            edited => { root.web-changed(); }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    Labelled {
+                        label: L.s(L.revision, "tls");
+                        ComboBox {
+                            model: root.web-tls-modes;
+                            current-index <=> root.web-tls-index;
+                            width: 220px;
+                            enabled: root.web-enabled;
+                            selected => { root.web-changed(); }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    Labelled {
+                        label: "    " + L.s(L.revision, "certificate");
+                        LineEdit {
+                            text <=> root.web-cert-path;
+                            horizontal-stretch: 1;
+                            // Only meaningful for the custom mode; index 1.
+                            enabled: root.web-enabled && root.web-tls-index == 1;
+                            edited => { root.web-changed(); }
+                        }
+                        Button {
+                            text: L.s(L.revision, "browse");
+                            enabled: root.web-enabled && root.web-tls-index == 1;
+                            clicked => { root.browse-web-cert(); }
+                        }
+                    }
+                    Labelled {
+                        label: "    " + L.s(L.revision, "private_key");
+                        LineEdit {
+                            text <=> root.web-key-path;
+                            horizontal-stretch: 1;
+                            enabled: root.web-enabled && root.web-tls-index == 1;
+                            edited => { root.web-changed(); }
+                        }
+                        Button {
+                            text: L.s(L.revision, "browse");
+                            enabled: root.web-enabled && root.web-tls-index == 1;
+                            clicked => { root.browse-web-key(); }
+                        }
+                    }
+
+                    // The server refuses these combinations at startup rather
+                    // than warning, so say so here instead of letting someone
+                    // press Ok and find the interface silently absent.
+                    Text {
+                        text: root.web-warning;
+                        color: #f2705f;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                        vertical-stretch: 0;
+                    }
+                    // What the server is actually doing: the address it is
+                    // listening on, or why it is not. Set after Ok restarts
+                    // it, so this reports the real outcome rather than a
+                    // promise about one.
+                    Text {
+                        text: root.web-status;
+                        font-size: 12px;
+                        color: root.web-status-ok ? #7bb87b : #888;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Tab {
+                title: L.s(L.revision, "labels_and_filters");
+                // Labels left, filters right: two small list-plus-editor panes
+                // rather than a tab each, which would bury one of them.
+                HorizontalLayout {
+                    padding: 12px;
+                    spacing: 16px;
+
+                    VerticalLayout {
+                        spacing: 6px;
+                        horizontal-stretch: 1;
+                        Text { text: L.s(L.revision, "labels"); font-weight: 700; font-size: 13px; }
+                        Rectangle {
+                            vertical-stretch: 1;
+                            border-color: Palette.border;
+                            border-width: 1px;
+                            border-radius: 4px;
+                            ListView {
+                                for l[i] in root.labels: Rectangle {
+                                    height: 26px;
+                                    background: i == root.label-index
+                                        ? Palette.selection-background
+                                        : transparent;
+                                    TouchArea { clicked => { root.pick-label(i); } }
+                                    Text {
+                                        text: l.name;
+                                        x: 8px;
+                                        height: parent.height;
+                                        vertical-alignment: center;
+                                        font-size: 13px;
+                                        color: i == root.label-index
+                                            ? Palette.selection-foreground
+                                            : Palette.foreground;
+                                    }
+                                }
+                            }
+                        }
+                        Labelled {
+                            label: L.s(L.revision, "name");
+                            label-width: 90px;
+                            LineEdit { text <=> root.edit-label-name; horizontal-stretch: 1; }
+                        }
+                        Labelled {
+                            label: L.s(L.revision, "save_path");
+                            label-width: 90px;
+                            LineEdit { text <=> root.edit-label-path; horizontal-stretch: 1; }
+                            Button { text: L.s(L.revision, "browse"); clicked => { root.browse-label-path(); } }
+                        }
+                        // Nothing to say here, but the right pane has a
+                        // validation message in this slot - without a matching
+                        // row its list ends higher and the buttons below stop
+                        // lining up.
+                        Rectangle { height: 16px; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Rectangle { horizontal-stretch: 1; }
+                            Button {
+                                text: L.s(L.revision, "delete");
+                                enabled: root.label-index >= 0;
+                                clicked => { root.delete-label(); }
+                            }
+                            Button {
+                                text: L.s(L.revision, "save");
+                                primary: true;
+                                enabled: root.edit-label-name != "";
+                                clicked => { root.save-label(); }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 6px;
+                        horizontal-stretch: 1;
+                        Text { text: L.s(L.revision, "amp_filter"); font-weight: 700; font-size: 13px; }
+                        Rectangle {
+                            vertical-stretch: 1;
+                            border-color: Palette.border;
+                            border-width: 1px;
+                            border-radius: 4px;
+                            ListView {
+                                for f[i] in root.filters: Rectangle {
+                                    height: 26px;
+                                    background: i == root.filter-index
+                                        ? Palette.selection-background
+                                        : transparent;
+                                    TouchArea { clicked => { root.pick-filter(i); } }
+                                    Text {
+                                        text: f.name;
+                                        x: 8px;
+                                        height: parent.height;
+                                        vertical-alignment: center;
+                                        font-size: 13px;
+                                        color: i == root.filter-index
+                                            ? Palette.selection-foreground
+                                            : Palette.foreground;
+                                    }
+                                }
+                            }
+                        }
+                        Labelled {
+                            label: L.s(L.revision, "name");
+                            label-width: 90px;
+                            LineEdit { text <=> root.edit-filter-name; horizontal-stretch: 1; }
+                        }
+                        Labelled {
+                            label: L.s(L.revision, "expression");
+                            label-width: 90px;
+                            LineEdit {
+                                text <=> root.edit-filter-rule;
+                                horizontal-stretch: 1;
+                                placeholder-text: L.s(L.revision, "filter_placeholder");
+                                edited => { root.filter-rule-changed(self.text); }
+                            }
+                            // Stands in for the left pane's Browse button:
+                            // `visible` only stops it painting, so it still
+                            // takes exactly the same space and the two panes
+                            // come out the same width.
+                            Button {
+                                text: L.s(L.revision, "browse");
+                                visible: false;
+                            }
+                        }
+                        Text {
+                            text: root.filter-valid ? "" : L.s(L.revision, "filter_invalid");
+                            color: #f2705f;
+                            font-size: 12px;
+                            height: 16px;
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Rectangle { horizontal-stretch: 1; }
+                            Button {
+                                text: L.s(L.revision, "delete");
+                                enabled: root.filter-index >= 0;
+                                clicked => { root.delete-filter(); }
+                            }
+                            Button {
+                                text: L.s(L.revision, "save");
+                                primary: true;
+                                enabled: root.edit-filter-name != "" && root.filter-valid;
+                                clicked => { root.save-filter(); }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -298,14 +599,14 @@ export component PreferencesDialog inherits Window {
         HorizontalLayout {
             spacing: 8px;
             Text {
-                text: "Changes are applied when you press Ok.";
+                text: L.s(L.revision, "changes_applied_on_ok");
                 font-size: 12px;
                 color: Palette.foreground;
                 vertical-alignment: center;
             }
             Rectangle { horizontal-stretch: 1; }
-            Button { text: "Cancel"; clicked => { root.cancelled(); } }
-            Button { text: "Ok"; primary: true; clicked => { root.accepted(); } }
+            Button { text: L.s(L.revision, "cancel"); clicked => { root.cancelled(); } }
+            Button { text: L.s(L.revision, "ok"); primary: true; clicked => { root.accepted(); } }
         }
     }
 }

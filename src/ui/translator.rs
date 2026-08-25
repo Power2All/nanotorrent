@@ -13,11 +13,70 @@ use std::path::Path;
 // from lang/*.json by build.rs.
 include!(concat!(env!("OUT_DIR"), "/lang_table.rs"));
 
+/// The compiled-in JSON for a locale, if it ships with this build.
 fn embedded(locale: &str) -> Option<&'static str> {
     EMBEDDED_LANGS
         .iter()
         .find(|(l, _)| l.eq_ignore_ascii_case(locale))
         .map(|(_, json)| *json)
+}
+
+/// Locale code -> what speakers of that language call it.
+///
+/// Endonyms, not English names: a language picker is read by someone who wants
+/// their own language, and "Nederlands" is what they are looking for, not
+/// "Dutch" and certainly not "nl-NL". Anything not listed falls back to its
+/// locale code, so adding a lang/*.json without touching this still works.
+const ENDONYMS: [(&str, &str); 41] = [
+    ("af-ZA", "Afrikaans"),
+    ("ar-SA", "العربية"),
+    ("bg-BG", "Български"),
+    ("ca-ES", "Català"),
+    ("cs-CZ", "Čeština"),
+    ("da-DK", "Dansk"),
+    ("de-DE", "Deutsch"),
+    ("el-GR", "Ελληνικά"),
+    ("en-US", "English"),
+    ("es-ES", "Español"),
+    ("et-EE", "Eesti"),
+    ("fi-FI", "Suomi"),
+    ("fr-FR", "Français"),
+    ("he-IL", "עברית"),
+    ("hi-IN", "हिन्दी"),
+    ("hr-HR", "Hrvatski"),
+    ("hu-HU", "Magyar"),
+    ("hy-AM", "Հայերեն"),
+    ("id-ID", "Bahasa Indonesia"),
+    ("it-IT", "Italiano"),
+    ("ja-JP", "日本語"),
+    ("ka-GE", "ქართული"),
+    ("ko-KR", "한국어"),
+    ("lt-LT", "Lietuvių"),
+    ("lv-LV", "Latviešu"),
+    ("nb-NO", "Norsk bokmål"),
+    ("nl-NL", "Nederlands"),
+    ("pl-PL", "Polski"),
+    ("pt-BR", "Português (Brasil)"),
+    ("pt-PT", "Português (Portugal)"),
+    ("ro-RO", "Română"),
+    ("ru-RU", "Русский"),
+    ("si-LK", "සිංහල"),
+    ("sk-SK", "Slovenčina"),
+    ("sr-SP", "Српски"),
+    ("sv-SE", "Svenska"),
+    ("tr-TR", "Türkçe"),
+    ("uk-UA", "Українська"),
+    ("vi-VN", "Tiếng Việt"),
+    ("zh-CN", "简体中文"),
+    ("zh-TW", "繁體中文"),
+];
+
+/// The native name for a locale, or the code itself when it is not known.
+fn endonym(locale: &str) -> &str {
+    ENDONYMS
+        .iter()
+        .find(|(l, _)| l.eq_ignore_ascii_case(locale))
+        .map_or(locale, |(_, name)| *name)
 }
 
 #[derive(Clone)]
@@ -34,6 +93,10 @@ pub struct Translator {
     languages: Vec<Language>,
 }
 
+/// Flatten one language file into key -> text.
+///
+/// Malformed entries are skipped rather than failing the load: a translation
+/// with one bad line should lose that line, not the language.
 fn parse_lang(json: &str) -> HashMap<String, String> {
     // serde_json rejects a leading UTF-8 BOM, and some of the original
     // language files carry one (es-ES) - without this they silently parse to
@@ -54,6 +117,11 @@ fn parse_lang(json: &str) -> HashMap<String, String> {
 }
 
 impl Translator {
+    /// Load a locale, preferring a file in `lang_dir` over the compiled-in
+    /// copy so a translation can be edited without a rebuild.
+    ///
+    /// Always succeeds: an unknown or unreadable locale falls back to the
+    /// embedded en-US, because a missing translation must not stop startup.
     pub fn load(lang_dir: &Path, locale: &str) -> Translator {
         let english = parse_lang(embedded("en-US").unwrap_or("{}"));
 
@@ -89,7 +157,7 @@ impl Translator {
         let mut languages: Vec<Language> = locales
             .into_iter()
             .map(|loc| Language {
-                name: loc.clone(),
+                name: endonym(&loc).to_string(),
                 locale: loc,
             })
             .collect();
@@ -110,11 +178,13 @@ impl Translator {
         }
     }
 
-    #[allow(dead_code)]
+    /// The locale actually loaded, which is not necessarily the one asked for.
     pub fn get_locale(&self) -> &str {
         &self.selected_locale
     }
 
+    /// Every language this build can switch to, English first and the rest
+    /// sorted - the order the Preferences list shows them in.
     pub fn languages(&self) -> &[Language] {
         &self.languages
     }
@@ -182,7 +252,11 @@ mod tests {
     #[test]
     fn every_language_is_embedded_and_parses() {
         // No lang/ dir needed: the whole set is compiled in.
-        assert!(EMBEDDED_LANGS.len() >= 40, "only {} embedded", EMBEDDED_LANGS.len());
+        assert!(
+            EMBEDDED_LANGS.len() >= 40,
+            "only {} embedded",
+            EMBEDDED_LANGS.len()
+        );
         assert!(embedded("en-US").is_some());
         assert_eq!(tr().languages().len(), EMBEDDED_LANGS.len());
 
@@ -200,7 +274,12 @@ mod tests {
 
     #[test]
     fn bom_prefixed_language_file_still_parses() {
-        assert_eq!(parse_lang("\u{feff}{\"a\": \"x\"}").get("a").map(String::as_str), Some("x"));
+        assert_eq!(
+            parse_lang("\u{feff}{\"a\": \"x\"}")
+                .get("a")
+                .map(String::as_str),
+            Some("x")
+        );
         // es-ES is the one that actually carries a BOM on disk.
         assert!(parse_lang(embedded("es-ES").unwrap()).len() > 100);
     }
@@ -236,7 +315,10 @@ mod tests {
 
     #[test]
     fn missing_key_is_humanized() {
-        assert_eq!(tr().i18n("dl_rate_limit"), "Dl rate limit");
+        // Deliberately not a real key: this used to use `dl_rate_limit`, which
+        // then got added to en-US.json and quietly turned the test into an
+        // assertion about a key that resolves.
+        assert_eq!(tr().i18n("no_such_key_anywhere"), "No such key anywhere");
     }
 
     #[test]
@@ -248,6 +330,82 @@ mod tests {
     fn positional_args_substitute() {
         let t = tr();
         assert_eq!(t.i18n1("state_error", "boom"), "Error: boom");
-        assert_eq!(t.i18n2("state_error_details", "boom", "42"), "Error: boom (42)");
+        assert_eq!(
+            t.i18n2("state_error_details", "boom", "42"),
+            "Error: boom (42)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod endonym_tests {
+    use super::{ENDONYMS, endonym};
+
+    /// Every shipped language file needs a native name, or the picker falls
+    /// back to showing a locale code among real names - which is exactly the
+    /// state this table was added to fix.
+    #[test]
+    fn every_embedded_locale_has_an_endonym() {
+        let missing: Vec<&str> = super::EMBEDDED_LANGS
+            .iter()
+            .map(|(locale, _)| *locale)
+            .filter(|locale| endonym(locale) == *locale)
+            .collect();
+        assert!(missing.is_empty(), "no native name for: {missing:?}");
+    }
+
+    #[test]
+    fn unknown_locales_fall_back_to_the_code() {
+        assert_eq!(endonym("xx-XX"), "xx-XX");
+        // Case-insensitive, like every other locale comparison here.
+        assert_eq!(endonym("NL-nl"), "Nederlands");
+    }
+
+    #[test]
+    fn no_duplicate_locales_in_the_table() {
+        let mut seen: Vec<&str> = ENDONYMS.iter().map(|(l, _)| *l).collect();
+        seen.sort_unstable();
+        let before = seen.len();
+        seen.dedup();
+        assert_eq!(before, seen.len(), "duplicate locale in ENDONYMS");
+    }
+}
+
+#[cfg(test)]
+mod slint_key_tests {
+    /// Every `L.s("key")` in the .slint markup must name a real key.
+    ///
+    /// A typo does not fail the build - `i18n` humanizes anything it cannot
+    /// find, so `L.s("cancle")` would quietly render "Cancle". This is the
+    /// only thing that catches that.
+    #[test]
+    fn every_key_used_in_markup_exists() {
+        let english = super::parse_lang(super::embedded("en-US").expect("en-US is embedded"));
+
+        let mut missing: Vec<String> = Vec::new();
+        for file in [
+            include_str!("../ui_slint/app.slint"),
+            include_str!("../ui_slint/preferences.slint"),
+            include_str!("../ui_slint/about.slint"),
+            include_str!("../ui_slint/create.slint"),
+            include_str!("../ui_slint/closeprompt.slint"),
+            include_str!("../ui_slint/tray.slint"),
+        ] {
+            for (_, rest) in file
+                .match_indices("L.s(\"")
+                .map(|(i, m)| (i, &file[i + m.len()..]))
+            {
+                let Some(key) = rest.split('"').next() else {
+                    continue;
+                };
+                if !english.contains_key(key) && !missing.contains(&key.to_string()) {
+                    missing.push(key.to_string());
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "keys not in lang/en-US.json: {missing:?}"
+        );
     }
 }

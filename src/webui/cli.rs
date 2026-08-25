@@ -184,6 +184,11 @@ fn set_setting(cfg: &Configuration, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Read a password from stdin.
+///
+/// From stdin rather than an argument so it never lands in shell history or
+/// in another user's `ps` output. Works piped as well as typed, which is what
+/// makes the `echo -n ... |` form in the usage text possible.
 fn read_password() -> Result<String> {
     let mut stdin = std::io::stdin();
 

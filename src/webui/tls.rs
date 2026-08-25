@@ -56,6 +56,11 @@ pub fn self_signed(data_dir: &Path) -> Result<ServerConfig> {
     }
 }
 
+/// Write a fresh self-signed certificate and key.
+///
+/// Called once, when the configured pair is missing. Browsers will warn about
+/// it - that is inherent to self-signing - but the traffic is still encrypted,
+/// which is what stops Basic credentials crossing the network in clear text.
 fn generate(cert_path: &PathBuf, key_path: &PathBuf) -> Result<()> {
     // SANs cover the names this is actually reached by. An IP-address SAN
     // cannot be predicted here (the LAN address changes), so reaching it by IP
@@ -100,6 +105,8 @@ fn restrict_permissions(path: &Path) {
 #[cfg(not(unix))]
 fn restrict_permissions(_path: &Path) {}
 
+/// This machine's hostname, for the certificate's subject alternative names,
+/// so reaching the interface by name rather than by IP still matches.
 fn hostname() -> Option<String> {
     // Only used as a certificate SAN, so an env var is enough - not worth a
     // dependency or a syscall wrapper for a nicety.
@@ -132,6 +139,8 @@ pub fn ensure_crypto_provider() {
     });
 }
 
+/// Turn a PEM certificate and key into a rustls server config, failing with a
+/// readable message rather than a parse error when the pair does not load.
 fn build(cert_pem: &[u8], key_pem: &[u8]) -> Result<ServerConfig> {
     ensure_crypto_provider();
 
@@ -170,6 +179,8 @@ pub fn fingerprint(cert_path: &Path) -> Option<String> {
     )
 }
 
+/// Where the self-signed certificate lives - beside the settings database,
+/// so it travels with the profile rather than the installation.
 pub fn cert_path(data_dir: &Path) -> PathBuf {
     data_dir.join(CERT_FILE)
 }

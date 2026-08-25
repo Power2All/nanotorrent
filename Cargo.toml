@@ -1,25 +1,16 @@
 [package]
 name = "nanotorrent"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
 license = "MIT"
 
 [features]
-default = ["ui-native"]
-# The Win32 UI. Only ever builds on Windows - every gate for it is
-# `all(feature = "ui-native", windows)` - so leaving it on by default costs
-# nothing on Linux/macOS, where those builds simply come up headless.
-ui-native = ["dep:native-windows-gui"]
-# The cross-platform UI, and eventually the only one. Not default yet: it is
-# built alongside ui-native rather than replacing it, so Windows keeps shipping
-# a UI that works while this one catches up.
-#
-#   cargo run --no-default-features --features ui-slint
-#
-# ui-native wins if both are on, because `default` still names it - see the
-# dispatch in main.rs::run_ui.
-ui-slint = ["dep:slint", "dep:slint-build", "dep:rfd"]
+default = ["ui-slint"]
+# The UI: the same window on Windows, Linux and macOS. Turning it off
+# (--no-default-features) gives a headless daemon reachable over the web
+# interface, which is the only other supported configuration.
+ui-slint = ["dep:slint", "dep:slint-build", "dep:rfd", "dep:raw-window-handle", "dep:copypasta", "dep:png"]
 
 [dependencies]
 # Actix rather than axum for the web API, chosen for its connection layer, not
@@ -93,8 +84,21 @@ rustls = "0.23"
 rustls-pemfile = "2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-# The cross-platform UI toolkit. Optional until it replaces ui_native.
-slint = { version = "1", optional = true }
+# The UI toolkit. Optional so --no-default-features gives a headless daemon.
+# Decoding res/flags/*.png into Slint images for the peers list. Already in the
+# tree via Slint's own image support, so naming it costs no new crate.
+png = { version = "0.18", optional = true }
+# Clipboard. Slint has no public clipboard API - only TextInput's internal
+# copy/paste - but its winit backend already builds copypasta for exactly that,
+# so naming it directly costs no new crate.
+copypasta = { version = "0.10", optional = true }
+# The HWND behind the Slint window, for EnableWindow. Same version slint
+# already pulls in, so this costs no new crate.
+raw-window-handle = { version = "0.6", optional = true }
+# raw-window-handle-06 for the HWND behind the Slint window: real modality on
+# Windows is EnableWindow on the owner, which needs it. Adds no crates - it is
+# already in the tree.
+slint = { version = "1", optional = true, features = ["raw-window-handle-06"] }
 # Constant-time comparison for the auth username. argon2 already compares the
 # password hash in constant time; the username needs the same treatment or it
 # leaks through timing.
@@ -104,8 +108,8 @@ tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
 [build-dependencies]
-# Compiles src/ui_slint/*.slint. Optional so a ui-native-only build does not
-# pay for it; build.rs gates the call on the same feature.
+# Compiles src/ui_slint/*.slint. Optional so a headless build does not pay for
+# it; build.rs gates the call on the same feature.
 slint-build = { version = "1", optional = true }
 
 [target.'cfg(windows)'.build-dependencies]
@@ -113,12 +117,41 @@ winresource = "0.1.31"
 
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.8"
-# NOT tied to the ui-native feature: core/toast.rs, core/file_assoc.rs and the
-# startup message box in main.rs all need winapi under plain cfg(windows),
-# whichever UI (or none) is built. Gating it on the feature is what stopped
-# --no-default-features from compiling.
-winapi = { version = "0.3.9", features = ["commctrl", "winuser", "windef", "winnls", "wingdi", "dwmapi", "uxtheme", "winreg", "libloaderapi", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "winerror"] }
-native-windows-gui = { version = "1.0.13", optional = true, features = ["list-view", "image-list", "image-decoder", "tabs", "tray-notification", "menu", "combobox", "textbox", "file-dialog", "animation-timer", "notice", "message-window", "flexbox", "progress-bar", "cursor", "high-dpi", "clipboard"] }
+# NOT tied to any UI feature: core/toast.rs, core/file_assoc.rs, the startup
+# message box in main.rs and ui_slint/modal.rs all need winapi under plain
+# cfg(windows), whether or not a UI is built.
+winapi = { version = "0.3.9", features = ["winuser", "windef", "winreg", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "wtypes", "winerror"] }
+
+# --- Linux packaging -------------------------------------------------------
+# Consumed by `cargo deb` and `cargo generate-rpm` in .github/workflows/release.yml.
+# Both install the same three files; keep them in step.
+#
+# The icon must land as `nanotorrent.png` under hicolor/256x256 because the
+# .desktop entry says `Icon=nanotorrent`, and its StartupWMClass must match
+# slint::set_xdg_app_id - that chain is what gives the window its icon on
+# Wayland, which has no protocol for a client to set one itself.
+
+[package.metadata.deb]
+maintainer = "Power2All <power2all@users.noreply.github.com>"
+copyright = "Power2All"
+section = "net"
+priority = "optional"
+# X11/Wayland/GL are dlopen'd at runtime, so shlibdeps cannot see them and they
+# are listed by hand. Everything else $auto finds from the ELF.
+depends = "$auto, libfontconfig1"
+extended-description = """A tiny, hackable BitTorrent client - a Rust port of PicoTorrent. DHT, UDP trackers, MSE/PE encryption, labels and filters, a details pane with per-file control, and an optional authenticated web interface."""
+assets = [
+    ["target/release/nanotorrent", "usr/bin/", "755"],
+    ["packaging/linux/nanotorrent.desktop", "usr/share/applications/", "644"],
+    ["res/app.png", "usr/share/icons/hicolor/256x256/apps/nanotorrent.png", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/nanotorrent", dest = "/usr/bin/nanotorrent", mode = "755" },
+    { source = "packaging/linux/nanotorrent.desktop", dest = "/usr/share/applications/nanotorrent.desktop", mode = "644" },
+    { source = "res/app.png", dest = "/usr/share/icons/hicolor/256x256/apps/nanotorrent.png", mode = "644" },
+]
 
 [patch.crates-io]
 librqbit = { path = "vendor/librqbit" }

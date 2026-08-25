@@ -1,0 +1,27 @@
+// Notification-area icon and its right-click menu.
+//
+import { L } from "globals.slint";
+// SystemTrayIcon is a top-level component in its own right, not something that
+// can sit inside a Window - hence a second .slint file, re-exported from
+// app.slint so one compile pass generates both. Slint talks to
+// Shell_NotifyIcon on Windows, NSStatusItem on macOS and StatusNotifierItem on
+// Linux, so no extra crate is involved.
+
+export component Tray inherits SystemTrayIcon {
+    icon: @image-url("../../res/app.png");
+    tooltip: "NanoTorrent";
+    title: "NanoTorrent";
+
+    callback show-window();
+    callback exit();
+
+    // Left-click opens the window on Windows and Linux; on macOS AppKit pops
+    // the menu instead, which is why "NanoTorrent" is also a menu entry.
+    clicked => { root.show-window(); }
+
+    Menu {
+        MenuItem { title: L.s(L.revision, "tray_open"); activated => { root.show-window(); } }
+        MenuSeparator { }
+        MenuItem { title: L.s(L.revision, "amp_exit"); activated => { root.exit(); } }
+    }
+}

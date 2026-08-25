@@ -18,6 +18,10 @@ pub struct GeoIp {
 }
 
 impl GeoIp {
+    /// Start with no database and fetch one in the background.
+    ///
+    /// Returns immediately: peer rows show no country until it arrives, which
+    /// is better than delaying startup on a network request.
     pub fn new() -> Arc<GeoIp> {
         Arc::new(GeoIp {
             reader: Mutex::new(None),
@@ -79,6 +83,8 @@ impl GeoIp {
     }
 }
 
+/// The country database, from the on-disk cache when it is fresh enough and
+/// from the network otherwise.
 async fn load_database(url: &str, cache: &PathBuf) -> anyhow::Result<Vec<u8>> {
     // Fresh enough cache?
     if let Ok(meta) = tokio::fs::metadata(cache).await
@@ -109,6 +115,7 @@ async fn load_database(url: &str, cache: &PathBuf) -> anyhow::Result<Vec<u8>> {
     }
 }
 
+/// Fetch and decompress the database. DB-IP ships it gzipped.
 async fn download(url: &str) -> anyhow::Result<Vec<u8>> {
     // Month-stamped URLs (DB-IP publishes one file per month). If the
     // current month isn't up yet, fall back to the previous one.
@@ -127,6 +134,8 @@ async fn download(url: &str) -> anyhow::Result<Vec<u8>> {
     download_raw(url).await
 }
 
+/// One HTTP GET, with no decompression - split out so [`download`] can decide
+/// what to do with the bytes.
 async fn download_raw(url: &str) -> anyhow::Result<Vec<u8>> {
     use std::io::Read;
 

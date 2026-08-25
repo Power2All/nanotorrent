@@ -62,6 +62,8 @@ pub struct Roots {
     pub separator: char,
 }
 
+/// The starting points for the save-path browser: drive letters on Windows,
+/// `/` plus the user's home elsewhere.
 pub fn roots() -> Roots {
     let mut roots = Vec::new();
 
@@ -146,6 +148,13 @@ fn display_path(path: &Path) -> String {
     text.into_owned()
 }
 
+/// The entries directly under `path`, plus its parent so a caller can walk
+/// back up.
+///
+/// Directories first, then files case-insensitively by name - the order every
+/// file manager uses, so a picker does not have to re-sort. Files carry their
+/// size; directories do not. An entry whose metadata cannot be read is still
+/// listed rather than failing the whole listing.
 pub fn list(path: &str) -> Result<Listing, String> {
     let dir = resolve(path)?;
     if !dir.is_dir() {

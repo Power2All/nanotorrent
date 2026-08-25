@@ -1,9 +1,8 @@
 # Proves the portability claim rather than inferring it.
 #
-# Development happens on Windows, where the only thing a local build can show is
-# that nothing outside src/ui_native depends on native-windows-gui. Whether the
-# Linux and macOS arms of the cfg(windows) / cfg(target_os) branches actually
-# compile is a question only those platforms can answer, so they answer it here.
+# Development happens on Windows. Whether the Linux and macOS arms of the
+# cfg(windows) / cfg(target_os) branches actually compile is a question only
+# those platforms can answer, so they answer it here.
 #
 # The runners already ship cmake and a C compiler, which aws-lc-sys needs. No
 # OpenSSL is required: the librqbit rust-tls feature (see Cargo.toml) keeps
@@ -29,26 +28,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: windows (Win32 UI)
+          # Default features are ui-slint, so these three build the same UI on
+          # all three platforms - which is the whole point of it.
+          - name: windows (slint UI)
             os: windows-latest
-            # Default features: ui-native, the only platform that has it.
             args: ""
+          - name: linux (slint UI)
+            os: ubuntu-latest
+            args: ""
+            apt: libfontconfig1-dev
+          - name: macos (slint UI)
+            os: macos-latest
+            args: ""
+          - name: windows (headless)
+            os: windows-latest
+            args: --no-default-features
           - name: linux (headless)
             os: ubuntu-latest
             args: --no-default-features
           - name: macos (headless)
             os: macos-latest
             args: --no-default-features
-          # The cross-platform GUI. Built on the platforms it is FOR - a
-          # Windows-only check proves nothing about it, and this is the
-          # configuration that will eventually be the default there.
-          - name: linux (slint UI)
-            os: ubuntu-latest
-            args: --no-default-features --features ui-slint
-            apt: libfontconfig1-dev
-          - name: macos (slint UI)
-            os: macos-latest
-            args: --no-default-features --features ui-slint
 
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +62,7 @@ jobs:
       # aws-lc-sys is a slow C build and cargo re-links it constantly otherwise.
       - uses: Swatinem/rust-cache@v2
         with:
-          # matrix.name, not matrix.os: two jobs now share each OS with different
+          # matrix.name, not matrix.os: each OS appears twice with different
           # feature sets, and one cache key for both would thrash.
           key: ${{ matrix.name }}
 

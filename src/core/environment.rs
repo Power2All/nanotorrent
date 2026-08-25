@@ -8,6 +8,10 @@ pub struct Environment {
 }
 
 impl Environment {
+    /// Work out where this installation keeps its data, logs and translations.
+    ///
+    /// Resolved once at startup and passed around: every path in the app
+    /// derives from here, so there is one answer rather than one per caller.
     pub fn create() -> Environment {
         Environment {
             startup_time: SystemTime::now(),
@@ -77,6 +81,7 @@ impl Environment {
         }
     }
 
+    /// The settings database, `NanoTorrent.sqlite` in the profile folder.
     pub fn get_database_file_path(&self) -> PathBuf {
         self.get_application_data_path().join("NanoTorrent.sqlite")
     }
@@ -123,6 +128,8 @@ impl Environment {
         self.get_application_data_path().join("session")
     }
 
+    /// The log file. Its parent directory is also where a panic backtrace is
+    /// written, so a crash leaves something to read.
     pub fn get_log_file_path(&self) -> PathBuf {
         let ts: chrono::DateTime<chrono::Local> = self.startup_time.into();
 
@@ -131,6 +138,11 @@ impl Environment {
             .join(format!("NanoTorrent.{}.log", ts.format("%Y%m%d%H%M%S")))
     }
 
+    /// The optional `lang/` folder beside the executable.
+    ///
+    /// Translations are compiled in, so this need not exist - a file dropped
+    /// here overrides the built-in copy for that locale, which is the quickest
+    /// way to edit one without rebuilding.
     pub fn get_lang_path(&self) -> PathBuf {
         // Look next to the executable first, then in the dev tree.
         let next_to_exe = self.get_application_path().join("lang");
@@ -153,22 +165,13 @@ impl Environment {
 
         PathBuf::from(".")
     }
-
-    /// Port of Environment::GetCurrentLocale.
-    ///
-    /// No longer used to pick the startup locale: NanoTorrent always starts in
-    /// English (`DEFAULT_LOCALE`) and only follows `locale_name` once the user
-    /// has chosen one. Kept because it is a direct port of the original.
-    #[allow(dead_code)]
-    pub fn get_current_locale() -> String {
-        // GetUserDefaultLocaleName equivalent; fall back to en-US.
-        std::env::var("LANG")
-            .ok()
-            .and_then(|l| l.split('.').next().map(|s| s.replace('_', "-")))
-            .unwrap_or_else(|| String::from("en-US"))
-    }
 }
 
+/// Recursively copy a directory, skipping anything that cannot be read.
+///
+/// Used only by the one-time PicoTorrent data takeover. Best-effort by design:
+/// a locked file in someone else's profile must not abort the migration and
+/// leave it half-done.
 fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
     let Ok(entries) = std::fs::read_dir(from) else {
         return;
@@ -200,7 +203,11 @@ mod tests {
         let dir = Environment::user_data_dir().expect("no per-user data dir on this platform");
         assert!(dir.is_absolute(), "{dir:?} is not absolute");
 
-        let leaf = dir.file_name().expect("no final component").to_string_lossy().into_owned();
+        let leaf = dir
+            .file_name()
+            .expect("no final component")
+            .to_string_lossy()
+            .into_owned();
         assert!(
             leaf.eq_ignore_ascii_case("nanotorrent"),
             "{dir:?} does not end in an app-specific folder"

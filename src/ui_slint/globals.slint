@@ -1,0 +1,25 @@
+// Globals shared by every window: the translation lookup and the clipboard.
+// Kept out of app.slint because app.slint imports the dialogs, so anything
+// they both need cannot live there.
+
+// Copying a detail value to the clipboard. A global rather than a callback
+// threaded through every list row: the cells below are several layers deep and
+// each one would otherwise need wiring at its use site.
+export global Clip {
+    callback copy(string);
+}
+
+// Translated UI strings, looked up by the same keys lang/*.json uses.
+//
+// A callback rather than one property per string: there are ~100 of them, and a
+// property each would be 100 declarations plus 100 setters in Rust. Bindings
+// that call it are re-evaluated when `revision` changes, which is how a
+// language change reaches every caption without a restart.
+export global L {
+    /// Bumped whenever the language changes. Every `s()` call passes it so the
+    /// binding depends on it and re-evaluates - without that the captions are
+    /// computed once at startup and switching language does nothing until the
+    /// app is restarted.
+    in property <int> revision;
+    pure callback s(int, string) -> string;
+}

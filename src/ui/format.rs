@@ -24,6 +24,11 @@ pub fn state_text(tr: &Translator, status: &TorrentStatus) -> String {
     }
 }
 
+/// The ETA column: a coarse duration, or "-" when there is nothing to
+/// estimate (paused, seeding, or no rate yet).
+///
+/// Two units at most - "3h 20m", never "3h 20m 11s". The seconds on a
+/// multi-hour estimate are noise that changes every tick.
 pub fn eta_text(status: &TorrentStatus) -> String {
     match status.eta {
         Some(eta) if eta.as_secs() > 0 => {
@@ -43,6 +48,10 @@ pub fn eta_text(status: &TorrentStatus) -> String {
     }
 }
 
+/// A rate column, or "-" below 1 KB/s.
+///
+/// The threshold is not zero: a trickle of protocol chatter would otherwise
+/// leave idle rows flickering between "-" and "12 B/s".
 pub fn speed_text(rate: i64) -> String {
     if rate < 1024 {
         String::from("-")
@@ -51,12 +60,15 @@ pub fn speed_text(rate: i64) -> String {
     }
 }
 
-#[cfg_attr(not(any(all(feature = "ui-native", windows), feature = "ui-slint")), allow(dead_code))]
+/// A timestamp in the Added / Completed columns, in local time.
+#[cfg_attr(not(feature = "ui-slint"), allow(dead_code))]
 pub fn date_text(dt: &chrono::DateTime<chrono::Local>) -> String {
     dt.format("%Y-%m-%d %H:%M").to_string()
 }
 
-#[cfg_attr(not(any(all(feature = "ui-native", windows), feature = "ui-slint")), allow(dead_code))]
+/// [`date_text`] for a time that may not have happened yet - an unfinished
+/// torrent has no completion date, and the cell reads "-".
+#[cfg_attr(not(feature = "ui-slint"), allow(dead_code))]
 pub fn opt_date_text(dt: &Option<chrono::DateTime<chrono::Local>>) -> String {
     dt.as_ref().map(date_text).unwrap_or_else(|| String::from("-"))
 }

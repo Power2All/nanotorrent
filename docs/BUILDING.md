@@ -6,16 +6,15 @@ correct it rather than working around it.
 
 ## Which build do you want?
 
-There are three, and the difference matters:
+There are two:
 
 | Command | What you get |
 |---|---|
-| `cargo build --release` | On Windows, the Win32 UI. On Linux/macOS, a **headless** daemon - no window, controlled through the web interface. |
-| `cargo build --release --no-default-features` | Headless everywhere, including Windows. |
-| `cargo build --release --no-default-features --features ui-slint` | The **cross-platform GUI**. This is the one to test on Linux and macOS. |
+| `cargo build --release` | The **GUI** - the same window on all three platforms. |
+| `cargo build --release --no-default-features` | **Headless** - no window, controlled through the web interface. |
 
-`ui-native` is Windows-only, so a plain `cargo build` on Linux or macOS gives
-you the headless daemon, not a window. That is deliberate, not a failure.
+The original Win32 front end was removed in v0.2.0, once the Slint one reached
+parity; it is in the history if you need it.
 
 ## Prerequisites
 
@@ -95,3 +94,25 @@ Then browse to `https://127.0.0.1:8443` and accept the self-signed certificate;
 its SHA-256 fingerprint is printed to the log so it can be checked rather than
 clicked through. `--webui-set bind_address 0.0.0.0` exposes it to the LAN, and
 the server refuses to serve plaintext off loopback.
+
+## Verified on Ubuntu 24.04 (WSL2)
+
+Built and run on 2026-08-23 against Ubuntu 24.04 under WSL2 with WSLg:
+
+- `cargo build --release` — clean, ~5 min cold.
+- `cargo test --release` — 87 pass (Windows runs 88; one test is
+  `#[cfg(windows)]`).
+- The GUI opens through WSLg and the session works: DHT reached ~100 nodes.
+
+No `sudo` was needed - `gcc`, `make`, `cmake`, `pkg-config` and the
+`fontconfig` / `xkbcommon` / `wayland` dev files were already present. Only
+`rustup` had to be installed, into `$HOME`.
+
+Expected on a bare WSLg session:
+
+```
+Slint: Failed to create system tray icon: 0
+```
+
+There is no StatusNotifierItem host, so there is nowhere to put a tray icon.
+The app logs it and carries on without one, which is the intended fallback.

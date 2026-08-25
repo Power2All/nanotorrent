@@ -1,11 +1,13 @@
-// Port of ui_native/dialogs.rs::spawn_about.
+// The About box: version, build stamp and a link to the project site.
 
 import { Button, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
 
 export component AboutDialog inherits Window {
-    title: "About NanoTorrent";
-    preferred-width: 460px;
-    preferred-height: 300px;
+    icon: @image-url("../../res/app.png");
+    title: L.s(L.revision, "about_nanotorrent");
+    preferred-width: 400px;
+    preferred-height: 260px;
     background: Palette.background;
 
     in property <string> version;
@@ -26,12 +28,12 @@ export component AboutDialog inherits Window {
             color: Palette.foreground;
         }
         Text {
-            text: "Version " + root.version;
+            text: L.s(L.revision, "version") + " " + root.version;
             font-size: 13px;
             color: Palette.foreground;
         }
         Text {
-            text: "Build " + root.build-stamp;
+            text: L.s(L.revision, "build") + " " + root.build-stamp;
             font-size: 12px;
             color: #888;
         }
@@ -39,7 +41,7 @@ export component AboutDialog inherits Window {
         Rectangle { height: 6px; }
 
         Text {
-            text: "A tiny, hackable BitTorrent client.";
+            text: L.s(L.revision, "app_description");
             font-size: 13px;
             color: Palette.foreground;
         }
@@ -66,7 +68,7 @@ export component AboutDialog inherits Window {
         Rectangle { vertical-stretch: 1; }
 
         Text {
-            text: "A Rust port of PicoTorrent, built on librqbit.";
+            text: L.s(L.revision, "app_credit");
             font-size: 12px;
             color: #888;
         }
@@ -74,7 +76,7 @@ export component AboutDialog inherits Window {
         HorizontalLayout {
             Rectangle { horizontal-stretch: 1; }
             Button {
-                text: "Close";
+                text: L.s(L.revision, "close");
                 primary: true;
                 clicked => { root.closed(); }
             }

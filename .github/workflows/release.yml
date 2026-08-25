@@ -1,0 +1,301 @@
+# Builds the installers people actually download, on demand.
+#
+# Manual only (workflow_dispatch): a release build is slow and these artifacts
+# are not something every push needs. CI (ci.yml) is what proves the code
+# compiles; this is what packages it.
+#
+# The version is read from Cargo.toml in one job and passed to the rest, so
+# there is exactly one place it is written down - the same rule
+# installer/make-assets.ps1 follows for the NSIS script.
+#
+# Output names, all carrying the version:
+#   NanoTorrent-<ver>-Setup.exe   Windows, NSIS, UPX-compressed payload
+#   nanotorrent-<ver>.deb         Debian / Ubuntu
+#   nanotorrent-<ver>.rpm         Fedora / RHEL / openSUSE
+#   nanotorrent-<ver>.dmg         macOS (Apple Silicon)
+#
+# Windows keeps its capitalised "-Setup" name; the Unix ones are lower case
+# without it, which is what those platforms expect.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      upx:
+        description: "UPX-compress the Windows executable"
+        type: boolean
+        default: true
+      draft:
+        description: "Create a draft GitHub release with the artifacts attached"
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Read the version once. Every other job needs it for its file name, and
+  # three independent greps would be three chances to disagree.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: get
+        # [package] is the first table in Cargo.toml and dependencies spell
+        # their versions inline, so the first line-anchored `version =` is ours.
+        run: |
+          ver=$(grep -m1 -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
+          [ -n "$ver" ] || { echo "no [package] version in Cargo.toml"; exit 1; }
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Building $ver"
+
+  windows:
+    name: Windows installer
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-windows
+
+      - name: Build
+        run: cargo build --release --locked
+
+      # upx.exe is deliberately not committed (see installer/.gitignore), so
+      # fetch it here. build-installer.bat picks it up automatically if it is
+      # sitting next to the script, and skips compression if it is not - which
+      # is exactly what unchecking the input should do.
+      - name: Fetch UPX
+        if: inputs.upx
+        shell: pwsh
+        run: |
+          $url = (Invoke-RestMethod https://api.github.com/repos/upx/upx/releases/latest).assets |
+                 Where-Object { $_.name -like '*-win64.zip' } |
+                 Select-Object -First 1 -ExpandProperty browser_download_url
+          Invoke-WebRequest $url -OutFile upx.zip
+          Expand-Archive upx.zip -DestinationPath upx-tmp
+          Copy-Item (Get-ChildItem upx-tmp -Recurse -Filter upx.exe).FullName installer\upx.exe
+          installer\upx.exe --version
+
+      - name: Install NSIS
+        run: choco install nsis --no-progress -y
+
+      # The .bat is the same script used locally: it UPX-packs the exe,
+      # regenerates version.nsh / installer.bmp / readme.rtf, then runs
+      # makensis. Calling it rather than repeating its steps keeps one
+      # definition of how a Windows build is made.
+      - name: Build installer
+        shell: cmd
+        run: call installer\build-installer.bat
+
+      - name: Check the expected file exists
+        shell: pwsh
+        run: |
+          $exe = "installer\NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe"
+          if (-not (Test-Path $exe)) {
+            Get-ChildItem installer\*.exe
+            throw "$exe was not produced"
+          }
+          "{0:N1} MB" -f ((Get-Item $exe).Length / 1MB)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe
+          path: installer/NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux packages
+    needs: version
+    # 22.04, not latest: a binary built against glibc 2.35 runs on 2.35 and
+    # newer, while one built on 24.04 needs 2.39 and refuses to start on
+    # anything older. glibc is backward compatible, not forward.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System packages
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-linux
+
+      - name: Install packaging tools
+        run: cargo install cargo-deb cargo-generate-rpm --locked
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Strip
+        run: strip target/release/nanotorrent
+
+      # --no-build for both: the binary above is the one to package, and
+      # letting each tool rebuild it would triple the job for no difference.
+      - name: Package .deb
+        run: cargo deb --no-build --output "nanotorrent-${{ needs.version.outputs.version }}.deb"
+
+      - name: Package .rpm
+        run: |
+          cargo generate-rpm --payload-compress none
+          mv target/generate-rpm/*.rpm "nanotorrent-${{ needs.version.outputs.version }}.rpm"
+
+      # A package that installs nothing, or installs to the wrong place, still
+      # builds cleanly - so list the contents rather than trusting it.
+      - name: Verify contents
+        run: |
+          echo "--- deb ---"; dpkg-deb -c "nanotorrent-${{ needs.version.outputs.version }}.deb"
+          echo "--- rpm ---"; rpm -qlp "nanotorrent-${{ needs.version.outputs.version }}.rpm"
+          echo "--- install and run ---"
+          sudo dpkg -i "nanotorrent-${{ needs.version.outputs.version }}.deb"
+          nanotorrent --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nanotorrent-${{ needs.version.outputs.version }}-linux
+          path: |
+            nanotorrent-${{ needs.version.outputs.version }}.deb
+            nanotorrent-${{ needs.version.outputs.version }}.rpm
+          if-no-files-found: error
+
+  macos:
+    name: macOS disk image
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-macos
+
+      - name: Build
+        run: cargo build --release --locked
+
+      # macOS will not show a Dock icon, a menu bar name or a Finder icon for a
+      # bare executable - it wants a bundle. Assembled by hand rather than with
+      # cargo-bundle: it is four files, and the plist is the only part with any
+      # content to it.
+      - name: Assemble NanoTorrent.app
+        env:
+          VER: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          APP="dist/NanoTorrent.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/release/nanotorrent "$APP/Contents/MacOS/nanotorrent"
+          strip "$APP/Contents/MacOS/nanotorrent"
+
+          # .icns from res/app.png. iconutil wants a full iconset, and sips is
+          # already on every runner, so no image tooling has to be installed.
+          ICONSET=nanotorrent.iconset
+          mkdir -p "$ICONSET"
+          for sz in 16 32 64 128 256 512; do
+            sips -z $sz $sz res/app.png --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null
+            sips -z $((sz*2)) $((sz*2)) res/app.png --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null
+          done
+          iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/nanotorrent.icns"
+
+          cat > "$APP/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>              <string>NanoTorrent</string>
+            <key>CFBundleDisplayName</key>       <string>NanoTorrent</string>
+            <key>CFBundleIdentifier</key>        <string>org.nanotorrent.NanoTorrent</string>
+            <key>CFBundleVersion</key>           <string>${VER}</string>
+            <key>CFBundleShortVersionString</key><string>${VER}</string>
+            <key>CFBundleExecutable</key>        <string>nanotorrent</string>
+            <key>CFBundleIconFile</key>          <string>nanotorrent</string>
+            <key>CFBundlePackageType</key>       <string>APPL</string>
+            <key>LSMinimumSystemVersion</key>    <string>11.0</string>
+            <key>NSHighResolutionCapable</key>   <true/>
+            <key>CFBundleDocumentTypes</key>
+            <array>
+              <dict>
+                <key>CFBundleTypeName</key><string>BitTorrent Document</string>
+                <key>CFBundleTypeRole</key><string>Viewer</string>
+                <key>LSItemContentTypes</key><array><string>org.bittorrent.torrent</string></array>
+              </dict>
+            </array>
+            <key>CFBundleURLTypes</key>
+            <array>
+              <dict>
+                <key>CFBundleURLName</key><string>Magnet URI</string>
+                <key>CFBundleURLSchemes</key><array><string>magnet</string></array>
+              </dict>
+            </array>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint "$APP/Contents/Info.plist"
+
+      # Unsigned and unnotarised: there is no Developer ID certificate in this
+      # repo, so Gatekeeper will ask on first launch (right-click > Open, or
+      # System Settings > Privacy & Security). Signing needs secrets the
+      # workflow does not have.
+      - name: Build .dmg
+        run: |
+          set -euo pipefail
+          ln -s /Applications dist/Applications
+          hdiutil create -volname NanoTorrent -srcfolder dist -ov -format UDZO \
+            "nanotorrent-${{ needs.version.outputs.version }}.dmg"
+          hdiutil verify "nanotorrent-${{ needs.version.outputs.version }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nanotorrent-${{ needs.version.outputs.version }}.dmg
+          path: nanotorrent-${{ needs.version.outputs.version }}.dmg
+          if-no-files-found: error
+
+  draft:
+    name: Draft release
+    needs: [version, windows, linux, macos]
+    if: inputs.draft
+    runs-on: ubuntu-latest
+    # Only this job writes anything back to the repo.
+    permissions:
+      contents: write
+    steps:
+      # No name filter: takes all four artifacts. merge-multiple flattens them
+      # into one directory instead of one subdirectory each.
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -lh dist
+
+          # gh, not a third-party action: it is already on the runner.
+          # A draft holds the tag name without creating the tag, so nothing is
+          # tagged until someone presses Publish.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Re-run of a build that already drafted. Refuse to touch it once
+            # it is published - overwriting assets on a live release would
+            # change what people have already been told to download.
+            if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
+              echo "$TAG is already published; refusing to overwrite its assets." >&2
+              exit 1
+            fi
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --draft \
+              --title "NanoTorrent ${{ needs.version.outputs.version }}" \
+              --generate-notes
+          fi
+
+          gh release view "$TAG" --json url -q .url

@@ -87,11 +87,10 @@ fn main() {
     );
 }
 
-/// Compiles the Slint UI when the `ui-slint` feature is on.
+/// Compiles the Slint UI into OUT_DIR when the `ui-slint` feature is on.
 ///
-/// Gated so a Windows-only ui-native build neither compiles slint-build nor
-/// needs the .slint sources to parse - the two UIs are independent until
-/// ui_native is retired.
+/// Gated on the feature so a headless build neither pulls in slint-build nor
+/// needs the .slint sources to parse.
 fn compile_slint_ui() {
     #[cfg(feature = "ui-slint")]
     {

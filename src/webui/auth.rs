@@ -25,6 +25,8 @@ pub struct Credentials {
 }
 
 impl Credentials {
+    /// Whether a password has been set. Without one the server refuses to
+    /// listen at all, rather than listening with no way in.
     pub fn is_configured(&self) -> bool {
         !self.password_hash.is_empty() && PasswordHash::new(&self.password_hash).is_ok()
     }
@@ -38,6 +40,11 @@ impl Credentials {
             .map_err(|e| anyhow::anyhow!("failed to hash password: {e}"))
     }
 
+    /// Check one set of credentials.
+    ///
+    /// Both halves are compared in constant time: Argon2 already gives that
+    /// for the password, and the username needs the same treatment or the
+    /// difference in reply timing leaks whether it was right.
     fn verify(&self, username: &str, password: &str) -> bool {
         // Both checks always run, and only then are combined. Returning early
         // on a bad username would make a wrong-user request measurably faster
@@ -71,6 +78,10 @@ fn parse_basic(header: &str) -> Option<(String, String)> {
     Some((user.to_string(), pass.to_string()))
 }
 
+/// The 401 every failed or missing authentication gets.
+///
+/// One shape for all of them - wrong password, wrong username, no header at
+/// all - so the reply never says which part was wrong.
 fn unauthorized(req: ServiceRequest) -> ServiceResponse<BoxBody> {
     // The realm makes browsers show their own credential prompt, which is all
     // the login UI a personal client needs.
@@ -81,6 +92,10 @@ fn unauthorized(req: ServiceRequest) -> ServiceResponse<BoxBody> {
     )
 }
 
+/// Middleware demanding HTTP Basic credentials on every request it wraps.
+///
+/// Applied to the whole app rather than per-route, so a route added later is
+/// protected by default instead of by remembering to say so.
 pub async fn require_auth<B>(
     req: ServiceRequest,
     next: Next<B>,

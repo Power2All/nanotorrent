@@ -4,7 +4,6 @@ use chrono::{DateTime, Local};
 
 // Some variants have no librqbit equivalent (queueing, resume-data checks)
 // but are kept to mirror the original enum.
-#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum State {
     Unknown,

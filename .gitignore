@@ -3,3 +3,4 @@
 
 # Spike crates build independently of the main workspace.
 /spike/*/target/
+__pycache__/

@@ -37,6 +37,10 @@ const VC: [u8; 8] = [0u8; 8]; // verification constant
 const CRYPTO_RC4: [u8; 4] = [0, 0, 0, 2]; // crypto_provide / crypto_select bit for RC4
 const MAX_PAD: usize = 512;
 
+/// Decode the hard-coded hex constant below into bytes.
+///
+/// Only ever called on `P_HEX`, a compile-time literal, so a stray character
+/// cannot come from input - it reads as zero rather than erroring.
 fn hex_to_bytes(s: &str) -> Vec<u8> {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len() / 2);
@@ -56,6 +60,8 @@ fn hex_to_bytes(s: &str) -> Vec<u8> {
     out
 }
 
+/// The 768-bit prime MSE fixes for its Diffie-Hellman exchange (BEP 8 / the
+/// MSE spec). Not a choice - both ends must use this exact value.
 fn dh_prime() -> BigUint {
     BigUint::from_bytes_be(&hex_to_bytes(P_HEX))
 }
@@ -86,6 +92,7 @@ struct Rc4 {
 }
 
 impl Rc4 {
+    /// Key-scheduling algorithm: shuffle the 256-byte state with the key.
     fn new(key: &[u8]) -> Self {
         let mut s = [0u8; 256];
         for (k, slot) in s.iter_mut().enumerate() {
@@ -101,6 +108,7 @@ impl Rc4 {
         Rc4 { s, i: 0, j: 0 }
     }
 
+    /// One byte of keystream (the pseudo-random generation algorithm).
     #[inline]
     fn next_byte(&mut self) -> u8 {
         self.i = self.i.wrapping_add(1);

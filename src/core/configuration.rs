@@ -11,16 +11,6 @@ use serde::de::DeserializeOwned;
 
 use super::database::Database;
 
-// Kept to mirror the original Configuration API; librqbit ships its own DHT
-// bootstrap node list.
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-pub struct DhtBootstrapNode {
-    pub id: i32,
-    pub hostname: String,
-    pub port: i32,
-}
-
 #[derive(Clone, Debug)]
 pub struct Filter {
     pub id: i32,
@@ -73,6 +63,8 @@ pub enum ConnectionProxyType {
 }
 
 impl ConnectionProxyType {
+    /// Map the stored integer to a proxy type, defaulting to None for a value
+    /// this build does not know - the original stored these as raw ints.
     pub fn from_i64(v: i64) -> ConnectionProxyType {
         match v {
             1 => ConnectionProxyType::Socks4,
@@ -90,10 +82,17 @@ pub struct Configuration {
 }
 
 impl Configuration {
+    /// Wrap an open database. Settings are read through on every access
+    /// rather than cached, so a change from anywhere is visible everywhere.
     pub fn new(db: Arc<Database>) -> Configuration {
         Configuration { db }
     }
 
+    /// The raw stored string for a key, falling back to the migration's
+    /// `default_value` when nothing has been set.
+    ///
+    /// That fallback is why a fresh database needs no seeding pass: every
+    /// setting's default arrives with the schema.
     fn get_value(&self, key: &str) -> Option<String> {
         self.db
             .with(|conn| {
@@ -109,6 +108,11 @@ impl Configuration {
             .flatten()
     }
 
+    /// Write the raw string for a key.
+    ///
+    /// An UPDATE, not an upsert: keys come from the migrations, so writing one
+    /// that does not exist is a typo and silently doing nothing is the right
+    /// outcome - it cannot invent a setting nothing reads.
     fn set_value(&self, key: &str, val: &str) {
         let _ = self.db.with(|conn| {
             conn.execute(
@@ -140,19 +144,21 @@ impl Configuration {
         self.set_value(key, &serde_json::to_string(value).unwrap_or_default());
     }
 
+    /// A boolean setting, false when missing or unparseable.
     pub fn get_bool(&self, key: &str) -> bool {
         self.get::<bool>(key).unwrap_or(false)
     }
 
+    /// An integer setting, or None when missing or unparseable.
     pub fn get_int(&self, key: &str) -> Option<i64> {
         self.get::<i64>(key)
     }
 
+    /// A string setting, or None when missing.
     pub fn get_string(&self, key: &str) -> Option<String> {
         self.get::<String>(key)
     }
 
-    #[allow(dead_code)]
     /// Port of the PersistenceManager - free-form key/value state in the
     /// persistent_object table (window geometry, splitter position, ...).
     pub fn get_persistent(&self, key: &str) -> Option<String> {
@@ -169,6 +175,12 @@ impl Configuration {
             .flatten()
     }
 
+    /// Write free-form UI state (window geometry, splitter position, column
+    /// widths) to the `persistent_object` table.
+    ///
+    /// Separate from settings because these are not configuration: nothing
+    /// declares them, nothing defaults them, and losing one costs a window
+    /// position rather than a preference.
     pub fn set_persistent(&self, key: &str, value: &str) {
         let _ = self.db.with(|conn| {
             conn.execute(
@@ -178,31 +190,7 @@ impl Configuration {
         });
     }
 
-    #[allow(dead_code)]
-    pub fn restore_defaults(&self) {
-        let _ = self.db.execute(
-            "UPDATE setting SET value = (SELECT default_value FROM setting s2 WHERE s2.key = setting.key);",
-        );
-    }
-
-    #[allow(dead_code)]
-    pub fn get_dht_bootstrap_nodes(&self) -> Vec<DhtBootstrapNode> {
-        self.db
-            .with(|conn| {
-                let mut stmt =
-                    conn.prepare("select id, hostname, port from dht_bootstrap_node")?;
-                let rows = stmt.query_map([], |row| {
-                    Ok(DhtBootstrapNode {
-                        id: row.get(0)?,
-                        hostname: row.get(1)?,
-                        port: row.get(2)?,
-                    })
-                })?;
-                rows.collect()
-            })
-            .unwrap_or_default()
-    }
-
+    /// Every saved filter, for the Filters menu and the Preferences tab.
     pub fn get_filters(&self) -> Vec<Filter> {
         self.db
             .with(|conn| {
@@ -219,6 +207,7 @@ impl Configuration {
             .unwrap_or_default()
     }
 
+    /// Every label: name, colours, save path and the auto-apply rule.
     pub fn get_labels(&self) -> Vec<Label> {
         self.db
             .with(|conn| {
@@ -243,6 +232,39 @@ impl Configuration {
             .unwrap_or_default()
     }
 
+    /// Remove a saved PQL filter.
+    ///
+    /// Nothing references a filter by id the way a torrent references a label,
+    /// so unlike `delete_label` this needs no fixup pass.
+    pub fn delete_filter(&self, id: i32) {
+        let _ = self
+            .db
+            .with(|conn| conn.execute("delete from filter where id = ?1", [id]));
+    }
+
+    /// Insert (id < 0) or update a saved PQL filter.
+    pub fn upsert_filter(&self, filter: &Filter) {
+        let _ = self.db.with(|conn| {
+            if filter.id < 0 {
+                conn.execute(
+                    "insert into filter (name, filter) values (?1, ?2);",
+                    rusqlite::params![filter.name, filter.filter],
+                )
+            } else {
+                conn.execute(
+                    "update filter set name = ?1, filter = ?2 where id = ?3",
+                    rusqlite::params![filter.name, filter.filter, filter.id],
+                )
+            }
+        });
+    }
+
+    /// Delete a label, clearing it from every torrent that carries it first.
+    ///
+    /// That order matters: `torrent.label_id` left pointing at a row that no
+    /// longer exists would show a torrent as labelled with a name nothing can
+    /// resolve. Doing it first means the worst outcome is an orphaned label
+    /// row, which is invisible, rather than an orphaned reference.
     pub fn delete_label(&self, id: i32) {
         let _ = self.db.with(|conn| {
             conn.execute(
@@ -253,6 +275,7 @@ impl Configuration {
         });
     }
 
+    /// Insert a label, or update it when `label.id` names an existing one.
     pub fn upsert_label(&self, label: &Label) {
         let _ = self.db.with(|conn| {
             if label.id < 0 {
@@ -288,6 +311,7 @@ impl Configuration {
         });
     }
 
+    /// The configured listen addresses and ports.
     pub fn get_listen_interfaces(&self) -> Vec<ListenInterface> {
         self.db
             .with(|conn| {
@@ -307,13 +331,7 @@ impl Configuration {
             .unwrap_or_default()
     }
 
-    #[allow(dead_code)]
-    pub fn delete_listen_interface(&self, id: i32) {
-        let _ = self
-            .db
-            .with(|conn| conn.execute("delete from listen_interface where id = ?1", [id]));
-    }
-
+    /// Insert or update one listen interface.
     pub fn upsert_listen_interface(&self, iface: &ListenInterface) {
         let _ = self.db.with(|conn| {
             if iface.id < 0 {

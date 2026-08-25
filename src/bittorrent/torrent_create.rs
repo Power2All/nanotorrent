@@ -31,6 +31,8 @@ pub enum TorrentVersion {
 }
 
 impl TorrentVersion {
+    /// Map a combo-box index to a version, defaulting to v1 for anything out
+    /// of range - v1 is the format every client can still read.
     pub fn from_index(i: usize) -> TorrentVersion {
         match i {
             1 => TorrentVersion::V2,
@@ -53,10 +55,18 @@ pub enum Ben {
 }
 
 impl Ben {
+    /// A bencode byte string from UTF-8 text. Bencode has no string type of
+    /// its own - everything is bytes - so this is just the common case.
     fn s(text: &str) -> Ben {
         Ben::Bytes(text.as_bytes().to_vec())
     }
 
+    /// Append the bencoded form to `out`.
+    ///
+    /// Dictionary keys are sorted here rather than at construction. Bencode
+    /// requires byte order, and the info dict's hash is the torrent's
+    /// identity, so the wrong order produces a different info hash and a
+    /// torrent nobody else can find.
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
             Ben::Int(n) => {
@@ -89,6 +99,7 @@ impl Ben {
         }
     }
 
+    /// The complete bencoded form as a fresh buffer.
     fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         self.encode(&mut out);
@@ -98,18 +109,21 @@ impl Ben {
 
 // Hashing helpers
 
+/// SHA-1 of one buffer - v1 piece hashes and the v1 info hash.
 fn sha1(data: &[u8]) -> [u8; 20] {
     let mut h = Sha1::new();
     h.update(data);
     h.finalize().into()
 }
 
+/// SHA-256 of one buffer - v2 block hashes and the v2 info hash (BEP 52).
 fn sha256(data: &[u8]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(data);
     h.finalize().into()
 }
 
+/// One interior node of a v2 merkle tree: SHA-256 over two child hashes.
 fn hash_pair(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(a);
@@ -126,6 +140,10 @@ fn merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
     layer[0]
 }
 
+/// Round up to a power of two.
+///
+/// A v2 merkle tree needs a full binary tree, so the leaf count is padded up
+/// to the next power of two before the root is computed.
 fn next_pow2(n: usize) -> usize {
     let mut p = 1;
     while p < n {
@@ -177,6 +195,16 @@ fn collect_files(source: &Path) -> Result<(String, Vec<SrcFile>, bool)> {
     Ok((name, files, false))
 }
 
+/// Collect every file under `dir`, depth-first, with path components relative
+/// to the torrent root.
+///
+/// Entries are sorted by name at each level, so the same folder always
+/// produces the same torrent - and therefore the same info hash.
+///
+/// `is_dir`/`is_file` follow symlinks, so a link to a file is included as that
+/// file. Anything that is neither after following (a broken link, a socket, a
+/// fifo) is skipped silently; a file that cannot be stat'ed fails the build,
+/// because a torrent missing a file it was asked to include is worse than none.
 fn walk(dir: &Path, prefix: &mut Vec<String>, out: &mut Vec<SrcFile>) -> Result<()> {
     let mut entries: Vec<_> = std::fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
     entries.sort_by_key(|e| e.file_name());
@@ -210,6 +238,11 @@ struct FileV2 {
     piece_layer: Vec<u8>,
 }
 
+/// Build one file's v2 merkle data: its pieces root and piece layer.
+///
+/// Per file, not per torrent - that is the v2 change. Each file is hashed
+/// independently in 16 KiB blocks, which is what lets two torrents share a
+/// file without sharing a piece alignment.
 fn hash_file_v2(path: &Path, piece_length: u32) -> Result<FileV2> {
     let blocks_per_piece = piece_length as usize / BLOCK;
     let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
@@ -290,6 +323,7 @@ struct V1Hasher {
 }
 
 impl V1Hasher {
+    /// A hasher that emits one SHA-1 per `piece_length` bytes fed through it.
     fn new(piece_length: usize) -> Self {
         V1Hasher {
             piece_length,
@@ -298,6 +332,11 @@ impl V1Hasher {
         }
     }
 
+    /// Feed bytes in, hashing each complete piece as it fills.
+    ///
+    /// Takes arbitrary-sized chunks and buffers the remainder, so callers can
+    /// stream a file in whatever read size they like without knowing where the
+    /// piece boundaries fall.
     fn push(&mut self, mut data: &[u8]) {
         while !data.is_empty() {
             let take = (self.piece_length - self.cur.len()).min(data.len());
@@ -321,6 +360,10 @@ impl V1Hasher {
         pad
     }
 
+    /// The concatenated piece hashes, flushing a final partial piece.
+    ///
+    /// The last piece of a torrent is short unless the total happens to divide
+    /// evenly, and it is hashed at its real length - not padded.
     fn finish(mut self) -> Vec<u8> {
         if !self.cur.is_empty() {
             self.pieces.extend_from_slice(&sha1(&self.cur));
@@ -329,6 +372,10 @@ impl V1Hasher {
     }
 }
 
+/// Read a file in fixed-size chunks, handing each to `sink`.
+///
+/// Streamed rather than read whole: torrents are made from files far larger
+/// than memory.
 fn stream_file(path: &Path, mut sink: impl FnMut(&[u8])) -> Result<()> {
     let mut f = File::open(path)?;
     let mut buf = vec![0u8; BLOCK];

@@ -54,6 +54,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     migration!("20260716000000_reinstate_geoip_settings"),
     migration!("20260815000000_github_release_update_check"),
     migration!("20260821000000_web_api_settings"),
+    migration!("20260822000000_notification_settings"),
 ];
 
 pub struct Database {
@@ -61,10 +62,13 @@ pub struct Database {
 }
 
 impl Database {
+    /// Open (creating if needed) the settings database in the profile folder.
     pub fn open(env: &Environment) -> Result<Database> {
         Self::open_path(&env.get_database_file_path())
     }
 
+    /// Open a database at an explicit path. Used by the tests and by the
+    /// one-shot PicoTorrent import, which reads someone else's file.
     pub fn open_path(path: &std::path::Path) -> Result<Database> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -181,13 +185,6 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         f(&conn)
     }
-
-    #[allow(dead_code)]
-    pub fn execute(&self, sql: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute_batch(sql)?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -224,8 +221,13 @@ mod tests {
         assert_eq!(ifaces[0].address, "0.0.0.0");
         assert_eq!(ifaces[0].port, 6881);
 
-        // Default DHT bootstrap nodes and filters.
-        assert_eq!(cfg.get_dht_bootstrap_nodes().len(), 4);
+        // Default DHT bootstrap nodes and filters. librqbit brings its own
+        // bootstrap list, so nothing reads this table - the assertion is here
+        // to catch a migration that stops seeding it.
+        let nodes: i64 = db
+            .with(|conn| conn.query_row("select count(*) from dht_bootstrap_node", [], |r| r.get(0)))
+            .unwrap();
+        assert_eq!(nodes, 4);
         assert_eq!(cfg.get_filters().len(), 2);
 
         // The torrent table has the Rust-port timestamp columns.

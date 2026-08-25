@@ -9,33 +9,28 @@
 //   6. Create the BitTorrent session
 //   7. Show the main window
 //
-// The UI is the native Win32 one (ui_native), matching the original's
-// wxWidgets-over-Win32 look.
+// The UI is the cross-platform Slint one (ui_slint) - the same window on
+// Windows, Linux and macOS. The original Win32 front end it replaced is in the
+// history up to v0.2.0.
 
 // GUI builds detach from the console; headless ones must NOT. Without a console
 // a Windows process gets no CTRL_C_EVENT, so the headless run loop below could
 // never be stopped cleanly - it would sit invisible in Task Manager and only die
 // by being killed, which is exactly the unclean exit that forces a full recheck.
 #![cfg_attr(
-    all(not(debug_assertions), feature = "ui-native", windows),
+    all(not(debug_assertions), windows, feature = "ui-slint"),
     windows_subsystem = "windows"
 )]
-// A headless build compiles the whole UI-support layer (ui::format, ui::filters,
-// core::utils) with nothing calling it yet, which buries real warnings under ~27
-// dead-code ones. The HTTP API is what consumes these, so this comes back out in
-// Phase 1 rather than growing per-item attributes now.
-#![cfg_attr(not(any(all(feature = "ui-native", windows), feature = "ui-slint")), allow(dead_code))]
+// A headless build compiles the UI-support layer (ui::format, ui::filters,
+// core::utils) with only the web interface calling into parts of it, which
+// would bury real warnings under a screenful of dead-code ones.
+#![cfg_attr(not(feature = "ui-slint"), allow(dead_code))]
 
 mod bittorrent;
 mod buildinfo;
 mod core;
 mod ipc;
 mod ui;
-// `windows` as well as the feature: ui-native is on by default, but the Win32
-// UI only exists on Windows. Linux/macOS builds fall through to run_ui's
-// headless arm instead of failing to compile.
-#[cfg(all(feature = "ui-native", windows))]
-mod ui_native;
 #[cfg(feature = "ui-slint")]
 mod ui_slint;
 mod updatechecker;
@@ -44,8 +39,7 @@ mod webui;
 /// True when no native UI is compiled in. The web interface is then the only
 /// way to reach this process, which makes failing to start it fatal rather
 /// than a degraded-but-usable state.
-const HEADLESS: bool =
-    !cfg!(any(all(feature = "ui-native", windows), feature = "ui-slint"));
+const HEADLESS: bool = !cfg!(feature = "ui-slint");
 
 use std::sync::{Arc, Mutex};
 
@@ -63,7 +57,7 @@ use crate::updatechecker::UpdateInfo;
 // A headless build reads almost none of these yet - the HTTP API is what will
 // consume them. Keeping them assembled means that lands as an addition rather
 // than a rework of startup.
-#[cfg_attr(not(any(all(feature = "ui-native", windows), feature = "ui-slint")), allow(dead_code))]
+#[cfg_attr(not(feature = "ui-slint"), allow(dead_code))]
 pub struct AppContext {
     pub env: Arc<Environment>,
     pub db: Arc<Database>,
@@ -74,8 +68,14 @@ pub struct AppContext {
     pub args: Vec<String>,
     pub update_slot: Arc<Mutex<Option<UpdateInfo>>>,
     pub geoip: Arc<core::geoip::GeoIp>,
+    /// The running web interface, handed to the UI so Preferences can restart
+    /// it in place rather than asking for an app restart. `None` when it is
+    /// disabled or failed to start.
+    pub web: Option<actix_web::dev::ServerHandle>,
 }
 
+/// Thin wrapper around [`run`]: its job is to turn a startup failure into
+/// something visible, since a GUI build has no console to print to.
 fn main() {
     if let Err(err) = run() {
         // The release build is a GUI subsystem binary, so a returned Err would
@@ -87,7 +87,7 @@ fn main() {
     }
 }
 
-/// Show a startup failure before the UI exists (nwg isn't initialised yet).
+/// Show a startup failure before the UI exists.
 fn fatal_error(msg: &str) {
     // Free, and the right channel whenever anyone is attached to it.
     eprintln!("NanoTorrent could not start: {msg}");
@@ -102,7 +102,7 @@ fn fatal_error(msg: &str) {
     // headless build would put up a modal box that blocks forever waiting for
     // a click nobody is there to make. A compile-time fact deserves a
     // compile-time test.
-    #[cfg(all(not(debug_assertions), feature = "ui-native", windows))]
+    #[cfg(all(not(debug_assertions), windows, feature = "ui-slint"))]
     unsafe {
         use std::os::windows::ffi::OsStrExt;
         let wide = |s: &str| -> Vec<u16> {
@@ -125,6 +125,8 @@ fn fatal_error(msg: &str) {
     }
 }
 
+/// Startup, in the order listed at the top of this file, ending in the UI
+/// event loop and a clean session shutdown.
 fn run() -> anyhow::Result<()> {
     // Before ANY TLS happens - reqwest (update check, GeoIP) and the web
     // interface both reach for rustls, which panics rather than erroring if no
@@ -132,6 +134,34 @@ fn run() -> anyhow::Result<()> {
     webui::tls::ensure_crypto_provider();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
+
+    // Before the database is opened and before the single-instance socket:
+    // `nanotorrent --version` has to print and exit, not hand itself to a
+    // running window as though it were a torrent to open.
+    //
+    // Windows GUI builds detach from the console (see windows_subsystem at the
+    // top), so these print nowhere there. They are for the packaged Linux and
+    // macOS binaries, where the executable sits on PATH.
+    if let Some(flag) = args.first().map(String::as_str)
+        && matches!(flag, "--version" | "-V" | "--help" | "-h")
+    {
+        if flag == "--version" || flag == "-V" {
+            println!("NanoTorrent {}", buildinfo::version());
+        } else {
+            println!(
+                "NanoTorrent {} - a tiny, hackable BitTorrent client.",
+                buildinfo::version()
+            );
+            println!();
+            println!("Usage: nanotorrent [FILE|MAGNET]...");
+            println!();
+            println!("Torrent files and magnet links are opened in the running");
+            println!("instance if there is one.");
+            println!();
+            println!("{}", webui::cli::USAGE);
+        }
+        return Ok(());
+    }
 
     // BEFORE the IPC check below, which forwards argv to a running instance and
     // exits - a --set-web-password would otherwise be handed to the running
@@ -218,10 +248,9 @@ fn run() -> anyhow::Result<()> {
     // Optional web interface (off unless webui.enabled). Held for the lifetime
     // of the process; the server runs on its own thread and its System is torn
     // down at exit.
-    // ponytail: no graceful stop on shutdown - in-flight requests are cut when
-    // the process exits. Wire ServerHandle::stop through run_ui if that starts
-    // mattering (it will once prefs can restart the server in place).
-    let _web = match webui::spawn(session.clone(), cfg.clone(), env.clone()) {
+    // Handed to the UI below, which can stop and respawn it when the settings
+    // change. In-flight requests are still cut when the process exits.
+    let web = match webui::spawn(session.clone(), cfg.clone(), env.clone()) {
         Ok(handle) => handle,
         Err(err) if HEADLESS => {
             return Err(err.context("the web interface is the only interface on this build"));
@@ -242,11 +271,17 @@ fn run() -> anyhow::Result<()> {
         args,
         update_slot,
         geoip,
+        web,
     };
 
     run_ui(ctx)
 }
 
+/// Write a panic and its backtrace to the logs folder before the default hook
+/// runs.
+///
+/// The original used Crashpad; this keeps the local report and drops the
+/// upload. Without it a GUI build's panic goes to an stderr nobody is reading.
 fn install_panic_hook(log_dir: std::path::PathBuf) {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -262,15 +297,8 @@ fn install_panic_hook(log_dir: std::path::PathBuf) {
     }));
 }
 
-#[cfg(all(feature = "ui-native", windows))]
-fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
-    ui_native::run(ctx)
-}
-
-/// The cross-platform UI. Reached when ui-native is not available - which is
-/// every non-Windows build, and a Windows build asked for it explicitly with
-/// `--no-default-features --features ui-slint`.
-#[cfg(all(feature = "ui-slint", not(all(feature = "ui-native", windows))))]
+/// Show the main window and run the UI event loop until it closes.
+#[cfg(feature = "ui-slint")]
 fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
     ui_slint::run(ctx)
 }
@@ -282,7 +310,7 @@ fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
 ///
 /// This is the loop the HTTP API will attach to, so it is deliberately a real
 /// run loop rather than a stub that returns.
-#[cfg(not(any(all(feature = "ui-native", windows), feature = "ui-slint")))]
+#[cfg(not(feature = "ui-slint"))]
 fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
     tracing::info!("no UI on this target - running headless, Ctrl-C to stop");
 

@@ -1,0 +1,48 @@
+// What closing the window does while `ui.close_action` is still "ask":
+// exit, or minimise to the notification area.
+
+import { Button, CheckBox, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
+
+export component ClosePromptDialog inherits Window {
+    icon: @image-url("../../res/app.png");
+    title: "NanoTorrent";
+    preferred-width: 440px;
+    preferred-height: 210px;
+    background: Palette.background;
+
+    in-out property <bool> remember;
+
+    /// `exit` false means minimize to the tray. Cancelling just closes the
+    /// prompt, leaving the window where it was.
+    callback chosen(bool);
+    callback cancelled();
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 14px;
+
+        Text {
+            text: L.s(L.revision, "close_prompt_body");
+            wrap: word-wrap;
+            vertical-stretch: 1;
+        }
+
+        CheckBox {
+            text: L.s(L.revision, "close_remember");
+            checked <=> root.remember;
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Rectangle { horizontal-stretch: 1; }
+            Button { text: L.s(L.revision, "amp_exit"); clicked => { root.chosen(true); } }
+            Button {
+                text: L.s(L.revision, "close_minimize");
+                primary: true;
+                clicked => { root.chosen(false); }
+            }
+            Button { text: L.s(L.revision, "cancel"); clicked => { root.cancelled(); } }
+        }
+    }
+}

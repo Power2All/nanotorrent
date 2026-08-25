@@ -71,6 +71,12 @@ pub struct WebConfig {
 }
 
 impl WebConfig {
+    /// Read the `webui.*` settings, substituting a working default for
+    /// anything missing or out of range.
+    ///
+    /// Every fallback here is the safe one: loopback rather than any-address,
+    /// and TLS on rather than off. A corrupt or half-written setting must not
+    /// be the thing that puts a plaintext listener on the LAN.
     pub fn load(cfg: &Configuration) -> WebConfig {
         let tls = match cfg.get_string("webui.tls_mode").unwrap_or_default().as_str() {
             "off" => TlsMode::Off,
@@ -98,10 +104,11 @@ impl WebConfig {
                 .filter(|u| !u.is_empty())
                 .unwrap_or_else(|| String::from("nanotorrent")),
             password_hash: cfg.get_string("webui.password_hash").unwrap_or_default(),
-            tls: tls,
+            tls,
         }
     }
 
+    /// The `host:port` string to bind the listener to.
     fn socket_addr(&self) -> String {
         format!("{}:{}", self.bind_address, self.port)
     }
@@ -212,6 +219,10 @@ impl From<TorrentStatus> for TorrentDto {
 
 // --- handlers ---------------------------------------------------------------
 
+/// `GET /api/health` - a liveness probe that touches nothing.
+///
+/// Deliberately does not consult the session: this answers "is the HTTP layer
+/// up", and a probe that blocks on a busy session would report the wrong thing.
 async fn h_health() -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({ "status": "ok" }))
 }
@@ -242,6 +253,8 @@ async fn h_index() -> impl Responder {
         .body(include_str!("index.html"))
 }
 
+/// `GET /api/session` - version, listen port, DHT node count, current rates
+/// and how many torrents there are.
 async fn h_session(state: web::Data<AppState>) -> actix_web::Result<impl Responder> {
     let st = state.clone();
     // web::block, not a direct call: see the threading note at the top.
@@ -261,6 +274,8 @@ async fn h_session(state: web::Data<AppState>) -> actix_web::Result<impl Respond
     Ok(web::Json(info))
 }
 
+/// `GET /api/torrents` - one row per torrent, the same fields the main
+/// window's list shows, with label ids already resolved to names.
 async fn h_torrents(state: web::Data<AppState>) -> actix_web::Result<impl Responder> {
     let st = state.clone();
     let rows = web::block(move || {
@@ -294,6 +309,8 @@ async fn h_errors(state: web::Data<AppState>) -> actix_web::Result<impl Responde
 
 // --- mutating handlers ------------------------------------------------------
 
+/// serde default for `AddRequest::start`: a torrent added without saying
+/// otherwise starts, which is what every client does.
 fn default_start() -> bool {
     true
 }
@@ -312,6 +329,12 @@ struct AddRequest {
     only_files: Option<Vec<usize>>,
 }
 
+/// `POST /api/torrents` - add a magnet link or an uploaded `.torrent`.
+///
+/// Exactly one of `magnet` / `torrent_file` must be given. Both are validated
+/// before reaching the engine: the magnet for its scheme, because librqbit
+/// would otherwise fetch arbitrary URLs on request (see the note inside), and
+/// the file for being decodable and non-empty.
 async fn h_add(
     state: web::Data<AppState>,
     body: web::Json<AddRequest>,
@@ -391,6 +414,7 @@ where
     }
 }
 
+/// `POST /api/torrents/{hash}/pause`
 async fn h_pause(
     state: web::Data<AppState>,
     hash: web::Path<String>,
@@ -398,6 +422,7 @@ async fn h_pause(
     with_torrent(&state, hash.into_inner(), |s, h| s.pause(h)).await
 }
 
+/// `POST /api/torrents/{hash}/resume`
 async fn h_resume(
     state: web::Data<AppState>,
     hash: web::Path<String>,
@@ -405,6 +430,7 @@ async fn h_resume(
     with_torrent(&state, hash.into_inner(), |s, h| s.resume(h)).await
 }
 
+/// `POST /api/torrents/{hash}/recheck` - re-hash what is on disk.
 async fn h_recheck(
     state: web::Data<AppState>,
     hash: web::Path<String>,
@@ -420,6 +446,8 @@ struct RemoveQuery {
     delete_files: bool,
 }
 
+/// `DELETE /api/torrents/{hash}` - remove a torrent, and its data only when
+/// `?delete_files=true` says so explicitly.
 async fn h_remove(
     state: web::Data<AppState>,
     hash: web::Path<String>,
@@ -437,6 +465,11 @@ struct MoveRequest {
     path: String,
 }
 
+/// `POST /api/torrents/{hash}/move` - move a torrent's storage.
+///
+/// The path must be absolute: a relative one would resolve against whatever
+/// directory the process happens to be running in, which is not something the
+/// caller can see.
 async fn h_move(
     state: web::Data<AppState>,
     hash: web::Path<String>,
@@ -458,6 +491,8 @@ struct LabelRequest {
     label_id: Option<i32>,
 }
 
+/// `POST /api/torrents/{hash}/label` - assign a label, or clear it with a
+/// null `label_id`.
 async fn h_label(
     state: web::Data<AppState>,
     hash: web::Path<String>,
@@ -469,16 +504,22 @@ async fn h_label(
 
 // --- filesystem handlers ----------------------------------------------------
 
+/// `GET /api/fs/roots` - the drives (Windows) or mount points (Unix) the save
+/// path browser starts from.
 async fn h_fs_roots() -> actix_web::Result<impl Responder> {
     Ok(web::Json(web::block(fs::roots).await?))
 }
 
+/// `GET /api/fs/list?path=...` - directories under one path, for picking a
+/// save location. Files are not listed; only somewhere to put them.
 async fn h_fs_list(query: web::Query<fs::PathRequest>) -> actix_web::Result<impl Responder> {
     let path = query.into_inner().path;
     let listing = web::block(move || fs::list(&path)).await?.map_err(ErrorBadRequest)?;
     Ok(web::Json(listing))
 }
 
+/// `POST /api/fs/mkdir` - create a directory so a torrent can be pointed at
+/// somewhere that does not exist yet.
 async fn h_fs_mkdir(body: web::Json<fs::PathRequest>) -> actix_web::Result<impl Responder> {
     let path = body.into_inner().path;
     let listing = web::block(move || fs::mkdir(&path)).await?.map_err(ErrorBadRequest)?;
@@ -492,6 +533,41 @@ async fn h_fs_mkdir(body: web::Json<fs::PathRequest>) -> actix_web::Result<impl 
 /// `Ok(None)` means "switched off", which is not an error. An `Err` means it
 /// was asked for and could not be started - the caller decides how loudly to
 /// say so, because that is fatal headless and merely bad on Windows.
+/// Stop a running web interface.
+///
+/// `ServerHandle::stop` is async and the caller is the UI thread, which has no
+/// runtime - so this drives the future on a throwaway one. Graceful, so a
+/// request in flight when someone presses Ok in Preferences finishes rather
+/// than being cut.
+pub fn stop(handle: ServerHandle) {
+    std::thread::Builder::new()
+        .name(String::from("nt-webui-stop"))
+        .spawn(move || {
+            actix_web::rt::System::new().block_on(handle.stop(true));
+        })
+        .map(|t| {
+            // Joined so the port is free before the caller rebinds it -
+            // respawning on the same port otherwise races the old listener.
+            let _ = t.join();
+        })
+        .unwrap_or_else(|err| tracing::error!("could not stop the web interface: {err}"));
+}
+
+/// Stop whatever is running and start again from the current settings.
+///
+/// Returns the new handle, or `None` when the interface is now disabled.
+pub fn restart(
+    current: Option<ServerHandle>,
+    session: Arc<Session>,
+    cfg: Arc<Configuration>,
+    env: Arc<Environment>,
+) -> Result<Option<ServerHandle>> {
+    if let Some(handle) = current {
+        stop(handle);
+    }
+    spawn(session, cfg, env)
+}
+
 pub fn spawn(
     session: Arc<Session>,
     cfg: Arc<Configuration>,
@@ -577,6 +653,11 @@ pub fn spawn(
     Ok(Some(handle))
 }
 
+/// Assemble the router, bind the socket and return the unstarted server.
+///
+/// Split out from [`spawn`] so binding fails here, on the caller's thread,
+/// with a real error - inside the server thread it would only reach a log line
+/// nobody is watching.
 fn build(
     addr: &str,
     session: Arc<Session>,

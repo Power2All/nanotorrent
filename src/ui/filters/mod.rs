@@ -1,10 +1,28 @@
-// Port of src/picotorrent/ui/filters/{torrentfilter,pqltorrentfilter}.{hpp,cpp}
-//
-// Implements the subset of PicoTorrent Query Language (PQL) needed for the
-// built-in filters, e.g.:
-//
-//     status = "downloading" and dl > 1kbps
-//     name contains "linux" or size >= 1gb
+//! The subset of PicoTorrent Query Language (PQL) the built-in filters need.
+//!
+//! Port of src/picotorrent/ui/filters/{torrentfilter,pqltorrentfilter}.{hpp,cpp}.
+//!
+//! ```text
+//! status = "downloading" and dl > 1kbps
+//! name contains "linux" or size >= 1gb
+//! (status = "paused" or progress < 100) and label = "iso"
+//! ```
+//!
+//! The grammar, loosest binding first - a recursive-descent parser with one
+//! function per precedence level:
+//!
+//! ```text
+//! or   := and ("or" and)*
+//! and  := cmp ("and" cmp)*
+//! cmp  := "(" or ")" | IDENT OP VALUE
+//! OP   := "=" | "!=" | ">" | "<" | ">=" | "<=" | "contains"
+//! ```
+//!
+//! Fields are fixed (see [`eval`]); an unknown one makes the comparison false
+//! rather than an error, so a filter typed against a newer version still runs.
+//!
+//! No precedence climbing, no operator table, no AST visitor: the grammar has
+//! three levels and seven operators, and it is not going to grow.
 
 use crate::bittorrent::torrentstatus::{State, TorrentStatus};
 
@@ -36,11 +54,18 @@ pub enum Value {
     Num(f64),
 }
 
+/// Clone so a UI can keep the last valid filter while a newer expression is
+/// still being typed. Expr is already Clone; this is just the wrapper.
+#[derive(Debug, Clone)]
 pub struct TorrentFilter {
     expr: Expr,
 }
 
 impl TorrentFilter {
+    /// Parse an expression, or say what is wrong with it.
+    ///
+    /// The error is shown verbatim in the filter console, so it names the
+    /// token that failed rather than just reporting failure.
     pub fn parse(input: &str) -> Result<TorrentFilter, String> {
         let tokens = tokenize(input)?;
         let mut pos = 0usize;
@@ -51,6 +76,8 @@ impl TorrentFilter {
         Ok(TorrentFilter { expr })
     }
 
+    /// Whether one torrent passes this filter. Called for every row on every
+    /// refresh tick, so it walks the parsed tree rather than re-parsing.
     pub fn includes(&self, status: &TorrentStatus) -> bool {
         eval(&self.expr, status)
     }
@@ -68,6 +95,11 @@ enum Token {
     RParen,
 }
 
+/// Split the input into tokens.
+///
+/// Sizes and rates carry their unit (`1gb`, `500kbps`) and are converted to
+/// plain bytes / bytes-per-second here, so the parser and evaluator below only
+/// ever see numbers.
 fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     let mut tokens = Vec::new();
     let chars: Vec<char> = input.chars().collect();
@@ -169,6 +201,8 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     Ok(tokens)
 }
 
+/// `or` - the loosest binding, so it is the entry point and the level
+/// parentheses recurse back into.
 fn parse_or(tokens: &[Token], pos: &mut usize) -> Result<Expr, String> {
     let mut left = parse_and(tokens, pos)?;
     while *pos < tokens.len() && tokens[*pos] == Token::Or {
@@ -179,6 +213,7 @@ fn parse_or(tokens: &[Token], pos: &mut usize) -> Result<Expr, String> {
     Ok(left)
 }
 
+/// `and`, which binds tighter than `or`: `a or b and c` is `a or (b and c)`.
 fn parse_and(tokens: &[Token], pos: &mut usize) -> Result<Expr, String> {
     let mut left = parse_cmp(tokens, pos)?;
     while *pos < tokens.len() && tokens[*pos] == Token::And {
@@ -189,6 +224,8 @@ fn parse_and(tokens: &[Token], pos: &mut usize) -> Result<Expr, String> {
     Ok(left)
 }
 
+/// A single `field op value`, or a parenthesised expression - the tightest
+/// binding level, and the only one that consumes anything itself.
 fn parse_cmp(tokens: &[Token], pos: &mut usize) -> Result<Expr, String> {
     if *pos < tokens.len() && tokens[*pos] == Token::LParen {
         *pos += 1;
@@ -225,6 +262,11 @@ fn parse_cmp(tokens: &[Token], pos: &mut usize) -> Result<Expr, String> {
     })
 }
 
+/// The name `status = "..."` matches against.
+///
+/// Deliberately coarser than [`State`]: the twelve internal states collapse to
+/// the six a person would think to type. Queued and checking sub-states read
+/// as the thing they are queued or checking for.
 fn status_name(state: State) -> &'static str {
     match state {
         State::Downloading
@@ -239,6 +281,11 @@ fn status_name(state: State) -> &'static str {
     }
 }
 
+/// Test one torrent against a parsed expression.
+///
+/// This is also the list of fields a filter can name. A field that is not here
+/// evaluates to false rather than erroring - parsing already succeeded, and a
+/// row is not worth a panic.
 fn eval(expr: &Expr, s: &TorrentStatus) -> bool {
     match expr {
         Expr::And(a, b) => eval(a, s) && eval(b, s),
@@ -264,6 +311,10 @@ fn eval(expr: &Expr, s: &TorrentStatus) -> bool {
     }
 }
 
+/// String comparison, case-insensitive on both sides: filters are typed by
+/// hand and `name contains "Linux"` should match `linux`.
+///
+/// Ordering operators are meaningless here and return false.
 fn cmp_str(actual: &str, op: Op, value: &Value) -> bool {
     let Value::Str(expected) = value else {
         return false;
@@ -278,6 +329,8 @@ fn cmp_str(actual: &str, op: Op, value: &Value) -> bool {
     }
 }
 
+/// Numeric comparison. `contains` has no meaning on a number and returns
+/// false rather than being rejected at parse time.
 fn cmp_num(actual: f64, op: Op, expected: f64) -> bool {
     match op {
         Op::Eq => actual == expected,

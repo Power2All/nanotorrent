@@ -31,6 +31,15 @@ impl Server {
     }
 }
 
+/// Claim the single-instance role, or hand `args` to whoever already has it.
+///
+/// Binding the port IS the lock: whichever process gets it is primary, and the
+/// rest connect, write their argv as JSON and exit. That avoids a named mutex
+/// (Windows-only) and a pid file (which outlives a crash and has to be
+/// validated); a port cannot be left stale, because it is released when the
+/// process dies.
+///
+/// Loopback only, so nothing off this machine can reach it.
 pub fn init(args: &[String]) -> Instance {
     match TcpListener::bind(IPC_ADDR) {
         Ok(listener) => {
@@ -55,6 +64,11 @@ pub fn init(args: &[String]) -> Instance {
     }
 }
 
+/// Read forwarded argv from secondary instances until the process ends.
+///
+/// Runs on its own thread and never fails a connection loudly: a malformed
+/// payload is dropped rather than being allowed to take the listener down and
+/// silently end single-instance handling for the rest of the session.
 fn accept_loop(listener: TcpListener, tx: Sender<Vec<String>>) {
     for stream in listener.incoming().flatten() {
         let mut buf = Vec::new();

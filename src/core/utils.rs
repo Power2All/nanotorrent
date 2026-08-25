@@ -27,6 +27,10 @@ pub fn to_human_file_size(bytes: i64) -> String {
     format!("{:.2} {}", value, UNITS[unit])
 }
 
+/// A transfer rate as a human-readable string, e.g. `1.4 MB/s`.
+///
+/// Formats whatever it is given; deciding that a rate is too small to be worth
+/// showing belongs to the caller (see `ui::format::speed_text`).
 pub fn to_human_speed(bytes_per_second: i64) -> String {
     format!("{}/s", to_human_file_size(bytes_per_second))
 }

@@ -103,6 +103,8 @@ impl TrackerRow {
             next_announce: None,
         }
     }
+    /// A tier heading row in the Trackers tab - a label with no statistics of
+    /// its own, grouping the trackers announced together.
     fn tier(label: String) -> Self {
         TrackerRow {
             kind: TrackerRowKind::Tier,
@@ -120,8 +122,6 @@ pub struct PeerEntry {
     pub addr: String,
     pub state: String,
     pub fetched_bytes: u64,
-    #[allow(dead_code)]
-    pub fetched_chunks: u32,
     pub pieces: u32,
 }
 
@@ -145,6 +145,11 @@ pub struct Session {
     session_path: std::path::PathBuf,
 }
 
+/// Translate the settings database into librqbit's `SessionOptions`.
+///
+/// The one place a setting becomes engine configuration. Settings with no
+/// librqbit equivalent are read and dropped here rather than at the call site,
+/// so what is and is not honoured is visible in one function.
 fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptions {
     // Peer ID: Azureus-style `-NT-` prefix, or a fully random id (no client
     // fingerprint) in anonymous mode.
@@ -190,9 +195,8 @@ fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptio
     };
 
     // SOCKS proxy support (librqbit supports SOCKS5).
-    let proxy_type = ConnectionProxyType::from_i64(
-        cfg.get_int("libtorrent.proxy_type").unwrap_or(0),
-    );
+    let proxy_type =
+        ConnectionProxyType::from_i64(cfg.get_int("libtorrent.proxy_type").unwrap_or(0));
     let socks_proxy_url = match proxy_type {
         ConnectionProxyType::Socks5 | ConnectionProxyType::Socks4 => {
             let host = cfg.get_string("libtorrent.proxy_host").unwrap_or_default();
@@ -294,11 +298,7 @@ fn reset_dht_port(path: &std::path::Path) {
 /// Move every file of a torrent from one folder to another, keeping the
 /// relative structure. Uses rename, falling back to copy+delete for
 /// cross-drive moves.
-fn move_files(
-    old_folder: &str,
-    new_folder: &str,
-    files: &[PathBuf],
-) -> std::io::Result<()> {
+fn move_files(old_folder: &str, new_folder: &str, files: &[PathBuf]) -> std::io::Result<()> {
     for rel in files {
         let from = std::path::Path::new(old_folder).join(rel);
         if !from.exists() {
@@ -413,6 +413,10 @@ pub enum CreateTorrentOutcome {
     Failed(String),
 }
 
+/// Hash a folder or file into a finished .torrent.
+///
+/// Async and off the UI thread: hashing is bounded by disk speed and a large
+/// folder takes minutes.
 async fn build_torrent(params: CreateTorrentParams) -> Result<CreateTorrentOutcome> {
     use crate::bittorrent::torrent_create::{self, TorrentVersion};
 
@@ -495,6 +499,10 @@ async fn build_torrent(params: CreateTorrentParams) -> Result<CreateTorrentOutco
 }
 
 impl Session {
+    /// Start the engine and restore whatever was running last time.
+    ///
+    /// Owns its own tokio runtime: every method here is synchronous with a
+    /// `block_on` inside, so callers on the UI thread never see a future.
     pub fn new(env: &Environment, db: Arc<Database>, cfg: &Configuration) -> Result<Session> {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -509,10 +517,8 @@ impl Session {
 
         let opts = build_session_options(cfg, env);
 
-        let inner = match rt.block_on(RqbitSession::new_with_opts(
-            default_save_path.clone(),
-            opts,
-        )) {
+        let inner = match rt.block_on(RqbitSession::new_with_opts(default_save_path.clone(), opts))
+        {
             Ok(session) => session,
             Err(err) => {
                 // The DHT remembers the exact UDP port it last bound and binds
@@ -604,8 +610,10 @@ impl Session {
             .map(PathBuf::from)
             .unwrap_or_else(Environment::get_downloads_path);
 
-        self.ipfilter_active
-            .store(ipfilter_url(cfg).is_some(), std::sync::atomic::Ordering::Relaxed);
+        self.ipfilter_active.store(
+            ipfilter_url(cfg).is_some(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
 
         let inner_slot = self.inner.clone();
         let api_slot = self.api.clone();
@@ -638,7 +646,11 @@ impl Session {
     /// Load per-torrent metadata from the `torrent` table for torrents
     /// restored by librqbit's session persistence.
     fn load_torrent_meta(&self) {
-        let rows: Vec<(String, i64, Option<i32>, Option<i64>, Option<i64>)> = self
+        /// info_hash, queue position, label, added on, completed on - one row
+        /// of the `torrent` table, named because the tuple is unreadable.
+        type MetaRow = (String, i64, Option<i32>, Option<i64>, Option<i64>);
+
+        let rows: Vec<MetaRow> = self
             .db
             .with(|conn| {
                 let mut stmt = conn.prepare(
@@ -678,6 +690,8 @@ impl Session {
         }
     }
 
+    /// A handle to the session runtime, for callers that need to drive their
+    /// own future on it rather than through one of the methods here.
     pub fn handle(&self) -> tokio::runtime::Handle {
         self.rt.handle().clone()
     }
@@ -729,7 +743,10 @@ impl Session {
                 overwrite: true,
                 ..Default::default()
             };
-            if let Err(err) = rq.add_torrent(AddTorrent::from_bytes(bytes), Some(opts)).await {
+            if let Err(err) = rq
+                .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
+                .await
+            {
                 errors
                     .lock()
                     .unwrap()
@@ -798,7 +815,10 @@ impl Session {
                 overwrite: true,
                 ..Default::default()
             };
-            if let Err(err) = rq.add_torrent(AddTorrent::from_bytes(bytes), Some(opts)).await {
+            if let Err(err) = rq
+                .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
+                .await
+            {
                 errors
                     .lock()
                     .unwrap()
@@ -823,9 +843,8 @@ impl Session {
             let queue_paused = self.queue_paused.lock().unwrap();
             for row in rows {
                 use QueueKind::*;
-                let entry = |kind, running| {
-                    (row.info_hash.clone(), row.queue_position, kind, running)
-                };
+                let entry =
+                    |kind, running| (row.info_hash.clone(), row.queue_position, kind, running);
                 match row.state {
                     State::Downloading | State::DownloadingMetadata => {
                         candidates.push(entry(Download, true))
@@ -965,15 +984,21 @@ impl Session {
         });
     }
 
-    #[allow(dead_code)]
+    /// The TCP port peers are accepted on, once one has been bound.
     pub fn listen_port(&self) -> Option<u16> {
         self.rq().tcp_listen_port()
     }
 
+    /// Drain the errors collected since the last call.
+    ///
+    /// Drained rather than read: these are polled by the refresh tick to raise
+    /// a toast, and leaving them in place would raise the same one every tick.
     pub fn take_errors(&self) -> Vec<String> {
         std::mem::take(&mut self.errors.lock().unwrap())
     }
 
+    /// Record an error from background work, where there is no caller to
+    /// return it to. Logged as well as queued, so it survives being missed.
     fn push_error(&self, err: String) {
         tracing::error!("{err}");
         self.errors.lock().unwrap().push(err);
@@ -1091,7 +1116,12 @@ impl Session {
         Ok((imported, skipped))
     }
 
-    fn on_torrent_added(
+    /// Record a newly added torrent in the database.
+///
+/// librqbit persists its own session state; this is the app's half - label,
+/// save path, added timestamp and the original source, none of which the
+/// engine knows or keeps.
+fn on_torrent_added(
         db: &Arc<Database>,
         meta: &Arc<Mutex<HashMap<String, TorrentMeta>>>,
         handle: &Arc<ManagedTorrent>,
@@ -1135,6 +1165,8 @@ impl Session {
         }
     }
 
+    /// Pause one torrent. Unknown hashes are ignored: the list and the engine
+    /// are refreshed on a tick, so a stale row can outlive its torrent.
     pub fn pause(&self, hash: &str) {
         if let Some(handle) = self.find(hash)
             && let Err(err) = self.rt.block_on(self.rq().pause(&handle))
@@ -1143,6 +1175,7 @@ impl Session {
         }
     }
 
+    /// Resume one torrent, ignoring an unknown hash.
     pub fn resume(&self, hash: &str) {
         if let Some(handle) = self.find(hash)
             && let Err(err) = self.rt.block_on(self.rq().unpause(&handle))
@@ -1151,6 +1184,10 @@ impl Session {
         }
     }
 
+    /// Remove a torrent, and its downloaded data when `delete_files`.
+    ///
+    /// Also clears the app's own row for it - otherwise the next start would
+    /// restore a torrent the engine no longer has.
     pub fn remove(&self, hash: &str, delete_files: bool) {
         if let Some(handle) = self.find(hash) {
             let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
@@ -1163,7 +1200,10 @@ impl Session {
         self.meta.lock().unwrap().remove(hash);
 
         let _ = self.db.with(|conn| {
-            conn.execute("delete from torrent_magnet_uri where info_hash = ?1", [hash])?;
+            conn.execute(
+                "delete from torrent_magnet_uri where info_hash = ?1",
+                [hash],
+            )?;
             conn.execute("delete from torrent where info_hash = ?1", [hash])
         });
 
@@ -1203,6 +1243,8 @@ impl Session {
         });
     }
 
+    /// Assign a label, or clear it with `None`. Stored by this app; librqbit
+    /// has no concept of labels.
     pub fn set_label(&self, hash: &str, label_id: Option<i32>) {
         if let Some(meta) = self.meta.lock().unwrap().get_mut(hash) {
             meta.label_id = label_id;
@@ -1216,6 +1258,10 @@ impl Session {
         });
     }
 
+    /// Change which files of a torrent are wanted, from the Files tab.
+    ///
+    /// Indices are into the torrent's own file list. Deselecting everything is
+    /// refused by the engine, which is why the tab keeps at least one ticked.
     pub fn update_only_files(&self, hash: &str, only_files: Vec<usize>) {
         // An empty selection would make the torrent 0 bytes "wanted" (and it
         // persists that way) - always keep at least one file included.
@@ -1224,9 +1270,10 @@ impl Session {
             return;
         }
         if let Some(handle) = self.find(hash)
-            && let Err(err) = self
-                .rt
-                .block_on(self.rq().update_only_files(&handle, &only_files.into_iter().collect()))
+            && let Err(err) = self.rt.block_on(
+                self.rq()
+                    .update_only_files(&handle, &only_files.into_iter().collect()),
+            )
         {
             self.push_error(format!("Failed to update file selection: {err:#}"));
         }
@@ -1242,6 +1289,8 @@ impl Session {
         self.find(hash).is_some()
     }
 
+    /// Look up a live torrent by info hash. `None` for an unparseable hash as
+    /// well as an unknown one - both mean "nothing to act on" to every caller.
     fn find(&self, hash: &str) -> Option<Arc<ManagedTorrent>> {
         let id = librqbit::api::TorrentIdOrHash::parse(hash).ok()?;
         self.rq().get(id)
@@ -1265,9 +1314,9 @@ impl Session {
 
     /// Build status snapshots for every torrent in the session.
     pub fn torrents(&self, labels: &HashMap<i32, String>) -> Vec<TorrentStatus> {
-        let handles: Vec<Arc<ManagedTorrent>> = self.rq().with_torrents(|torrents| {
-            torrents.map(|(_, h)| h.clone()).collect()
-        });
+        let handles: Vec<Arc<ManagedTorrent>> = self
+            .rq()
+            .with_torrents(|torrents| torrents.map(|(_, h)| h.clone()).collect());
 
         let mut result = Vec::with_capacity(handles.len());
         let mut completed_now: Vec<String> = Vec::new();
@@ -1334,12 +1383,9 @@ impl Session {
                     .map(|live| {
                         let down = live.download_speed.mbps * 1024.0 * 1024.0;
                         let up = live.upload_speed.mbps * 1024.0 * 1024.0;
-                        let remaining =
-                            stats.total_bytes.saturating_sub(stats.progress_bytes);
+                        let remaining = stats.total_bytes.saturating_sub(stats.progress_bytes);
                         let eta = if down > 1.0 && remaining > 0 {
-                            Some(std::time::Duration::from_secs_f64(
-                                remaining as f64 / down,
-                            ))
+                            Some(std::time::Duration::from_secs_f64(remaining as f64 / down))
                         } else {
                             None
                         };
@@ -1384,8 +1430,10 @@ impl Session {
                     (Some(live), total) if total > 0 => {
                         let peers = live.per_peer_have_pieces();
                         let seeds = peers.iter().filter(|(_, have)| *have >= total).count();
-                        let avail: f32 =
-                            peers.iter().map(|(_, have)| *have as f32 / total as f32).sum();
+                        let avail: f32 = peers
+                            .iter()
+                            .map(|(_, have)| *have as f32 / total as f32)
+                            .sum();
                         (seeds as i64, avail)
                     }
                     _ => (0, -1.0),
@@ -1500,7 +1548,6 @@ impl Session {
                 addr,
                 state: stats.state.to_string(),
                 fetched_bytes: stats.counters.fetched_bytes,
-                fetched_chunks: stats.counters.fetched_chunks,
                 pieces: stats.counters.downloaded_and_checked_pieces,
             })
             .collect();
@@ -1534,9 +1581,10 @@ impl Session {
             tr.i18n("tracker_paused")
         } else {
             match rq.get_dht() {
-                Some(dht) => {
-                    tr.i18n1("tracker_dht_working", &dht.stats().routing_table_size.to_string())
-                }
+                Some(dht) => tr.i18n1(
+                    "tracker_dht_working",
+                    &dht.stats().routing_table_size.to_string(),
+                ),
                 None => tr.i18n("tracker_disabled"),
             }
         };
@@ -1617,12 +1665,13 @@ impl Session {
 
     /// Magnet URI for a torrent (used by the copy-magnet context menu item).
     pub fn magnet_uri(&self, hash: &str, name: &str) -> String {
-        format!(
-            "magnet:?xt=urn:btih:{hash}&dn={}",
-            urlencode(name)
-        )
+        format!("magnet:?xt=urn:btih:{hash}&dn={}", urlencode(name))
     }
 
+    /// Shut the session down, flushing fast-resume state first.
+    ///
+    /// Must run before the process exits: without it every torrent re-hashes
+    /// its data on the next start, which is what an unclean exit costs.
     pub fn stop(&self) {
         // librqbit's stop() pauses every torrent and PERSISTS that pause, so
         // a restored session would come back fully paused. Remember which
@@ -1685,6 +1734,24 @@ pub enum AddTorrentSource {
     MagnetUri(String),
 }
 
+/// Percent-encode one query-string value (RFC 3986 unreserved set kept).
+///
+/// Hand-rolled rather than pulled in: this escapes tracker parameters and
+/// magnet fields, which is a handful of call sites and no edge cases beyond
+/// "escape everything that is not unreserved".
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     /// Queue scheduler decisions: lowest positions run, excess pauses,
@@ -1719,22 +1786,14 @@ mod tests {
         assert_eq!(resume, vec!["b"]);
 
         // Position order beats insertion order.
-        let (pause, resume) = super::decide_queue(
-            unl,
-            1,
-            unl,
-            vec![d("high", 5, true), d("low", 1, false)],
-        );
+        let (pause, resume) =
+            super::decide_queue(unl, 1, unl, vec![d("high", 5, true), d("low", 1, false)]);
         assert_eq!(pause, vec!["high"]);
         assert_eq!(resume, vec!["low"]);
 
         // Unlimited resumes everything the scheduler paused.
-        let (pause, resume) = super::decide_queue(
-            unl,
-            0,
-            unl,
-            vec![d("a", 0, true), d("b", 1, false)],
-        );
+        let (pause, resume) =
+            super::decide_queue(unl, 0, unl, vec![d("a", 0, true), d("b", 1, false)]);
         assert!(pause.is_empty());
         assert_eq!(resume, vec!["b"]);
 
@@ -1871,9 +1930,7 @@ mod tests {
     #[test]
     #[ignore = "writes a test torrent to NANOTORRENT_TEST_TORRENT_DIR"]
     fn make_test_torrent() {
-        let dir = std::path::PathBuf::from(
-            std::env::var("NANOTORRENT_TEST_TORRENT_DIR").unwrap(),
-        );
+        let dir = std::path::PathBuf::from(std::env::var("NANOTORRENT_TEST_TORRENT_DIR").unwrap());
         let payload = dir.join("nanotorrent-test-payload.bin");
         std::fs::write(&payload, vec![0xABu8; 512 * 1024]).unwrap();
 
@@ -1892,20 +1949,10 @@ mod tests {
             ))
             .unwrap();
 
-        std::fs::write(dir.join("nanotorrent-test.torrent"), torrent.as_bytes().unwrap())
-            .unwrap();
+        std::fs::write(
+            dir.join("nanotorrent-test.torrent"),
+            torrent.as_bytes().unwrap(),
+        )
+        .unwrap();
     }
-}
-
-fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
 }

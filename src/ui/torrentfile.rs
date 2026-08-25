@@ -16,6 +16,12 @@ pub struct ParsedTorrent {
     pub files: Vec<(String, u64)>,
 }
 
+/// Read a `.torrent` far enough to fill the Add dialog: name, total size and
+/// the file list.
+///
+/// Deliberately not the engine's parser - this runs before anything is added,
+/// so a malformed file has to come back as a message rather than as a failed
+/// session operation.
 pub fn parse(bytes: &[u8]) -> Result<ParsedTorrent, String> {
     let torrent = torrent_from_bytes::<ByteBufOwned>(bytes)
         .map_err(|err| format!("Failed to parse torrent file: {err:#}"))?;

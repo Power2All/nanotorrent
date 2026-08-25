@@ -65,11 +65,8 @@ pub fn register() {
     let key = format!("Software\\Classes\\AppUserModelId\\{AUMID}");
     let _ = crate::core::file_assoc::set_string(&key, Some("DisplayName"), "NanoTorrent");
     if let Some(icon) = ensure_icon_file() {
-        let _ = crate::core::file_assoc::set_string(
-            &key,
-            Some("IconUri"),
-            &icon.display().to_string(),
-        );
+        let _ =
+            crate::core::file_assoc::set_string(&key, Some("IconUri"), &icon.display().to_string());
     }
 
     if let Err(e) = ensure_shortcut() {
@@ -141,10 +138,9 @@ fn ensure_shortcut() -> anyhow::Result<()> {
 
         // Stamp the AUMID onto the shortcut via IPropertyStore.
         let mut store: *mut IPropertyStore = std::ptr::null_mut();
-        if SUCCEEDED((*link).QueryInterface(
-            &IPropertyStore::uuidof(),
-            &mut store as *mut _ as *mut _,
-        )) && !store.is_null()
+        if SUCCEEDED(
+            (*link).QueryInterface(&IPropertyStore::uuidof(), &mut store as *mut _ as *mut _),
+        ) && !store.is_null()
         {
             // Build a VT_LPWSTR PROPVARIANT holding the AUMID. SetValue copies
             // it, so the CoTaskMem buffer is freed again right after.
@@ -166,10 +162,10 @@ fn ensure_shortcut() -> anyhow::Result<()> {
         let mut pf: *mut IPersistFile = std::ptr::null_mut();
         let hr = (*link).QueryInterface(&IPersistFile::uuidof(), &mut pf as *mut _ as *mut _);
         if SUCCEEDED(hr) && !pf.is_null() {
-            if SUCCEEDED((*pf).Save(wide(lnk.as_os_str()).as_ptr(), 1)) {
-                if let Some(m) = &marker {
-                    let _ = std::fs::write(m, b"");
-                }
+            if SUCCEEDED((*pf).Save(wide(lnk.as_os_str()).as_ptr(), 1))
+                && let Some(m) = &marker
+            {
+                let _ = std::fs::write(m, b"");
             }
             (*pf).Release();
         }
@@ -178,7 +174,13 @@ fn ensure_shortcut() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Configuration key gating the notification below.
+pub const ENABLED_KEY: &str = "notifications.download_complete";
+
 /// Show a "download complete" toast for the given torrent.
+///
+/// The caller checks [`ENABLED_KEY`] first; this stays unconditional so the
+/// setting is read in one place rather than plumbing a Configuration in here.
 #[cfg(windows)]
 pub fn download_complete(title: &str, name: &str) {
     use tauri_winrt_notification::{IconCrop, Toast};
