@@ -157,3 +157,41 @@ confusing compile errors.
 
 Long term these should be submitted upstream as PRs so this folder can be
 deleted again.
+
+## 0011 - our own name in the peer handshake
+
+`peer_connection.rs` hard-codes the BEP 10 extended-handshake `v` string to
+`client_name_and_version()`, i.e. `rqbit <librqbit version>`. That is the
+string other clients show in their Client column, so NanoTorrent appeared as
+rqbit to every peer it talked to - while its peer id said `-NT0200-`. The two
+identities disagreed.
+
+Adds `pub static CLIENT_NAME: OnceLock<String>` next to
+`client_name_and_version()`, and uses it in the handshake when set. Unset falls
+back to the upstream constant, so this changes nothing for anyone who does not
+set it.
+
+`src/bittorrent/session.rs` sets it to `buildinfo::client_id()`
+(`NanoTorrent <version>`) when building the session.
+
+Anonymous mode needs no extra handling: patch 0007 already clears `handshake.v`
+in `update_my_extended_handshake`, which runs after this assignment.
+
+## 0012 - fsync the session index before renaming it (behavioral, a real bug fix)
+
+`JsonSessionPersistenceStore::flush` wrote `session.json.tmp` and renamed it
+over `session.json` without ever flushing it. The rename is atomic for the
+directory entry, but the file's data blocks are not guaranteed to have reached
+disk, so a crash or power loss in between leaves a valid name pointing at zero
+bytes.
+
+That is fatal on the next start: `new` treats a *missing* index as an empty
+session but an *unreadable* one as an error, so the whole app fails with
+`error deserializing session database: EOF while parsing a value at line 1
+column 0` and cannot be started again.
+
+Adds `tmp.sync_all()` between the write and the rename.
+
+`src/bittorrent/session.rs::quarantine_unreadable_session_index` is the other
+half - it moves an already-corrupt index aside so existing broken profiles can
+start. Both are needed: this patch prevents it, that function recovers from it.

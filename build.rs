@@ -214,6 +214,16 @@ fn verify_librqbit_patches() {
             "patches/0010-windows-pread-pwrite-exact.patch",
         ),
         (
+            "vendor/librqbit/src/lib.rs",
+            "pub static CLIENT_NAME",
+            "patches/0011-client-name.patch",
+        ),
+        (
+            "vendor/librqbit/src/session_persistence/json.rs",
+            "tmp.sync_all()",
+            "patches/0012-fsync-session-index.patch",
+        ),
+        (
             "vendor/librqbit-tracker-comms/src/tracker_comms.rs",
             "pub struct TrackerStat",
             "patches/0008-tracker-stats.patch (tracker-comms side; this crate is \

@@ -106,6 +106,16 @@ impl JsonSessionPersistenceStore {
             .with_context(|| format!("error writing {tmp_filename:?}"))?;
         trace!(?tmp_filename, "wrote to temp file");
 
+        // Flush to the platter before the rename, not after. rename() is
+        // atomic for the directory entry only - without this, a crash or power
+        // loss between the two can leave the new name pointing at a file whose
+        // contents never landed, i.e. session.json becomes 0 bytes. That is
+        // fatal on the next start, because `new` treats an unreadable database
+        // as an error while a missing one is simply an empty session.
+        tmp.sync_all()
+            .await
+            .with_context(|| format!("error flushing {tmp_filename:?}"))?;
+
         tokio::fs::rename(&tmp_filename, &self.db_filename)
             .await
             .context("error renaming persistence file")?;

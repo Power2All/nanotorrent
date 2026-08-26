@@ -1,8 +1,9 @@
 //! Reading a `.torrent` far enough to show it in an "Add torrent" dialog.
 //!
-//! Shared rather than living in one UI: both the Win32 dialog and the Slint one
-//! need the same name, size and file list, and a second copy would be a second
-//! place for "(unnamed torrent)" to drift.
+//! Shared rather than living in one UI: the desktop dialog and the web remote
+//! (through `POST /api/torrents/inspect`) need the same name, size and file
+//! list, and a second copy would be a second place for "(unnamed torrent)" to
+//! drift - or worse, a second file ordering, since `only_files` indexes by it.
 
 use librqbit::{ByteBufOwned, torrent_from_bytes};
 

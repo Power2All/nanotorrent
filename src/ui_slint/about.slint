@@ -6,15 +6,22 @@ import { L } from "globals.slint";
 export component AboutDialog inherits Window {
     icon: @image-url("../../res/app.png");
     title: L.s(L.revision, "about_nanotorrent");
-    preferred-width: 400px;
-    preferred-height: 260px;
+    // Fixed size: min == max is how Slint says "not resizable" - it has no
+    // such property. The content here does not reflow, so a resize could only
+    // ever leave dead space or clip.
+    min-width: 400px;
+    max-width: 400px;
+    min-height: 260px;
+    max-height: 260px;
     background: Palette.background;
 
     in property <string> version;
     in property <string> build-stamp;
     in property <string> website;
+    in property <string> developer;
 
     callback open-website();
+    callback open-developer();
     callback closed();
 
     VerticalLayout {
@@ -71,6 +78,32 @@ export component AboutDialog inherits Window {
             text: L.s(L.revision, "app_credit");
             font-size: 12px;
             color: #888;
+        }
+
+        // "Developed by <name>", the name being the clickable half. Two Texts
+        // in a row rather than one, because only the name is a link and Slint
+        // has no rich text.
+        HorizontalLayout {
+            spacing: 4px;
+            alignment: start;
+            Text {
+                text: L.s(L.revision, "developed_by");
+                font-size: 12px;
+                color: #888;
+                vertical-alignment: center;
+            }
+            TouchArea {
+                width: link-text.preferred-width;
+                height: 18px;
+                mouse-cursor: pointer;
+                clicked => { root.open-developer(); }
+                link-text := Text {
+                    text: root.developer;
+                    font-size: 12px;
+                    color: Palette.accent-background;
+                    vertical-alignment: center;
+                }
+            }
         }
 
         HorizontalLayout {

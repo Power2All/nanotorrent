@@ -39,10 +39,13 @@ component Labelled inherits HorizontalLayout {
 export component PreferencesDialog inherits Window {
     icon: @image-url("../../res/app.png");
     title: L.s(L.revision, "preferences");
-    preferred-width: 700px;
-    // Sized to the tallest tab (Connection). General used to force 620 on its
-    // own and left the bottom third of every other tab empty.
-    preferred-height: 470px;
+    // Fixed size: min == max is how Slint says "not resizable" - it has no
+    // such property. Height is the tallest tab (Connection); General used to
+    // force 620 on its own and left the bottom third of every other tab empty.
+    min-width: 700px;
+    max-width: 700px;
+    min-height: 470px;
+    max-height: 470px;
     background: Palette.background;
 
     // --- General ---------------------------------------------------------
@@ -231,6 +234,7 @@ export component PreferencesDialog inherits Window {
                     Labelled {
                         label: "    " + L.s(L.revision, "pause_on_low_disk_space_limit");
                         LineEdit { text <=> root.low-disk-limit; width: 100px; enabled: root.pause-on-low-disk; }
+                        Text { text: "%"; vertical-alignment: center; color: Palette.foreground; }
                         Rectangle { horizontal-stretch: 1; }
                     }
 

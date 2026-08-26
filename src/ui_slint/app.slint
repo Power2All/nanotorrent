@@ -1169,6 +1169,13 @@ export component AddMagnetDialog inherits Window {
 }
 
 
+/// One torrent waiting in a multi-file add. The file list belongs to whichever
+/// of these is selected, so this only carries what the queue column shows.
+export struct QueueRow {
+    name: string,
+    size: string,
+}
+
 export struct FileRow {
     /// Index into the torrent's file list, or -1 for a folder row.
     index: int,
@@ -1192,26 +1199,20 @@ export component AddTorrentDialog inherits Window {
     in-out property <bool> start-torrent: true;
     in property <[FileRow]> files;
 
+    /// Every torrent in this batch. One entry for a single add, in which case
+    /// the queue column is hidden and the dialog looks exactly as it did.
+    in property <[QueueRow]> queue;
+    in-out property <int> selected-torrent;
+
     callback accepted();
     callback cancelled();
     callback browse();
     callback toggle-file(int);
+    callback select-torrent(int);
 
     VerticalLayout {
         padding: 12px;
         spacing: 10px;
-
-        GridLayout {
-            spacing: 8px;
-            Row {
-                Text { text: L.s(L.revision, "name"); font-weight: 700; font-size: 13px; width: 90px; vertical-alignment: center; }
-                Text { text: root.torrent-name; font-size: 13px; overflow: elide; vertical-alignment: center; }
-            }
-            Row {
-                Text { text: L.s(L.revision, "size"); font-weight: 700; font-size: 13px; width: 90px; vertical-alignment: center; }
-                Text { text: root.torrent-size; font-size: 13px; vertical-alignment: center; }
-            }
-        }
 
         HorizontalLayout {
             spacing: 8px;
@@ -1227,6 +1228,84 @@ export component AddTorrentDialog inherits Window {
         CheckBox {
             text: L.s(L.revision, "start_torrent");
             checked <=> root.start-torrent;
+        }
+
+        HorizontalLayout {
+        spacing: 10px;
+
+        // The queue column, only when there is a queue. A single add keeps the
+        // original full-width layout rather than growing an empty sidebar.
+        if root.queue.length > 1: Rectangle {
+            width: 200px;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 4px;
+
+            VerticalLayout {
+                padding: 1px;
+                Rectangle {
+                    height: 26px;
+                    background: Palette.alternate-background;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        Text {
+                            text: L.s(L.revision, "torrents") + " (\{root.queue.length})";
+                            font-weight: 700;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                ListView {
+                    for q[i] in root.queue: Rectangle {
+                        height: 38px;
+                        background: i == root.selected-torrent
+                            ? Palette.accent-background
+                            : (mod(i, 2) == 0 ? transparent : Palette.alternate-background);
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.select-torrent(i); }
+                        }
+                        VerticalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            padding-top: 4px;
+                            padding-bottom: 4px;
+                            Text {
+                                text: q.name;
+                                font-size: 12px;
+                                overflow: elide;
+                                color: i == root.selected-torrent
+                                    ? Palette.accent-foreground
+                                    : Palette.foreground;
+                            }
+                            Text {
+                                text: q.size;
+                                font-size: 11px;
+                                color: i == root.selected-torrent
+                                    ? Palette.accent-foreground
+                                    : #888;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+        spacing: 8px;
+        horizontal-stretch: 1;
+
+        GridLayout {
+            spacing: 8px;
+            Row {
+                Text { text: L.s(L.revision, "name"); font-weight: 700; font-size: 13px; width: 90px; vertical-alignment: center; }
+                Text { text: root.torrent-name; font-size: 13px; overflow: elide; vertical-alignment: center; }
+            }
+            Row {
+                Text { text: L.s(L.revision, "size"); font-weight: 700; font-size: 13px; width: 90px; vertical-alignment: center; }
+                Text { text: root.torrent-size; font-size: 13px; vertical-alignment: center; }
+            }
         }
 
         Rectangle {
@@ -1279,11 +1358,22 @@ export component AddTorrentDialog inherits Window {
             }
         }
 
+        }
+        }
+
         HorizontalLayout {
             spacing: 8px;
             Rectangle { horizontal-stretch: 1; }
             Button { text: L.s(L.revision, "cancel"); clicked => { root.cancelled(); } }
-            Button { text: L.s(L.revision, "add"); primary: true; clicked => { root.accepted(); } }
+            // Says how many when it is more than one, so nobody presses Add
+            // thinking it only takes the torrent currently on screen.
+            Button {
+                text: root.queue.length > 1
+                    ? L.s(L.revision, "add") + " (\{root.queue.length})"
+                    : L.s(L.revision, "add");
+                primary: true;
+                clicked => { root.accepted(); }
+            }
         }
     }
 }

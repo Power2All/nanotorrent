@@ -6,8 +6,13 @@ import { L } from "globals.slint";
 export component CreateTorrentDialog inherits Window {
     icon: @image-url("../../res/app.png");
     title: L.s(L.revision, "create_torrent");
-    preferred-width: 600px;
-    preferred-height: 430px;
+    // Fixed size: min == max is how Slint says "not resizable" - it has no
+    // such property. The content here does not reflow, so a resize could only
+    // ever leave dead space or clip.
+    min-width: 600px;
+    max-width: 600px;
+    min-height: 430px;
+    max-height: 430px;
     background: Palette.background;
 
     in-out property <string> source;

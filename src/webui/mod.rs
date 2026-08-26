@@ -45,7 +45,7 @@ use anyhow::{Context, Result};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
-use crate::bittorrent::session::{AddParams, AddTorrentSource, Session};
+use crate::bittorrent::session::{AddParams, AddTorrentSource, Session, SessionEvent};
 use crate::bittorrent::torrentstatus::{State, TorrentStatus};
 use crate::core::configuration::Configuration;
 use crate::core::environment::Environment;
@@ -122,6 +122,11 @@ impl WebConfig {
 struct AppState {
     session: Arc<Session>,
     cfg: Arc<Configuration>,
+    /// This layer's own subscription to session events, so /errors no longer
+    /// competes with the desktop window for them. Both used to drain one
+    /// shared queue, which meant whichever polled first won and the other
+    /// silently lost the error.
+    errors: Arc<std::sync::Mutex<std::sync::mpsc::Receiver<SessionEvent>>>,
 }
 
 // --- wire types -------------------------------------------------------------
@@ -296,14 +301,27 @@ async fn h_torrents(state: web::Data<AppState>) -> actix_web::Result<impl Respon
     Ok(web::Json(rows))
 }
 
-/// Drains the session's error queue.
+/// Drains this layer's error queue.
 ///
 /// Draining, not peeking, and that is the contract: adds are fire-and-forget,
 /// so this is where a failed magnet or a rejected .torrent surfaces, and two
-/// clients polling it will each see a subset. One poller.
+/// HTTP clients polling it will each see a subset. One poller.
+///
+/// The desktop window is no longer one of them - it holds its own subscription
+/// and sees every error regardless of what any web client does.
 async fn h_errors(state: web::Data<AppState>) -> actix_web::Result<impl Responder> {
     let st = state.clone();
-    let errors = web::block(move || st.session.take_errors()).await?;
+    let errors = web::block(move || {
+        let rx = st.errors.lock().unwrap();
+        let mut drained = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let SessionEvent::Error(message) = event {
+                drained.push(message);
+            }
+        }
+        drained
+    })
+    .await?;
     Ok(web::Json(serde_json::json!({ "errors": errors })))
 }
 
@@ -329,19 +347,27 @@ struct AddRequest {
     only_files: Option<Vec<usize>>,
 }
 
-/// `POST /api/torrents` - add a magnet link or an uploaded `.torrent`.
+/// One torrent, or a batch of them.
 ///
-/// Exactly one of `magnet` / `torrent_file` must be given. Both are validated
-/// before reaching the engine: the magnet for its scheme, because librqbit
-/// would otherwise fetch arbitrary URLs on request (see the note inside), and
-/// the file for being decodable and non-empty.
-async fn h_add(
-    state: web::Data<AppState>,
-    body: web::Json<AddRequest>,
-) -> actix_web::Result<impl Responder> {
-    let req = body.into_inner();
+/// Untagged so the original single-object body still works and a JSON array is
+/// simply the new form. A separate endpoint or a version bump would be a lot of
+/// ceremony for "the same thing, n times".
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AddBody {
+    // Boxed: AddRequest carries a base64 torrent, so the Many variant would
+    // otherwise be far smaller than One and clippy rightly objects.
+    One(Box<AddRequest>),
+    Many(Vec<AddRequest>),
+}
 
-    let source = match (req.magnet, req.torrent_file) {
+/// Validate one request and turn it into something the session can add.
+///
+/// Split out from the handler so a batch validates every entry the same way a
+/// single add does - the checks are the interesting part and there is now more
+/// than one caller.
+fn add_source(req: &mut AddRequest) -> actix_web::Result<AddTorrentSource> {
+    match (req.magnet.take(), req.torrent_file.take()) {
         (Some(magnet), None) => {
             // Magnet scheme only. librqbit's from_url happily fetches http(s)
             // too, which would turn "add a torrent" into "make the server
@@ -350,7 +376,7 @@ async fn h_add(
             if !magnet.starts_with("magnet:") {
                 return Err(ErrorBadRequest("magnet must start with 'magnet:'"));
             }
-            AddTorrentSource::MagnetUri(magnet)
+            Ok(AddTorrentSource::MagnetUri(magnet))
         }
         (None, Some(encoded)) => {
             let bytes = base64::engine::general_purpose::STANDARD
@@ -359,29 +385,144 @@ async fn h_add(
             if bytes.is_empty() {
                 return Err(ErrorBadRequest("torrent_file decoded to zero bytes"));
             }
-            AddTorrentSource::TorrentFileBytes(bytes)
+            Ok(AddTorrentSource::TorrentFileBytes(bytes))
         }
-        _ => {
-            return Err(ErrorBadRequest(
-                "provide exactly one of 'magnet' or 'torrent_file'",
-            ));
-        }
-    };
+        _ => Err(ErrorBadRequest(
+            "provide exactly one of 'magnet' or 'torrent_file'",
+        )),
+    }
+}
 
-    let params = AddParams {
-        save_path: req.save_path,
-        start_torrent: req.start,
-        only_files: req.only_files,
-        label_id: req.label_id,
-    };
+/// One `.torrent` to look inside, base64 as everywhere else on this endpoint.
+#[derive(Deserialize)]
+struct InspectRequest {
+    torrent_file: String,
+}
 
+#[derive(Serialize)]
+struct InspectedFile {
+    path: String,
+    size: u64,
+}
+
+/// What a `.torrent` turns out to contain.
+#[derive(Serialize)]
+struct Inspected {
+    name: String,
+    total_size: i64,
+    /// In metainfo order, which is the order `only_files` indexes by - so the
+    /// caller can hand positions from this list straight back to the add.
+    files: Vec<InspectedFile>,
+}
+
+/// One or many, matching [`AddBody`] so a batch is one request.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum InspectBody {
+    One(Box<InspectRequest>),
+    Many(Vec<InspectRequest>),
+}
+
+/// `POST /api/torrents/inspect` - read `.torrent` files without adding them.
+///
+/// This is what lets the web remote show the same name, size and file tree the
+/// desktop Add dialog does, and tick files off before committing. Parsing here
+/// rather than in the browser reuses [`crate::ui::torrentfile::parse`] - the
+/// same function the desktop dialog uses, so the two cannot disagree about
+/// what a torrent contains.
+///
+/// Adds nothing and touches no session state; it is a pure read of the bytes
+/// posted to it. Magnets are not accepted: there is nothing to inspect until
+/// their metadata resolves, which is why they skip this step entirely.
+async fn h_inspect(body: web::Json<InspectBody>) -> actix_web::Result<impl Responder> {
+    let reqs = match body.into_inner() {
+        InspectBody::One(r) => vec![*r],
+        InspectBody::Many(r) => r,
+    };
+    if reqs.is_empty() {
+        return Err(ErrorBadRequest("no torrents given"));
+    }
+
+    let parsed = web::block(move || {
+        reqs.into_iter()
+            .enumerate()
+            .map(|(i, req)| {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(req.torrent_file.trim())
+                    .map_err(|e| format!("torrent {}: not valid base64: {e}", i + 1))?;
+                let t = crate::ui::torrentfile::parse(&bytes)
+                    .map_err(|e| format!("torrent {}: {e}", i + 1))?;
+                Ok(Inspected {
+                    name: t.name,
+                    total_size: t.total_size,
+                    files: t
+                        .files
+                        .into_iter()
+                        .map(|(path, size)| InspectedFile { path, size })
+                        .collect(),
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })
+    .await?
+    .map_err(ErrorBadRequest)?;
+
+    Ok(web::Json(parsed))
+}
+
+/// `POST /api/torrents` - add magnet links or uploaded `.torrent` files.
+///
+/// Takes either one request object or an array of them. Each entry names
+/// exactly one of `magnet` / `torrent_file` and carries its own save path,
+/// label and file selection, so a batch is not forced to share settings.
+///
+/// All-or-nothing on validation: every entry is checked before any is added,
+/// so a typo in the eighth magnet does not leave seven added and the request
+/// reported as failed. Nothing is partially applied.
+async fn h_add(
+    state: web::Data<AppState>,
+    body: web::Json<AddBody>,
+) -> actix_web::Result<impl Responder> {
+    let mut reqs = match body.into_inner() {
+        AddBody::One(req) => vec![*req],
+        AddBody::Many(reqs) => reqs,
+    };
+    if reqs.is_empty() {
+        return Err(ErrorBadRequest("no torrents given"));
+    }
+
+    let mut batch = Vec::with_capacity(reqs.len());
+    for (i, req) in reqs.iter_mut().enumerate() {
+        // Say which one, or a batch of twenty reports an unlocatable error.
+        let source = add_source(req)
+            .map_err(|e| ErrorBadRequest(format!("torrent {}: {e}", i + 1)))?;
+        batch.push((
+            source,
+            AddParams {
+                save_path: req.save_path.take(),
+                start_torrent: req.start,
+                only_files: req.only_files.take(),
+                label_id: req.label_id,
+            },
+        ));
+    }
+
+    let count = batch.len();
     let st = state.clone();
-    web::block(move || st.session.add_torrent(source, params)).await?;
+    web::block(move || {
+        for (source, params) in batch {
+            st.session.add_torrent(source, params);
+        }
+    })
+    .await?;
 
     // 202, not 200: add_torrent returns before the torrent exists. Resolving a
     // magnet's metadata can take minutes, or never finish. Poll /api/torrents
     // for arrival and /api/errors for failure.
-    Ok(HttpResponse::Accepted().json(serde_json::json!({ "status": "accepted" })))
+    Ok(HttpResponse::Accepted().json(serde_json::json!({
+        "status": "accepted",
+        "count": count,
+    })))
 }
 
 /// Run `op` against a torrent, 404ing if that hash is not in the session.
@@ -665,7 +806,15 @@ fn build(
     creds: Credentials,
     tls_config: Option<rustls::ServerConfig>,
 ) -> Result<actix_web::dev::Server> {
-    let state = web::Data::new(AppState { session, cfg });
+    // Subscribed once for the lifetime of the server, not per request: a
+    // per-request subscription would only ever see events raised while that
+    // one request was in flight.
+    let errors = Arc::new(std::sync::Mutex::new(session.subscribe()));
+    let state = web::Data::new(AppState {
+        session,
+        cfg,
+        errors,
+    });
     let creds = web::Data::new(creds);
 
     let server = HttpServer::new(move || {
@@ -686,6 +835,7 @@ fn build(
                     .route("/errors", web::get().to(h_errors))
                     .route("/torrents", web::get().to(h_torrents))
                     .route("/torrents", web::post().to(h_add))
+                    .route("/torrents/inspect", web::post().to(h_inspect))
                     .route("/torrents/{hash}", web::delete().to(h_remove))
                     .route("/torrents/{hash}/pause", web::post().to(h_pause))
                     .route("/torrents/{hash}/resume", web::post().to(h_resume))
@@ -732,6 +882,90 @@ fn build(
 
 #[cfg(test)]
 mod tests {
+    /// The web remote shows a file list only if inspection returns the same
+    /// thing the desktop dialog sees, in the same order - only_files indexes
+    /// by that order, so a mismatch would untick the wrong file.
+    #[test]
+    fn inspect_reports_what_the_desktop_dialog_sees() {
+        use super::{InspectBody, InspectRequest};
+        use base64::Engine as _;
+
+        // Minimal single-file v1 metainfo, same shape ui::torrentfile tests use.
+        let mut t = Vec::new();
+        t.extend_from_slice(b"d4:infod6:lengthi4096e4:name13:Some.File.mkv");
+        t.extend_from_slice(b"12:piece lengthi262144e6:pieces20:");
+        t.extend_from_slice(&[0u8; 20]);
+        t.extend_from_slice(b"ee");
+
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&t);
+        let body = format!(r#"{{"torrent_file":"{encoded}"}}"#);
+
+        // Single object and array must both parse, as with AddBody.
+        assert!(matches!(
+            serde_json::from_str::<InspectBody>(&body).unwrap(),
+            InspectBody::One(_)
+        ));
+        let many: InspectBody = serde_json::from_str(&format!("[{body},{body}]")).unwrap();
+        let InspectBody::Many(reqs) = many else {
+            panic!("array should parse as Many");
+        };
+        assert_eq!(reqs.len(), 2);
+
+        // And the bytes really do decode to what the desktop parser reports.
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&reqs[0].torrent_file)
+            .unwrap();
+        let parsed = crate::ui::torrentfile::parse(&decoded).unwrap();
+        assert_eq!(parsed.name, "Some.File.mkv");
+        assert_eq!(parsed.total_size, 4096);
+        assert_eq!(parsed.files, vec![(String::from("Some.File.mkv"), 4096)]);
+
+        // Garbage must be rejected, not silently shown as an empty torrent.
+        let junk = InspectRequest {
+            torrent_file: base64::engine::general_purpose::STANDARD.encode(b"not a torrent"),
+        };
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(junk.torrent_file.trim())
+            .unwrap();
+        assert!(crate::ui::torrentfile::parse(&bytes).is_err());
+    }
+
+    /// The untagged AddBody must keep accepting the old single-object body
+    /// while also taking an array - that back-compat is the whole reason it is
+    /// untagged, and it is the kind of thing a serde attribute change breaks
+    /// silently.
+    #[test]
+    fn add_body_takes_one_or_many() {
+        use super::{AddBody, add_source};
+
+        let one: AddBody = serde_json::from_str(r#"{"magnet":"magnet:?xt=1"}"#).unwrap();
+        assert!(matches!(one, AddBody::One(_)));
+
+        let many: AddBody =
+            serde_json::from_str(r#"[{"magnet":"magnet:?xt=1"},{"magnet":"magnet:?xt=2"}]"#)
+                .unwrap();
+        let AddBody::Many(reqs) = many else {
+            panic!("array should parse as Many");
+        };
+        assert_eq!(reqs.len(), 2);
+
+        // `start` defaults to true whichever form it arrives in.
+        assert!(reqs[0].start);
+
+        // Validation is per entry, and rejects the same shapes it always has.
+        let mut bad = match serde_json::from_str::<AddBody>(r#"{"magnet":"http://x/y"}"#).unwrap() {
+            AddBody::One(r) => *r,
+            AddBody::Many(_) => unreachable!(),
+        };
+        assert!(add_source(&mut bad).is_err(), "http:// must not be fetched");
+
+        let mut neither = match serde_json::from_str::<AddBody>("{}").unwrap() {
+            AddBody::One(r) => *r,
+            AddBody::Many(_) => unreachable!(),
+        };
+        assert!(add_source(&mut neither).is_err(), "needs one source");
+    }
+
     use super::*;
 
     #[test]

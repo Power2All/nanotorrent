@@ -83,6 +83,10 @@ struct Ui {
     rows: RefCell<Vec<TorrentStatus>>,
     /// Arguments forwarded by a second instance, polled on the refresh tick.
     ipc: Option<crate::ipc::Server>,
+    /// Torrent lifecycle events, drained on the refresh tick. Replaces
+    /// Session::take_completions: detection now runs on the session's own
+    /// timer, so it happens whether or not this window is here to poll.
+    events: RefCell<std::sync::mpsc::Receiver<crate::bittorrent::session::SessionEvent>>,
     /// Peer country lookups, loaded in the background at startup - the same
     /// database the Win32 peers list uses.
     geoip: Arc<crate::core::geoip::GeoIp>,
@@ -256,6 +260,9 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         active_label: RefCell::new(None),
         rows: RefCell::new(Vec::new()),
         ipc: ctx.ipc,
+        // Subscribed before the first refresh tick, so a torrent that finishes
+        // during startup still raises its notification.
+        events: RefCell::new(ctx.session.subscribe()),
         geoip: ctx.geoip.clone(),
         flags: flags::Flags::default(),
         magnet_dialog: RefCell::new(None),
@@ -852,25 +859,38 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
 /// Both queues must be drained every tick whether or not anything is shown,
 /// or they grow without bound.
 fn drain_notifications(window: &MainWindow, ui: &Rc<Ui>) {
-    // A real desktop notification, not the in-app toast: a finished download
-    // is worth seeing when the window is behind something else. No-op off
-    // Windows for now - see core::toast.
-    let notify = ui.cfg.get_bool(crate::core::toast::ENABLED_KEY);
-    for name in ui.session.take_completions() {
-        // Drained either way: the queue grows without bound otherwise, so
-        // turning notifications off must not turn draining off with them.
-        if notify {
-            tracing::info!("showing completion notification: {name}");
-            crate::core::toast::download_complete(&ui.tr.borrow().i18n("download_complete"), &name);
-        }
-    }
+    use crate::bittorrent::session::SessionEvent;
 
-    // A toast rather than a message box: these arrive from background work,
-    // and a modal stealing focus mid-download is worse than a message that
-    // fades. Logged either way.
-    for err in ui.session.take_errors() {
-        tracing::error!("session error: {err}");
-        show_toast(window, &err);
+    let notify = ui.cfg.get_bool(crate::core::toast::ENABLED_KEY);
+    // try_recv, not recv: this runs on the UI thread and must never block.
+    // Drained whether or not anything is shown - the channel behind it grows
+    // otherwise, so turning notifications off must not turn draining off too.
+    //
+    // The borrow ends with each `let`, not at the end of the body: a handler
+    // below that reached back into the queue would otherwise panic on a second
+    // borrow rather than misbehave visibly.
+    loop {
+        let Ok(event) = ui.events.borrow().try_recv() else {
+            break;
+        };
+
+        match event {
+            SessionEvent::TorrentCompleted { name, .. } if notify => {
+                // A real desktop notification, not the in-app toast: a finished
+                // download is worth seeing when the window is behind something
+                // else. No-op off Windows for now - see core::toast.
+                tracing::info!("showing completion notification: {name}");
+                crate::core::toast::download_complete(
+                    &ui.tr.borrow().i18n("download_complete"),
+                    &name,
+                );
+            }
+            // A toast rather than a message box: these arrive from background
+            // work, and a modal stealing focus mid-download is worse than a
+            // message that fades. Already logged where it was raised.
+            SessionEvent::Error(err) => show_toast(window, &err),
+            _ => {}
+        }
     }
 }
 
@@ -1377,23 +1397,40 @@ fn pick_and_queue_torrents(ui: &Rc<Ui>) {
 
 /// Show the Add dialog for the next queued `.torrent`, if any and if one is
 /// not already up.
+/// Show the Add-torrent dialog for everything sitting in `pending`.
+///
+/// One dialog for the whole batch, not one per file: selecting eight torrents
+/// used to mean eight dialogs in a row, with no way to look at the seventh
+/// before committing to the first. The queue column lists them all and the
+/// file list follows whichever is selected, so every torrent can be inspected
+/// and have files ticked off before a single Add.
+///
+/// Save path and start-immediately are batch-wide - they are the settings
+/// people want applied uniformly. File selection stays per torrent, which is
+/// why each gets its own model rather than one shared list.
 fn show_next_pending(ui: &Rc<Ui>) {
     if ui.torrent_dialog.borrow().is_some() {
-        return; // one at a time; the rest wait their turn in `pending`
+        return; // already showing a batch; these wait in `pending`
     }
-    let Some(bytes) = ui.pending.borrow_mut().pop() else {
-        return;
-    };
 
-    let parsed = match crate::ui::torrentfile::parse(&bytes) {
-        Ok(p) => p,
-        Err(err) => {
-            // Skip it and carry on - one bad file should not strand the queue.
-            tracing::error!("{err}");
-            show_next_pending(ui);
-            return;
+    let queued: Vec<Vec<u8>> = std::mem::take(&mut ui.pending.borrow_mut());
+    if queued.is_empty() {
+        return;
+    }
+
+    // Parse first, then build the dialog: a batch of unreadable files should
+    // produce one error each and no empty dialog at the end of it.
+    let mut parsed = Vec::new();
+    for bytes in queued {
+        match crate::ui::torrentfile::parse(&bytes) {
+            // One bad file does not strand the rest of the batch.
+            Err(err) => tracing::error!("{err}"),
+            Ok(p) => parsed.push((bytes, p)),
         }
-    };
+    }
+    if parsed.is_empty() {
+        return;
+    }
 
     let dialog = match AddTorrentDialog::new() {
         Ok(d) => d,
@@ -1403,8 +1440,38 @@ fn show_next_pending(ui: &Rc<Ui>) {
         }
     };
 
-    dialog.set_torrent_name(parsed.name.as_str().into());
-    dialog.set_torrent_size(utils::to_human_file_size(parsed.total_size).into());
+    // One file model per torrent, kept alive for the life of the dialog so
+    // ticking files in one, looking at another and coming back does not lose
+    // the first one's choices.
+    let file_models: Vec<Rc<VecModel<FileRow>>> = parsed
+        .iter()
+        .map(|(_, t)| {
+            Rc::new(VecModel::from(
+                file_tree(t.files.iter().map(|(name, _)| name.as_str()))
+                    .into_iter()
+                    .map(|(index, depth, name)| FileRow {
+                        index: index.map_or(-1, |i| i as i32),
+                        depth: depth as i32,
+                        name: name.into(),
+                        size: index
+                            .map(|i| utils::to_human_file_size(t.files[i].1 as i64).into())
+                            .unwrap_or_default(),
+                        included: true,
+                    })
+                    .collect::<Vec<_>>(),
+            ))
+        })
+        .collect();
+
+    dialog.set_queue(ModelRc::new(VecModel::from(
+        parsed
+            .iter()
+            .map(|(_, t)| QueueRow {
+                name: t.name.as_str().into(),
+                size: utils::to_human_file_size(t.total_size).into(),
+            })
+            .collect::<Vec<_>>(),
+    )));
     dialog.set_save_path(
         ui.cfg
             .get_string("default_save_path")
@@ -1412,27 +1479,38 @@ fn show_next_pending(ui: &Rc<Ui>) {
             .into(),
     );
 
-    let files: Rc<VecModel<FileRow>> = Rc::new(VecModel::from(
-        file_tree(parsed.files.iter().map(|(name, _)| name.as_str()))
-            .into_iter()
-            .map(|(index, depth, name)| FileRow {
-                index: index.map_or(-1, |i| i as i32),
-                depth: depth as i32,
-                name: name.into(),
-                size: index
-                    .map(|i| utils::to_human_file_size(parsed.files[i].1 as i64).into())
-                    .unwrap_or_default(),
-                included: true,
-            })
-            .collect::<Vec<_>>(),
-    ));
-    dialog.set_files(ModelRc::from(files.clone()));
+    let parsed = Rc::new(parsed);
+    let file_models = Rc::new(file_models);
+
+    // Selecting a torrent swaps which model the file list is bound to, and
+    // repoints the name/size above it. Called once up front for the first.
+    let select = {
+        let (weak, p, m) = (dialog.as_weak(), parsed.clone(), file_models.clone());
+        move |index: i32| {
+            let (Some(d), Ok(i)) = (weak.upgrade(), usize::try_from(index)) else {
+                return;
+            };
+            let Some((_, t)) = p.get(i) else { return };
+            d.set_selected_torrent(index);
+            d.set_torrent_name(t.name.as_str().into());
+            d.set_torrent_size(utils::to_human_file_size(t.total_size).into());
+            d.set_files(ModelRc::from(m[i].clone()));
+        }
+    };
+    select(0);
+    dialog.on_select_torrent(select);
 
     {
-        let f = files.clone();
+        let (weak, m) = (dialog.as_weak(), file_models.clone());
         dialog.on_toggle_file(move |index| {
+            let Some(d) = weak.upgrade() else { return };
+            let Ok(sel) = usize::try_from(d.get_selected_torrent()) else {
+                return;
+            };
             let index = index.max(0) as usize;
-            if let Some(mut row) = f.row_data(index) {
+            if let Some(f) = m.get(sel)
+                && let Some(mut row) = f.row_data(index)
+            {
                 row.included = !row.included;
                 f.set_row_data(index, row);
             }
@@ -1455,42 +1533,48 @@ fn show_next_pending(ui: &Rc<Ui>) {
     }
 
     {
-        let (weak, u, f) = (dialog.as_weak(), ui.clone(), files.clone());
-        let bytes = bytes.clone();
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        let (p, m) = (parsed.clone(), file_models.clone());
         dialog.on_accepted(move || {
             let Some(d) = weak.upgrade() else { return };
 
-            // r.index, not the row number: the model has folder rows in it
-            // now, and only_files indexes the torrent's own file list.
-            let mut total = 0;
-            let mut included: Vec<usize> = Vec::new();
-            for i in 0..f.row_count() {
-                let Some(row) = f.row_data(i) else { continue };
-                let Ok(index) = usize::try_from(row.index) else {
-                    continue; // a folder row
-                };
-                total += 1;
-                if row.included {
-                    included.push(index);
-                }
-            }
-            // None means "everything", which is not the same as an explicit
-            // list of all of them - keep the distinction the session expects.
-            let only_files = (included.len() != total).then_some(included);
-
             let save_path = d.get_save_path().to_string();
-            u.session.add_torrent(
-                AddTorrentSource::TorrentFileBytes(bytes.clone()),
-                AddParams {
-                    save_path: (!save_path.trim().is_empty()).then_some(save_path),
-                    start_torrent: d.get_start_torrent(),
-                    only_files,
-                    label_id: None,
-                },
-            );
+            let save_path = (!save_path.trim().is_empty()).then_some(save_path);
+            let start = d.get_start_torrent();
+
+            for (i, (bytes, _)) in p.iter().enumerate() {
+                // row.index, not the row number: the model has folder rows in
+                // it, and only_files indexes the torrent's own file list.
+                let mut total = 0;
+                let mut included: Vec<usize> = Vec::new();
+                for r in 0..m[i].row_count() {
+                    let Some(row) = m[i].row_data(r) else { continue };
+                    let Ok(index) = usize::try_from(row.index) else {
+                        continue; // a folder row
+                    };
+                    total += 1;
+                    if row.included {
+                        included.push(index);
+                    }
+                }
+                // None means "everything", which is not the same as an explicit
+                // list of all of them - keep the distinction the session expects.
+                let only_files = (included.len() != total).then_some(included);
+
+                u.session.add_torrent(
+                    AddTorrentSource::TorrentFileBytes(bytes.clone()),
+                    AddParams {
+                        save_path: save_path.clone(),
+                        start_torrent: start,
+                        only_files,
+                        label_id: None,
+                    },
+                );
+            }
 
             dismiss(&u, &d);
             *u.torrent_dialog.borrow_mut() = None;
+            // Anything dropped in while the dialog was open gets its own batch.
             show_next_pending(&u);
         });
     }
@@ -2406,6 +2490,10 @@ mod tests {
 /// The project's own site, shown in About and opened when it is clicked.
 const WEBSITE: &str = "https://www.nanotorrent.org";
 
+/// Who wrote it, and where to find them - the second link in About.
+const DEVELOPER: &str = "Power2All";
+const DEVELOPER_URL: &str = "https://www.power2all.com";
+
 /// Open the About box: version, build stamp and a link to the project site.
 fn open_about(ui: &Rc<Ui>) {
     if let Some(existing) = ui.about_dialog.borrow().as_ref() {
@@ -2424,6 +2512,13 @@ fn open_about(ui: &Rc<Ui>) {
     dialog.set_version(crate::buildinfo::version().into());
     dialog.set_build_stamp(crate::buildinfo::build_stamp().into());
     dialog.set_website(WEBSITE.into());
+    dialog.set_developer(DEVELOPER.into());
+
+    dialog.on_open_developer(|| {
+        if let Err(err) = open::that(DEVELOPER_URL) {
+            tracing::error!("cannot open {DEVELOPER_URL}: {err}");
+        }
+    });
 
     dialog.on_open_website(|| {
         // `open` picks the platform's handler, so this is the one place the

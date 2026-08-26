@@ -227,7 +227,10 @@ mod tests {
                     assert!(
                         matches!(
                             flag.as_str(),
-                            "--webui" | "--set-web-password" | "--webui-status" | "--webui-set"
+                            "--webui"
+                                | "--set-web-password"
+                                | "--webui-status"
+                                | "--webui-set"
                         ),
                         "USAGE mentions {flag} but handle() does not match it"
                     );

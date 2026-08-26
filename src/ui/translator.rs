@@ -97,7 +97,20 @@ pub struct Translator {
 ///
 /// Malformed entries are skipped rather than failing the load: a translation
 /// with one bad line should lose that line, not the language.
-fn parse_lang(json: &str) -> HashMap<String, String> {
+///
+/// `rebrand` renames the product in the inherited translations, which are
+/// PicoTorrent's originals and say so in a dozen strings. It must be false for
+/// en-US: that file is ours and already says what it means, including the one
+/// place the old name is deliberate - the About box credits the project this
+/// is a port OF, and blanket-renaming turned it into "a Rust port of
+/// NanoTorrent".
+fn parse_lang(json: &str, rebrand: bool) -> HashMap<String, String> {
+    // Never renamed, in any file. Today only en-US defines it, so the flag
+    // above is enough - but the day someone translates the credit, renaming it
+    // would silently restore "a Rust port of NanoTorrent" in that language
+    // alone, which is the hardest kind of bug to notice.
+    const ABOUT_UPSTREAM: [&str; 1] = ["app_credit"];
+
     // serde_json rejects a leading UTF-8 BOM, and some of the original
     // language files carry one (es-ES) - without this they silently parse to
     // nothing and the UI falls back to English.
@@ -106,10 +119,14 @@ fn parse_lang(json: &str) -> HashMap<String, String> {
         .map(|m| {
             m.into_iter()
                 .filter_map(|(k, v)| {
-                    // The language files come from the original project;
-                    // rebrand any product-name mention.
-                    v.as_str()
-                        .map(|s| (k, s.replace("PicoTorrent", "NanoTorrent")))
+                    v.as_str().map(|s| {
+                        let s = if rebrand && !ABOUT_UPSTREAM.contains(&k.as_str()) {
+                            s.replace("PicoTorrent", "NanoTorrent")
+                        } else {
+                            s.to_string()
+                        };
+                        (k, s)
+                    })
                 })
                 .collect()
         })
@@ -123,11 +140,15 @@ impl Translator {
     /// Always succeeds: an unknown or unreadable locale falls back to the
     /// embedded en-US, because a missing translation must not stop startup.
     pub fn load(lang_dir: &Path, locale: &str) -> Translator {
-        let english = parse_lang(embedded("en-US").unwrap_or("{}"));
+        // Never rebranded: en-US is ours, not an inherited translation.
+        let english = parse_lang(embedded("en-US").unwrap_or("{}"), false);
 
         // Start from what is compiled in, so a missing lang/ folder is fine.
         let mut locales: Vec<String> = EMBEDDED_LANGS.iter().map(|(l, _)| l.to_string()).collect();
-        let mut strings = embedded(locale).map(parse_lang).unwrap_or_default();
+        let is_english = locale.eq_ignore_ascii_case(crate::DEFAULT_LOCALE);
+        let mut strings = embedded(locale)
+            .map(|json| parse_lang(json, !is_english))
+            .unwrap_or_default();
 
         // A lang/ directory on disk overrides the embedded copy per locale and
         // may add locales that did not ship with this build.
@@ -149,7 +170,9 @@ impl Translator {
                 if loc.eq_ignore_ascii_case(locale)
                     && let Ok(contents) = std::fs::read_to_string(&path)
                 {
-                    strings = parse_lang(&contents);
+                    // Same rule for a lang/ override as for the embedded
+                    // copy: an en-US.json on disk is a replacement for ours.
+                    strings = parse_lang(&contents, !is_english);
                 }
             }
         }
@@ -228,6 +251,44 @@ impl Translator {
 
 #[cfg(test)]
 mod tests {
+    /// The About box credits the project this is a port OF, so that one string
+    /// must keep saying PicoTorrent - a blanket rename turned it into "A Rust
+    /// port of NanoTorrent", which is nonsense. Every other en-US string must
+    /// already say NanoTorrent in the file itself rather than relying on that
+    /// rename, and the inherited translations must still get renamed.
+    #[test]
+    fn only_the_credit_still_names_picotorrent() {
+        let english = super::parse_lang(super::embedded("en-US").expect("en-US is embedded"), false);
+
+        let credit = english.get("app_credit").expect("app_credit exists");
+        assert!(credit.contains("PicoTorrent"), "the credit lost its subject: {credit}");
+        assert!(!credit.contains("NanoTorrent"), "the credit was rebranded: {credit}");
+
+        let stray: Vec<&String> = english
+            .iter()
+            .filter(|(k, v)| k.as_str() != "app_credit" && v.contains("PicoTorrent"))
+            .map(|(k, _)| k)
+            .collect();
+        assert!(stray.is_empty(), "en-US should say NanoTorrent itself: {stray:?}");
+
+        // A translated credit keeps its subject too. No locale defines one
+        // today, so this is the guard rather than the current behaviour.
+        let translated = super::parse_lang(
+            r#"{"app_credit": "Een Rust-port van PicoTorrent.", "about_picotorrent": "Over PicoTorrent"}"#,
+            true,
+        );
+        assert!(translated["app_credit"].contains("PicoTorrent"), "credit renamed");
+        assert!(translated["about_picotorrent"].contains("NanoTorrent"), "title not renamed");
+
+        // An inherited translation is still rebranded - that is what the flag
+        // is for, and 40 files depend on it.
+        let dutch = super::parse_lang(super::embedded("nl-NL").expect("nl-NL is embedded"), true);
+        assert!(
+            dutch.values().all(|v| !v.contains("PicoTorrent")),
+            "inherited translations must be rebranded"
+        );
+    }
+
     use super::*;
 
     fn tr() -> Translator {
@@ -237,14 +298,14 @@ mod tests {
 
     #[test]
     fn rebrands_product_name() {
-        let m = parse_lang(r#"{"a": "About PicoTorrent", "b": "no brand"}"#);
+        let m = parse_lang(r#"{"a": "About PicoTorrent", "b": "no brand"}"#, true);
         assert_eq!(m.get("a").unwrap(), "About NanoTorrent");
         assert_eq!(m.get("b").unwrap(), "no brand");
     }
 
     #[test]
     fn parse_lang_ignores_non_strings() {
-        let m = parse_lang(r#"{"a": "x", "n": 5, "o": {"k": "v"}}"#);
+        let m = parse_lang(r#"{"a": "x", "n": 5, "o": {"k": "v"}}"#, true);
         assert_eq!(m.len(), 1);
         assert!(m.contains_key("a"));
     }
@@ -264,7 +325,7 @@ mod tests {
         // else must yield strings. Catches a BOM or a truncated file turning a
         // translation into a silent English fallback.
         for (locale, json) in EMBEDDED_LANGS {
-            let n = parse_lang(json).len();
+            let n = parse_lang(json, true).len();
             if matches!(*locale, "af-ZA" | "da-DK") {
                 continue;
             }
@@ -275,13 +336,13 @@ mod tests {
     #[test]
     fn bom_prefixed_language_file_still_parses() {
         assert_eq!(
-            parse_lang("\u{feff}{\"a\": \"x\"}")
+            parse_lang("\u{feff}{\"a\": \"x\"}", true)
                 .get("a")
                 .map(String::as_str),
             Some("x")
         );
         // es-ES is the one that actually carries a BOM on disk.
-        assert!(parse_lang(embedded("es-ES").unwrap()).len() > 100);
+        assert!(parse_lang(embedded("es-ES").unwrap(), true).len() > 100);
     }
 
     #[test]
@@ -380,7 +441,7 @@ mod slint_key_tests {
     /// only thing that catches that.
     #[test]
     fn every_key_used_in_markup_exists() {
-        let english = super::parse_lang(super::embedded("en-US").expect("en-US is embedded"));
+        let english = super::parse_lang(super::embedded("en-US").expect("en-US is embedded"), false);
 
         let mut missing: Vec<String> = Vec::new();
         for file in [

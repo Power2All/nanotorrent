@@ -271,7 +271,15 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
 
         if supports_extended {
             let mut my_extended = ExtendedHandshake::new();
-            my_extended.v = Some(ByteBuf(crate::client_name_and_version().as_bytes()));
+            // Anonymous mode clears this again in update_my_extended_handshake
+            // below, so there is no fingerprint to leak here.
+            my_extended.v = Some(ByteBuf(
+                crate::CLIENT_NAME
+                    .get()
+                    .map(String::as_str)
+                    .unwrap_or(crate::client_name_and_version())
+                    .as_bytes(),
+            ));
             my_extended.yourip = Some(PeerIP(self.addr.ip()));
             self.handler
                 .update_my_extended_handshake(&mut my_extended)?;

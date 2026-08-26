@@ -69,8 +69,101 @@ pub fn open_and_select(path: &Path) {
     }
 }
 
+/// Free and total bytes on the filesystem holding `path`, or `None` if it
+/// cannot be determined (a path that does not exist, a permission error, an
+/// unsupported platform).
+///
+/// There is no std API for this, so it is one small platform call each. The
+/// caller must treat `None` as "do not know" and take no action on it -
+/// pausing every torrent because a stat failed would be worse than the disk
+/// filling.
+#[cfg(windows)]
+pub fn disk_space(path: &Path) -> Option<(u64, u64)> {
+    use std::os::windows::ffi::OsStrExt;
+
+    // GetDiskFreeSpaceExW takes a directory; walk up until one exists, so a
+    // save path that has not been created yet still reports its drive.
+    let mut dir = path;
+    while !dir.is_dir() {
+        dir = dir.parent()?;
+    }
+
+    let wide: Vec<u16> = dir
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    // SAFETY: a zeroed ULARGE_INTEGER is a valid value of the union, `wide` is
+    // NUL-terminated and outlives the call, and both outputs are ours.
+    unsafe {
+        let mut avail: winapi::um::winnt::ULARGE_INTEGER = std::mem::zeroed();
+        let mut total: winapi::um::winnt::ULARGE_INTEGER = std::mem::zeroed();
+        // Available-to-caller rather than total free, so a disk quota is
+        // respected - the same reason the unix arm reads f_bavail.
+        let ok = winapi::um::fileapi::GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut avail,
+            &mut total,
+            std::ptr::null_mut(),
+        );
+        (ok != 0).then(|| (*avail.QuadPart(), *total.QuadPart()))
+    }
+}
+
+#[cfg(unix)]
+pub fn disk_space(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let mut dir = path;
+    while !dir.is_dir() {
+        dir = dir.parent()?;
+    }
+
+    let c_path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+    // SAFETY: zeroed statvfs is a valid starting state and c_path is a valid
+    // NUL-terminated string that outlives the call.
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c_path.as_ptr(), &mut st) } != 0 {
+        return None;
+    }
+
+    // f_bavail, not f_bfree: the reserved blocks root can still use are not
+    // available to this process and counting them would report space that
+    // cannot actually be written.
+    let unit = st.f_frsize as u64;
+    Some((st.f_bavail as u64 * unit, st.f_blocks as u64 * unit))
+}
+
+/// Free space as a percentage of the volume, for the low-disk guard.
+pub fn free_space_percent(path: &Path) -> Option<f64> {
+    let (free, total) = disk_space(path)?;
+    (total > 0).then(|| free as f64 * 100.0 / total as f64)
+}
+
 #[cfg(test)]
 mod tests {
+    /// The probe must agree with itself and stay in range on a path that
+    /// certainly exists. Exact figures are the filesystem's business, but a
+    /// percentage outside 0-100, or free exceeding total, means the union
+    /// fields or the block-size multiply are wrong - and this silently decides
+    /// whether every torrent gets paused.
+    #[test]
+    fn disk_space_is_self_consistent() {
+        let here = std::env::temp_dir();
+        let (free, total) = super::disk_space(&here).expect("temp dir is on a real volume");
+        assert!(total > 0, "volume reports zero size");
+        assert!(free <= total, "free {free} exceeds total {total}");
+
+        let pct = super::free_space_percent(&here).unwrap();
+        assert!((0.0..=100.0).contains(&pct), "percentage out of range: {pct}");
+
+        // A path that cannot exist reports "do not know" rather than zero -
+        // the guard must never read a failure as a full disk.
+        let missing = std::path::Path::new("nanotorrent-no-such-dir-9f3a2b");
+        assert!(super::disk_space(missing).is_none());
+    }
+
     use super::*;
 
     #[test]

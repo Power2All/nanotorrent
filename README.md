@@ -2,9 +2,9 @@
 
 NanoTorrent is a tiny, hackable BitTorrent client for **Windows, Linux and
 macOS** — a Rust 2024 port of
-[PicoTorrent](https://github.com/picotorrent/picotorrent). It keeps the
-original's application structure, settings database and behaviour while
-replacing the C++ / Rasterbar-libtorrent / wxWidgets stack with pure-Rust
+[PicoTorrent](https://github.com/picotorrent/picotorrent) by Viktor Elofsson.
+It keeps the original's application structure, settings database and behaviour
+while replacing the C++ / Rasterbar-libtorrent / wxWidgets stack with pure-Rust
 building blocks.
 
 Site: <https://www.nanotorrent.org>
@@ -83,16 +83,21 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 ## What's included
 
 - **Session** — DHT (persisted routing table), UDP trackers, listen port,
-  `-NT-` Azureus-style (or random, in anonymous mode) peer id, up/down rate
+  `-NT-` Azureus-style (or random, in anonymous mode) peer id and a matching
+  `NanoTorrent <version>` in the BEP 10 handshake — the string other clients
+  show in their Client column — up/down rate
   limits, SOCKS proxy with per-scope toggles (peers / trackers / hostnames),
   fast-resume across restarts. Settings are applied **live** — Preferences ▸ OK
   rebuilds the session, no restart needed.
 - **MSE / PE encryption** — both outgoing and incoming, RC4, require-encryption
   toggles (`src/bittorrent/mse.rs`, injected through a vendored transform seam).
 - **libtorrent tuning knobs** — every setting PicoTorrent exposed that can
-  function against librqbit: active-download/seed/overall limits, pause on low
-  disk space, PeX toggle, anonymous mode, proxy scoping. Ones with no librqbit
-  mechanism are documented as no-ops.
+  function against librqbit: active-download/seed/overall limits, PeX toggle,
+  anonymous mode, proxy scoping. Ones with no librqbit mechanism are documented
+  as no-ops.
+- **Low-disk guard** - pause everything when free space on the default save
+  path drops below a percentage of the volume. librqbit has no such mechanism,
+  so this is checked here every 30s. Off by default; 5% when enabled.
 - **Settings database** — the exact original migration SQL (incl. the custom
   `get_known_folder_path()` / `get_user_default_ui_language()` SQLite
   functions); a pre-existing PicoTorrent DB migrates cleanly.
@@ -107,18 +112,28 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   **Trackers** grouped into announce tiers with per-tracker
   seeds/leeches/fails/next-announce plus DHT/LSD/PeX source rows. Any value
   that is too long to fit shows in full on hover, and a click copies it.
-- **Add flows** — Add torrent (parsed file list, save path, label, start
-  toggle); Add magnet, which **fetches the metadata first** and then shows the
-  same dialog with the real file list.
+- **Add flows** — Add torrent(s): pick any number of `.torrent` files and they
+  arrive in **one dialog**, listed down the side, with each one's file tree
+  shown as you select it. File selection is per torrent; save path and start
+  apply to the batch. Add magnet, which **fetches the metadata first** and then
+  shows the same dialog with the real file list.
 - **Torrent creation** — BitTorrent v1, v2 and hybrid (BEP 52), with tracker /
   comment / private options.
 - **Web interface** — an optional authenticated HTTPS remote: session and
   torrent listings, add / pause / resume / recheck / remove / move / label, and
-  a save-path browser. Argon2id password hashing, HTTP Basic over TLS
+  a save-path browser. Adding takes several at once — magnet links one per
+  line, or a multi-file `.torrent` picker — and `POST /api/torrents/inspect`
+  reads them server-side so the remote shows the same name, size and file tree
+  the desktop dialog does, with the same per-file checkboxes. It reuses the
+  desktop's own parser, so the two cannot disagree about a torrent's file
+  order (which `only_files` indexes by). Argon2id password hashing, HTTP Basic
+  over TLS
   (self-signed by default, or bring your own certificate), and it refuses to
   listen off-loopback in plaintext. Configurable from Preferences ▸ Web
   interface — pressing OK restarts it in place — or from the command line with
   `--webui`, `--set-web-password`, `--webui-status` and `--webui-set`.
+  `--version` and `--help` work too, though on Windows the GUI build has no
+  console to print to.
 - **Notifications** — real Windows 11 toasts on download-complete under a
   registered AppUserModelID, switchable off in Preferences; a notification-area
   (tray) icon with close-to-tray prompt, shown for both the window's close
@@ -184,6 +199,14 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   fallback and has been corrected.
 
 ## History
+
+**v0.2.1** added batch torrent adding to both UIs, the low-disk guard, and
+gave the client its own name in the BEP 10 handshake — until then peers saw
+`rqbit` rather than NanoTorrent. It also fixed a bug that could leave the app
+unable to start: the session index was renamed into place without being
+flushed first, so a full disk or a crash could replace it with an empty file.
+It is now fsynced before the rename, and an unreadable index is moved aside
+rather than being fatal.
 
 **v0.2.0** replaced the Win32 front end (native-windows-gui) with Slint,
 bringing Linux and macOS support, and added the web interface, live language

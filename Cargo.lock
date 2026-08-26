@@ -4112,7 +4112,7 @@ dependencies = [
 
 [[package]]
 name = "nanotorrent"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4122,6 +4122,7 @@ dependencies = [
  "copypasta",
  "flate2",
  "futures",
+ "libc",
  "librqbit",
  "librqbit-bencode",
  "maxminddb",
@@ -5926,7 +5927,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

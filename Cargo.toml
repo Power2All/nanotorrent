@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
 license = "MIT"
@@ -103,7 +103,10 @@ slint = { version = "1", optional = true, features = ["raw-window-handle-06"] }
 # password hash in constant time; the username needs the same treatment or it
 # leaks through timing.
 subtle = "2.6"
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "signal"] }
+# "time" for the session's lifecycle scan tick. It was already on through
+# feature unification with librqbit; naming it here means a dependency change
+# elsewhere cannot silently take our timer away.
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "signal", "time"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
@@ -114,6 +117,11 @@ slint-build = { version = "1", optional = true }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1.31"
+
+# statvfs, for the free-space check that pauses torrents before the disk
+# fills. Windows uses GetDiskFreeSpaceExW from winapi below instead.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.8"

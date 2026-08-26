@@ -125,6 +125,66 @@ pub struct PeerEntry {
     pub pieces: u32,
 }
 
+/// Something that happened to a torrent, delivered to every subscriber.
+///
+/// Lifecycle is derived by diffing the live torrent set against the previous
+/// tick rather than hooked into each add/remove call site, so a torrent added
+/// by the UI, the web API, IPC or a plugin all raise the same event through
+/// one path.
+#[derive(Clone, Debug)]
+pub enum SessionEvent {
+    TorrentAdded { hash: String, name: String },
+    TorrentCompleted { hash: String, name: String },
+    TorrentRemoved { hash: String, name: String },
+    /// Background work failed where there was no caller to return it to.
+    Error(String),
+}
+
+/// Report a background failure: logged once, then handed to every subscriber.
+///
+/// A free function rather than a method because the tasks that raise these have
+/// no `&self` - they own a cloned bus and nothing else. Logging here rather than
+/// where the event is consumed means a headless build, which has no UI draining
+/// anything, still gets the error in its log.
+fn report_error(events: &EventBus, message: String) {
+    tracing::error!("{message}");
+    events.emit(SessionEvent::Error(message));
+}
+
+/// Fan-out to every subscriber.
+///
+/// Cloned into background tasks, which have no `&self` to emit through - the
+/// same reason the error queue this replaces was an `Arc<Mutex<..>>`.
+#[derive(Clone)]
+pub struct EventBus(Arc<Mutex<Vec<std::sync::mpsc::Sender<SessionEvent>>>>);
+
+impl EventBus {
+    fn new() -> EventBus {
+        EventBus(Arc::new(Mutex::new(Vec::new())))
+    }
+
+    /// Subscribe for the lifetime of the returned receiver.
+    ///
+    /// These are unbounded std channels, so a subscriber that stops draining
+    /// grows one. Every subscriber here drains on a timer: the UI on its
+    /// refresh tick, the plugin host on its own thread.
+    pub fn subscribe(&self) -> std::sync::mpsc::Receiver<SessionEvent> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.0.lock().unwrap().push(tx);
+        rx
+    }
+
+    /// Deliver to everyone still listening.
+    pub fn emit(&self, event: SessionEvent) {
+        // A send fails only once the receiver is dropped, which is how a
+        // subscriber unregisters itself - no explicit unsubscribe needed.
+        self.0
+            .lock()
+            .unwrap()
+            .retain(|tx| tx.send(event.clone()).is_ok());
+    }
+}
+
 pub struct Session {
     rt: tokio::runtime::Runtime,
     // Behind RwLocks so preferences can be applied without restarting the
@@ -134,9 +194,12 @@ pub struct Session {
     api: Arc<std::sync::RwLock<Api>>,
     db: Arc<Database>,
     meta: Arc<Mutex<HashMap<String, TorrentMeta>>>,
-    errors: Arc<Mutex<Vec<String>>>,
-    /// Info-hashes of torrents that just finished, for the UI to notify on.
-    completed_events: Arc<Mutex<Vec<String>>>,
+    /// Lifecycle fan-out. Replaces a `Vec<String>` of completions that was
+    /// filled inside `torrents()` and drained only by the Slint UI: a headless
+    /// build never called the former and never ran the latter, so completions
+    /// were both undetected and (once the web API started calling `torrents()`)
+    /// accumulated forever.
+    events: EventBus,
     ipfilter_active: Arc<std::sync::atomic::AtomicBool>,
     /// Torrents paused by the queue scheduler (as opposed to by the user).
     queue_paused: Arc<Mutex<std::collections::HashSet<String>>>,
@@ -150,7 +213,45 @@ pub struct Session {
 /// The one place a setting becomes engine configuration. Settings with no
 /// librqbit equivalent are read and dropped here rather than at the call site,
 /// so what is and is not honoured is visible in one function.
+/// The Azureus-style peer id for a version string: `-NT<major><minor><patch>0-`
+/// followed by 12 random bytes.
+///
+/// Each version component is one character from librqbit's 64-entry alphabet
+/// (`0-9A-Za-z.-`), so 0.2.0 reads `-NT0200-` and 0.2.10 reads `-NT02A0-`.
+/// Anything past 63 has no character to map to and librqbit unwraps a None, so
+/// the clamp below is what keeps a future 0.2.64 from panicking at startup
+/// rather than merely misreporting itself.
+fn azureus_peer_id(version: &str) -> librqbit::Id20 {
+    let mut parts = version
+        .split('.')
+        .map(|p| p.parse::<u8>().unwrap_or(0).min(63));
+    generate_azereus_style(
+        *b"NT",
+        (
+            parts.next().unwrap_or(0),
+            parts.next().unwrap_or(0),
+            parts.next().unwrap_or(0),
+            0,
+        ),
+    )
+}
+
 fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptions {
+    // How peers see this client, in the two places the protocol asks:
+    //
+    //   * the peer id below, Azureus-style `-NT<version>-`
+    //   * the BEP 10 extended handshake's `v` string, set here
+    //
+    // Both derive from CARGO_PKG_VERSION, so they cannot disagree. Without the
+    // second, peers see librqbit's own name and NanoTorrent shows up as rqbit
+    // in their client column - see patch 0011.
+    //
+    // set() rather than get_or_init(): the session can be rebuilt when
+    // Preferences change, and only the first call takes. The value never
+    // varies, so a later failure is nothing to report. Anonymous mode does not
+    // need special handling here - librqbit drops `v` entirely in that mode.
+    let _ = librqbit::CLIENT_NAME.set(crate::buildinfo::client_id());
+
     // Peer ID: Azureus-style `-NT-` prefix, or a fully random id (no client
     // fingerprint) in anonymous mode.
     let anonymous = cfg.get_bool("libtorrent.anonymous_mode");
@@ -159,18 +260,7 @@ fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptio
         rand::fill(&mut bytes[..]);
         librqbit::Id20::new(bytes)
     } else {
-        let mut version = env!("CARGO_PKG_VERSION")
-            .split('.')
-            .map(|p| p.parse::<u8>().unwrap_or(0));
-        generate_azereus_style(
-            *b"NT",
-            (
-                version.next().unwrap_or(0),
-                version.next().unwrap_or(0),
-                version.next().unwrap_or(0),
-                0,
-            ),
-        )
+        azureus_peer_id(env!("CARGO_PKG_VERSION"))
     };
 
     // Listen port from the listen_interface table (default 6881).
@@ -277,6 +367,61 @@ fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptio
         })),
         ..Default::default()
     }
+}
+
+/// Move an unreadable `session.json` aside so startup can continue.
+///
+/// librqbit treats a *missing* index as an empty session but an *unreadable*
+/// one as fatal, so a single truncated write takes the whole app down with
+/// "error deserializing session database: EOF while parsing a value" and no
+/// way back in. Patch 0012 stops it happening again (the write was not fsynced
+/// before its rename); this is what lets an already-broken profile start.
+///
+/// Renamed, never deleted: it is the only record of where each torrent was
+/// saving to - that lives in this file and nowhere else, as the `torrent`
+/// table has no save path column. Nothing is re-added automatically for the
+/// same reason: guessing a save path could send a finished download to the
+/// wrong folder or trigger a full re-download.
+///
+/// The `<hash>.torrent` files beside it are untouched, so the torrents can be
+/// re-added by hand.
+fn quarantine_unreadable_session_index(session_path: &std::path::Path) {
+    let index = session_path.join("session.json");
+
+    // Only act on a file that exists AND fails to parse. A healthy index must
+    // never be moved aside, and a missing one is already handled.
+    match std::fs::read(&index) {
+        Err(_) => return, // missing or unreadable: librqbit copes with both
+        Ok(bytes) if serde_json::from_slice::<serde_json::Value>(&bytes).is_ok() => return,
+        Ok(_) => {}
+    }
+
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let quarantined = session_path.join(format!("session.json.corrupt-{stamp}"));
+    if let Err(err) = std::fs::rename(&index, &quarantined) {
+        // Leave it in place: the error below is still more useful than the
+        // deserialize failure the caller would otherwise hit.
+        tracing::error!("cannot move the corrupt session index aside: {err}");
+        return;
+    }
+
+    let orphans = std::fs::read_dir(session_path)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "torrent"))
+                .count()
+        })
+        .unwrap_or(0);
+
+    tracing::error!(
+        "the session index was corrupt (a truncated write, usually an unclean \
+         shutdown) and has been moved to {}. Starting with an empty session. \
+         {orphans} torrent(s) remain in {} and can be re-added - their data is \
+         intact, but their save paths were only recorded in the index.",
+        quarantined.display(),
+        session_path.display(),
+    );
 }
 
 /// Clear the UDP port the DHT persisted in `dht.json`, keeping the routing
@@ -517,6 +662,11 @@ impl Session {
 
         let opts = build_session_options(cfg, env);
 
+        // Before librqbit reads it: an unreadable index is fatal there, and a
+        // torrent client that will not launch is worse than one that lost its
+        // list. See the function for why nothing is re-added automatically.
+        quarantine_unreadable_session_index(&env.get_session_state_path());
+
         let inner = match rt.block_on(RqbitSession::new_with_opts(default_save_path.clone(), opts))
         {
             Ok(session) => session,
@@ -543,8 +693,7 @@ impl Session {
             api: Arc::new(std::sync::RwLock::new(api)),
             db,
             meta: Arc::new(Mutex::new(HashMap::new())),
-            errors: Arc::new(Mutex::new(Vec::new())),
-            completed_events: Arc::new(Mutex::new(Vec::new())),
+            events: EventBus::new(),
             ipfilter_active: Arc::new(std::sync::atomic::AtomicBool::new(
                 ipfilter_url(cfg).is_some(),
             )),
@@ -552,10 +701,17 @@ impl Session {
             session_path: env.get_session_state_path(),
         };
 
+        session.spawn_low_disk_guard(cfg);
         session.load_torrent_meta();
         // Heal any duplicate/gapped queue positions persisted before positions
         // were compacted on removal.
         session.normalize_queue_positions();
+
+        // Lifecycle detection, on a timer the session owns. It must not hang
+        // off `torrents()`: that is called by the UI refresh tick and by web
+        // API requests, so on a headless build with nothing connected it never
+        // runs, and a download could finish with no event raised at all.
+        session.spawn_scan_task();
 
         // Resume the torrents that were running when the previous session
         // shut down (librqbit persists its shutdown pause).
@@ -617,7 +773,7 @@ impl Session {
 
         let inner_slot = self.inner.clone();
         let api_slot = self.api.clone();
-        let errors = self.errors.clone();
+        let events = self.events.clone();
 
         self.rt.spawn(async move {
             let old = inner_slot.read().unwrap().clone();
@@ -637,7 +793,7 @@ impl Session {
                 Err(err) => {
                     let msg = format!("Failed to apply settings: {err:#}");
                     tracing::error!("{msg}");
-                    errors.lock().unwrap().push(msg);
+                    report_error(&events, msg);
                 }
             }
         });
@@ -715,7 +871,7 @@ impl Session {
         };
 
         let rq = self.rq();
-        let errors = self.errors.clone();
+        let events = self.events.clone();
         let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
         // librqbit's fastresume file. After deleting the torrent we remove it
         // ourselves so the re-add does a FULL re-hash: librqbit only spot-checks
@@ -726,10 +882,7 @@ impl Session {
 
         self.rt.spawn(async move {
             if let Err(err) = rq.delete(id, false).await {
-                errors
-                    .lock()
-                    .unwrap()
-                    .push(format!("Failed to recheck torrent: {err:#}"));
+                report_error(&events, format!("Failed to recheck torrent: {err:#}"));
                 return;
             }
 
@@ -747,10 +900,7 @@ impl Session {
                 .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
                 .await
             {
-                errors
-                    .lock()
-                    .unwrap()
-                    .push(format!("Failed to re-add torrent for recheck: {err:#}"));
+                report_error(&events, format!("Failed to re-add torrent for recheck: {err:#}"));
             }
         });
     }
@@ -781,24 +931,18 @@ impl Session {
         }
 
         let rq = self.rq();
-        let errors = self.errors.clone();
+        let events = self.events.clone();
         let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
         let new_folder = new_folder.to_string();
 
         self.rt.spawn(async move {
             if let Err(err) = rq.delete(id, false).await {
-                errors
-                    .lock()
-                    .unwrap()
-                    .push(format!("Failed to move torrent: {err:#}"));
+                report_error(&events, format!("Failed to move torrent: {err:#}"));
                 return;
             }
 
             if let Err(err) = move_files(&old_folder, &new_folder, &files) {
-                errors
-                    .lock()
-                    .unwrap()
-                    .push(format!("Failed to move torrent data: {err:#}"));
+                report_error(&events, format!("Failed to move torrent data: {err:#}"));
                 // Fall through and re-add at the OLD location so the torrent
                 // is not lost.
             }
@@ -819,10 +963,7 @@ impl Session {
                 .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
                 .await
             {
-                errors
-                    .lock()
-                    .unwrap()
-                    .push(format!("Failed to re-add moved torrent: {err:#}"));
+                report_error(&events, format!("Failed to re-add moved torrent: {err:#}"));
             }
         });
     }
@@ -989,19 +1130,10 @@ impl Session {
         self.rq().tcp_listen_port()
     }
 
-    /// Drain the errors collected since the last call.
-    ///
-    /// Drained rather than read: these are polled by the refresh tick to raise
-    /// a toast, and leaving them in place would raise the same one every tick.
-    pub fn take_errors(&self) -> Vec<String> {
-        std::mem::take(&mut self.errors.lock().unwrap())
-    }
-
     /// Record an error from background work, where there is no caller to
-    /// return it to. Logged as well as queued, so it survives being missed.
+    /// return it to.
     fn push_error(&self, err: String) {
-        tracing::error!("{err}");
-        self.errors.lock().unwrap().push(err);
+        report_error(&self.events, err);
     }
 
     /// Add a torrent from a .torrent file's contents or a magnet link.
@@ -1026,7 +1158,7 @@ impl Session {
         let inner = self.rq();
         let db = self.db.clone();
         let meta = self.meta.clone();
-        let errors = self.errors.clone();
+        let events = self.events.clone();
 
         self.rt.spawn(async move {
             match inner.add_torrent(add, Some(opts)).await {
@@ -1038,7 +1170,7 @@ impl Session {
                 Err(err) => {
                     let msg = format!("Failed to add torrent: {err:#}");
                     tracing::error!("{msg}");
-                    errors.lock().unwrap().push(msg);
+                    report_error(&events, msg);
                 }
             }
         });
@@ -1337,14 +1469,9 @@ fn on_torrent_added(
                     prev_finished: None,
                 });
 
-                // Notify only on a genuine not-finished -> finished transition
-                // this session; prev_finished == None (first observation) means
-                // the torrent was already complete at startup, so no toast.
-                if meta.prev_finished == Some(false) && stats.finished {
-                    let name = handle.name().unwrap_or_else(|| hash.clone());
-                    tracing::info!("torrent finished: {name}");
-                    self.completed_events.lock().unwrap().push(name);
-                }
+                // Completion is detected by the scan task in `new`, not here:
+                // this function is called only when something asks for the list,
+                // which on a headless build may be never.
                 meta.prev_finished = Some(stats.finished);
 
                 // Record the completion timestamp for the "Completed On" column.
@@ -1490,9 +1617,185 @@ fn on_torrent_added(
         result
     }
 
-    /// Drain the info-hashes of torrents that finished since the last call.
-    pub fn take_completions(&self) -> Vec<String> {
-        std::mem::take(&mut self.completed_events.lock().unwrap())
+    /// Listen for torrent lifecycle events until the receiver is dropped.
+    pub fn subscribe(&self) -> std::sync::mpsc::Receiver<SessionEvent> {
+        self.events.subscribe()
+    }
+
+    /// Pause everything before the disk fills, if the setting asks for it.
+    ///
+    /// This exists because running out of space is not a recoverable error
+    /// part-way through: librqbit logs a write failure per file per torrent and
+    /// keeps going, so a full disk produces hundreds of log lines, a torrent
+    /// whose data is now wrong, and - if the session index happens to be
+    /// rewritten at the wrong moment - a profile that will not start at all.
+    /// Stopping early is the only cheap defence.
+    ///
+    /// The limit is a percentage of the volume holding the default save path,
+    /// which is what PicoTorrent's setting meant. Torrents saved elsewhere are
+    /// not checked; per-torrent volumes would mean one stat per torrent per
+    /// tick for a case nobody has asked for.
+    ///
+    /// ponytail: polls every 30s. A filesystem watch would be prompter but is
+    /// three platform implementations for a threshold nobody sits exactly on;
+    /// 30s is well inside the time it takes to write a torrent's worth of data.
+    fn spawn_low_disk_guard(&self, cfg: &Configuration) {
+        let enabled = cfg.get_bool("pause_on_low_disk_space");
+        if !enabled {
+            return;
+        }
+        // Below 0 or above 100 can never trigger or always would; treat a
+        // nonsense value as the default rather than acting on it.
+        let limit = cfg
+            .get_int("pause_on_low_disk_space_limit")
+            .filter(|p| (0..=100).contains(p))
+            .unwrap_or(5) as f64;
+
+        let path = cfg
+            .get_string("default_save_path")
+            .map(PathBuf::from)
+            .unwrap_or_else(Environment::get_downloads_path);
+
+        let inner = self.inner.clone();
+        let events = self.events.clone();
+
+        self.rt.spawn(async move {
+            // Edge-triggered: pause once on the way down, and only arm again
+            // once there is room. Without this it would re-pause and re-toast
+            // every 30 seconds for as long as the disk stayed full.
+            let mut tripped = false;
+
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+                // None is "cannot tell" - a removable drive, a path that has
+                // gone away. Never pause on that.
+                let Some(free) = crate::core::utils::free_space_percent(&path) else {
+                    continue;
+                };
+
+                if free >= limit {
+                    tripped = false;
+                    continue;
+                }
+                if tripped {
+                    continue;
+                }
+                tripped = true;
+
+                let rq = inner.read().unwrap().clone();
+                let running = running_hashes(&rq);
+                if running.is_empty() {
+                    continue;
+                }
+
+                for hash in &running {
+                    if let Ok(id) = librqbit::api::TorrentIdOrHash::parse(hash)
+                        && let Some(handle) = rq.get(id)
+                    {
+                        let _ = rq.pause(&handle).await;
+                    }
+                }
+
+                // Same channel as every other background failure, so it
+                // reaches the UI as a toast and the web API's /errors.
+                report_error(
+                    &events,
+                    format!(
+                        "Only {free:.1}% free on {} (limit {limit:.0}%) - paused {} torrent(s).",
+                        path.display(),
+                        running.len(),
+                    ),
+                );
+            }
+        });
+    }
+
+    /// Poll the live torrent set once a second and emit what changed.
+    ///
+    /// Diffing rather than hooking each mutation: `add_torrent`, `remove`, the
+    /// web API and a plugin calling in all end up here, and a torrent that
+    /// librqbit finishes on its own has no call site to hook in the first
+    /// place.
+    ///
+    /// ponytail: a 1s poll over every handle. Fine for the hundreds of torrents
+    /// a desktop client holds; if someone runs thousands headless, have
+    /// librqbit push state changes instead of walking the set.
+    fn spawn_scan_task(&self) {
+        let inner = self.inner.clone();
+        let events = self.events.clone();
+
+        self.rt.spawn(async move {
+            // Owned by the task, not by `meta`: this is "what the previous tick
+            // saw", which is nobody else's business and must not be confused
+            // with the persisted per-torrent metadata.
+            let mut live: HashMap<String, String> = HashMap::new();
+            let mut finished: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut primed = false;
+
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+                // Re-read every tick: applying preferences swaps the whole
+                // librqbit session out from under us.
+                let rq = inner.read().unwrap().clone();
+                let snapshot: Vec<(String, String, bool)> = rq.with_torrents(|torrents| {
+                    torrents
+                        .map(|(_, handle)| {
+                            let hash = handle.info_hash().as_string();
+                            let name = handle.name().unwrap_or_else(|| hash.clone());
+                            (hash, name, handle.stats().finished)
+                        })
+                        .collect()
+                });
+
+                let mut seen: HashMap<String, String> = HashMap::new();
+                for (hash, name, is_finished) in snapshot {
+                    // The first tick establishes the baseline. Without this
+                    // every torrent restored from the previous run would look
+                    // newly added, and anything already complete would raise a
+                    // completion on every launch.
+                    if primed {
+                        if !live.contains_key(&hash) {
+                            events.emit(SessionEvent::TorrentAdded {
+                                hash: hash.clone(),
+                                name: name.clone(),
+                            });
+                        }
+                        if is_finished && !finished.contains(&hash) {
+                            tracing::info!("torrent finished: {name}");
+                            events.emit(SessionEvent::TorrentCompleted {
+                                hash: hash.clone(),
+                                name: name.clone(),
+                            });
+                        }
+                    }
+
+                    if is_finished {
+                        finished.insert(hash.clone());
+                    } else {
+                        // A recheck can un-finish a torrent; let it complete again.
+                        finished.remove(&hash);
+                    }
+                    seen.insert(hash, name);
+                }
+
+                if primed {
+                    for (hash, name) in &live {
+                        if !seen.contains_key(hash) {
+                            events.emit(SessionEvent::TorrentRemoved {
+                                hash: hash.clone(),
+                                name: name.clone(),
+                            });
+                            finished.remove(hash);
+                        }
+                    }
+                }
+
+                live = seen;
+                primed = true;
+            }
+        });
     }
 
     /// File list for the Files tab.
@@ -1754,6 +2057,79 @@ fn urlencode(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// A 0-byte session.json used to make the app unstartable. It must be
+    /// moved aside, a healthy one must be left strictly alone, and the
+    /// .torrent files beside it must survive either way.
+    #[test]
+    fn corrupt_session_index_is_quarantined_not_deleted() {
+        use super::quarantine_unreadable_session_index as quarantine;
+
+        // std::env::temp_dir, not the tempfile crate: the other tests here do
+        // the same and it is not worth a dependency.
+        let dir = std::env::temp_dir().join(format!("nt-session-idx-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.as_path();
+        let index = p.join("session.json");
+        let torrent = p.join("abc123.torrent");
+        std::fs::write(&torrent, b"d4:infod4:name3:isoee").unwrap();
+
+        // Nothing there at all: librqbit handles that, so do not interfere.
+        quarantine(p);
+        assert!(!index.exists());
+
+        // The reported failure: an empty file.
+        std::fs::write(&index, b"").unwrap();
+        quarantine(p);
+        assert!(!index.exists(), "empty index should be moved aside");
+        let saved: Vec<_> = std::fs::read_dir(p)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains("corrupt-"))
+            .collect();
+        assert_eq!(saved.len(), 1, "kept as evidence, not deleted");
+        assert!(torrent.exists(), "torrent files must be untouched");
+
+        // Truncated mid-write is the same class of failure.
+        std::fs::write(&index, b"{\"torrents\":{\"1\":").unwrap();
+        quarantine(p);
+        assert!(!index.exists(), "unparseable index should be moved aside");
+
+        // A healthy index must survive untouched - this runs on every start.
+        let good = b"{\"torrents\":{}}";
+        std::fs::write(&index, good).unwrap();
+        quarantine(p);
+        assert_eq!(std::fs::read(&index).unwrap(), good, "valid index kept");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The two ways this client names itself on the wire must agree on the
+    /// version, and neither may panic on a version the project could actually
+    /// reach. `-NT0200-` and `NanoTorrent 0.2.0` are the same identity in the
+    /// peer id's encoding and BEP 10's.
+    #[test]
+    fn client_identifies_itself_consistently() {
+        use super::azureus_peer_id;
+
+        let id = azureus_peer_id("0.2.0");
+        assert_eq!(&id.0[..8], b"-NT0200-", "0.2.0 peer id prefix");
+
+        // One character per component from a 64-entry alphabet, so 10 is 'A'.
+        assert_eq!(&azureus_peer_id("0.2.10").0[..8], b"-NT02A0-");
+        assert_eq!(&azureus_peer_id("1.0.0").0[..8], b"-NT1000-");
+
+        // Past the alphabet librqbit unwraps a None. Clamped, not panicking.
+        assert_eq!(&azureus_peer_id("0.2.64").0[..8], b"-NT02-0-");
+        azureus_peer_id("0.2.255");
+        azureus_peer_id("not.a.version");
+
+        // The BEP 10 string carries the same version the peer id encodes.
+        let v = env!("CARGO_PKG_VERSION");
+        assert_eq!(crate::buildinfo::client_id(), format!("NanoTorrent {v}"));
+        assert_eq!(&azureus_peer_id(v).0[..3], b"-NT");
+    }
+
     /// Queue scheduler decisions: lowest positions run, excess pauses,
     /// freed slots resume, limit <= 0 means unlimited, and active_limit caps
     /// the two sub-limits combined.
@@ -1954,5 +2330,31 @@ mod tests {
             torrent.as_bytes().unwrap(),
         )
         .unwrap();
+    }
+
+    /// The bus has no unsubscribe: a subscriber leaves by dropping its
+    /// receiver, and the next emit is what notices. Worth pinning, because the
+    /// alternative failure is a sender kept forever for a receiver that is gone.
+    #[test]
+    fn events_reach_every_subscriber_and_dropped_ones_unregister() {
+        use super::{EventBus, SessionEvent};
+
+        let bus = EventBus::new();
+        let first = bus.subscribe();
+        let second = bus.subscribe();
+
+        bus.emit(SessionEvent::Error("one".into()));
+        assert!(matches!(first.try_recv(), Ok(SessionEvent::Error(m)) if m == "one"));
+        assert!(matches!(second.try_recv(), Ok(SessionEvent::Error(m)) if m == "one"));
+
+        drop(second);
+        bus.emit(SessionEvent::Error("two".into()));
+
+        assert!(matches!(first.try_recv(), Ok(SessionEvent::Error(m)) if m == "two"));
+        assert_eq!(
+            bus.0.lock().unwrap().len(),
+            1,
+            "the dropped subscriber should have been pruned on emit"
+        );
     }
 }
