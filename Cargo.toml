@@ -74,7 +74,7 @@ rcgen = "0.13"
 # Native file/folder pickers for the Slint UI - Slint has none of its own.
 # xdg-portal rather than the default GTK3 backend: a torrent client should not
 # drag GTK into a Linux build to show one Open dialog, and the portal is what
-# Flatpak/Wayland expect anyway.
+# Wayland desktops expect anyway.
 rfd = { version = "0.15", optional = true, default-features = false, features = ["xdg-portal", "tokio"] }
 reqwest = { version = "0.13.4", features = ["json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
@@ -140,7 +140,7 @@ winapi = { version = "0.3.9", features = ["winuser", "windef", "winreg", "fileap
 # because the .desktop entry says `Icon=org.nanotorrent.NanoTorrent`, and its
 # StartupWMClass must match slint::set_xdg_app_id - that chain is what gives
 # the window its icon on Wayland, which has no protocol for a client to set one
-# itself. Flatpak additionally requires all three to be named by the app id.
+# itself.
 
 [package.metadata.deb]
 maintainer = "Power2All <power2all@users.noreply.github.com>"

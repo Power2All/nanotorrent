@@ -12,6 +12,7 @@
 #   NanoTorrent-<ver>-Setup.exe   Windows, NSIS, UPX-compressed payload
 #   nanotorrent-<ver>.deb         Debian / Ubuntu
 #   nanotorrent-<ver>.rpm         Fedora / RHEL / openSUSE
+#   nanotorrent-<ver>-x86_64.AppImage   any glibc 2.35+ distro, no install
 #   nanotorrent-<ver>.dmg         macOS (Apple Silicon)
 #
 # Windows keeps its capitalised "-Setup" name; the Unix ones are lower case
@@ -146,6 +147,44 @@ jobs:
           cargo generate-rpm --payload-compress none
           mv target/generate-rpm/*.rpm "nanotorrent-${{ needs.version.outputs.version }}.rpm"
 
+      # AppImage: one file, no install, no package manager. linuxdeploy walks
+      # the binary's ELF dependencies and copies them in - everything except
+      # glibc itself, which is why this job runs on 22.04 (see above).
+      #
+      # The .desktop, icon and metainfo are the same three files the .deb
+      # installs, and all three must be named by the app id or the desktop
+      # cannot connect a running window to them.
+      - name: Package AppImage
+        env:
+          # The runners have no FUSE, so the tools cannot mount themselves;
+          # this makes them unpack to a temp dir and run from there instead.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          APPID: org.nanotorrent.NanoTorrent
+        run: |
+          set -euo pipefail
+          curl -fsSLo linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy
+
+          mkdir -p AppDir/usr/bin
+          cp target/release/nanotorrent AppDir/usr/bin/
+
+          # Passed with -d/-i rather than pre-placed: linuxdeploy installs them
+          # into the AppDir AND writes the top-level .desktop and .DirIcon that
+          # make the AppImage launchable.
+          install -Dm644 "packaging/linux/$APPID.desktop" "$APPID.desktop"
+          install -Dm644 res/app.png "$APPID.png"
+          install -Dm644 "packaging/linux/$APPID.metainfo.xml" \
+            "AppDir/usr/share/metainfo/$APPID.metainfo.xml"
+
+          ./linuxdeploy --appdir AppDir \
+            -e AppDir/usr/bin/nanotorrent \
+            -d "$APPID.desktop" \
+            -i "$APPID.png" \
+            --output appimage
+
+          mv ./*.AppImage "nanotorrent-${{ needs.version.outputs.version }}-x86_64.AppImage"
+          chmod +x "nanotorrent-${{ needs.version.outputs.version }}-x86_64.AppImage"
+
       # A package that installs nothing, or installs to the wrong place, still
       # builds cleanly - so list the contents rather than trusting it.
       - name: Verify contents
@@ -155,6 +194,10 @@ jobs:
           echo "--- install and run ---"
           sudo dpkg -i "nanotorrent-${{ needs.version.outputs.version }}.deb"
           nanotorrent --version
+          echo "--- appimage ---"
+          # Same no-FUSE dance as the build. Proves the bundle actually starts,
+          # which a successful pack does not.
+          APPIMAGE_EXTRACT_AND_RUN=1 "./nanotorrent-${{ needs.version.outputs.version }}-x86_64.AppImage" --version
 
       - uses: actions/upload-artifact@v6
         with:
@@ -162,6 +205,7 @@ jobs:
           path: |
             nanotorrent-${{ needs.version.outputs.version }}.deb
             nanotorrent-${{ needs.version.outputs.version }}.rpm
+            nanotorrent-${{ needs.version.outputs.version }}-x86_64.AppImage
           if-no-files-found: error
 
   macos:

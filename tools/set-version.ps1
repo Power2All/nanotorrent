@@ -15,7 +15,7 @@ param(
     [string]$Version,
 
     # One or two sentences for the AppStream release entry, which is what
-    # Flathub shows on the store page.
+    # software centres show.
     [string]$Notes = 'TODO: describe this release.',
 
     # Skip regenerating installer assets (needs no Windows-only tooling
@@ -53,7 +53,7 @@ $lockPattern = '(?m)(^\[\[package\]\]\r?\nname = "nanotorrent"\r?\nversion = )"\
 Edit-File 'Cargo.lock' $lockPattern "`${1}`"$Version`"" 'the nanotorrent package entry'
 
 # --- AppStream ------------------------------------------------------------
-# Newest release first; Flathub renders these on the store page.
+# Newest release first; GNOME Software and KDE Discover render these.
 $metainfo = Join-Path $root 'packaging\linux\org.nanotorrent.NanoTorrent.metainfo.xml'
 $xml = Get-Content -Raw -Encoding UTF8 $metainfo
 if ($xml -match [regex]::Escape("<release version=`"$Version`"")) {
@@ -71,15 +71,6 @@ if ($xml -match [regex]::Escape("<release version=`"$Version`"")) {
         '(?m)^  <releases>' $entry 'the <releases> block'
 }
 
-# --- Flatpak manifest -----------------------------------------------------
-# The tag can be set now; the commit cannot, because the tag does not exist
-# yet. Blanking it is deliberate - a stale sha would build the WRONG release
-# and nothing downstream would notice.
-Edit-File 'packaging\flatpak\org.nanotorrent.NanoTorrent.yml' `
-    '(?m)^(\s*)tag: v\d+\.\d+\.\d+' "`${1}tag: v$Version" 'the git tag'
-Edit-File 'packaging\flatpak\org.nanotorrent.NanoTorrent.yml' `
-    '(?m)^(\s*)commit: \S+' "`${1}commit: SET-ME-AFTER-TAGGING" 'the git commit'
-
 # --- installer assets -----------------------------------------------------
 if (-not $NoInstallerAssets) {
     & (Join-Path $root 'installer\make-assets.ps1') | Out-Null
@@ -94,4 +85,3 @@ Write-Host ''
 Write-Host 'Then:'
 Write-Host "  git commit -am `"NanoTorrent $Version`" && git tag -a v$Version -m `"NanoTorrent $Version`""
 Write-Host "  git push origin master --tags"
-Write-Host "  git rev-parse v$Version^{commit}    # paste into the manifest's commit:"

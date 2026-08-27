@@ -52,9 +52,9 @@ slint::include_modules!();
 
 /// Matches the .desktop file name that packaging installs, which is how
 /// Wayland compositors find the window icon. See docs/BUILDING.md.
-/// Reverse-DNS, because Flatpak and Flathub require the desktop file, the
-/// icon and the AppStream metainfo to be named by it - and this value must
-/// match their names exactly or Wayland cannot connect the window to them.
+/// Reverse-DNS, and the desktop file, icon and AppStream metainfo are all
+/// named by it. This value must match their names exactly or Wayland cannot
+/// connect the window to them, and the icon falls back to a generic one.
 ///
 /// The executable is still plain `nanotorrent`; only the application identity
 /// is reverse-DNS.

@@ -78,9 +78,9 @@ pub fn open_and_select(path: &Path) {
         // There is no portable "reveal this item" equivalent; opening the
         // containing folder is what the menu entry promises anyway.
         //
-        // Inside a Flatpak this goes through the OpenURI portal. A save path
-        // outside the sandbox's reach can still be refused, which is why the
-        // error is logged rather than dropped.
+        // Under a sandbox this goes through the desktop's OpenURI portal, and
+        // a save path outside what the sandbox can reach may be refused - which
+        // is why the error is logged rather than dropped.
         if let Err(err) = open::that(path) {
             tracing::error!("cannot open {}: {err}", path.display());
         }

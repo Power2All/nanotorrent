@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  AppStream metainfo. Flathub will not accept a submission without this, and
-  the file name, <id> and the .desktop file must all be the same app id.
+  AppStream metainfo. GNOME Software and KDE Discover read this to show the
+  app in their listings once the .deb or .rpm is installed; without it the
+  entry is a bare desktop file with no description or screenshots.
 
-  The <screenshots> URLs must be publicly reachable at review time - Flathub
-  fetches them to build the store page. They point at raw.githubusercontent so
-  they travel with the repo rather than needing separate hosting.
+  The file name, <id> and the .desktop file must all be the same app id.
+
+  The <screenshots> URLs must be publicly reachable. They point at
+  raw.githubusercontent so they travel with the repo rather than needing
+  separate hosting.
 -->
 <component type="desktop-application">
   <id>org.nanotorrent.NanoTorrent</id>
@@ -86,11 +89,11 @@
   <releases>
     <release version="0.2.3" date="2026-08-27">
       <description>
-        <p>A Linux release, and the first published as a Flatpak.</p>
+        <p>A Linux release.</p>
         <ul>
           <li>Opening a torrent's download folder opened the parent directory instead, and reported nothing when it failed</li>
           <li>The window icon fell back to a generic one on Wayland</li>
-          <li>The notification-area icon did not appear when running as a Flatpak</li>
+          <li>The notification-area icon could not be created in sandboxed environments</li>
         </ul>
       </description>
     </release>
