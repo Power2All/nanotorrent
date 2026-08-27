@@ -108,7 +108,9 @@ subtle = "2.6"
 # elsewhere cannot silently take our timer away.
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "signal", "time"] }
 tracing = "0.1.44"
-tracing-subscriber = "0.3.23"
+# env-filter: everything this app does goes in the log at debug, while the
+# dependencies stay at info - librqbit traces every chunk and would bury it.
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [build-dependencies]
 # Compiles src/ui_slint/*.slint. Optional so a headless build does not pay for

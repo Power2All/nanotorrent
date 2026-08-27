@@ -221,7 +221,12 @@ fn verify_librqbit_patches() {
         (
             "vendor/librqbit/src/session_persistence/json.rs",
             "tmp.sync_all()",
-            "patches/0012-fsync-session-index.patch",
+            "patches/0012-session-persistence.patch (fsync before rename)",
+        ),
+        (
+            "vendor/librqbit/src/session_persistence/json.rs",
+            "next_id: std::sync::atomic::AtomicUsize",
+            "patches/0012-session-persistence.patch (next_id must reserve, not              report - without it a batch add collapses into one torrent)",
         ),
         (
             "vendor/librqbit-tracker-comms/src/tracker_comms.rs",

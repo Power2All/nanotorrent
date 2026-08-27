@@ -6,13 +6,15 @@ import { L } from "globals.slint";
 export component AboutDialog inherits Window {
     icon: @image-url("../../res/app.png");
     title: L.s(L.revision, "about_nanotorrent");
-    // Fixed size: min == max is how Slint says "not resizable" - it has no
-    // such property. The content here does not reflow, so a resize could only
-    // ever leave dead space or clip.
+    // Width is pinned - nothing here reflows horizontally. Height is NOT:
+    // the window takes its content's natural height, so it opens exactly
+    // fitting and shows no scrollbar. Capping it instead meant a cap even a
+    // few pixels under the content left the scrollbar up permanently.
+    // min-height only sets how far it may be dragged down on a screen too
+    // short for it - that is when the ScrollView earns its keep.
     min-width: 400px;
     max-width: 400px;
-    min-height: 260px;
-    max-height: 260px;
+    min-height: 200px;
     background: Palette.background;
 
     in property <string> version;

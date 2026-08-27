@@ -1,18 +1,28 @@
 // Torrent creation: v1, v2 or hybrid, with tracker, comment and private options.
 
-import { Button, CheckBox, ComboBox, LineEdit, TextEdit, Palette } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, TextEdit, ScrollView, Palette } from "std-widgets.slint";
 import { L } from "globals.slint";
 
 export component CreateTorrentDialog inherits Window {
     icon: @image-url("../../res/app.png");
     title: L.s(L.revision, "create_torrent");
-    // Fixed size: min == max is how Slint says "not resizable" - it has no
-    // such property. The content here does not reflow, so a resize could only
-    // ever leave dead space or clip.
+    // Width is pinned - nothing here reflows horizontally. Height is NOT:
+    // the window takes its content's natural height, so it opens exactly
+    // fitting and shows no scrollbar. Capping it instead meant a cap even a
+    // few pixels under the content left the scrollbar up permanently.
+    // min-height only sets how far it may be dragged down on a screen too
+    // short for it - that is when the ScrollView earns its keep.
     min-width: 600px;
     max-width: 600px;
-    min-height: 430px;
-    max-height: 430px;
+    /// See preferences.slint - the monitor work area, in logical pixels.
+    in property <length> screen-limit: 100000px;
+    // min == max: not resizable, sized to content, clamped to the screen.
+    // The form's own height, NOT the body's: the body holds a ScrollView, and
+    // a ScrollView reports `preferred-height: 100%` rather than its content's
+    // size - binding above it collapses the window. Same trap as
+    // preferences.slint, same fix.
+    min-height: min(form.preferred-height + foot.preferred-height + 34px, root.screen-limit);
+    max-height: min(form.preferred-height + foot.preferred-height + 34px, root.screen-limit);
     background: Palette.background;
 
     in-out property <string> source;
@@ -34,81 +44,90 @@ export component CreateTorrentDialog inherits Window {
     callback pick-file();
     callback pick-folder();
 
-    VerticalLayout {
+    body := VerticalLayout {
         padding: 12px;
         spacing: 10px;
 
-        Text {
-            text: L.s(L.revision, "source");
-            font-weight: 700;
-            font-size: 13px;
-        }
-        HorizontalLayout {
-            spacing: 8px;
-            LineEdit {
-                text <=> root.source;
-                horizontal-stretch: 1;
-                placeholder-text: L.s(L.revision, "source_placeholder");
-            }
-            Button { text: L.s(L.revision, "choose_file"); clicked => { root.pick-file(); } }
-            Button { text: L.s(L.revision, "choose_folder"); clicked => { root.pick-folder(); } }
-        }
-
-        Text {
-            text: L.s(L.revision, "trackers_input_per_line");
-            font-weight: 700;
-            font-size: 13px;
-        }
-        TextEdit {
+        // Only the form scrolls; the buttons below stay put so Create and
+        // Cancel are reachable at any window height.
+        ScrollView {
+            vertical-scrollbar-policy: as-needed;
             vertical-stretch: 1;
-            // Enough for a handful of trackers without the box dominating the
-            // dialog; it still grows if the window is resized.
-            min-height: 90px;
-            text <=> root.trackers;
-            wrap: no-wrap;
-        }
-
-        Text {
-            text: L.s(L.revision, "comment");
-            font-weight: 700;
-            font-size: 13px;
-        }
-        LineEdit { text <=> root.comment; }
-
-        HorizontalLayout {
-            spacing: 10px;
+            form := VerticalLayout {
+                spacing: 10px;
             Text {
-                text: L.s(L.revision, "piece_size");
+                text: L.s(L.revision, "source");
                 font-weight: 700;
                 font-size: 13px;
-                width: 90px;
-                vertical-alignment: center;
             }
-            ComboBox {
-                model: root.piece-lengths;
-                current-index <=> root.piece-length-index;
-                width: 160px;
+            HorizontalLayout {
+                spacing: 8px;
+                LineEdit {
+                    text <=> root.source;
+                    horizontal-stretch: 1;
+                    placeholder-text: L.s(L.revision, "source_placeholder");
+                }
+                Button { text: L.s(L.revision, "choose_file"); clicked => { root.pick-file(); } }
+                Button { text: L.s(L.revision, "choose_folder"); clicked => { root.pick-folder(); } }
             }
+
             Text {
-                text: L.s(L.revision, "torrent_version");
+                text: L.s(L.revision, "trackers_input_per_line");
                 font-weight: 700;
                 font-size: 13px;
-                width: 70px;
-                vertical-alignment: center;
-                horizontal-alignment: right;
             }
-            ComboBox {
-                model: root.versions;
-                current-index <=> root.version-index;
-                width: 160px;
+            TextEdit {
+                vertical-stretch: 1;
+                // Enough for a handful of trackers without the box dominating the
+                // dialog; it still grows if the window is resized.
+                min-height: 90px;
+                text <=> root.trackers;
+                wrap: no-wrap;
             }
-            Rectangle { horizontal-stretch: 1; }
+
+            Text {
+                text: L.s(L.revision, "comment");
+                font-weight: 700;
+                font-size: 13px;
+            }
+            LineEdit { text <=> root.comment; }
+
+            HorizontalLayout {
+                spacing: 10px;
+                Text {
+                    text: L.s(L.revision, "piece_size");
+                    font-weight: 700;
+                    font-size: 13px;
+                    width: 90px;
+                    vertical-alignment: center;
+                }
+                ComboBox {
+                    model: root.piece-lengths;
+                    current-index <=> root.piece-length-index;
+                    width: 160px;
+                }
+                Text {
+                    text: L.s(L.revision, "torrent_version");
+                    font-weight: 700;
+                    font-size: 13px;
+                    width: 70px;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                }
+                ComboBox {
+                    model: root.versions;
+                    current-index <=> root.version-index;
+                    width: 160px;
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+
+            CheckBox { text: L.s(L.revision, "private"); checked <=> root.private; }
+            CheckBox { text: L.s(L.revision, "add_to_session_and_seed"); checked <=> root.add-to-session; }
+            }
         }
 
-        CheckBox { text: L.s(L.revision, "private"); checked <=> root.private; }
-        CheckBox { text: L.s(L.revision, "add_to_session_and_seed"); checked <=> root.add-to-session; }
-
-        HorizontalLayout {
+        foot := HorizontalLayout {
             spacing: 8px;
             Text {
                 text: root.status;

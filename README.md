@@ -104,9 +104,10 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **Main window** — torrent list with all 16 columns, a **rendered progress
   bar** in the Progress column, click-to-sort, multi-select, context menu
   (pause/resume, remove with/without files, force recheck, move storage,
-  labels, copy info hash / magnet, open in file manager). Paused torrents blank
-  their live columns. Column widths follow the language, so a longer
-  translation still fits.
+  labels, copy info hash / magnet, open in file manager). **Ctrl+A** selects
+  everything the current filter shows; **Delete** asks whether to remove the
+  selection with or without its data. Paused torrents blank their live columns.
+  Column widths follow the language, so a longer translation still fits.
 - **Details tabs** — Overview (with a piece-availability bar), Files (per-file
   include toggles), Peers (with GeoIP country **and its flag**), and
   **Trackers** grouped into announce tiers with per-tracker
@@ -116,7 +117,9 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   arrive in **one dialog**, listed down the side, with each one's file tree
   shown as you select it. File selection is per torrent; save path and start
   apply to the batch. Add magnet, which **fetches the metadata first** and then
-  shows the same dialog with the real file list.
+  shows the same dialog with the real file list. Every add reports back: how
+  many were added, and how many were already in the list rather than silently
+  doing nothing.
 - **Torrent creation** — BitTorrent v1, v2 and hybrid (BEP 52), with tracker /
   comment / private options.
 - **Web interface** — an optional authenticated HTTPS remote: session and

@@ -29,6 +29,10 @@ pub struct JsonSessionPersistenceStore {
     output_folder: PathBuf,
     db_filename: PathBuf,
     db_content: tokio::sync::RwLock<SerializedSessionDatabase>,
+    /// Hands out torrent ids. Separate from `db_content` because `next_id`
+    /// must *reserve* an id, not merely report what the next one would be -
+    /// see the method for what went wrong when it only reported.
+    next_id: std::sync::atomic::AtomicUsize,
 }
 
 impl std::fmt::Debug for JsonSessionPersistenceStore {
@@ -49,7 +53,10 @@ impl JsonSessionPersistenceStore {
                 )
             })?;
 
-        let db = match tokio::fs::File::open(&db_filename).await {
+        // Annotated because `next_id` below reads db.torrents before the
+        // struct literal pins the type - Default::default() alone cannot be
+        // inferred from a field access.
+        let db: SerializedSessionDatabase = match tokio::fs::File::open(&db_filename).await {
             Ok(f) => {
                 let mut buf = Vec::new();
                 let mut rdr = tokio::io::BufReader::new(f);
@@ -63,10 +70,23 @@ impl JsonSessionPersistenceStore {
             }
         };
 
+        // One past the highest id already stored, so ids stay unique across
+        // restarts. Monotonic, never reused: deleting torrent 3 does not make
+        // 3 available again, which is what keeps the check in
+        // Session::add_torrent from matching an unrelated torrent.
+        let next = db
+            .torrents
+            .keys()
+            .copied()
+            .max()
+            .map(|max| max + 1)
+            .unwrap_or(0);
+
         Ok(Self {
             db_filename,
             output_folder,
             db_content: tokio::sync::RwLock::new(db),
+            next_id: std::sync::atomic::AtomicUsize::new(next),
         })
     }
 
@@ -256,17 +276,25 @@ impl BitVFactory for JsonSessionPersistenceStore {
 
 #[async_trait]
 impl SessionPersistenceStore for JsonSessionPersistenceStore {
+    /// Reserve the next torrent id.
+    ///
+    /// This used to take a read lock and return `max(existing ids) + 1`, which
+    /// reserves nothing: N concurrent `add_torrent` calls all read the same
+    /// state and all receive the *same* id. `Session::add_torrent` then treats
+    /// a colliding id as an existing torrent -
+    ///
+    /// ```ignore
+    /// if t.info_hash() == info_hash || *eid == id { return AlreadyManaged }
+    /// ```
+    ///
+    /// - so adding five different torrents at once added the first and
+    /// reported the other four as already present, naming the first one. The
+    /// non-persistent path never had this bug because it uses an atomic
+    /// fetch_add; this makes the persistent path behave the same way.
     async fn next_id(&self) -> anyhow::Result<TorrentId> {
         Ok(self
-            .db_content
-            .read()
-            .await
-            .torrents
-            .keys()
-            .copied()
-            .max()
-            .map(|max| max + 1)
-            .unwrap_or(0))
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed))
     }
 
     async fn delete(&self, id: TorrentId) -> anyhow::Result<()> {

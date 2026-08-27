@@ -134,6 +134,12 @@ pub struct PeerEntry {
 #[derive(Clone, Debug)]
 pub enum SessionEvent {
     TorrentAdded { hash: String, name: String },
+    /// Asked to add a torrent the session already holds.
+    ///
+    /// Not an error - re-adding is harmless and the torrent is there either
+    /// way - but it is not an add, and reporting it as one made a batch of
+    /// three look like it had added one.
+    TorrentDuplicate { hash: String, name: String },
     TorrentCompleted { hash: String, name: String },
     TorrentRemoved { hash: String, name: String },
     /// Background work failed where there was no caller to return it to.
@@ -1162,9 +1168,20 @@ impl Session {
 
         self.rt.spawn(async move {
             match inner.add_torrent(add, Some(opts)).await {
-                Ok(AddTorrentResponse::Added(_, handle))
-                | Ok(AddTorrentResponse::AlreadyManaged(_, handle)) => {
+                Ok(AddTorrentResponse::Added(_, handle)) => {
                     Self::on_torrent_added(&db, &meta, &handle, &source, &params);
+                }
+                // Already present. Still recorded - on_torrent_added only
+                // inserts what is missing, and a re-added magnet refreshes its
+                // stored URI - but announced separately, because silently
+                // treating this as an add is what made "add 3, get 1" look
+                // like torrents were being dropped.
+                Ok(AddTorrentResponse::AlreadyManaged(_, handle)) => {
+                    Self::on_torrent_added(&db, &meta, &handle, &source, &params);
+                    let hash = handle.info_hash().as_string();
+                    let name = handle.name().unwrap_or_else(|| hash.clone());
+                    tracing::info!("already in the session, not added again: {name}");
+                    events.emit(SessionEvent::TorrentDuplicate { hash, name });
                 }
                 Ok(AddTorrentResponse::ListOnly(_)) => {}
                 Err(err) => {
@@ -2057,6 +2074,103 @@ fn urlencode(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// Adding several torrents at once must add all of them.
+    ///
+    /// `add_torrent` spawns one task per call, so a batch fires N concurrent
+    /// adds at librqbit. This drives that exact shape against a real session:
+    /// if concurrent adds drop torrents, the batch Add dialog silently adds a
+    /// subset and there is nothing in the log to say so.
+    #[test]
+    fn concurrent_adds_all_land() {
+        use librqbit::{AddTorrent, AddTorrentOptions, AddTorrentResponse};
+
+        let dir = std::env::temp_dir().join(format!("nt-concurrent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Distinct names give distinct info hashes, which is the whole point.
+        let torrents: Vec<Vec<u8>> = (0..5).map(single_file_torrent).collect();
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let added = rt.block_on(async {
+            // Persistence ON. This is the whole point of the test: the
+            // non-persistent path hands out ids with an atomic fetch_add and
+            // never had the bug, so `persistence: None` passed happily while
+            // real batch adds collapsed into one. See patch 0013.
+            let opts = librqbit::SessionOptions {
+                disable_dht: true,
+                disable_dht_persistence: true,
+                persistence: Some(librqbit::SessionPersistenceConfig::Json {
+                    folder: Some(dir.join("state")),
+                }),
+                enable_upnp_port_forwarding: false,
+                ..Default::default()
+            };
+            let session = librqbit::Session::new_with_opts(dir.clone(), opts)
+                .await
+                .expect("session");
+
+            // The shape add_torrent uses: one spawned task each, all at once.
+            let mut handles = Vec::new();
+            for bytes in torrents {
+                let s = session.clone();
+                let out = dir.clone();
+                handles.push(tokio::spawn(async move {
+                    let opts = AddTorrentOptions {
+                        // paused:false and a shared output folder, exactly as
+                        // the Add dialog sends them with "start immediately"
+                        // ticked. paused:true took a different path inside
+                        // librqbit and hid this.
+                        paused: false,
+                        output_folder: Some(out.to_string_lossy().into_owned()),
+                        overwrite: true,
+                        ..Default::default()
+                    };
+                    match s.add_torrent(AddTorrent::from_bytes(bytes), Some(opts)).await {
+                        Ok(AddTorrentResponse::Added(..))
+                        | Ok(AddTorrentResponse::AlreadyManaged(..)) => Ok(()),
+                        Ok(AddTorrentResponse::ListOnly(_)) => Err("list only".to_string()),
+                        Err(e) => Err(format!("{e:#}")),
+                    }
+                }));
+            }
+
+            let mut failures = Vec::new();
+            for h in handles {
+                if let Ok(Err(e)) = h.await {
+                    failures.push(e);
+                }
+            }
+            let count = session.with_torrents(|t| t.count());
+            (count, failures)
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let (count, failures) = added;
+        assert!(failures.is_empty(), "adds failed: {failures:?}");
+        assert_eq!(count, 5, "only {count} of 5 concurrent adds landed");
+    }
+
+    /// A single-file torrent whose name (and therefore info hash) varies with
+    /// `n`, so a batch of them is a batch of genuinely different torrents.
+    fn single_file_torrent(n: usize) -> Vec<u8> {
+        let name = format!("file-{n}.bin");
+        let mut out = Vec::new();
+        out.extend_from_slice(b"d4:infod6:lengthi4096e4:name");
+        out.extend_from_slice(name.len().to_string().as_bytes());
+        out.push(b':');
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(b"12:piece lengthi262144e6:pieces20:");
+        out.extend_from_slice(&[0u8; 20]);
+        out.extend_from_slice(b"ee");
+        out
+    }
+
     /// A 0-byte session.json used to make the app unstartable. It must be
     /// moved aside, a healthy one must be left strictly alone, and the
     /// .torrent files beside it must survive either way.

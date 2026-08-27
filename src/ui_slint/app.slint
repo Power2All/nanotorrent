@@ -18,7 +18,8 @@ import { PreferencesDialog } from "preferences.slint";
 import { AboutDialog } from "about.slint";
 import { CreateTorrentDialog } from "create.slint";
 import { ClosePromptDialog } from "closeprompt.slint";
-export { PreferencesDialog, AboutDialog, CreateTorrentDialog, ClosePromptDialog }
+import { RemoveDialog } from "remove.slint";
+export { PreferencesDialog, AboutDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
 
 import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette } from "std-widgets.slint";
 
@@ -409,6 +410,11 @@ export component MainWindow inherits Window {
 
     callback sort(int);
     callback row-pressed(int, bool, bool);
+    /// Delete on the torrent list. Named for what it opens rather than what it
+    /// does, because it does nothing until the dialog comes back.
+    callback remove-prompt();
+    /// Ctrl+A on the torrent list.
+    callback select-all();
     /// Clicking the empty space below the rows clears the selection.
     callback clear-selection();
     /// True while a dialog is open - see ui_slint/modal.rs.
@@ -590,6 +596,29 @@ export component MainWindow inherits Window {
                 // lands somewhere.
                 Rectangle {
                     vertical-stretch: 1;
+                  // Delete removes what is selected. A FocusScope around the
+                  // whole list rather than per row: rows come and go on every
+                  // refresh tick, and focus that lives on one would be lost
+                  // the moment the model updated.
+                  list-keys := FocusScope {
+                    // Focused up front, not just on click: otherwise Ctrl+A or
+                    // Delete on a freshly opened window go nowhere, and there
+                    // is nothing on screen to explain why.
+                    init => { self.focus(); }
+                    key-pressed(event) => {
+                        if (event.text == Key.Delete) {
+                            root.remove-prompt();
+                            return accept;
+                        }
+                        // Ctrl+A. event.text is the character the key would
+                        // type, so it is compared lower-case - with Shift also
+                        // held it would arrive as "A".
+                        if (event.modifiers.control && event.text.to-lowercase() == "a") {
+                            root.select-all();
+                            return accept;
+                        }
+                        return reject;
+                    }
                   list := ListView {
                     // ListView culls to the viewport, so 5,000 rows cost the
                     // same as 50. That is what the Win32 list does NOT do.
@@ -602,6 +631,10 @@ export component MainWindow inherits Window {
                         ta := TouchArea {
                             pointer-event(e) => {
                                 if (e.kind == PointerEventKind.down) {
+                                    // Focus the list so Delete reaches the
+                                    // scope below - a TouchArea does not take
+                                    // focus on its own.
+                                    list-keys.focus();
                                     if (e.button == PointerEventButton.right) {
                                         // Select and show in the same event -
                                         // there is no modal loop to work around
@@ -668,6 +701,7 @@ export component MainWindow inherits Window {
                             Cell { w: Cols.w[15]; text: row.label; }
                         }
                     }
+                  }
                   }
 
                     // A Flickable grabs the mouse on press, so a TouchArea

@@ -203,15 +203,33 @@ fn run() -> anyhow::Result<()> {
     let log_file = std::fs::File::create(&log_path).ok();
 
     if let Some(file) = log_file {
+        // Everything NanoTorrent itself does is logged at debug; dependencies
+        // stay at info, because librqbit traces every chunk of every piece and
+        // one busy torrent would bury the app's own activity in minutes.
+        //
+        // RUST_LOG overrides the lot when a specific dependency needs
+        // watching, e.g. RUST_LOG=info,librqbit=debug,nanotorrent=trace
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,nanotorrent=debug"));
+
         let subscriber = tracing_subscriber::fmt()
             .with_writer(Mutex::new(file))
             .with_ansi(false)
-            .with_max_level(tracing::Level::INFO)
+            .with_env_filter(filter)
+            // Which module a line came from - the whole point of a debug log
+            // is being able to follow one subsystem through it.
+            .with_target(true)
             .finish();
         let _ = tracing::subscriber::set_global_default(subscriber);
     }
 
-    tracing::info!("NanoTorrent starting up...");
+    // Version and build first: a log that does not say which binary produced
+    // it is guesswork the moment there is more than one build around.
+    tracing::info!(
+        "NanoTorrent {} ({}) starting up...",
+        buildinfo::version(),
+        buildinfo::build_stamp()
+    );
 
     // Register our AppUserModelID so Windows shows/attributes toast
     // notifications (download complete) to NanoTorrent.

@@ -141,6 +141,36 @@ pub fn free_space_percent(path: &Path) -> Option<f64> {
     (total > 0).then(|| free as f64 * 100.0 / total as f64)
 }
 
+/// Height of the primary monitor's work area in PHYSICAL pixels, or `None`
+/// when it cannot be determined.
+///
+/// Work area, not screen: it excludes the taskbar, which is exactly the space
+/// a window may actually occupy. The caller must divide by the window's scale
+/// factor to get the logical pixels a layout speaks in - on a 200% display the
+/// two differ by a factor of two, and using the raw number would let a dialog
+/// grow to twice the screen.
+#[cfg(windows)]
+pub fn work_area_height() -> Option<f32> {
+    let mut rect: winapi::shared::windef::RECT = unsafe { std::mem::zeroed() };
+    // SAFETY: SPI_GETWORKAREA writes a RECT, which is what we pass.
+    let ok = unsafe {
+        winapi::um::winuser::SystemParametersInfoW(
+            winapi::um::winuser::SPI_GETWORKAREA,
+            0,
+            &mut rect as *mut _ as *mut winapi::ctypes::c_void,
+            0,
+        )
+    };
+    (ok != 0).then(|| (rect.bottom - rect.top) as f32)
+}
+
+/// No equivalent wired up off Windows yet: the dialogs simply size to their
+/// content there, which is what they did before the clamp existed.
+#[cfg(not(windows))]
+pub fn work_area_height() -> Option<f32> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     /// The probe must agree with itself and stay in range on a path that

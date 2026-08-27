@@ -195,3 +195,34 @@ Adds `tmp.sync_all()` between the write and the rename.
 `src/bittorrent/session.rs::quarantine_unreadable_session_index` is the other
 half - it moves an already-corrupt index aside so existing broken profiles can
 start. Both are needed: this patch prevents it, that function recovers from it.
+
+## 0013 - next_id must reserve an id, not report one (in the 0012 patch file)
+
+Same file as 0012, so both live in `patches/0012-session-persistence.patch`.
+
+`JsonSessionPersistenceStore::next_id` took a *read* lock and returned
+`max(existing ids) + 1`. That reserves nothing: N concurrent `add_torrent`
+calls all read the same state and all receive the same id.
+
+`Session::add_torrent` then treats a colliding id as an existing torrent:
+
+```rust
+if t.info_hash() == info_hash || *eid == id {
+    return Ok(AddTorrentResponse::AlreadyManaged(id, handle));
+}
+```
+
+So selecting five different torrents in the Add dialog added the first and
+reported the other four as `AlreadyManaged` - naming the first one, because
+that is the handle the id matched. One torrent appeared and four vanished
+without an error.
+
+The non-persistent path never had this: it uses `next_id.fetch_add`. The store
+now keeps its own `AtomicUsize`, seeded from the loaded database, so the
+persistent path behaves the same. Ids are monotonic and never reused, which
+also stops a deleted id from colliding with a later add.
+
+Covered by `session::tests::concurrent_adds_all_land`, which fails with
+"only 1 of 5 concurrent adds landed" when this is reverted. Note that the test
+must enable persistence - with `persistence: None` it passes either way, which
+is exactly why this went unnoticed.

@@ -104,6 +104,7 @@ struct Ui {
     env: Arc<crate::core::environment::Environment>,
     torrent_dialog: RefCell<Option<AddTorrentDialog>>,
     close_prompt: RefCell<Option<ClosePromptDialog>>,
+    remove_dialog: RefCell<Option<RemoveDialog>>,
     /// The .torrent currently in the Add dialog, and any queued behind it.
     /// argv can name several, and only one dialog is shown at a time.
     pending: RefCell<Vec<Vec<u8>>>,
@@ -278,6 +279,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         web: RefCell::new(ctx.web.clone()),
         blocked: std::cell::Cell::new(false),
         close_prompt: RefCell::new(None),
+        remove_dialog: RefCell::new(None),
     });
 
     let model: Rc<VecModel<Row>> = Rc::new(VecModel::from(Vec::new()));
@@ -388,6 +390,25 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     window
         .show()
         .map_err(|e| anyhow::anyhow!("failed to show the Slint window: {e}"))?;
+
+    // Open a dialog straight away, for screenshotting one without driving the
+    // menus. Dialog layout is the one thing here that neither the compiler nor
+    // a test can check, and every round of "does it fit now?" otherwise costs a
+    // human. Off unless the variable is set.
+    if let Ok(which) = std::env::var("NANOTORRENT_OPEN_DIALOG") {
+        let (u, w) = (ui.clone(), window.as_weak());
+        slint::Timer::single_shot(std::time::Duration::from_millis(400), move || {
+            let Some(window) = w.upgrade() else { return };
+            match which.as_str() {
+                "preferences" => open_preferences(&u),
+                "create" => open_create_torrent(&u),
+                "about" => open_about(&u),
+                other => tracing::warn!("unknown NANOTORRENT_OPEN_DIALOG: {other}"),
+            }
+            let _ = window;
+        });
+    }
+
     let result = slint::run_event_loop_until_quit()
         .map_err(|e| anyhow::anyhow!("Slint event loop failed: {e}"));
     drop(modal_timer);
@@ -869,6 +890,13 @@ fn drain_notifications(window: &MainWindow, ui: &Rc<Ui>) {
     // The borrow ends with each `let`, not at the end of the body: a handler
     // below that reached back into the queue would otherwise panic on a second
     // borrow rather than misbehave visibly.
+    // Collected rather than toasted one by one: a batch add raises one event
+    // per torrent and they all arrive in the same drain, so N toasts would
+    // replace each other and only the last would ever be read.
+    let mut added: Vec<String> = Vec::new();
+    let mut duplicates: Vec<String> = Vec::new();
+    let mut had_error = false;
+
     loop {
         let Ok(event) = ui.events.borrow().try_recv() else {
             break;
@@ -888,9 +916,41 @@ fn drain_notifications(window: &MainWindow, ui: &Rc<Ui>) {
             // A toast rather than a message box: these arrive from background
             // work, and a modal stealing focus mid-download is worse than a
             // message that fades. Already logged where it was raised.
-            SessionEvent::Error(err) => show_toast(window, &err),
+            SessionEvent::Error(err) => {
+                had_error = true;
+                show_toast(window, &err);
+            }
+            // Confirmation that the add actually happened. Failures already
+            // arrive as Error above, so between the two every add says
+            // something - silence used to be the only outcome either way.
+            SessionEvent::TorrentAdded { name, .. } => added.push(name),
+            SessionEvent::TorrentDuplicate { name, .. } => duplicates.push(name),
             _ => {}
         }
+    }
+
+    // An error in the same drain keeps the toast: show_toast replaces rather
+    // than queues, and "added 3 torrents" over the top of a failure is how a
+    // failure goes unnoticed.
+    if had_error {
+        return;
+    }
+
+    let tr = ui.tr.borrow();
+
+    // Two clauses rather than a string per combination: "added" and "already
+    // there" are independent counts and a batch can produce both.
+    let mut parts: Vec<String> = Vec::new();
+    match added.len() {
+        0 => {}
+        1 => parts.push(tr.i18n1("torrent_added", &added[0])),
+        n => parts.push(tr.i18n1("torrents_added", &n.to_string())),
+    }
+    if !duplicates.is_empty() {
+        parts.push(tr.i18n1("torrents_duplicate", &duplicates.len().to_string()));
+    }
+    if !parts.is_empty() {
+        show_toast(window, &parts.join(" - "));
     }
 }
 
@@ -1085,6 +1145,30 @@ fn clear_details(window: &MainWindow) {
 fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     let (w, u, m) = (window.as_weak(), ui.clone(), model.clone());
     {
+        let (w, u, m) = (window.as_weak(), ui.clone(), model.clone());
+        window.on_select_all(move || {
+            // Every row currently in the model, which is the filtered view -
+            // Ctrl+A selecting torrents a filter is hiding would be a nasty
+            // surprise on the next Delete.
+            let all: Vec<String> = u.rows.borrow().iter().map(|r| r.info_hash.clone()).collect();
+            if all.is_empty() {
+                return;
+            }
+            {
+                let mut selected = u.selected.borrow_mut();
+                selected.clear();
+                selected.extend(all);
+            }
+            // Anchor at the top so a following Shift+click extends from there
+            // rather than from wherever the last single click landed.
+            *u.anchor.borrow_mut() = 0;
+            if let Some(window) = w.upgrade() {
+                repaint_selection(&window, &u, &m);
+            }
+        });
+    }
+
+    {
         let (u, m, w) = (ui.clone(), model.clone(), window.as_weak());
         window.on_clear_selection(move || {
             if u.selected.borrow().is_empty() {
@@ -1219,8 +1303,91 @@ fn repaint_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>
     window.window().request_redraw();
 }
 
+/// Ask what to do with the data, then remove.
+///
+/// Only Delete reaches this. The context menu's two Remove entries say which
+/// they are and go straight to the session - a prompt on top of a choice
+/// already made is just a second click.
+fn open_remove_prompt(window: &MainWindow, ui: &Rc<Ui>) {
+    let targets = ui.targets();
+    if targets.is_empty() {
+        return;
+    }
+
+    // Re-using one dialog would mean it kept the previous selection alive; the
+    // targets are captured below, so a fresh one each time is also the simplest
+    // way to be sure they are current.
+    let dialog = match RemoveDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the remove dialog: {err}");
+            return;
+        }
+    };
+
+    // The name when there is one, a count when there are several - a list of
+    // twenty names would not fit and nobody reads it anyway.
+    let subject = {
+        let rows = ui.rows.borrow();
+        if targets.len() == 1 {
+            rows.iter()
+                .find(|r| r.info_hash == targets[0])
+                .map(|r| r.name.clone())
+                .unwrap_or_else(|| targets[0].clone())
+        } else {
+            ui.tr
+                .borrow()
+                .i18n1("remove_n_torrents", &targets.len().to_string())
+        }
+    };
+    dialog.set_subject(subject.into());
+
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        let targets = targets.clone();
+        dialog.on_chosen(move |delete_files| {
+            for hash in &targets {
+                u.session.remove(hash, delete_files);
+            }
+            tracing::info!(
+                "removed {} torrent(s), data {}",
+                targets.len(),
+                if delete_files { "deleted" } else { "kept" }
+            );
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+            *u.remove_dialog.borrow_mut() = None;
+        });
+    }
+
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_cancelled(move || {
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+            *u.remove_dialog.borrow_mut() = None;
+        });
+    }
+
+    wire_dialog_close(&dialog, ui);
+    let _ = dialog.show();
+    let _ = window; // owner is set by wire_dialog_close
+    *ui.remove_dialog.borrow_mut() = Some(dialog);
+}
+
 /// Menu and context-menu commands, dispatched by name.
 fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
+    {
+        let (u, w) = (ui.clone(), window.as_weak());
+        window.on_remove_prompt(move || {
+            if let Some(window) = w.upgrade() {
+                open_remove_prompt(&window, &u);
+            }
+        });
+    }
+
     let (u, w) = (ui.clone(), window.as_weak());
     window.on_action(move |what| {
         let targets = u.targets();
@@ -1386,6 +1553,11 @@ fn pick_and_queue_torrents(ui: &Rc<Ui>) {
         return; // cancelled
     };
 
+    tracing::info!(
+        "add torrent(s): picker returned {} file(s): {:?}",
+        paths.len(),
+        paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>()
+    );
     for path in paths {
         match std::fs::read(&path) {
             Ok(bytes) => ui.pending.borrow_mut().push(bytes),
@@ -1431,6 +1603,11 @@ fn show_next_pending(ui: &Rc<Ui>) {
     if parsed.is_empty() {
         return;
     }
+    tracing::info!(
+        "add dialog: {} torrent(s) in this batch: {:?}",
+        parsed.len(),
+        parsed.iter().map(|(b, t)| (t.name.as_str(), b.len())).collect::<Vec<_>>()
+    );
 
     let dialog = match AddTorrentDialog::new() {
         Ok(d) => d,
@@ -1541,6 +1718,11 @@ fn show_next_pending(ui: &Rc<Ui>) {
             let save_path = d.get_save_path().to_string();
             let save_path = (!save_path.trim().is_empty()).then_some(save_path);
             let start = d.get_start_torrent();
+            tracing::info!(
+                "add dialog: adding {} torrent(s): {:?}",
+                p.len(),
+                p.iter().map(|(b, t)| (t.name.as_str(), b.len())).collect::<Vec<_>>()
+            );
 
             for (i, (bytes, _)) in p.iter().enumerate() {
                 // row.index, not the row number: the model has folder rows in
@@ -2024,6 +2206,41 @@ fn wire_rules(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
     }
 }
 
+/// Tell a dialog how tall the screen will let it be, in logical pixels.
+///
+/// The work area is reported in physical pixels; a layout speaks logical ones,
+/// and on a 200% display the two differ by a factor of two - using the raw
+/// number would let the window grow to twice the screen. The scale factor is
+/// only known once the window exists, so this runs after `show`.
+///
+/// The margin covers the title bar and borders, which sit outside the client
+/// area this height applies to.
+fn clamp_to_screen(window: &impl slint::ComponentHandle, set: impl FnOnce(f32)) {
+    // Pretend the screen is this many logical pixels tall. The clamp only
+    // engages on a screen too short for the dialog, which is not a state a
+    // development machine can usually be put into - without this the branch
+    // ships untested.
+    if let Ok(forced) = std::env::var("NANOTORRENT_SCREEN_LIMIT")
+        && let Ok(h) = forced.parse::<f32>()
+    {
+        set(h);
+        return;
+    }
+
+    let Some(physical) = crate::core::utils::work_area_height() else {
+        return; // not wired up on this platform - leave it unclamped
+    };
+    let scale = window.window().scale_factor();
+    if !(scale.is_finite() && scale > 0.0) {
+        return;
+    }
+    const CHROME: f32 = 56.0;
+    let usable = (physical / scale) - CHROME;
+    if usable.is_finite() && usable > 200.0 {
+        set(usable);
+    }
+}
+
 /// Open the Preferences dialog, building it on first use and re-showing the
 /// same window - with every tab reloaded - after that.
 fn open_preferences(ui: &Rc<Ui>) {
@@ -2111,6 +2328,7 @@ fn open_preferences(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
+    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
     *ui.prefs_dialog.borrow_mut() = Some(dialog);
 }
 
@@ -2679,6 +2897,7 @@ fn open_create_torrent(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
+    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
     *ui.create_dialog.borrow_mut() = Some(dialog);
 }
 

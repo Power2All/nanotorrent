@@ -8,7 +8,7 @@
 // the Win32 dialog applies on Ok too, and a half-edited port number should not
 // take effect the moment a digit lands.
 
-import { TabWidget, Button, CheckBox, ComboBox, LineEdit, ListView, Palette } from "std-widgets.slint";
+import { TabWidget, Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView, Palette } from "std-widgets.slint";
 import { L } from "globals.slint";
 
 // A left-aligned bold caption with its control beside it, which is the shape
@@ -39,13 +39,46 @@ component Labelled inherits HorizontalLayout {
 export component PreferencesDialog inherits Window {
     icon: @image-url("../../res/app.png");
     title: L.s(L.revision, "preferences");
-    // Fixed size: min == max is how Slint says "not resizable" - it has no
-    // such property. Height is the tallest tab (Connection); General used to
-    // force 620 on its own and left the bottom third of every other tab empty.
+    // Width is pinned - nothing here reflows horizontally. Height is NOT:
+    // the window takes its content's natural height, so it opens exactly
+    // fitting and shows no scrollbar. Capping it instead meant a cap even a
+    // few pixels under the content left the scrollbar up permanently.
+    // min-height only sets how far it may be dragged down on a screen too
+    // short for it - that is when the ScrollView earns its keep.
+    // The TabWidget's height is the tallest tab (Connection), so every other
+    // tab carries some empty space - that is inherent to a tabbed dialog and
+    // was true when the height was hard-coded too.
     min-width: 700px;
     max-width: 700px;
-    min-height: 470px;
-    max-height: 470px;
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it (or
+    /// a platform where it is not wired up) behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    // min == max, so the window is not resizable at all.
+    //
+    // Height = the tallest tab's content, plus the tab bar, the footer and the
+    // padding around them - then clamped to what the screen can show.
+    //
+    // It is summed from the tab BODIES (tb1..tb5) rather than from the
+    // TabWidget or the outer layout, because each body now sits in its own
+    // ScrollView and a ScrollView reports `preferred-height: 100%` with a 50px
+    // floor - it deliberately does not pass its content's size up. Measuring
+    // anything above the bodies collapsed the window (336px, then 729px).
+    //
+    // So on a screen with room, the window is exactly tall enough for the
+    // tallest tab and nothing scrolls. On a short screen the clamp wins and
+    // the tab CONTENT scrolls - the tab bar and the footer stay put, because
+    // both are outside the per-tab ScrollViews.
+    property <length> tallest-tab: max(tb1.preferred-height,
+        max(tb2.preferred-height,
+        max(tb3.preferred-height,
+        max(tb4.preferred-height,
+        max(tb5.preferred-height, tb6.preferred-height)))));
+    // Tab bar, footer row, and the 12px padding top and bottom plus 10px
+    // between the tabs and the footer.
+    property <length> chrome: 40px + foot.preferred-height + 34px;
+    min-height: min(self.tallest-tab + self.chrome, root.screen-limit);
+    max-height: min(self.tallest-tab + self.chrome, root.screen-limit);
     background: Palette.background;
 
     // --- General ---------------------------------------------------------
@@ -148,307 +181,326 @@ export component PreferencesDialog inherits Window {
     callback browse-web-key();
     callback web-changed();
 
-    VerticalLayout {
+    body := VerticalLayout {
         padding: 12px;
         spacing: 10px;
 
-        TabWidget {
-            vertical-stretch: 1;
+        // The tab BAR must never scroll - scrolling it away leaves no way to
+        // change tab. So the scrolling happens inside each Tab instead, and
+        // the widget itself just fills what height the window has. The footer
+        // below is outside all of it and is always reachable.
+        tabs := TabWidget {
+        vertical-stretch: 1;
 
             Tab {
                 title: L.s(L.revision, "general");
-                VerticalLayout {
-                    padding: 12px;
-                    spacing: 10px;
+                ScrollView {
+                    vertical-scrollbar-policy: as-needed;
+                    tb1 := VerticalLayout {
+                        padding: 12px;
+                        spacing: 10px;
 
-                    Labelled {
-                        // A ComboBox, not the 160px list this used to be: with
-                        // ~50 locales the list could never show enough of them
-                        // to be worth the height, and it made the tab tall
-                        // enough to leave the rest of the dialog empty.
-                        label: L.s(L.revision, "language");
-                        ComboBox {
-                            model: root.languages;
-                            current-index <=> root.language-index;
-                            width: 220px;
+                        Labelled {
+                            // A ComboBox, not the 160px list this used to be: with
+                            // ~50 locales the list could never show enough of them
+                            // to be worth the height, and it made the tab tall
+                            // enough to leave the rest of the dialog empty.
+                            label: L.s(L.revision, "language");
+                            ComboBox {
+                                model: root.languages;
+                                current-index <=> root.language-index;
+                                width: 220px;
+                            }
+                            Rectangle { horizontal-stretch: 1; }
                         }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
 
-                    Labelled {
-                        label: L.s(L.revision, "theme");
-                        ComboBox {
-                            model: root.themes;
-                            current-index <=> root.theme-index;
-                            width: 220px;
+                        Labelled {
+                            label: L.s(L.revision, "theme");
+                            ComboBox {
+                                model: root.themes;
+                                current-index <=> root.theme-index;
+                                width: 220px;
+                            }
+                            Rectangle { horizontal-stretch: 1; }
                         }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
 
-                    CheckBox { text: L.s(L.revision, "skip_add_torrent_dialog"); checked <=> root.skip-add-dialog; }
-                    CheckBox { text: L.s(L.revision, "show_picotorrent_in_notification_area"); checked <=> root.show-in-tray; }
+                        CheckBox { text: L.s(L.revision, "skip_add_torrent_dialog"); checked <=> root.skip-add-dialog; }
+                        CheckBox { text: L.s(L.revision, "show_picotorrent_in_notification_area"); checked <=> root.show-in-tray; }
 
-                    Labelled {
-                        label: L.s(L.revision, "close_action_label");
-                        ComboBox {
-                            model: root.close-actions;
-                            current-index <=> root.close-action-index;
-                            width: 220px;
+                        Labelled {
+                            label: L.s(L.revision, "close_action_label");
+                            ComboBox {
+                                model: root.close-actions;
+                                current-index <=> root.close-action-index;
+                                width: 220px;
+                            }
+                            Rectangle { horizontal-stretch: 1; }
                         }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
 
-                    CheckBox { text: L.s(L.revision, "minimize_to_notification_area"); checked <=> root.minimize-to-tray; }
-                    CheckBox { text: L.s(L.revision, "notify_download_complete"); checked <=> root.notify-complete; }
+                        CheckBox { text: L.s(L.revision, "minimize_to_notification_area"); checked <=> root.minimize-to-tray; }
+                        CheckBox { text: L.s(L.revision, "notify_download_complete"); checked <=> root.notify-complete; }
 
-                    if root.can-associate: HorizontalLayout {
-                        Button {
-                            text: L.s(L.revision, "set_default_associations");
-                            clicked => { root.set-associations(); }
+                        if root.can-associate: HorizontalLayout {
+                            Button {
+                                text: L.s(L.revision, "set_default_associations");
+                                clicked => { root.set-associations(); }
+                            }
+                            // Keeps the button its natural width instead of
+                            // stretching it across the dialog.
+                            Rectangle { horizontal-stretch: 1; }
                         }
-                        // Keeps the button its natural width instead of
-                        // stretching it across the dialog.
-                        Rectangle { horizontal-stretch: 1; }
-                    }
 
-                    Rectangle { vertical-stretch: 1; }
+                        Rectangle { vertical-stretch: 1; }
+                    }
                 }
             }
 
             Tab {
                 title: L.s(L.revision, "downloads");
-                VerticalLayout {
-                    padding: 12px;
-                    spacing: 10px;
+                ScrollView {
+                    vertical-scrollbar-policy: as-needed;
+                    tb2 := VerticalLayout {
+                        padding: 12px;
+                        spacing: 10px;
 
-                    Labelled {
-                        label: L.s(L.revision, "save_path");
-                        LineEdit { text <=> root.save-path; horizontal-stretch: 1; }
-                        Button { text: L.s(L.revision, "browse"); clicked => { root.browse-save-path(); } }
-                    }
+                        Labelled {
+                            label: L.s(L.revision, "save_path");
+                            LineEdit { text <=> root.save-path; horizontal-stretch: 1; }
+                            Button { text: L.s(L.revision, "browse"); clicked => { root.browse-save-path(); } }
+                        }
 
-                    CheckBox {
-                        text: L.s(L.revision, "pause_on_low_disk_space");
-                        checked <=> root.pause-on-low-disk;
-                    }
-                    Labelled {
-                        label: "    " + L.s(L.revision, "pause_on_low_disk_space_limit");
-                        LineEdit { text <=> root.low-disk-limit; width: 100px; enabled: root.pause-on-low-disk; }
-                        Text { text: "%"; vertical-alignment: center; color: Palette.foreground; }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
+                        CheckBox {
+                            text: L.s(L.revision, "pause_on_low_disk_space");
+                            checked <=> root.pause-on-low-disk;
+                        }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "pause_on_low_disk_space_limit");
+                            LineEdit { text <=> root.low-disk-limit; width: 100px; enabled: root.pause-on-low-disk; }
+                            Text { text: "%"; vertical-alignment: center; color: Palette.foreground; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
 
-                    Labelled {
-                        label: L.s(L.revision, "active_limit");
-                        LineEdit { text <=> root.active-limit; width: 100px; }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
-                    Labelled {
-                        label: L.s(L.revision, "active_downloads");
-                        LineEdit { text <=> root.active-downloads; width: 100px; }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
-                    Labelled {
-                        label: L.s(L.revision, "active_seeds");
-                        LineEdit { text <=> root.active-seeds; width: 100px; }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
+                        Labelled {
+                            label: L.s(L.revision, "active_limit");
+                            LineEdit { text <=> root.active-limit; width: 100px; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        Labelled {
+                            label: L.s(L.revision, "active_downloads");
+                            LineEdit { text <=> root.active-downloads; width: 100px; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        Labelled {
+                            label: L.s(L.revision, "active_seeds");
+                            LineEdit { text <=> root.active-seeds; width: 100px; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
 
-                    CheckBox { text: L.s(L.revision, "enable_dl_rate_limit"); checked <=> root.limit-download; }
-                    Labelled {
-                        label: "    " + L.s(L.revision, "dl_rate_limit");
-                        LineEdit { text <=> root.download-limit; width: 100px; enabled: root.limit-download; }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
-                    CheckBox { text: L.s(L.revision, "enable_ul_rate_limit"); checked <=> root.limit-upload; }
-                    Labelled {
-                        label: "    " + L.s(L.revision, "ul_rate_limit");
-                        LineEdit { text <=> root.upload-limit; width: 100px; enabled: root.limit-upload; }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
+                        CheckBox { text: L.s(L.revision, "enable_dl_rate_limit"); checked <=> root.limit-download; }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "dl_rate_limit");
+                            LineEdit { text <=> root.download-limit; width: 100px; enabled: root.limit-download; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        CheckBox { text: L.s(L.revision, "enable_ul_rate_limit"); checked <=> root.limit-upload; }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "ul_rate_limit");
+                            LineEdit { text <=> root.upload-limit; width: 100px; enabled: root.limit-upload; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
 
-                    Rectangle { vertical-stretch: 1; }
+                        Rectangle { vertical-stretch: 1; }
+                    }
                 }
             }
 
             Tab {
                 title: L.s(L.revision, "connection");
-                VerticalLayout {
-                    padding: 12px;
-                    spacing: 10px;
+                ScrollView {
+                    vertical-scrollbar-policy: as-needed;
+                    tb3 := VerticalLayout {
+                        padding: 12px;
+                        spacing: 10px;
 
-                    Labelled {
-                        label: L.s(L.revision, "listen_interface");
-                        LineEdit { text <=> root.listen-address; horizontal-stretch: 1; }
-                        LineEdit { text <=> root.listen-port; width: 110px; }
+                        Labelled {
+                            label: L.s(L.revision, "listen_interface");
+                            LineEdit { text <=> root.listen-address; horizontal-stretch: 1; }
+                            LineEdit { text <=> root.listen-port; width: 110px; }
+                        }
+
+                        CheckBox { text: L.s(L.revision, "enable_dht"); checked <=> root.enable-dht; }
+                        CheckBox {
+                            // No librqbit 8 equivalent, so the value round-trips but
+                            // never reaches the session. Disabled rather than left
+                            // looking functional - same as the Win32 dialog.
+                            text: L.s(L.revision, "enable_lsd_unavailable");
+                            checked <=> root.enable-lsd;
+                            enabled: false;
+                        }
+                        CheckBox { text: L.s(L.revision, "enable_pex"); checked <=> root.enable-pex; }
+                        CheckBox { text: L.s(L.revision, "resolve_peer_countries"); checked <=> root.enable-geoip; }
+
+                        CheckBox { text: L.s(L.revision, "ip_filter"); checked <=> root.enable-ipfilter; }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "filter_file");
+                            LineEdit { text <=> root.ipfilter-path; horizontal-stretch: 1; enabled: root.enable-ipfilter; }
+                            Button { text: L.s(L.revision, "browse"); enabled: root.enable-ipfilter; clicked => { root.browse-ipfilter(); } }
+                        }
+
+                        CheckBox { text: L.s(L.revision, "require_encryption_outgoing"); checked <=> root.require-outgoing-encryption; }
+                        CheckBox { text: L.s(L.revision, "require_encryption_incoming"); checked <=> root.require-incoming-encryption; }
+                        CheckBox { text: L.s(L.revision, "anonymous_mode"); checked <=> root.anonymous-mode; }
+
+                        Rectangle { vertical-stretch: 1; }
                     }
-
-                    CheckBox { text: L.s(L.revision, "enable_dht"); checked <=> root.enable-dht; }
-                    CheckBox {
-                        // No librqbit 8 equivalent, so the value round-trips but
-                        // never reaches the session. Disabled rather than left
-                        // looking functional - same as the Win32 dialog.
-                        text: L.s(L.revision, "enable_lsd_unavailable");
-                        checked <=> root.enable-lsd;
-                        enabled: false;
-                    }
-                    CheckBox { text: L.s(L.revision, "enable_pex"); checked <=> root.enable-pex; }
-                    CheckBox { text: L.s(L.revision, "resolve_peer_countries"); checked <=> root.enable-geoip; }
-
-                    CheckBox { text: L.s(L.revision, "ip_filter"); checked <=> root.enable-ipfilter; }
-                    Labelled {
-                        label: "    " + L.s(L.revision, "filter_file");
-                        LineEdit { text <=> root.ipfilter-path; horizontal-stretch: 1; enabled: root.enable-ipfilter; }
-                        Button { text: L.s(L.revision, "browse"); enabled: root.enable-ipfilter; clicked => { root.browse-ipfilter(); } }
-                    }
-
-                    CheckBox { text: L.s(L.revision, "require_encryption_outgoing"); checked <=> root.require-outgoing-encryption; }
-                    CheckBox { text: L.s(L.revision, "require_encryption_incoming"); checked <=> root.require-incoming-encryption; }
-                    CheckBox { text: L.s(L.revision, "anonymous_mode"); checked <=> root.anonymous-mode; }
-
-                    Rectangle { vertical-stretch: 1; }
                 }
             }
 
             Tab {
                 title: L.s(L.revision, "proxy");
-                VerticalLayout {
-                    padding: 12px;
-                    spacing: 10px;
+                ScrollView {
+                    vertical-scrollbar-policy: as-needed;
+                    tb4 := VerticalLayout {
+                        padding: 12px;
+                        spacing: 10px;
 
-                    Labelled {
-                        label: L.s(L.revision, "type");
-                        ComboBox {
-                            model: root.proxy-types;
-                            current-index <=> root.proxy-type-index;
-                            width: 220px;
+                        Labelled {
+                            label: L.s(L.revision, "type");
+                            ComboBox {
+                                model: root.proxy-types;
+                                current-index <=> root.proxy-type-index;
+                                width: 220px;
+                            }
+                            Rectangle { horizontal-stretch: 1; }
                         }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
-                    Labelled {
-                        label: L.s(L.revision, "host");
-                        LineEdit { text <=> root.proxy-host; horizontal-stretch: 1; enabled: root.proxy-type-index > 0; }
-                        LineEdit { text <=> root.proxy-port; width: 110px; enabled: root.proxy-type-index > 0; }
-                    }
+                        Labelled {
+                            label: L.s(L.revision, "host");
+                            LineEdit { text <=> root.proxy-host; horizontal-stretch: 1; enabled: root.proxy-type-index > 0; }
+                            LineEdit { text <=> root.proxy-port; width: 110px; enabled: root.proxy-type-index > 0; }
+                        }
 
-                    CheckBox { text: L.s(L.revision, "proxy_hostnames"); checked <=> root.proxy-hostnames; enabled: root.proxy-type-index > 0; }
-                    CheckBox { text: L.s(L.revision, "proxy_peers"); checked <=> root.proxy-peers; enabled: root.proxy-type-index > 0; }
-                    CheckBox { text: L.s(L.revision, "proxy_trackers"); checked <=> root.proxy-trackers; enabled: root.proxy-type-index > 0; }
+                        CheckBox { text: L.s(L.revision, "proxy_hostnames"); checked <=> root.proxy-hostnames; enabled: root.proxy-type-index > 0; }
+                        CheckBox { text: L.s(L.revision, "proxy_peers"); checked <=> root.proxy-peers; enabled: root.proxy-type-index > 0; }
+                        CheckBox { text: L.s(L.revision, "proxy_trackers"); checked <=> root.proxy-trackers; enabled: root.proxy-type-index > 0; }
 
-                    Rectangle { vertical-stretch: 1; }
+                        Rectangle { vertical-stretch: 1; }
+                    }
                 }
             }
 
             Tab {
                 title: L.s(L.revision, "web_interface");
-                VerticalLayout {
-                    padding: 12px;
-                    spacing: 10px;
+                ScrollView {
+                    vertical-scrollbar-policy: as-needed;
+                    tb5 := VerticalLayout {
+                        padding: 12px;
+                        spacing: 10px;
 
-                    CheckBox {
-                        text: L.s(L.revision, "enable_web_interface");
-                        checked <=> root.web-enabled;
-                        toggled => { root.web-changed(); }
-                    }
-                    Labelled {
-                        label: L.s(L.revision, "listen_interface");
-                        LineEdit {
-                            text <=> root.web-bind;
-                            horizontal-stretch: 1;
-                            enabled: root.web-enabled;
-                            edited => { root.web-changed(); }
+                        CheckBox {
+                            text: L.s(L.revision, "enable_web_interface");
+                            checked <=> root.web-enabled;
+                            toggled => { root.web-changed(); }
                         }
-                        LineEdit {
-                            text <=> root.web-port;
-                            width: 110px;
-                            enabled: root.web-enabled;
-                            edited => { root.web-changed(); }
+                        Labelled {
+                            label: L.s(L.revision, "listen_interface");
+                            LineEdit {
+                                text <=> root.web-bind;
+                                horizontal-stretch: 1;
+                                enabled: root.web-enabled;
+                                edited => { root.web-changed(); }
+                            }
+                            LineEdit {
+                                text <=> root.web-port;
+                                width: 110px;
+                                enabled: root.web-enabled;
+                                edited => { root.web-changed(); }
+                            }
                         }
-                    }
-                    Labelled {
-                        label: L.s(L.revision, "username");
-                        LineEdit { text <=> root.web-username; horizontal-stretch: 1; enabled: root.web-enabled; }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
-                    Labelled {
-                        label: L.s(L.revision, "password");
-                        LineEdit {
-                            text <=> root.web-password;
-                            input-type: password;
-                            horizontal-stretch: 1;
-                            enabled: root.web-enabled;
-                            // Says whether one is already stored without
-                            // implying the box should show it - the hash
-                            // cannot be turned back into a password.
-                            placeholder-text: root.web-password-set
-                                ? L.s(L.revision, "password_unchanged")
-                                : L.s(L.revision, "password_required");
-                            edited => { root.web-changed(); }
+                        Labelled {
+                            label: L.s(L.revision, "username");
+                            LineEdit { text <=> root.web-username; horizontal-stretch: 1; enabled: root.web-enabled; }
+                            Rectangle { horizontal-stretch: 1; }
                         }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
-                    Labelled {
-                        label: L.s(L.revision, "tls");
-                        ComboBox {
-                            model: root.web-tls-modes;
-                            current-index <=> root.web-tls-index;
-                            width: 220px;
-                            enabled: root.web-enabled;
-                            selected => { root.web-changed(); }
+                        Labelled {
+                            label: L.s(L.revision, "password");
+                            LineEdit {
+                                text <=> root.web-password;
+                                input-type: password;
+                                horizontal-stretch: 1;
+                                enabled: root.web-enabled;
+                                // Says whether one is already stored without
+                                // implying the box should show it - the hash
+                                // cannot be turned back into a password.
+                                placeholder-text: root.web-password-set
+                                    ? L.s(L.revision, "password_unchanged")
+                                    : L.s(L.revision, "password_required");
+                                edited => { root.web-changed(); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
                         }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
-                    Labelled {
-                        label: "    " + L.s(L.revision, "certificate");
-                        LineEdit {
-                            text <=> root.web-cert-path;
-                            horizontal-stretch: 1;
-                            // Only meaningful for the custom mode; index 1.
-                            enabled: root.web-enabled && root.web-tls-index == 1;
-                            edited => { root.web-changed(); }
+                        Labelled {
+                            label: L.s(L.revision, "tls");
+                            ComboBox {
+                                model: root.web-tls-modes;
+                                current-index <=> root.web-tls-index;
+                                width: 220px;
+                                enabled: root.web-enabled;
+                                selected => { root.web-changed(); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
                         }
-                        Button {
-                            text: L.s(L.revision, "browse");
-                            enabled: root.web-enabled && root.web-tls-index == 1;
-                            clicked => { root.browse-web-cert(); }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "certificate");
+                            LineEdit {
+                                text <=> root.web-cert-path;
+                                horizontal-stretch: 1;
+                                // Only meaningful for the custom mode; index 1.
+                                enabled: root.web-enabled && root.web-tls-index == 1;
+                                edited => { root.web-changed(); }
+                            }
+                            Button {
+                                text: L.s(L.revision, "browse");
+                                enabled: root.web-enabled && root.web-tls-index == 1;
+                                clicked => { root.browse-web-cert(); }
+                            }
                         }
-                    }
-                    Labelled {
-                        label: "    " + L.s(L.revision, "private_key");
-                        LineEdit {
-                            text <=> root.web-key-path;
-                            horizontal-stretch: 1;
-                            enabled: root.web-enabled && root.web-tls-index == 1;
-                            edited => { root.web-changed(); }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "private_key");
+                            LineEdit {
+                                text <=> root.web-key-path;
+                                horizontal-stretch: 1;
+                                enabled: root.web-enabled && root.web-tls-index == 1;
+                                edited => { root.web-changed(); }
+                            }
+                            Button {
+                                text: L.s(L.revision, "browse");
+                                enabled: root.web-enabled && root.web-tls-index == 1;
+                                clicked => { root.browse-web-key(); }
+                            }
                         }
-                        Button {
-                            text: L.s(L.revision, "browse");
-                            enabled: root.web-enabled && root.web-tls-index == 1;
-                            clicked => { root.browse-web-key(); }
-                        }
-                    }
 
-                    // The server refuses these combinations at startup rather
-                    // than warning, so say so here instead of letting someone
-                    // press Ok and find the interface silently absent.
-                    Text {
-                        text: root.web-warning;
-                        color: #f2705f;
-                        font-size: 12px;
-                        wrap: word-wrap;
-                        vertical-stretch: 0;
+                        // The server refuses these combinations at startup rather
+                        // than warning, so say so here instead of letting someone
+                        // press Ok and find the interface silently absent.
+                        Text {
+                            text: root.web-warning;
+                            color: #f2705f;
+                            font-size: 12px;
+                            wrap: word-wrap;
+                            vertical-stretch: 0;
+                        }
+                        // What the server is actually doing: the address it is
+                        // listening on, or why it is not. Set after Ok restarts
+                        // it, so this reports the real outcome rather than a
+                        // promise about one.
+                        Text {
+                            text: root.web-status;
+                            font-size: 12px;
+                            color: root.web-status-ok ? #7bb87b : #888;
+                            wrap: word-wrap;
+                        }
+                        Rectangle { vertical-stretch: 1; }
                     }
-                    // What the server is actually doing: the address it is
-                    // listening on, or why it is not. Set after Ok restarts
-                    // it, so this reports the real outcome rather than a
-                    // promise about one.
-                    Text {
-                        text: root.web-status;
-                        font-size: 12px;
-                        color: root.web-status-ok ? #7bb87b : #888;
-                        wrap: word-wrap;
-                    }
-                    Rectangle { vertical-stretch: 1; }
                 }
             }
 
@@ -456,7 +508,11 @@ export component PreferencesDialog inherits Window {
                 title: L.s(L.revision, "labels_and_filters");
                 // Labels left, filters right: two small list-plus-editor panes
                 // rather than a tab each, which would bury one of them.
-                HorizontalLayout {
+                //
+                // No ScrollView around this one: both panes are ListViews that
+                // scroll themselves. It still has to count towards the window
+                // height below, or the window would be too short for it.
+                tb6 := HorizontalLayout {
                     padding: 12px;
                     spacing: 16px;
 
@@ -600,7 +656,7 @@ export component PreferencesDialog inherits Window {
             }
         }
 
-        HorizontalLayout {
+        foot := HorizontalLayout {
             spacing: 8px;
             Text {
                 text: L.s(L.revision, "changes_applied_on_ok");

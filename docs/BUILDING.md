@@ -116,3 +116,25 @@ Slint: Failed to create system tray icon: 0
 
 There is no StatusNotifierItem host, so there is nowhere to put a tray icon.
 The app logs it and carries on without one, which is the intended fallback.
+
+## Screenshotting a dialog
+
+Dialog layout is the one thing here that neither the compiler nor a test can
+check. Two environment variables make it verifiable without driving the menus
+by hand - they exist because getting the Preferences window to size correctly
+took several blind attempts before it was checked visually.
+
+```powershell
+# open a dialog straight after startup: preferences | create | about
+$env:NANOTORRENT_OPEN_DIALOG = "preferences"
+
+# pretend the screen is this many logical pixels tall, to exercise the clamp
+# and the scrollbar on a machine whose screen is perfectly big enough
+$env:NANOTORRENT_SCREEN_LIMIT = "360"
+
+Start-Process target\release\nanotorrent.exe
+tools\screenshot.ps1 -Title Preferences -PrintWindow -Out shot.png
+```
+
+`-PrintWindow` matters: the plain path reads screen pixels and captures
+whatever is in front of the window.
