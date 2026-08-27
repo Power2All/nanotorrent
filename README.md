@@ -94,7 +94,8 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **libtorrent tuning knobs** — every setting PicoTorrent exposed that can
   function against librqbit: active-download/seed/overall limits, PeX toggle,
   anonymous mode, proxy scoping. Ones with no librqbit mechanism are documented
-  as no-ops.
+  as no-ops. The active limits are enforced by the UI's refresh tick, so they
+  do not apply to a headless build yet.
 - **Low-disk guard** - pause everything when free space on the default save
   path drops below a percentage of the volume. librqbit has no such mechanism,
   so this is checked here every 30s. Off by default; 5% when enabled.
@@ -202,6 +203,11 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   fallback and has been corrected.
 
 ## History
+
+**v0.2.2** fixed a startup crash: switching off the notification-area icon
+left the app unable to launch, and the setting could not be reached to undo it.
+The "Skip 'Add torrent' dialog" preference also works now, having been stored
+and never read. Adds a Flatpak manifest.
 
 **v0.2.1** added batch torrent adding to both UIs, the low-disk guard, and
 gave the client its own name in the BEP 10 handshake — until then peers saw

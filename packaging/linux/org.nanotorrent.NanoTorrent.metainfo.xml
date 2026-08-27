@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metainfo. Flathub will not accept a submission without this, and
+  the file name, <id> and the .desktop file must all be the same app id.
+
+  The <screenshots> URLs must be publicly reachable at review time - Flathub
+  fetches them to build the store page. They point at raw.githubusercontent so
+  they travel with the repo rather than needing separate hosting.
+-->
+<component type="desktop-application">
+  <id>org.nanotorrent.NanoTorrent</id>
+
+  <name>NanoTorrent</name>
+  <summary>Tiny, hackable BitTorrent client</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <developer id="org.nanotorrent">
+    <name>Power2All</name>
+  </developer>
+
+  <description>
+    <p>
+      NanoTorrent is a small BitTorrent client: a Rust port of PicoTorrent by
+      Viktor Elofsson, built on librqbit.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>DHT, UDP trackers and MSE/PE protocol encryption</li>
+      <li>Add several torrents at once, choosing which files to fetch from each</li>
+      <li>Create torrents in BitTorrent v1, v2 or hybrid format</li>
+      <li>Labels, and filters written in a small query language</li>
+      <li>Per-torrent details: files, peers with country flags, and trackers by announce tier</li>
+      <li>An optional authenticated HTTPS web interface for controlling it remotely</li>
+      <li>Available in over 40 languages, switchable without restarting</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">org.nanotorrent.NanoTorrent.desktop</launchable>
+
+  <url type="homepage">https://www.nanotorrent.org</url>
+  <url type="bugtracker">https://github.com/Power2All/nanotorrent/issues</url>
+  <url type="vcs-browser">https://github.com/Power2All/nanotorrent</url>
+
+  <categories>
+    <category>Network</category>
+    <category>FileTransfer</category>
+  </categories>
+
+  <keywords>
+    <keyword>bittorrent</keyword>
+    <keyword>torrent</keyword>
+    <keyword>p2p</keyword>
+    <keyword>download</keyword>
+  </keywords>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <!--
+    A BitTorrent client transfers whatever its user asks it to, so it is rated
+    for unmoderated user-to-user contact rather than for content of its own.
+  -->
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-info">moderate</content_attribute>
+  </content_rating>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/Power2All/nanotorrent/master/docs/screenshots/main-window.png</image>
+      <caption>The torrent list, with the details pane below it</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Power2All/nanotorrent/master/docs/screenshots/preferences.png</image>
+      <caption>Preferences</caption>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.2.2" date="2026-08-27">
+      <description>
+        <p>
+          Fixes a crash on startup: turning off the notification-area icon made
+          the application fail to launch every time afterwards, with no way to
+          undo it from the interface.
+        </p>
+        <p>
+          The "Skip 'Add torrent' dialog" preference now works - it was stored
+          but never acted on.
+        </p>
+      </description>
+    </release>
+    <release version="0.2.1" date="2026-08-27">
+      <description>
+        <p>Batch torrent adding in both the desktop and web interfaces, a
+        low-disk guard, and fixes for two bugs in session persistence.</p>
+      </description>
+    </release>
+  </releases>
+</component>

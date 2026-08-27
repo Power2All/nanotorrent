@@ -52,7 +52,13 @@ slint::include_modules!();
 
 /// Matches the .desktop file name that packaging installs, which is how
 /// Wayland compositors find the window icon. See docs/BUILDING.md.
-const APP_ID: &str = "nanotorrent";
+/// Reverse-DNS, because Flatpak and Flathub require the desktop file, the
+/// icon and the AppStream metainfo to be named by it - and this value must
+/// match their names exactly or Wayland cannot connect the window to them.
+///
+/// The executable is still plain `nanotorrent`; only the application identity
+/// is reverse-DNS.
+const APP_ID: &str = "org.nanotorrent.NanoTorrent";
 
 mod flags;
 mod modal;
@@ -463,7 +469,16 @@ fn install_tray(window: &MainWindow, ui: &Rc<Ui>) -> Option<Tray> {
     // Built either way and merely shown or hidden by the setting, so toggling
     // it in Preferences takes effect without a restart. The refresh tick keeps
     // it in step.
-    show_tray(&tray, ui.cfg.get_bool("show_in_notification_area"));
+    //
+    // Shown only if wanted, and never hidden here: hide() on a SystemTrayIcon
+    // that has not been shown panics inside Slint with "Constant property
+    // being changed". That made unticking the setting a startup crash on every
+    // subsequent launch, with no way back except editing the database - the
+    // Preferences checkbox that caused it could not be reached to undo it.
+    // A freshly built tray is already invisible, so there is nothing to undo.
+    if ui.cfg.get_bool("show_in_notification_area") {
+        show_tray(&tray, true);
+    }
     *ui.tray.borrow_mut() = Some(tray.clone_strong());
     Some(tray)
 }
@@ -472,6 +487,10 @@ fn install_tray(window: &MainWindow, ui: &Rc<Ui>) -> Option<Tray> {
 ///
 /// A SystemTrayIcon has no `visible` property - show/hide is the whole API -
 /// so the Preferences toggle routes through here rather than rebuilding it.
+///
+/// Only call this to CHANGE the state. `hide()` on a tray that was never shown
+/// panics inside Slint; callers track what they last asked for (`tray_visible`
+/// on the refresh tick) rather than calling it unconditionally.
 fn show_tray(tray: &Tray, visible: bool) {
     let result = if visible { tray.show() } else { tray.hide() };
     if let Err(err) = result {
@@ -806,6 +825,22 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     drain_notifications(window, ui);
 
     let mut rows = ui.session.torrents(&ui.labels());
+
+    // Queue limits, before any filtering: the scheduler decides what runs
+    // across the whole session, not across whatever the current filter shows.
+    //
+    // Called here because this is the only periodic tick that already has the
+    // rows. Session::enforce_queue existed and was never called from anywhere,
+    // so "Active limit", "Active downloads" and "Active seeds" were stored by
+    // Preferences and acted on by nothing.
+    //
+    // A headless build has no such tick, so the limits do not apply there yet.
+    ui.session.enforce_queue(
+        &rows,
+        ui.cfg.get_int("libtorrent.active_limit").unwrap_or(0),
+        ui.cfg.get_int("libtorrent.active_downloads").unwrap_or(0),
+        ui.cfg.get_int("libtorrent.active_seeds").unwrap_or(0),
+    );
 
     // Filters first, then the sort. Both happen before anything indexes into
     // rows: selection and the context menu map a row index to a torrent, so
@@ -1603,6 +1638,25 @@ fn show_next_pending(ui: &Rc<Ui>) {
     if parsed.is_empty() {
         return;
     }
+
+    // Preferences > "Skip 'Add torrent' dialog". Until this existed the
+    // checkbox was written to the database and never read back, so ticking it
+    // did nothing whatsoever.
+    //
+    // Everything goes in with the session defaults: default save path, started,
+    // every file wanted. Choosing otherwise is exactly what the dialog is for,
+    // and the setting says not to show it.
+    if ui.cfg.get_bool("skip_add_torrent_dialog") {
+        tracing::info!("adding {} torrent(s) without the dialog", parsed.len());
+        for (bytes, _) in &parsed {
+            ui.session.add_torrent(
+                AddTorrentSource::TorrentFileBytes(bytes.clone()),
+                default_add_params(),
+            );
+        }
+        return;
+    }
+
     tracing::info!(
         "add dialog: {} torrent(s) in this batch: {:?}",
         parsed.len(),

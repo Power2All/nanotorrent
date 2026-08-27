@@ -3,11 +3,12 @@ Type=Application
 Name=NanoTorrent
 Comment=Tiny, hackable BitTorrent client
 Exec=nanotorrent %f
-Icon=nanotorrent
+Icon=org.nanotorrent.NanoTorrent
 Terminal=false
 Categories=Network;FileTransfer;P2P;
 MimeType=application/x-bittorrent;x-scheme-handler/magnet;
-# Must match slint::set_xdg_app_id in src/ui_slint/mod.rs: this is how a
+# Must match slint::set_xdg_app_id in src/ui_slint/mod.rs, and the file name
+# must match it too: this is how a
 # Wayland compositor connects the running window to this file, and therefore
 # to the icon below. Without it the window gets a generic fallback icon.
-StartupWMClass=nanotorrent
+StartupWMClass=org.nanotorrent.NanoTorrent
