@@ -1,0 +1,99 @@
+// Confirming a removal, for when the request did not say what to do with the
+// downloaded data.
+//
+// The context menu does not use this: "Remove torrent" and "Remove torrent and
+// files" already say exactly what they will do, so a prompt on top of them
+// would only be a second click. Delete has no such wording behind it, which is
+// the whole reason this exists.
+//
+// Two buttons rather than a checkbox: "remove" and "remove and erase the data"
+// are different acts, one of them irreversible, and a ticked box is easy to
+// miss on the way to a button that reads the same either way.
+
+import { Button, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
+
+export component RemoveDialog inherits Window {
+    icon: @image-url("../../res/app.png");
+    title: L.s(L.revision, "remove_torrent");
+    // Width is pinned - nothing here reflows horizontally. Height is NOT:
+    // the window takes its content's natural height, so it opens exactly
+    // fitting and shows no scrollbar. Capping it instead meant a cap even a
+    // few pixels under the content left the scrollbar up permanently.
+    // min-height only sets how far it may be dragged down on a screen too
+    // short for it - that is when the ScrollView earns its keep.
+    min-width: 500px;
+    max-width: 500px;
+    min-height: 200px;
+    background: Palette.background;
+
+    /// What is being removed: one torrent's name, or "N torrents".
+    in property <string> subject;
+
+    /// True means the downloaded data goes too.
+    callback chosen(bool);
+    callback cancelled();
+
+    // Esc cancels, as in every other dialog here. Deliberately no Enter
+    // binding: neither option should be reachable by a stray keypress.
+    FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.cancelled();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        Text {
+            text: L.s(L.revision, "remove_confirm");
+            font-size: 13px;
+            font-weight: 700;
+            color: Palette.foreground;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: root.subject;
+            font-size: 13px;
+            color: Palette.foreground;
+            wrap: word-wrap;
+            overflow: elide;
+        }
+
+        Text {
+            text: L.s(L.revision, "remove_keeps_files");
+            font-size: 12px;
+            color: #888;
+            wrap: word-wrap;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: L.s(L.revision, "cancel");
+                clicked => { root.cancelled(); }
+            }
+            // The irreversible one is not primary: the safe choice is the one
+            // under the cursor's resting place and the one Enter would reach
+            // if Enter were bound.
+            Button {
+                text: L.s(L.revision, "remove_torrent_and_files");
+                clicked => { root.chosen(true); }
+            }
+            Button {
+                text: L.s(L.revision, "remove_torrent");
+                primary: true;
+                clicked => { root.chosen(false); }
+            }
+        }
+    }
+}
