@@ -39,11 +39,16 @@ or build one yourself:
 | Windows | `NanoTorrent-<ver>-Setup.exe` | NSIS, UPX-compressed payload — `installer/build-installer.bat` |
 | Debian / Ubuntu | `nanotorrent-<ver>.deb` | `cargo deb` |
 | Fedora / RHEL / openSUSE | `nanotorrent-<ver>.rpm` | `cargo generate-rpm` |
+| Any Linux (glibc 2.35+) | `nanotorrent-<ver>-x86_64.AppImage` | `linuxdeploy` — one file, no install |
 | macOS | `nanotorrent-<ver>.dmg` | `hdiutil`, from a hand-assembled `.app` |
 
 The macOS bundle is unsigned and unnotarised, so Gatekeeper asks on first
 launch (right-click ▸ Open). The Linux packages install the binary, a desktop
 entry and an icon; the `.deb` targets glibc 2.35 or newer (Ubuntu 22.04+).
+
+The AppImage needs no installation - `chmod +x` it and run. It bundles its
+libraries but not glibc, so it needs 2.35 or newer too. For a desktop entry and
+icon, run it once with `--appimage-integrate`, or use the `.deb`/`.rpm`.
 
 ## Building
 
