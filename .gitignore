@@ -4,3 +4,6 @@
 # Spike crates build independently of the main workspace.
 /spike/*/target/
 __pycache__/
+
+# Flatpak bundles and other built artefacts, produced on demand.
+/dist/

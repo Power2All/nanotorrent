@@ -11,14 +11,19 @@ starting - the requirements do move, and this file is a snapshot.
 | Path | |
 | --- | --- |
 | `packaging/flatpak/org.nanotorrent.NanoTorrent.yml` | the manifest |
+| `packaging/flatpak/flathub.json` | limits the build to x86_64 - see below |
 | `packaging/flatpak/build.sh` | builds and installs it locally |
 | `packaging/linux/org.nanotorrent.NanoTorrent.metainfo.xml` | AppStream data for the store page |
 | `packaging/linux/org.nanotorrent.NanoTorrent.desktop` | desktop entry |
 | `docs/screenshots/*.png` | the images the metainfo points at |
 
-The app id is `org.nanotorrent.NanoTorrent`, matching nanotorrent.org. Flathub
-requires the id to be a domain the submitter controls, and may ask for proof -
-usually a DNS TXT record or a file under `/.well-known/` on that domain.
+The app id is `org.nanotorrent.NanoTorrent`, matching nanotorrent.org. Flathub's
+rule is that "the domain must be directly related to the project or the
+application being submitted and the author or the developer or the project must
+have control over the domain" - so the id is fine whether or not the person
+opening the PR is the author, as long as the project controls nanotorrent.org.
+Expect to be asked for proof: usually a DNS TXT record or a file under
+`/.well-known/`.
 
 ## 1. Tag and push the release
 
@@ -57,12 +62,26 @@ from. Copy it across in the next step.
 
 ## 4. Open the pull request
 
-1. Fork <https://github.com/flathub/flathub>.
-2. Branch from **`new-pr`** - not `master`. This is the one step people get
-   wrong; a PR against `master` is closed unread.
-3. Add two files at the repository root:
+1. Fork <https://github.com/flathub/flathub>, with **"Copy the master branch
+   only" unchecked**. Leaving it checked gives a fork with no `new-pr` branch,
+   which is the branch everything below depends on.
+2. Branch from **`new-pr`** - not `master`:
+
+   ```sh
+   git clone --branch=new-pr https://github.com/<you>/flathub.git
+   ```
+
+   The Flathub docs are explicit: "Please do not open the PR against the
+   `master` base branch."
+
+   Third-party submissions are allowed - you do not have to be the upstream
+   author - but the app id must be a domain you control, so
+   `org.nanotorrent.NanoTorrent` requires control of nanotorrent.org.
+3. Add three files at the repository root - Flathub requires them at the top
+   level, not in a subdirectory:
    - `org.nanotorrent.NanoTorrent.yml` (the manifest, with the git source)
    - `cargo-sources.json`
+   - `flathub.json`
 4. Open the PR against the `new-pr` branch.
 
 A bot builds the submission and reports back. Reviewers then look at it by
@@ -82,6 +101,22 @@ manifest explains each one. The two that draw questions:
 After the PR is merged Flathub creates `flathub/org.nanotorrent.NanoTorrent`,
 and that repo - not this one - is where future updates are published. Each new
 release is a PR there bumping `tag`, `commit` and `cargo-sources.json`.
+
+## Architectures
+
+Flathub builds x86_64 and aarch64 by default. `flathub.json` restricts this to
+x86_64:
+
+```json
+{ "only-arches": ["x86_64"] }
+```
+
+Not because aarch64 is known broken - because it has never been built. The
+stack has C in it (aws-lc-sys) and Slint pulls in renderers, and a red aarch64
+build would stall the submission while it was investigated.
+
+Delete the file, or add `"aarch64"` to the list, once someone has built it on
+that architecture. Nothing else has to change.
 
 ## Runtime version
 

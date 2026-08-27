@@ -15,3 +15,6 @@ flatpak-cargo-generator.py
 # NOTE: the Flathub manifest repo does need a committed copy of this - it has
 # no Cargo.lock to generate one from. Copy it across when submitting.
 cargo-sources.json
+
+# The working-tree manifest build.sh generates for local testing.
+local-*.yml

@@ -5,6 +5,9 @@
 #   packaging/flatpak/build.sh          build and install to the user remote
 #   packaging/flatpak/build.sh --run    ... then launch it
 #
+# Builds what is in the working tree, NOT the tag the manifest names - so it
+# tests uncommitted work, and works before a release has been tagged.
+#
 # Must be run from Linux (WSL is fine). The Rust build happens inside the
 # sandbox from scratch, so the first run takes a while - there is no shared
 # target/ directory to reuse.
@@ -71,9 +74,46 @@ case "$PWD" in
         ;;
 esac
 
-echo "==> building (this is a full release build inside the sandbox)"
+# --- local manifest --------------------------------------------------------
+# The committed manifest builds from a git tag, because that is what Flathub
+# does. Locally that is the wrong thing twice over: it ignores uncommitted work,
+# and between `set-version.ps1` and the actual tagging the tag does not exist
+# yet, so the build simply fails.
+#
+# So a copy is made with the git source swapped for the working tree. The
+# committed manifest is never touched - it is the submission artifact.
+# Written beside the real manifest, not in the cache: `- cargo-sources.json`
+# and any other relative source is resolved against the MANIFEST's directory,
+# so a copy kept elsewhere silently loses them. Gitignored.
+LOCAL_MANIFEST="local-$APP_ID.yml"
+
+awk -v repo="$REPO_ROOT" '
+    /^      - type: git/ { skip = 1 }
+    # The git source ends at its commit: line; emit the replacement there.
+    skip && /^        commit:/ {
+        skip = 0
+        print "      - type: dir"
+        print "        path: " repo
+        # Without these the whole working tree is copied in, target/ included.
+        print "        skip:"
+        print "          - target"
+        print "          - .git"
+        print "          - build-dir"
+        print "          - .flatpak-builder"
+        next
+    }
+    !skip { print }
+' "$APP_ID.yml" > "$LOCAL_MANIFEST"
+
+grep -q 'type: dir' "$LOCAL_MANIFEST" || {
+    echo "could not rewrite the manifest source - has its shape changed?" >&2
+    exit 1
+}
+
+echo "==> building $(grep -m1 '^version' "$REPO_ROOT/Cargo.toml" | cut -d'"' -f2) from the working tree"
+echo "    (a full release build inside the sandbox - not quick)"
 flatpak-builder --user --force-clean --install \
-    --state-dir "$STATE_DIR" "$BUILD_DIR" "$APP_ID.yml"
+    --state-dir "$STATE_DIR" "$BUILD_DIR" "$LOCAL_MANIFEST"
 
 echo
 echo "==> installed. Run it with:"

@@ -215,15 +215,6 @@ fn to_row(status: &TorrentStatus, tr: &Translator, selected: bool) -> Row {
 /// Returns only when the UI is done, so the caller can shut the session down
 /// afterwards.
 pub fn run(ctx: AppContext) -> anyhow::Result<()> {
-    // Wayland has no protocol for a client to set its own window icon, so
-    // `icon:` in the markup is a no-op there and the compositor falls back to
-    // a generic one. What it does instead is match the app id against an
-    // installed .desktop file and take the Icon= from that. Must be set before
-    // the window is shown; harmless on Windows and macOS.
-    if let Err(err) = slint::set_xdg_app_id(APP_ID) {
-        tracing::debug!("could not set the xdg app id: {err}");
-    }
-
     let window = MainWindow::new().map_err(|e| {
         // winit's own words for a missing display server are "neither
         // WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set", which names
@@ -245,6 +236,23 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         };
         anyhow::anyhow!("failed to create the Slint window: {e}{hint}")
     })?;
+
+    // AFTER MainWindow::new, not before: creating the component is what
+    // initialises the Slint backend, and without one this returns NoPlatform
+    // and does nothing. It only has to happen before the window is SHOWN,
+    // which is much later, so this is early enough.
+    //
+    // It matters because Wayland has no protocol for a client to set its own
+    // window icon - `icon:` in the markup is a no-op there. The compositor
+    // matches this app id against an installed .desktop file and takes the
+    // Icon= from that instead, so getting it wrong means a generic icon on
+    // every window. Harmless on Windows and macOS.
+    //
+    // Logged at warn: it used to be debug, which is why this failing went
+    // unnoticed until the icon was wrong on a real Wayland desktop.
+    if let Err(err) = slint::set_xdg_app_id(APP_ID) {
+        tracing::warn!("could not set the xdg app id ({APP_ID}): {err}");
+    }
 
     window.set_window_title(
         format!(

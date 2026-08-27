@@ -84,6 +84,16 @@
   </screenshots>
 
   <releases>
+    <release version="0.2.3" date="2026-08-27">
+      <description>
+        <p>A Linux release, and the first published as a Flatpak.</p>
+        <ul>
+          <li>Opening a torrent's download folder opened the parent directory instead, and reported nothing when it failed</li>
+          <li>The window icon fell back to a generic one on Wayland</li>
+          <li>The notification-area icon did not appear when running as a Flatpak</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.2" date="2026-08-27">
       <description>
         <p>

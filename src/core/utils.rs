@@ -35,8 +35,11 @@ pub fn to_human_speed(bytes_per_second: i64) -> String {
     format!("{}/s", to_human_file_size(bytes_per_second))
 }
 
-/// Port of Utils::openAndSelect - opens Windows Explorer with the
-/// given file selected.
+/// Show a downloaded torrent's folder in the desktop's file manager.
+///
+/// Port of Utils::openAndSelect. Windows selects the folder inside its parent,
+/// which is what explorer's /select does; everywhere else the folder is simply
+/// opened, there being no portable equivalent of "reveal this item".
 pub fn open_and_select(path: &Path) {
     #[cfg(target_os = "windows")]
     {
@@ -56,15 +59,30 @@ pub fn open_and_select(path: &Path) {
         // and explorer silently opens Documents instead. Rust's normal arg
         // quoting would wrap the whole "/select,<path>" token (which explorer
         // misreads), so pass it verbatim with raw_arg and quote the path only.
-        let _ = std::process::Command::new("explorer.exe")
+        if let Err(err) = std::process::Command::new("explorer.exe")
             .raw_arg(format!("/select,\"{}\"", path.display()))
-            .spawn();
+            .spawn()
+        {
+            tracing::error!("cannot open explorer for {}: {err}", path.display());
+        }
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        if let Some(parent) = path.parent() {
-            let _ = open::that(parent);
+        // The path IS the folder holding the download, so open it - not its
+        // parent. Mirroring the Windows call was wrong: explorer's /select
+        // highlights the folder inside its parent, whereas open::that simply
+        // opens whatever it is given, so this used to land a level too high
+        // (the home directory instead of the download folder).
+        //
+        // There is no portable "reveal this item" equivalent; opening the
+        // containing folder is what the menu entry promises anyway.
+        //
+        // Inside a Flatpak this goes through the OpenURI portal. A save path
+        // outside the sandbox's reach can still be refused, which is why the
+        // error is logged rather than dropped.
+        if let Err(err) = open::that(path) {
+            tracing::error!("cannot open {}: {err}", path.display());
         }
     }
 }

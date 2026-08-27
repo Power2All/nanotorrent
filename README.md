@@ -204,6 +204,14 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 
 ## History
 
+**v0.2.3** is a Linux release. Opening a torrent's download folder opened the
+parent directory and said nothing when it failed; the window icon fell back to
+a generic one on Wayland, because the app id was set before the UI backend
+existed and the call quietly did nothing; and the notification-area icon never
+appeared under Flatpak, because the sandbox would not let it own the bus name
+its tray implementation claims. Adds the Flatpak packaging and a
+`tools/set-version.ps1` that sets the version everywhere it is written down.
+
 **v0.2.2** fixed a startup crash: switching off the notification-area icon
 left the app unable to launch, and the setting could not be reached to undo it.
 The "Skip 'Add torrent' dialog" preference also works now, having been stored
