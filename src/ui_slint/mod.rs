@@ -302,7 +302,8 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     wire_selection(&window, &ui, &model);
     wire_actions(&window, &ui);
     {
-        let (widths, titles, total) = columns(&ui.tr.borrow());
+        let saved = ui.cfg.get_column_widths(TORRENT_LIST);
+        let (widths, titles, total) = columns(&ui.tr.borrow(), &saved);
         let cols = window.global::<Cols>();
         cols.set_w(ModelRc::new(VecModel::from(widths)));
         cols.set_titles(ModelRc::new(VecModel::from(titles)));
@@ -507,7 +508,13 @@ fn show_tray(tray: &Tray, visible: bool) {
 }
 
 /// How long a toast stays up.
-const TOAST_DURATION: std::time::Duration = std::time::Duration::from_millis(1600);
+///
+/// Five seconds, set by the longest thing a toast has to say rather than the
+/// shortest: a failed add is two wrapped lines explaining why, and 1.6s was
+/// not enough to finish reading it. A confirmation shares the timer - it is a
+/// non-blocking pill in the corner, so outstaying its welcome costs nothing,
+/// whereas a message that vanishes mid-sentence costs the whole point of it.
+const TOAST_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Show a transient confirmation at the bottom of the window.
 ///
@@ -515,11 +522,21 @@ const TOAST_DURATION: std::time::Duration = std::time::Duration::from_millis(160
 /// earlier toast would clear a later one early, so each toast only clears the
 /// message if it is still the newest.
 fn show_toast(window: &MainWindow, text: &str) {
+    toast(window, text, false)
+}
+
+/// The same, in red, for something that did not work.
+fn show_error_toast(window: &MainWindow, text: &str) {
+    toast(window, text, true)
+}
+
+fn toast(window: &MainWindow, text: &str, is_error: bool) {
     thread_local! {
         static GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     }
 
     window.set_toast(text.into());
+    window.set_toast_error(is_error);
     let mine = GENERATION.with(|g| {
         g.set(g.get().wrapping_add(1));
         g.get()
@@ -589,7 +606,12 @@ fn caption_width(text: &str) -> f32 {
 /// Each column is the wider of its designed width and what its caption needs,
 /// so switching language cannot clip a header. Returns the widths, the
 /// captions and their total.
-fn columns(tr: &Translator) -> (Vec<f32>, Vec<SharedString>, f32) {
+/// Identifies the torrent list in `column_state`. PicoTorrent keyed the same
+/// table by list, and the details tabs will want their own rows one day.
+pub const TORRENT_LIST: &str = "torrents";
+
+fn columns(tr: &Translator, saved: &std::collections::HashMap<i64, f32>)
+-> (Vec<f32>, Vec<SharedString>, f32) {
     // key, designed width. "#", "DL" and "UL" have no key: they are the same
     // symbols in every locale the original ships.
     const COLUMNS: [(&str, f32); 16] = [
@@ -616,6 +638,9 @@ fn columns(tr: &Translator) -> (Vec<f32>, Vec<SharedString>, f32) {
     // 12px of cell padding, plus room for the "  ^" sort arrow the caption
     // grows by when the column is the active sort.
     const PADDING: f32 = 12.0 + 18.0;
+    // Matches the floor the header's drag handle enforces, so a width that
+    // came back from the database cannot be narrower than one you can drag to.
+    const MIN_COLUMN: f32 = 40.0;
 
     let mut widths = Vec::with_capacity(COLUMNS.len());
     let mut titles = Vec::with_capacity(COLUMNS.len());
@@ -625,7 +650,14 @@ fn columns(tr: &Translator) -> (Vec<f32>, Vec<SharedString>, f32) {
         } else {
             ui_string(tr, key)
         };
-        widths.push(base.max(caption_width(&caption) + PADDING));
+        // A saved width wins over the designed one, but never over what the
+        // caption needs - a narrower translation must not clip its own header,
+        // which is the rule the designed width exists to enforce.
+        let fits = base.max(caption_width(&caption) + PADDING);
+        widths.push(match saved.get(&(i as i64)) {
+            Some(w) => w.max(MIN_COLUMN),
+            None => fits,
+        });
         titles.push(caption);
     }
     let total = widths.iter().sum();
@@ -834,6 +866,18 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
 
     let mut rows = ui.session.torrents(&ui.labels());
 
+    // Counted here, before the filters below narrow `rows`: the tray reports
+    // what the application is doing, not what the current view happens to
+    // show. Queued, paused and checking torrents are none of these - the
+    // tooltip says "actively", so it means transferring.
+    let (n_downloading, n_seeding) =
+        rows.iter()
+            .fold((0usize, 0usize), |(down, seed), r| match r.state {
+                State::Downloading | State::DownloadingMetadata => (down + 1, seed),
+                State::Uploading => (down, seed + 1),
+                _ => (down, seed),
+            });
+
     // Queue limits, before any filtering: the scheduler decides what runs
     // across the whole session, not across whatever the current filter shows.
     //
@@ -884,14 +928,37 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     model.set_vec(mapped);
 
     let (down, up) = ui.session.session_rates();
-    window.set_session_rates(
-        format!(
-            "DL: {}, UL: {}",
-            utils::to_human_speed(down),
-            utils::to_human_speed(up)
-        )
-        .into(),
+    let rates = format!(
+        "DL: {}, UL: {}",
+        utils::to_human_speed(down),
+        utils::to_human_speed(up)
     );
+    window.set_session_rates(rates.as_str().into());
+
+    // The tray tooltip: what is running, and how fast. Reuses the counts and
+    // rates computed above rather than recomputing on the same tick.
+    //
+    // The state words come from the translator, so the tooltip follows the
+    // language like everything else. "DL"/"UL" do not - they are the same
+    // abbreviations the status bar uses, and are read as symbols.
+    let tray_tip = {
+        let tr = ui.tr.borrow();
+        format!(
+            "{n_downloading} {}, {n_seeding} {} - {rates}",
+            tr.i18n("state_downloading"),
+            tr.i18n("state_uploading"),
+        )
+    };
+
+    // Only on a change: setting it re-registers the icon with the shell
+    // (NIM_MODIFY on Windows, a D-Bus property change under
+    // StatusNotifierItem), and while nothing is transferring the string is
+    // identical every second.
+    if let Some(tray) = ui.tray.borrow().as_ref()
+        && tray.get_rates() != tray_tip.as_str()
+    {
+        tray.set_rates(tray_tip.as_str().into());
+    }
     window.set_dht_nodes(
         ui.session
             .dht_nodes()
@@ -905,7 +972,7 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
         set_details(window, first, &ui.tr.borrow());
         refresh_detail_tab(window, ui, &first.info_hash);
     } else if selected.is_empty() {
-        clear_details(window);
+        clear_details(window, &ui.tr.borrow());
         clear_detail_tabs(window);
     }
 
@@ -961,7 +1028,7 @@ fn drain_notifications(window: &MainWindow, ui: &Rc<Ui>) {
             // message that fades. Already logged where it was raised.
             SessionEvent::Error(err) => {
                 had_error = true;
-                show_toast(window, &err);
+                show_error_toast(window, &err);
             }
             // Confirmation that the add actually happened. Failures already
             // arrive as Error above, so between the two every add says
@@ -1143,7 +1210,32 @@ fn format_next_announce(at: Option<std::time::SystemTime>) -> String {
 /// formatting, and these are the same helpers the list columns use.
 fn set_details(window: &MainWindow, t: &TorrentStatus, tr: &Translator) {
     window.set_d_name(t.name.as_str().into());
-    window.set_d_hash(t.info_hash.as_str().into());
+
+    // Which hashes a torrent has is what tells v1, v2 and hybrid apart, so the
+    // labels come from that rather than from a separate "format" field.
+    //
+    // The version suffix only appears when there is something to distinguish:
+    // a plain v1 torrent - still most of what exists - keeps the bare "Info
+    // hash" it has always shown. "(v1)"/"(v2)" are protocol version numbers,
+    // not prose, so they stay literal in every language, exactly like the
+    // mode_v1 / mode_v2 entries in the create dialog.
+    let hash_label = tr.i18n("info_hash");
+    let (label, value, label2, value2) = match (&t.info_hash_v1, &t.info_hash_v2) {
+        (Some(v1), Some(v2)) => (
+            format!("{hash_label} (v1)"),
+            v1.as_str(),
+            format!("{hash_label} (v2)"),
+            v2.as_str(),
+        ),
+        (None, Some(v2)) => (format!("{hash_label} (v2)"), v2.as_str(), String::new(), ""),
+        (Some(v1), None) => (hash_label, v1.as_str(), String::new(), ""),
+        // Metadata not resolved yet: the id is all there is to show.
+        (None, None) => (hash_label, t.info_hash.as_str(), String::new(), ""),
+    };
+    window.set_d_hash_label(label.into());
+    window.set_d_hash(value.into());
+    window.set_d_hash2_label(label2.into());
+    window.set_d_hash2(value2.into());
     window.set_d_save_path(t.save_path.as_str().into());
     // The same translated state the list column shows, or the error if there
     // is one. (An earlier version read `t.error.is_empty().then(|| "")`, which
@@ -1163,7 +1255,7 @@ fn set_details(window: &MainWindow, t: &TorrentStatus, tr: &Translator) {
 }
 
 /// Blank the Overview fields, for when nothing is selected.
-fn clear_details(window: &MainWindow) {
+fn clear_details(window: &MainWindow, tr: &Translator) {
     for set in [
         MainWindow::set_d_name,
         MainWindow::set_d_hash,
@@ -1178,6 +1270,13 @@ fn clear_details(window: &MainWindow) {
     ] {
         set(window, SharedString::from("-"));
     }
+    // The first label keeps its plain form rather than going blank - the row
+    // is still drawn, and a value with no label beside it reads as a bug.
+    window.set_d_hash_label(tr.i18n("info_hash").into());
+    // The SECOND one does go empty: that is what hides the row, so a hybrid's
+    // "(v2)" does not linger over the next selection.
+    window.set_d_hash2(SharedString::new());
+    window.set_d_hash2_label(SharedString::new());
     window.set_d_progress(0.0);
 }
 
@@ -1334,7 +1433,7 @@ fn repaint_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>
     {
         set_details(window, first, &ui.tr.borrow());
     } else {
-        clear_details(window);
+        clear_details(window, &ui.tr.borrow());
     }
 
     // Ask for a frame explicitly. Mutating the model marks it dirty, but the
@@ -1503,6 +1602,17 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
         }
     });
 
+    // Remembered so the list comes back the way it was left. Written on
+    // release rather than on every move: the markup fires this once the drag
+    // ends, and a database write per mouse event would be absurd.
+    {
+        let u = ui.clone();
+        window.on_column_resized(move |column, width| {
+            u.cfg
+                .set_column_width(TORRENT_LIST, column.max(0) as i64, width);
+        });
+    }
+
     // Sorting is the model's job - `ListView` has no opinion about order.
     let (w, u) = (window.as_weak(), ui.clone());
     window.on_sort(move |column| {
@@ -1588,9 +1698,10 @@ fn open_add_magnet(ui: &Rc<Ui>) {
 /// `rfd` gives the native picker Slint does not have. It blocks the event loop
 /// while open, which is what a modal file dialog is supposed to do.
 fn pick_and_queue_torrents(ui: &Rc<Ui>) {
+    let tr = ui.tr.borrow();
     let Some(paths) = rfd::FileDialog::new()
-        .add_filter("Torrent files", &["torrent"])
-        .set_title("Add torrent(s)")
+        .add_filter(tr.i18n("torrent_file_s"), &["torrent"])
+        .set_title(tr.i18n("add_torrent_s"))
         .pick_files()
     else {
         return; // cancelled
@@ -1636,13 +1747,32 @@ fn show_next_pending(ui: &Rc<Ui>) {
     // Parse first, then build the dialog: a batch of unreadable files should
     // produce one error each and no empty dialog at the end of it.
     let mut parsed = Vec::new();
+    let mut failures: Vec<String> = Vec::new();
     for bytes in queued {
         match crate::ui::torrentfile::parse(&bytes) {
             // One bad file does not strand the rest of the batch.
-            Err(err) => tracing::error!("{err}"),
+            Err(err) => {
+                tracing::error!("{err}");
+                // Deduplicated: picking five v2 torrents is one problem, not
+                // five, and the same sentence five times reads as a stutter.
+                if !failures.contains(&err) {
+                    failures.push(err);
+                }
+            }
             Ok(p) => parsed.push((bytes, p)),
         }
     }
+
+    // Said out loud, not just logged. A file that cannot be parsed never
+    // reaches a dialog, so without this the whole interaction was: pick a
+    // torrent, watch nothing happen.
+    if !failures.is_empty()
+        && let Some(window) = ui.main.borrow().as_ref().and_then(|w| w.upgrade())
+    {
+        let headline = ui.tr.borrow().i18n("add_torrent_failed");
+        show_error_toast(&window, &format!("{headline}\n{}", failures.join("\n")));
+    }
+
     if parsed.is_empty() {
         return;
     }
@@ -1757,10 +1887,10 @@ fn show_next_pending(ui: &Rc<Ui>) {
     }
 
     {
-        let weak = dialog.as_weak();
+        let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_browse(move || {
             let Some(dir) = rfd::FileDialog::new()
-                .set_title("Save torrent to")
+                .set_title(u.tr.borrow().i18n("save_torrent_to"))
                 .pick_folder()
             else {
                 return;
@@ -1869,7 +1999,10 @@ fn apply_language(window: &MainWindow, ui: &Rc<Ui>) {
 
     // Column captions are computed in Rust rather than bound in markup, so
     // they do not come along with the revision bump.
-    let (widths, titles, total) = columns(&ui.tr.borrow());
+    // Re-read on a language change too: the captions change, so a column
+    // may need to grow - but a width the user chose is still theirs.
+    let saved = ui.cfg.get_column_widths(TORRENT_LIST);
+    let (widths, titles, total) = columns(&ui.tr.borrow(), &saved);
     let cols = window.global::<Cols>();
     cols.set_w(ModelRc::new(VecModel::from(widths)));
     cols.set_titles(ModelRc::new(VecModel::from(titles)));
@@ -1952,6 +2085,19 @@ fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
     dialog.set_web_cert_path(cfg.get_string("webui.tls_cert_path").unwrap_or_default().into());
     dialog.set_web_key_path(cfg.get_string("webui.tls_key_path").unwrap_or_default().into());
 
+    // Shown through Advanced::load rather than read raw, so the fields display
+    // the value the server will actually use - a clamped or missing setting
+    // would otherwise show one number here and behave as another.
+    let adv = crate::webui::Advanced::load(cfg);
+    dialog.set_web_req_timeout(adv.client_request_timeout.to_string().into());
+    dialog.set_web_disconnect_timeout(adv.client_disconnect_timeout.to_string().into());
+    dialog.set_web_keep_alive(adv.keep_alive.to_string().into());
+    dialog.set_web_shutdown_timeout(adv.shutdown_timeout.to_string().into());
+    dialog.set_web_max_connections(adv.max_connections.to_string().into());
+    dialog.set_web_max_conn_rate(adv.max_connection_rate.to_string().into());
+    dialog.set_web_workers(adv.workers.to_string().into());
+    dialog.set_web_max_body(adv.max_body_size.to_string().into());
+
     let refresh = {
         let (weak, u) = (dialog.as_weak(), ui.clone());
         move || {
@@ -1971,10 +2117,10 @@ fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
     }
 
     {
-        let weak = dialog.as_weak();
+        let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_browse_web_cert(move || {
             if let Some(path) = rfd::FileDialog::new()
-                .add_filter("PEM certificate", &["pem", "crt", "cer"])
+                .add_filter(u.tr.borrow().i18n("pem_certificate"), &["pem", "crt", "cer"])
                 .pick_file()
                 && let Some(d) = weak.upgrade()
             {
@@ -1984,10 +2130,10 @@ fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
         });
     }
     {
-        let weak = dialog.as_weak();
+        let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_browse_web_key(move || {
             if let Some(path) = rfd::FileDialog::new()
-                .add_filter("PEM private key", &["pem", "key"])
+                .add_filter(u.tr.borrow().i18n("pem_private_key"), &["pem", "key"])
                 .pick_file()
                 && let Some(d) = weak.upgrade()
             {
@@ -2025,11 +2171,20 @@ fn web_status(ui: &Rc<Ui>) -> (String, bool) {
     )
 }
 
+/// Index of the Web interface tab, in the order they are declared.
+const WEB_TAB: i32 = 4;
+
 /// Stop the web interface and start it again from the settings just saved.
 ///
 /// The server is otherwise only spawned at startup, which meant pressing Ok
 /// appeared to do nothing at all.
-fn apply_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
+///
+/// Returns false when it was asked for and could not start. The caller keeps
+/// the dialog open in that case: the reason is written to the status line on
+/// the Web interface tab, and dismissing on the way out used to close the
+/// dialog over the top of it. Enabling the interface with no password set is
+/// the common way in, and it looked exactly like Ok doing nothing at all.
+fn apply_web(d: &PreferencesDialog, ui: &Rc<Ui>) -> bool {
     let current = ui.web.borrow_mut().take();
     match crate::webui::restart(
         current,
@@ -2042,6 +2197,7 @@ fn apply_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
             let (status, ok) = web_status(ui);
             d.set_web_status(status.into());
             d.set_web_status_ok(ok);
+            true
         }
         Err(err) => {
             // The three rules the tab already warns about end up here too if
@@ -2049,6 +2205,10 @@ fn apply_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
             tracing::error!("web interface did not restart: {err:#}");
             d.set_web_status(format!("{err:#}").into());
             d.set_web_status_ok(false);
+            // Bring the tab forward: Ok can be pressed from any of them, and
+            // an error nobody is looking at is the bug this fixes.
+            d.set_current_tab(WEB_TAB);
+            false
         }
     }
 }
@@ -2070,6 +2230,24 @@ fn save_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
     );
     cfg.set("webui.tls_cert_path", &d.get_web_cert_path().to_string());
     cfg.set("webui.tls_key_path", &d.get_web_key_path().to_string());
+
+    // Advanced tab. Only well-formed numbers are stored; a blank or garbled
+    // field leaves the existing setting alone rather than resetting it. The
+    // ranges are Advanced::load's business - it clamps on the way out too, so
+    // a value edited into the database by hand is bounded the same way.
+    let num = |key: &str, text: SharedString| {
+        if let Ok(v) = text.trim().parse::<i64>() {
+            cfg.set(key, &v);
+        }
+    };
+    num("webui.client_request_timeout", d.get_web_req_timeout());
+    num("webui.client_disconnect_timeout", d.get_web_disconnect_timeout());
+    num("webui.keep_alive", d.get_web_keep_alive());
+    num("webui.shutdown_timeout", d.get_web_shutdown_timeout());
+    num("webui.max_connections", d.get_web_max_connections());
+    num("webui.max_connection_rate", d.get_web_max_conn_rate());
+    num("webui.workers", d.get_web_workers());
+    num("webui.max_body_size", d.get_web_max_body());
 
     // Empty means "keep the stored hash". Anything else is hashed here - the
     // password itself is never written to the database.
@@ -2337,7 +2515,7 @@ fn open_preferences(ui: &Rc<Ui>) {
             save_preferences(&d, &u);
             // After the settings are written, not before: restart reads them
             // back from the database.
-            apply_web(&d, &u);
+            let web_ok = apply_web(&d, &u);
             // Theme and language both have to be pushed into the main
             // window; everything else it re-reads on the next tick.
             if let Some(window) = u.main.borrow().as_ref().and_then(|w| w.upgrade()) {
@@ -2352,7 +2530,13 @@ fn open_preferences(ui: &Rc<Ui>) {
             // Rebuild the librqbit session with the new settings, exactly as
             // mainwindow.rs does after its dialog closes.
             u.session.apply_settings(&u.env, &u.cfg);
-            dismiss(&u, &d);
+            // Everything else has been saved and applied by now, so staying
+            // open costs nothing and pressing Ok again is a legitimate retry.
+            // Only the web interface holds the dialog back, because it is the
+            // only setting here that can be refused outright.
+            if web_ok {
+                dismiss(&u, &d);
+            }
         });
     }
     {
@@ -2364,9 +2548,11 @@ fn open_preferences(ui: &Rc<Ui>) {
         });
     }
     {
-        let weak = dialog.as_weak();
+        let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_browse_save_path(move || {
-            if let Some(dir) = rfd::FileDialog::new().set_title("Save path").pick_folder()
+            if let Some(dir) = rfd::FileDialog::new()
+                .set_title(u.tr.borrow().i18n("save_path"))
+                .pick_folder()
                 && let Some(d) = weak.upgrade()
             {
                 d.set_save_path(dir.to_string_lossy().as_ref().into());
@@ -2374,9 +2560,11 @@ fn open_preferences(ui: &Rc<Ui>) {
         });
     }
     {
-        let weak = dialog.as_weak();
+        let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_browse_ipfilter(move || {
-            if let Some(file) = rfd::FileDialog::new().set_title("IP filter").pick_file()
+            if let Some(file) = rfd::FileDialog::new()
+                .set_title(u.tr.borrow().i18n("ip_filter"))
+                .pick_file()
                 && let Some(d) = weak.upgrade()
             {
                 d.set_ipfilter_path(file.to_string_lossy().as_ref().into());
@@ -2692,6 +2880,8 @@ mod tests {
             download_payload_rate: 0,
             error: String::new(),
             eta: None,
+            info_hash_v1: None,
+            info_hash_v2: None,
             info_hash: name.to_string(),
             label_id: None,
             label_name: String::new(),
@@ -2871,9 +3061,11 @@ fn open_create_torrent(ui: &Rc<Ui>) {
     )));
 
     {
-        let weak = dialog.as_weak();
+        let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_pick_file(move || {
-            if let Some(path) = rfd::FileDialog::new().set_title("Source file").pick_file()
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title(u.tr.borrow().i18n("source_file"))
+                .pick_file()
                 && let Some(d) = weak.upgrade()
             {
                 d.set_source(path.to_string_lossy().as_ref().into());
@@ -2881,10 +3073,10 @@ fn open_create_torrent(ui: &Rc<Ui>) {
         });
     }
     {
-        let weak = dialog.as_weak();
+        let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_pick_folder(move || {
             if let Some(path) = rfd::FileDialog::new()
-                .set_title("Source folder")
+                .set_title(u.tr.borrow().i18n("source_folder"))
                 .pick_folder()
                 && let Some(d) = weak.upgrade()
             {
@@ -2899,7 +3091,12 @@ fn open_create_torrent(ui: &Rc<Ui>) {
 
             let source = std::path::PathBuf::from(d.get_source().to_string());
             if !source.exists() {
-                d.set_status(format!("{} does not exist", source.display()).into());
+                d.set_status(
+                    u.tr
+                        .borrow()
+                        .i18n1("status_source_does_not_exist", &source.display().to_string())
+                        .into(),
+                );
                 return;
             }
 
@@ -2911,9 +3108,9 @@ fn open_create_torrent(ui: &Rc<Ui>) {
                 .map(|n| format!("{}.torrent", n.to_string_lossy()))
                 .unwrap_or_else(|| String::from("torrent.torrent"));
             let Some(output) = rfd::FileDialog::new()
-                .set_title("Save torrent as")
+                .set_title(u.tr.borrow().i18n("save_torrent_as"))
                 .set_file_name(&default_name)
-                .add_filter("Torrent files", &["torrent"])
+                .add_filter(u.tr.borrow().i18n("torrent_file_s"), &["torrent"])
                 .save_file()
             else {
                 return; // cancelled at the save prompt
@@ -2941,7 +3138,7 @@ fn open_create_torrent(ui: &Rc<Ui>) {
             };
 
             d.set_busy(true);
-            d.set_status("hashing...".into());
+            d.set_status(u.tr.borrow().i18n("status_hashing").into());
             // Runs on the session runtime and reports back through the slot,
             // which the refresh tick drains - hashing a large folder takes far
             // too long to block the UI thread on.
@@ -3381,7 +3578,7 @@ mod column_tests {
     #[test]
     fn total_is_the_sum_of_the_widths() {
         for locale in ["en-US", "nl-NL", "ja-JP", "ru-RU"] {
-            let (widths, titles, total) = columns(&tr(locale));
+            let (widths, titles, total) = columns(&tr(locale), &Default::default());
             assert_eq!(widths.len(), 16, "{locale}");
             assert_eq!(titles.len(), 16, "{locale}");
             let sum: f32 = widths.iter().sum();
@@ -3393,7 +3590,7 @@ mod column_tests {
     /// translated caption is.
     #[test]
     fn columns_never_go_below_their_designed_width() {
-        let (widths, _, _) = columns(&tr("en-US"));
+        let (widths, _, _) = columns(&tr("en-US"), &Default::default());
         assert!(widths[0] >= 260.0, "Name column: {}", widths[0]);
         assert!(widths[1] >= 44.0, "# column: {}", widths[1]);
     }
@@ -3403,7 +3600,7 @@ mod column_tests {
     #[test]
     fn a_long_caption_widens_its_column() {
         // "Availability" is 90px by design and needs more than that at 13px.
-        let (widths, titles, _) = columns(&tr("en-US"));
+        let (widths, titles, _) = columns(&tr("en-US"), &Default::default());
         let i = titles.iter().position(|t| t == "Availability").unwrap();
         assert!(
             widths[i] > 90.0,

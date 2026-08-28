@@ -271,8 +271,10 @@ mod tests {
             .collect();
         assert!(stray.is_empty(), "en-US should say NanoTorrent itself: {stray:?}");
 
-        // A translated credit keeps its subject too. No locale defines one
-        // today, so this is the guard rather than the current behaviour.
+        // A translated credit keeps its subject: every locale now translates
+        // app_credit, and renaming it there would say "a Rust port of
+        // NanoTorrent" in that language alone - the hardest kind of bug to
+        // notice, because the English build stays right.
         let translated = super::parse_lang(
             r#"{"app_credit": "Een Rust-port van PicoTorrent.", "about_picotorrent": "Over PicoTorrent"}"#,
             true,
@@ -280,13 +282,28 @@ mod tests {
         assert!(translated["app_credit"].contains("PicoTorrent"), "credit renamed");
         assert!(translated["about_picotorrent"].contains("NanoTorrent"), "title not renamed");
 
-        // An inherited translation is still rebranded - that is what the flag
-        // is for, and 40 files depend on it.
-        let dutch = super::parse_lang(super::embedded("nl-NL").expect("nl-NL is embedded"), true);
-        assert!(
-            dutch.values().all(|v| !v.contains("PicoTorrent")),
-            "inherited translations must be rebranded"
-        );
+        // Every inherited translation is rebranded EXCEPT the credit - that is
+        // what the flag is for, and 40 files depend on it. Checked across all
+        // of them rather than one: a single file was the weaker guard, and the
+        // credit is now translated in each.
+        for (locale, json) in super::EMBEDDED_LANGS {
+            let map = super::parse_lang(json, true);
+            let stray: Vec<&String> = map
+                .iter()
+                .filter(|(k, v)| k.as_str() != "app_credit" && v.contains("PicoTorrent"))
+                .map(|(k, _)| k)
+                .collect();
+            assert!(stray.is_empty(), "{locale} was not rebranded: {stray:?}");
+
+            // And where the credit is translated, it still names the project
+            // it is crediting.
+            if let Some(credit) = map.get("app_credit") {
+                assert!(
+                    credit.contains("PicoTorrent"),
+                    "{locale} credit lost its subject: {credit}"
+                );
+            }
+        }
     }
 
     use super::*;
@@ -321,15 +338,20 @@ mod tests {
         assert!(embedded("en-US").is_some());
         assert_eq!(tr().languages().len(), EMBEDDED_LANGS.len());
 
-        // af-ZA and da-DK ship upstream as empty `{}` placeholders; everything
-        // else must yield strings. Catches a BOM or a truncated file turning a
-        // translation into a silent English fallback.
+        // Every file must yield a full set of strings. af-ZA and da-DK used to
+        // be exempt - they shipped upstream as empty `{}` placeholders - and
+        // are now translated like the rest, so the carve-out is gone.
+        //
+        // Compared against en-US rather than just "> 0": a file that parses to
+        // a handful of keys is a silent English fallback for everything else,
+        // which is exactly what the empty placeholders were.
+        let expected = parse_lang(embedded("en-US").unwrap(), false).len();
         for (locale, json) in EMBEDDED_LANGS {
             let n = parse_lang(json, true).len();
-            if matches!(*locale, "af-ZA" | "da-DK") {
-                continue;
-            }
-            assert!(n > 0, "{locale} parsed to nothing");
+            assert!(
+                n >= expected,
+                "{locale} has {n} strings, en-US has {expected}"
+            );
         }
     }
 

@@ -87,6 +87,11 @@
   </screenshots>
 
   <releases>
+    <release version="0.2.4" date="2026-08-29">
+      <description>
+        <p>Adds a resizable details panel with per-version info hashes, advanced HTTP tuning and login rate limiting for the web interface, and completes the translations for all 41 languages. Fixes a progress bar that could read 100% before a torrent had finished, and a durability bug that could lose verified pieces after an unclean exit.</p>
+      </description>
+    </release>
     <release version="0.2.3" date="2026-08-27">
       <description>
         <p>A Linux release.</p>

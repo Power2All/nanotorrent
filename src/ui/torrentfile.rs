@@ -24,8 +24,22 @@ pub struct ParsedTorrent {
 /// so a malformed file has to come back as a message rather than as a failed
 /// session operation.
 pub fn parse(bytes: &[u8]) -> Result<ParsedTorrent, String> {
-    let torrent = torrent_from_bytes::<ByteBufOwned>(bytes)
-        .map_err(|err| format!("Failed to parse torrent file: {err:#}"))?;
+    let torrent = torrent_from_bytes::<ByteBufOwned>(bytes).map_err(|err| {
+        // A v2-only torrent fails deep inside serde with "missing field
+        // `pieces`" - accurate, and useless to the person who just picked the
+        // file. Say what it actually is, and what does work.
+        //
+        // Checked only on the error path: it re-walks the bencode, and every
+        // torrent that parses has already answered the question by parsing.
+        if crate::bittorrent::metainfo::is_v2_only(bytes) {
+            String::from(concat!(
+                "This is a BitTorrent v2-only torrent, which is not supported yet. ",
+                "Hybrid (v1 + v2) torrents work.",
+            ))
+        } else {
+            format!("Failed to parse torrent file: {err:#}")
+        }
+    })?;
 
     // A torrent with no name is malformed but not worth refusing over - the
     // info hash is what actually identifies it.

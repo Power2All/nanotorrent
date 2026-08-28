@@ -9,8 +9,19 @@ import { L } from "globals.slint";
 
 export component Tray inherits SystemTrayIcon {
     icon: @image-url("../../res/app.png");
-    tooltip: "NanoTorrent";
     title: "NanoTorrent";
+
+    /// Current transfer rates, set from the refresh tick. Empty until the
+    /// first one runs, which is why the tooltip falls back to the bare name.
+    in property <string> rates;
+
+    // A binding, not a value Rust writes: assigning to a property that already
+    // has a literal binding panics inside Slint ("Constant property being
+    // changed"). Rust sets `rates` instead and this follows it.
+    //
+    // One line rather than two: Windows puts this in NOTIFYICONDATA.szTip,
+    // which is a single short string, so a newline would not help there.
+    tooltip: root.rates == "" ? "NanoTorrent" : "NanoTorrent - " + root.rates;
 
     callback show-window();
     callback exit();

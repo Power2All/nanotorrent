@@ -15,6 +15,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
+
+use crate::bittorrent::metainfo;
 use chrono::{DateTime, Local};
 use librqbit::limits::LimitsConfig;
 use librqbit::{
@@ -52,6 +54,14 @@ struct TorrentMeta {
     /// stale fastresume, which would otherwise pop a false toast and, worse,
     /// suppress the real one after a recheck+re-download).
     prev_finished: Option<bool>,
+    /// The v1/v2 info hashes, computed once from the info dict.
+    ///
+    /// Cached because `list()` runs on the one-second UI tick and hashing is
+    /// proportional to the info dictionary, which for a torrent with many
+    /// files runs to hundreds of kilobytes - re-hashing every torrent every
+    /// second would be pure waste. `None` means "not computed yet", which is
+    /// also the state a magnet sits in until its metadata arrives.
+    info_hashes: Option<(Option<String>, Option<String>)>,
 }
 
 pub struct FileEntry {
@@ -847,6 +857,7 @@ impl Session {
                     label_id,
                     queue_position,
                     prev_finished: None,
+                    info_hashes: None,
                 },
             );
         }
@@ -1289,6 +1300,7 @@ fn on_torrent_added(
                 label_id: params.label_id,
                 queue_position,
                 prev_finished: None,
+                info_hashes: None,
             });
         }
 
@@ -1484,6 +1496,7 @@ fn on_torrent_added(
                     label_id: None,
                     queue_position,
                     prev_finished: None,
+                    info_hashes: None,
                 });
 
                 // Completion is detected by the scan task in `new`, not here:
@@ -1543,6 +1556,17 @@ fn on_torrent_added(
                     })
                     .unwrap_or((0, 0, 0, 0, None));
 
+                // Computed on the first tick that has metadata, then reused.
+                // A magnet has no info dict until it resolves, so this stays
+                // None and the panel falls back to showing the id.
+                if meta.info_hashes.is_none()
+                    && let Ok(computed) =
+                        handle.with_metadata(|m| metainfo::info_hashes(&m.info_bytes))
+                {
+                    meta.info_hashes = Some(computed);
+                }
+                let (info_hash_v1, info_hash_v2) = meta.info_hashes.clone().unwrap_or_default();
+
                 let progress = if stats.total_bytes > 0 {
                     stats.progress_bytes as f32 / stats.total_bytes as f32
                 } else {
@@ -1595,6 +1619,8 @@ fn on_torrent_added(
                     download_payload_rate: down_rate,
                     error: stats.error.clone().unwrap_or_default(),
                     eta,
+                    info_hash_v1,
+                    info_hash_v2,
                     info_hash: hash.clone(),
                     label_id: meta.label_id,
                     label_name: meta
@@ -2074,6 +2100,7 @@ fn urlencode(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
     /// Adding several torrents at once must add all of them.
     ///
     /// `add_torrent` spawns one task per call, so a batch fires N concurrent
@@ -2356,6 +2383,50 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&file);
+    }
+
+    /// End-to-end: build each of the three shapes with our own writer, then
+    /// feed them to the reader the Add dialog uses.
+    #[test]
+    fn v2_only_is_refused_with_a_readable_message() {
+        let dir = std::env::temp_dir().join("nanotorrent-v2-msg-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload = dir.join("payload.bin");
+        std::fs::write(&payload, vec![7u8; 300 * 1024]).unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        use crate::bittorrent::torrent_create::TorrentVersion as V;
+
+        let build = |v| {
+            let out = dir.join("t.torrent");
+            let outcome = rt
+                .block_on(super::build_torrent(super::CreateTorrentParams {
+                    source: payload.clone(),
+                    trackers: vec![],
+                    comment: String::new(),
+                    private: false,
+                    piece_length: Some(256 * 1024),
+                    version: v,
+                    output: out,
+                    add_to_session: false,
+                }))
+                .unwrap();
+            let super::CreateTorrentOutcome::Created { bytes, .. } = outcome else {
+                panic!("expected Created")
+            };
+            bytes
+        };
+
+        // v1 and hybrid parse; a hybrid is downloadable as v1, which is the
+        // reason it is not lumped in with v2-only.
+        assert!(crate::ui::torrentfile::parse(&build(V::V1)).is_ok());
+        assert!(crate::ui::torrentfile::parse(&build(V::Hybrid)).is_ok());
+
+        // v2-only is refused - and the message names the format rather than
+        // leaking serde's "missing field `pieces`".
+        let err = crate::ui::torrentfile::parse(&build(V::V2)).unwrap_err();
+        assert!(err.contains("v2-only"), "unhelpful message: {err}");
+        assert!(err.contains("Hybrid"), "message does not say what works: {err}");
+        assert!(!err.contains("pieces"), "serde error leaked through: {err}");
     }
 
     /// End-to-end check of the create-torrent pipeline: build a torrent for

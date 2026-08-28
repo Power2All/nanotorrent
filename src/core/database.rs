@@ -55,6 +55,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     migration!("20260815000000_github_release_update_check"),
     migration!("20260821000000_web_api_settings"),
     migration!("20260822000000_notification_settings"),
+    migration!("20260828000000_webui_advanced_settings"),
 ];
 
 pub struct Database {
@@ -192,6 +193,37 @@ mod tests {
     use super::*;
     use crate::core::configuration::Configuration;
     use std::sync::Arc;
+
+    /// Column widths survive a restart, and re-saving one replaces it.
+    ///
+    /// The upsert is the table's own `UNIQUE (list_id, column_id) ON CONFLICT
+    /// REPLACE` rather than a read-modify-write, so this checks the constraint
+    /// is actually doing that job - without it every drag would append a row
+    /// and the oldest width would win on the next start.
+    #[test]
+    fn column_widths_round_trip_and_replace() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        db.migrate().unwrap();
+        let cfg = Configuration::new(db.clone());
+
+        assert!(cfg.get_column_widths("torrents").is_empty());
+
+        cfg.set_column_width("torrents", 0, 447.0);
+        cfg.set_column_width("torrents", 3, 120.0);
+        let saved = cfg.get_column_widths("torrents");
+        assert_eq!(saved.get(&0).copied(), Some(447.0));
+        assert_eq!(saved.get(&3).copied(), Some(120.0));
+        assert_eq!(saved.len(), 2);
+
+        // Dragging the same column again replaces rather than accumulates.
+        cfg.set_column_width("torrents", 0, 260.0);
+        let saved = cfg.get_column_widths("torrents");
+        assert_eq!(saved.get(&0).copied(), Some(260.0), "the old width won");
+        assert_eq!(saved.len(), 2, "a duplicate row was inserted");
+
+        // Lists are independent - the details tabs will key by their own name.
+        assert!(cfg.get_column_widths("peers").is_empty());
+    }
 
     #[test]
     fn migrations_apply_and_defaults_load() {

@@ -177,9 +177,26 @@ export component PreferencesDialog inherits Window {
     /// What the running server is doing, filled in by Rust.
     in property <string> web-status;
     in property <bool> web-status-ok;
+    // Actix tuning, hidden behind the toggle. Strings and not ints because
+    // these are LineEdits: an int property would coerce a half-typed or empty
+    // field to 0 mid-edit, and 0 is a meaningful value for two of them.
+    // Rust parses and clamps on save.
+    in-out property <bool> web-advanced;
+    in-out property <string> web-req-timeout;
+    in-out property <string> web-disconnect-timeout;
+    in-out property <string> web-keep-alive;
+    in-out property <string> web-max-connections;
+    in-out property <string> web-max-conn-rate;
+    in-out property <string> web-workers;
+    in-out property <string> web-shutdown-timeout;
+    in-out property <string> web-max-body;
     callback browse-web-cert();
     callback browse-web-key();
     callback web-changed();
+    // Writable so a failed Ok can bring the Web interface tab back to the
+    // front - the error it reports is on that tab, and pressing Ok from any
+    // other one would otherwise leave the dialog open with no visible reason.
+    in-out property <int> current-tab <=> tabs.current-index;
 
     body := VerticalLayout {
         padding: 12px;
@@ -498,6 +515,105 @@ export component PreferencesDialog inherits Window {
                             font-size: 12px;
                             color: root.web-status-ok ? #7bb87b : #888;
                             wrap: word-wrap;
+                        }
+
+                        // Collapsed by default: these are actix internals, and
+                        // the defaults are right for the machine-local case
+                        // this interface is normally used in. Anyone who needs
+                        // them knows to look; anyone who does not should not
+                        // meet eight timeout fields on the way to the password.
+                        CheckBox {
+                            text: L.s(L.revision, "web_advanced");
+                            checked <=> root.web-advanced;
+                        }
+                        if root.web-advanced: VerticalLayout {
+                            spacing: 10px;
+                            Text {
+                                text: L.s(L.revision, "web_advanced_hint");
+                                font-size: 12px;
+                                color: #888;
+                                wrap: word-wrap;
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "web_request_timeout");
+                                LineEdit {
+                                    text <=> root.web-req-timeout;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "web_disconnect_timeout");
+                                LineEdit {
+                                    text <=> root.web-disconnect-timeout;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "web_keep_alive");
+                                LineEdit {
+                                    text <=> root.web-keep-alive;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "web_shutdown_timeout");
+                                LineEdit {
+                                    text <=> root.web-shutdown-timeout;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "web_max_connections");
+                                LineEdit {
+                                    text <=> root.web-max-connections;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "web_max_conn_rate");
+                                LineEdit {
+                                    text <=> root.web-max-conn-rate;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "web_workers");
+                                LineEdit {
+                                    text <=> root.web-workers;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "web_max_body");
+                                LineEdit {
+                                    text <=> root.web-max-body;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
                         }
                         Rectangle { vertical-stretch: 1; }
                     }

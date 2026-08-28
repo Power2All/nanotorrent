@@ -89,9 +89,69 @@ export struct Row {
 // short of the real total, which left the last column outside the painted row
 // background and showing through as black.
 export global Cols {
-    in property <[length]> w;
+    // in-out, not in: Rust computes the starting widths, and the header's
+    // drag handles write them back. `total` is kept in step by hand rather
+    // than summed, because Slint has no fold over a model - and it drives the
+    // ScrollView's viewport, so letting it drift would leave the last column
+    // outside the painted row background, which is exactly how the
+    // hand-written constant it replaced went wrong.
+    in-out property <[length]> w;
     in property <[string]> titles;
-    in property <length> total;
+    in-out property <length> total;
+}
+
+/// The grab handle on a column's right edge.
+///
+/// Hand-rolled like the two splitters, and for the same reason - Slint has no
+/// header widget. Works in ABSOLUTE x: the handle sits inside the column it
+/// resizes, so it moves as that column grows, and measuring against its own
+/// `mouse-x` would cancel the delta out and the drag would do nothing.
+component ColResize inherits Rectangle {
+    in property <int> index;
+    /// Fired once, when the drag ends - not on every move. Persisting is a
+    /// database write, and `moved` runs per mouse event.
+    callback done(int, length);
+    private property <length> start-w;
+    private property <length> start-x;
+    // Sits ENTIRELY inside its column rather than straddling the boundary:
+    // Slint does not deliver pointer events to the part of a child that falls
+    // outside its parent, so a straddling handle is only half grabbable - and
+    // the dead half is the one on the side people aim at.
+    //
+    // `x` and `height` are set where it is used: a component's own root has
+    // no `parent` to measure against.
+    width: 8px;
+    Rectangle {
+        // Hard against the right edge, so it still reads as the boundary.
+        x: 7px;
+        width: 1px;
+        height: parent.height;
+        // Always drawn, not only on hover: an invisible resize edge is one
+        // nobody finds. Faint until the pointer is on it.
+        background: touch.has-hover ? Palette.accent-background : Palette.border;
+    }
+    touch := TouchArea {
+        mouse-cursor: col-resize;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.start-w = Cols.w[root.index];
+                root.start-x = self.absolute-position.x + self.mouse-x;
+            }
+            if (e.kind == PointerEventKind.up) {
+                root.done(root.index, Cols.w[root.index]);
+            }
+        }
+        moved => {
+            // 40px floor: narrower and the caption has nothing left to elide
+            // into, so the column reads as a gap rather than a column.
+            root.resize(max(40px,
+                root.start-w + ((self.absolute-position.x + self.mouse-x) - root.start-x)));
+        }
+    }
+    function resize(next: length) {
+        Cols.total += next - Cols.w[root.index];
+        Cols.w[root.index] = next;
+    }
 }
 
 // A Rectangle wrapping a Text, not a Text: `padding-left` is not a Text
@@ -119,6 +179,12 @@ component Cell inherits Rectangle {
 // see the note on ctx-popup for why that is not a style choice.
 component MenuRow inherits Rectangle {
     in property <string> label;
+    /// Draws a tick to the left of the label, the way a Win32 menu marks a
+    /// toggle. Only the View menu's three panel toggles opt in, and they sit
+    /// together between separators, so the gutter lines up with itself
+    /// without indenting every other row in the menu.
+    in property <bool> checkable;
+    in property <bool> checked;
     // Greyed and inert, the way a disabled Win32 menu item is - Pause on an
     // already-paused torrent, say.
     in property <bool> enabled: true;
@@ -132,9 +198,20 @@ component MenuRow inherits Rectangle {
         clicked => { root.activated(); }
     }
     Text {
-        text: root.label;
+        // Always laid out, so the label never shifts as the toggle flips -
+        // only the glyph appears and disappears.
+        text: root.checkable && root.checked ? "\u{2713}" : "";
         x: 12px;
-        width: parent.width - 24px;
+        width: 14px;
+        height: parent.height;
+        vertical-alignment: center;
+        font-size: 13px;
+        color: touch.has-hover ? Palette.accent-foreground : Palette.foreground;
+    }
+    Text {
+        text: root.label;
+        x: root.checkable ? 30px : 12px;
+        width: parent.width - (root.checkable ? 42px : 24px);
         height: parent.height;
         vertical-alignment: center;
         overflow: elide;
@@ -232,10 +309,45 @@ component DataText inherits Rectangle {
 }
 
 // One "Name: value" pair in the Overview grid.
+/// The draggable line between the Overview's two columns.
+///
+/// Hand-rolled for the same reason as the horizontal splitter above the
+/// details panel - Slint has no splitter widget. It reports positions in
+/// ABSOLUTE coordinates and lets the window do the arithmetic, because this
+/// element moves as the column it resizes changes width: measuring against
+/// its own `mouse-x` would cancel the delta out and the drag would appear to
+/// do nothing (the same trap the horizontal one documents).
+component VDivider inherits Rectangle {
+    /// Absolute x of the press, and of each subsequent move.
+    callback grabbed(length);
+    callback dragged(length);
+    // Wider than the line it draws: 1px is a pixel-hunt to grab.
+    width: 11px;
+    Rectangle {
+        x: 5px;
+        width: 1px;
+        height: parent.height;
+        background: touch.has-hover ? Palette.accent-background : Palette.border;
+    }
+    touch := TouchArea {
+        mouse-cursor: col-resize;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.grabbed(self.absolute-position.x + self.mouse-x);
+            }
+        }
+        moved => { root.dragged(self.absolute-position.x + self.mouse-x); }
+    }
+}
+
 component Field inherits HorizontalLayout {
     in property <string> label;
     in property <string> value;
     spacing: 8px;
+    // The row rhythm lives here rather than in the grid's spacing: the
+    // divider between the two columns has to be one unbroken line, and a
+    // 6px gap between rows would have chopped it into dashes.
+    min-height: 26px;
     Text {
         text: root.label;
         font-weight: 700;
@@ -279,6 +391,12 @@ export component MainWindow inherits Window {
     // Details of the selected torrent.
     in property <string> d-name: "-";
     in property <string> d-hash: "-";
+    /// Set from Rust because which hashes exist is a property of the torrent,
+    /// not of the layout: a v1 torrent keeps the plain "Info hash", a v2 one
+    /// says so, and only a hybrid shows two rows.
+    in property <string> d-hash-label;
+    in property <string> d-hash2;
+    in property <string> d-hash2-label;
     in property <string> d-save-path: "-";
     in property <string> d-status: "-";
     in property <string> d-downloaded: "-";
@@ -304,6 +422,11 @@ export component MainWindow inherits Window {
     // Captured when the splitter is grabbed - see the note on its TouchArea.
     private property <length> drag-start-height;
     private property <length> drag-start-y;
+    /// Width of the Overview's left column. Not persisted, matching
+    /// `details-height` above - both reset to a sane default each launch.
+    in-out property <length> details-split: 420px;
+    private property <length> drag-start-split;
+    private property <length> drag-start-x;
     in-out property <bool> show-details: true;
     in-out property <bool> show-status: true;
 
@@ -409,6 +532,8 @@ export component MainWindow inherits Window {
     }
 
     callback sort(int);
+    /// A column's new width, once the drag has finished. Rust remembers it.
+    callback column-resized(int, length);
     callback row-pressed(int, bool, bool);
     /// Delete on the torrent list. Named for what it opens rather than what it
     /// does, because it does nothing until the dialog comes back.
@@ -588,6 +713,15 @@ export component MainWindow inherits Window {
                                 vertical-alignment: center;
                                 overflow: elide;
                             }
+                            // Declared after the sort TouchArea above, so a
+                            // drag on the edge resizes rather than re-sorting:
+                            // later siblings win the hit test.
+                            ColResize {
+                                index: i;
+                                x: parent.width - 8px;
+                                height: parent.height;
+                                done(col, width) => { root.column-resized(col, width); }
+                            }
                         }
                     }
                 }
@@ -679,7 +813,15 @@ export component MainWindow inherits Window {
                                         border-radius: 3px;
                                     }
                                     Text {
-                                        text: round(row.progress * 1000) / 10 + " %";
+                                        // floor, not round: round() turns a torrent that is
+                                        // 99.98% done into "100 %" while the Status column
+                                        // still - correctly - says Downloading. The files are
+                                        // preallocated at full size, so on disk it looks
+                                        // finished too, and the only honest reading was the
+                                        // remaining-size column. Never claim 100 until it is.
+                                        text: row.progress >= 1.0
+                                            ? "100 %"
+                                            : floor(row.progress * 1000) / 10 + " %";
                                         font-size: 11px;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
@@ -783,28 +925,75 @@ export component MainWindow inherits Window {
                         }
                     }
 
+                    // Cells are placed by explicit row/col rather than with
+                    // `Row`, so the divider can rowspan the whole grid: one
+                    // continuous line and one drag target instead of five
+                    // stacked ones. Keeping the GridLayout (rather than two
+                    // side-by-side columns) is what keeps the left and right
+                    // labels on the same baseline - including when a hybrid
+                    // torrent makes the first row two lines tall.
                     GridLayout {
-                        spacing: 6px;
-                        Row {
-                            Field { label: L.s(L.revision, "name"); value: root.d-name; }
-                            Field { label: L.s(L.revision, "info_hash"); value: root.d-hash; }
+                        spacing: 0px;
+
+                        VDivider {
+                            row: 0;
+                            col: 1;
+                            rowspan: 5;
+                            grabbed(x) => {
+                                root.drag-start-split = root.details-split;
+                                root.drag-start-x = x;
+                            }
+                            dragged(x) => {
+                                // Floor before ceiling: on a narrow window the
+                                // upper bound can fall below the lower one, and
+                                // min() of a smaller max would pin the column
+                                // shut.
+                                root.details-split = min(
+                                    max(root.drag-start-split + (x - root.drag-start-x), 200px),
+                                    max(220px, root.width - 320px));
+                            }
                         }
-                        Row {
-                            Field { label: L.s(L.revision, "save_path"); value: root.d-save-path; }
-                            Field { label: L.s(L.revision, "status"); value: root.d-status; }
+
+                        Field {
+                            row: 0; col: 0; width: root.details-split;
+                            label: L.s(L.revision, "name"); value: root.d-name;
                         }
-                        Row {
-                            Field { label: L.s(L.revision, "downloaded"); value: root.d-downloaded; }
-                            Field { label: L.s(L.revision, "uploaded"); value: root.d-uploaded; }
+                        // Stacked inside the one cell rather than added as
+                        // another grid row: the second hash belongs beside
+                        // the first, and this leaves every other row's
+                        // alignment alone.
+                        VerticalLayout {
+                            row: 0; col: 2;
+                            Field { label: root.d-hash-label; value: root.d-hash; }
+                            if root.d-hash2 != "": Field {
+                                label: root.d-hash2-label;
+                                value: root.d-hash2;
+                            }
                         }
-                        Row {
-                            Field { label: L.s(L.revision, "ratio"); value: root.d-ratio; }
-                            Field { label: L.s(L.revision, "peers"); value: root.d-peers; }
+
+                        Field {
+                            row: 1; col: 0; width: root.details-split;
+                            label: L.s(L.revision, "save_path"); value: root.d-save-path;
                         }
-                        Row {
-                            Field { label: L.s(L.revision, "added_on"); value: root.d-added; }
-                            Field { label: L.s(L.revision, "completed_on"); value: root.d-completed; }
+                        Field { row: 1; col: 2; label: L.s(L.revision, "status"); value: root.d-status; }
+
+                        Field {
+                            row: 2; col: 0; width: root.details-split;
+                            label: L.s(L.revision, "downloaded"); value: root.d-downloaded;
                         }
+                        Field { row: 2; col: 2; label: L.s(L.revision, "uploaded"); value: root.d-uploaded; }
+
+                        Field {
+                            row: 3; col: 0; width: root.details-split;
+                            label: L.s(L.revision, "ratio"); value: root.d-ratio;
+                        }
+                        Field { row: 3; col: 2; label: L.s(L.revision, "peers"); value: root.d-peers; }
+
+                        Field {
+                            row: 4; col: 0; width: root.details-split;
+                            label: L.s(L.revision, "added_on"); value: root.d-added;
+                        }
+                        Field { row: 4; col: 2; label: L.s(L.revision, "completed_on"); value: root.d-completed; }
                     }
                     Rectangle { vertical-stretch: 1; }
                     }
@@ -846,7 +1035,12 @@ export component MainWindow inherits Window {
                                 }
                                 DataText { text: f.size; width: 110px; align: right; }
                                 DataText {
-                                    text: f.index < 0 ? "" : round(f.progress * 1000) / 10 + " %";
+                                    // Same reason as the Progress column above.
+                                    text: f.index < 0
+                                        ? ""
+                                        : (f.progress >= 1.0
+                                            ? "100 %"
+                                            : floor(f.progress * 1000) / 10 + " %");
                                     width: 110px;
                                     align: right;
                                 }
@@ -971,22 +1165,35 @@ export component MainWindow inherits Window {
     /// Transient confirmation, cleared by a timer on the Rust side. Empty
     /// means nothing to say.
     in property <string> toast;
+    /// Red instead of accent. A failed add has to look different from "copied
+    /// to clipboard" - both used to be the same blue pill, so the one that
+    /// mattered read as confirmation.
+    in property <bool> toast-error;
 
     // Bottom centre, above the status bar, and outside the main layout so it
     // floats rather than taking room. No TouchArea, so it never swallows a
     // click even while it is fading out.
     Rectangle {
+        // Errors carry a sentence, not two words, so the pill wraps rather
+        // than growing wider than the window. Capped at 560px because a
+        // full-width band of text stops reading as a toast.
+        property <length> limit: min(root.width - 40px, 560px);
         x: (parent.width - self.width) / 2;
         y: parent.height - self.height - (root.show-status ? 46px : 20px);
-        width: label.width + 32px;
-        height: 34px;
-        background: Palette.accent-background;
+        width: min(label.preferred-width + 32px, self.limit);
+        height: max(34px, label.preferred-height + 18px);
+        background: root.toast-error ? #b3261e : Palette.accent-background;
         border-radius: 6px;
         opacity: root.toast == "" ? 0 : 1;
         animate opacity { duration: 150ms; }
         label := Text {
             text: root.toast;
-            color: Palette.accent-foreground;
+            width: parent.width - 32px;
+            wrap: word-wrap;
+            // White on the red, which the accent foreground is not guaranteed
+            // to be - it follows the theme's accent, and this background does
+            // not.
+            color: root.toast-error ? #ffffff : Palette.accent-foreground;
             font-size: 13px;
             vertical-alignment: center;
             horizontal-alignment: center;
@@ -1080,6 +1287,8 @@ export component MainWindow inherits Window {
                 MenuSep { }
                 MenuRow {
                     label: L.s(L.revision, "amp_details_panel");
+                    checkable: true;
+                    checked: root.show-details;
                     activated => {
                         root.show-details = !root.show-details;
                         root.view-toggled("ui.show_details_panel", root.show-details);
@@ -1088,6 +1297,8 @@ export component MainWindow inherits Window {
                 }
                 MenuRow {
                     label: L.s(L.revision, "amp_status_bar");
+                    checkable: true;
+                    checked: root.show-status;
                     activated => {
                         root.show-status = !root.show-status;
                         root.view-toggled("ui.show_status_bar", root.show-status);
@@ -1096,6 +1307,8 @@ export component MainWindow inherits Window {
                 }
                 MenuRow {
                     label: L.s(L.revision, "amp_console");
+                    checkable: true;
+                    checked: root.show-console;
                     activated => {
                         root.show-console = !root.show-console;
                         root.view-toggled("ui.show_console_input", root.show-console);

@@ -208,6 +208,46 @@ impl Configuration {
     }
 
     /// Every label: name, colours, save path and the auto-apply rule.
+    /// Saved widths for one list, as `column_id -> width`.
+    ///
+    /// Uses PicoTorrent's own `column_state` table, which has carried
+    /// `(list_id, column_id, width, is_visible, position)` since 2018 and was
+    /// migrated but never read. Only `width` is used today; the rest is what a
+    /// hide-column or reorder feature would fill in.
+    ///
+    /// Columns the caller does not recognise are ignored rather than being an
+    /// error: a database written by a build with more columns must not stop
+    /// this one from starting.
+    pub fn get_column_widths(&self, list_id: &str) -> std::collections::HashMap<i64, f32> {
+        self.db
+            .with(|conn| {
+                let mut stmt = conn
+                    .prepare("select column_id, width from column_state where list_id = ?1")?;
+                let rows = stmt.query_map([list_id], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? as f32))
+                })?;
+                rows.collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Remember one column's width.
+    ///
+    /// An upsert by way of the table's own `UNIQUE (list_id, column_id) ON
+    /// CONFLICT REPLACE`, so this is one statement rather than a read-modify-
+    /// write. `position` is stored as the column index because nothing
+    /// reorders columns yet - when something does, it becomes the real order
+    /// and this row is already the right shape to hold it.
+    pub fn set_column_width(&self, list_id: &str, column_id: i64, width: f32) {
+        let _ = self.db.with(|conn| {
+            conn.execute(
+                "insert into column_state (list_id, column_id, width, is_visible, position) \
+                 values (?1, ?2, ?3, 1, ?2)",
+                rusqlite::params![list_id, column_id, width.round() as i64],
+            )
+        });
+    }
+
     pub fn get_labels(&self) -> Vec<Label> {
         self.db
             .with(|conn| {

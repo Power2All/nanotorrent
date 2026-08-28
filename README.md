@@ -114,11 +114,19 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   everything the current filter shows; **Delete** asks whether to remove the
   selection with or without its data. Paused torrents blank their live columns.
   Column widths follow the language, so a longer translation still fits.
+  View ▸ Details panel / Status bar / Console are ticked when shown. Progress
+  never rounds up: a torrent one piece short reads 99.9%, not a full bar over
+  a Downloading status.
 - **Details tabs** — Overview (with a piece-availability bar), Files (per-file
   include toggles), Peers (with GeoIP country **and its flag**), and
   **Trackers** grouped into announce tiers with per-tracker
   seeds/leeches/fails/next-announce plus DHT/LSD/PeX source rows. Any value
   that is too long to fit shows in full on hover, and a click copies it.
+  Overview labels the info hash by what the torrent actually carries — a v1
+  torrent shows **Info hash**, a hybrid shows **Info hash (v1)** and **Info
+  hash (v2)** — read from the torrent's own info dictionary, because librqbit
+  reports only the v1 id and a hybrid is otherwise indistinguishable from a
+  plain v1 torrent. The divider between the panel's two columns is draggable.
 - **Add flows** — Add torrent(s): pick any number of `.torrent` files and they
   arrive in **one dialog**, listed down the side, with each one's file tree
   shown as you select it. File selection is per torrent; save path and start
@@ -138,8 +146,15 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   order (which `only_files` indexes by). Argon2id password hashing, HTTP Basic
   over TLS
   (self-signed by default, or bring your own certificate), and it refuses to
-  listen off-loopback in plaintext. Configurable from Preferences ▸ Web
-  interface — pressing OK restarts it in place — or from the command line with
+  listen off-loopback in plaintext. Repeated failed logins from one address are
+  refused with a 429: Argon2 makes each guess expensive, but nothing else
+  stopped a client simply trying forever. Preferences ▸ Web interface ▸
+  **Advanced** exposes the HTTP server's own tuning — request / disconnect /
+  shutdown timeouts, keep-alive, connection ceiling and rate, worker threads,
+  maximum request body — each clamped on load, so nothing typed there can stop
+  the interface coming up. Configurable from Preferences ▸ Web interface —
+  pressing OK restarts it in place, and keeps the dialog open with the reason
+  if it refuses to start — or from the command line with
   `--webui`, `--set-web-password`, `--webui-status` and `--webui-set`.
   `--version` and `--help` work too, though on Windows the GUI build has no
   console to print to.
@@ -160,9 +175,10 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   filters, with the filter expression validated as you type.
 - **Single-instance** — a second launch forwards its command line (torrent
   files / magnet links) to the running instance and exits.
-- **Translations** — all original language files, compiled into the executable
-  and picked from a scrollable list in Preferences, each shown by its native
-  name ("Nederlands (Nederland)"). A fresh install always starts in English
+- **Translations** — all 41 languages, **complete**: every string the UI can
+  show is translated in every locale, compiled into the executable and picked
+  from a scrollable list in Preferences, each shown by its native name
+  ("Nederlands (Nederland)"). A fresh install always starts in English
   (the OS locale is deliberately not consulted) and English is the first entry.
   **Changing the language applies immediately** — no restart.
 - **Update check** — asks GitHub for this repo's latest release on startup
@@ -176,15 +192,15 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 
 ## Known differences / not yet ported
 
-- **uTP peer transport** is deferred until librqbit 9 ships a stable release,
-  at which point it will be implemented. librqbit 9 integrates
-  [librqbit-utp](https://crates.io/crates/librqbit-utp) (BEP 29) and configures
-  it through `SessionOptions.listen`, so this becomes an engine upgrade rather
-  than a transport to write — but 9.x is currently a prerelease (9.0.0-rc.0),
-  its restructured transport layer is exactly where the MSE stream-transform
-  patches (0003 / 0005) sit, and upstream has not yet enabled uTP by default.
-  The vendored 8.1.1 is stable, so we wait. UDP trackers and DHT work today;
-  only µTP peer connections are missing.
+- **uTP peer transport** is not implemented. librqbit 9 (9.0.1, August 2026)
+  integrates [librqbit-utp](https://crates.io/crates/librqbit-utp) (BEP 29) and
+  configures it through `SessionOptions.listen`, so this becomes an engine
+  upgrade rather than a transport to write. We are still on the vendored 8.1.1:
+  9.x's restructured transport layer is exactly where the MSE stream-transform
+  patches (0003 / 0005) sit, and upstream still gates uTP behind an
+  experimental flag (`--experimental-enable-utp-listen`) rather than enabling
+  it by default. UDP trackers and DHT work today; only µTP peer connections are
+  missing.
 - **LSD** is deferred to the same librqbit 9 upgrade as uTP above — 9.x
   configures it through `SessionOptions.disable_local_service_discovery`; 8.1.1
   has no equivalent. Its Preferences checkbox is disabled until then, and
@@ -192,6 +208,22 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   applying. Separately, librqbit does not attribute peer counts to a discovery
   source, so the DHT/LSD/PeX tracker rows are status-only (no seeds/leeches
   numbers there) — that part is unchanged by the upgrade.
+- **Pure v2 torrents cannot be added**, and this one is not waiting on a
+  version bump: librqbit has no BEP 52 support in any release, 9.x included.
+  It is an open upstream design proposal
+  ([rqbit#546](https://github.com/ikatson/rqbit/issues/546)) — 9.x shipped the
+  SHA-256 groundwork and the BEP 52 error types, but not parsing, merkle
+  verification or the v2 wire protocol.
+
+  NanoTorrent *creates* v1, v2 and hybrid torrents — that side is written here
+  (`src/bittorrent/torrent_create.rs`), not delegated to the engine — and
+  *reads* v1 and hybrid. A hybrid works because it carries the v1 keys as well
+  and librqbit simply downloads it as v1, ignoring the v2 half. A v2-only
+  torrent has no `pieces` key, and librqbit-core's metainfo struct requires
+  one, so it cannot be parsed at all — the add is refused up front with a
+  message naming the format, rather than the engine's `missing field 'pieces'`.
+  Hybrids cover the interoperable case meanwhile, which is what the create
+  dialog defaults to.
 - **Desktop toasts are Windows-only.** Linux and macOS get the in-app toast;
   the OS-level notification is not wired up on those platforms yet.
 - Windows will not let an app force-set the **magnet** protocol default when
@@ -203,11 +235,40 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   `target/release` shows a generic icon until
   `packaging/linux/install-desktop-entry.sh` has been run. The packages do this
   for you.
-- Language files other than `en-US.json` are PicoTorrent's original
-  translations and still name that product in a few strings; `en-US` is the
-  fallback and has been corrected.
+- The **translations are machine-assisted**. They started as PicoTorrent's
+  original files, which stopped well short of covering this port, and the gaps
+  were filled in during development rather than by native speakers. Any
+  inherited string still naming the old product is renamed on load — except
+  the credit in About, which is meant to say PicoTorrent. Corrections are
+  welcome: the failure mode here is a wrong word in a language none of us
+  reads, not a missing one.
 
 ## History
+
+**v0.2.4** finishes the translations - all 41 languages are complete, where
+before only English covered the whole UI - and fixes two things that were
+quietly wrong. The Progress column rounded up, so a torrent one piece short of
+done showed a full bar over a Downloading status; it now floors, and reads
+100% only when it is. And the engine's record of which pieces it had verified
+was only written every 16 MB and never when pausing, so an unclean exit could
+lose it: the data was still on disk, but the torrent came back a few pieces
+short with a file that played almost to the end. It is now flushed on pause
+(vendored patch 0013).
+
+The details panel labels its info hash by what the torrent actually carries -
+a hybrid shows both v1 and v2 - and the divider between its two columns can be
+dragged. The View menu ticks the panels that are showing. A torrent that
+cannot be added now says so in a red toast instead of only reaching the log,
+and a BitTorrent v2-only torrent is named as such rather than failing with the
+engine's "missing field `pieces`".
+
+The web interface gained an Advanced section for the HTTP server's own tuning
+(timeouts, keep-alive, connection limits, worker threads, request size), every
+value clamped so nothing typed there can stop it starting. Repeated failed
+logins from one address are now refused with a 429 rather than being allowed
+to continue forever, and Preferences keeps its dialog open, with the reason,
+when the interface declines to start - previously the error was written to a
+window that closed on top of it.
 
 **v0.2.3** is a Linux release. Opening a torrent's download folder opened the
 parent directory and said nothing when it failed; the window icon fell back to
