@@ -1704,6 +1704,14 @@ export component AddTorrentDialog inherits Window {
     callback toggle-file(int);
     callback select-torrent(int);
 
+    /// Width of the queue column. Rust seeds it from the last time and stores
+    /// it again when a drag ends - a batch add is short-lived, so re-dragging
+    /// it on every add would be the whole interaction.
+    in-out property <length> queue-width: 200px;
+    callback queue-width-changed(length);
+    private property <length> queue-drag-start;
+    private property <length> queue-drag-x;
+
     VerticalLayout {
         padding: 12px;
         spacing: 10px;
@@ -1730,7 +1738,7 @@ export component AddTorrentDialog inherits Window {
         // The queue column, only when there is a queue. A single add keeps the
         // original full-width layout rather than growing an empty sidebar.
         if root.queue.length > 1: Rectangle {
-            width: 200px;
+            width: root.queue-width;
             border-color: Palette.border;
             border-width: 1px;
             border-radius: 4px;
@@ -1784,6 +1792,21 @@ export component AddTorrentDialog inherits Window {
                     }
                 }
             }
+        }
+
+        if root.queue.length > 1: VDivider {
+            grabbed(x) => {
+                root.queue-drag-start = root.queue-width;
+                root.queue-drag-x = x;
+            }
+            dragged(x) => {
+                // Floor keeps the names readable; ceiling keeps the file tree
+                // on the right from being squeezed out of its own dialog.
+                root.queue-width = min(
+                    max(root.queue-drag-start + (x - root.queue-drag-x), 120px),
+                    max(140px, root.width - 320px));
+            }
+            released => { root.queue-width-changed(root.queue-width); }
         }
 
         VerticalLayout {

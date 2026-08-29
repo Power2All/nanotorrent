@@ -2246,6 +2246,24 @@ fn show_next_pending(ui: &Rc<Ui>) {
     select(0);
     dialog.on_select_torrent(select);
 
+    // The queue column's width, kept across adds. Range-checked on the way in
+    // for the same reason the panel splitters are: a stored value that no
+    // longer fits the dialog would leave nothing to grab.
+    if let Some(w) = ui
+        .cfg
+        .get_persistent("ui.add_queue_width")
+        .and_then(|v| v.parse::<f32>().ok())
+        .filter(|v| v.is_finite() && (120.0..=1200.0).contains(v))
+    {
+        dialog.set_queue_width(w);
+    }
+    {
+        let u = ui.clone();
+        dialog.on_queue_width_changed(move |w| {
+            u.cfg.set_persistent("ui.add_queue_width", &w.to_string());
+        });
+    }
+
     {
         let (weak, m) = (dialog.as_weak(), file_models.clone());
         dialog.on_toggle_file(move |index| {

@@ -142,9 +142,10 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   while you are reading it, so a divider you drag by hand stays where you put
   it. The panel's height and the divider position are both remembered.
 - **Add flows** — Add torrent(s): pick any number of `.torrent` files and they
-  arrive in **one dialog**, listed down the side, with each one's file tree
-  shown as you select it. File selection is per torrent; save path and start
-  apply to the batch. Add magnet, which **fetches the metadata first** and then
+  arrive in **one dialog**, listed down the side behind a draggable divider -
+  long names need the room - with each one's file tree shown as you select it.
+  The divider's position is remembered. File selection is per torrent; save
+  path and start apply to the batch. Add magnet, which **fetches the metadata first** and then
   shows the same dialog with the real file list. Every add reports back: how
   many were added, and how many were already in the list rather than silently
   doing nothing.
