@@ -11,7 +11,16 @@ Unicode true
 !include "version.nsh"
 
 !define APP "NanoTorrent"
-!define EXE "nanotorrent.exe"
+; The GUI. Every shortcut and file association points here, so an
+; ordinary launch never opens a console window.
+!define EXE "nanotorrent-gui.exe"
+; The console-subsystem launcher, and the one a shell finds when you
+; type `nanotorrent`. It forwards argv to the GUI binary and waits, which
+; is the only way cmd/PowerShell will wait too. See src/bin/console.rs.
+!define CLI_EXE "nanotorrent-cli.exe"
+; Installed a second time under the bare name, so the command the docs
+; and the program's own --help text use - `nanotorrent` - resolves.
+!define CLI_ALIAS "nanotorrent.exe"
 !define PUBLISHER "Power2All"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP}"
 
@@ -69,7 +78,9 @@ Section "!${APP} (required)" SecCore
   ; The lang/*.json files are compiled into the exe (see build.rs), so there is
   ; no lang folder to install. Dropping one next to the exe still overrides a
   ; locale at runtime.
-  File "..\target\release\${EXE}"
+  File "/oname=${EXE}" "..\target\release\nanotorrent-gui.exe"
+  File "/oname=${CLI_EXE}" "..\target\release\nanotorrent-cli.exe"
+  File "/oname=${CLI_ALIAS}" "..\target\release\nanotorrent-cli.exe"
 
   CreateDirectory "$SMPROGRAMS\${APP}"
   CreateShortcut "$SMPROGRAMS\${APP}\${APP}.lnk" "$INSTDIR\${EXE}"
@@ -124,6 +135,8 @@ SectionEnd
 
 Section "Uninstall"
   Delete "$INSTDIR\${EXE}"
+  Delete "$INSTDIR\${CLI_EXE}"
+  Delete "$INSTDIR\${CLI_ALIAS}"
   Delete "$INSTDIR\uninstall.exe"
   RMDir /r "$INSTDIR\lang"
   RMDir "$INSTDIR"

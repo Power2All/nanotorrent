@@ -15,11 +15,13 @@ import { Clip, L } from "globals.slint";
 export { Clip, L }
 
 import { PreferencesDialog } from "preferences.slint";
+import { CliHelpDialog } from "clihelp.slint";
+import { UpdateDialog } from "update.slint";
 import { AboutDialog } from "about.slint";
 import { CreateTorrentDialog } from "create.slint";
 import { ClosePromptDialog } from "closeprompt.slint";
 import { RemoveDialog } from "remove.slint";
-export { PreferencesDialog, AboutDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
+export { PreferencesDialog, AboutDialog, CliHelpDialog, UpdateDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
 
 import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette } from "std-widgets.slint";
 
@@ -1602,6 +1604,8 @@ export component MainWindow inherits Window {
         help-layout := VerticalLayout {
                 padding: 4px;
                 MenuRow { label: L.s(L.revision, "documentation"); activated => { root.action("docs"); root.open-menu = 0; } }
+                MenuRow { label: L.s(L.revision, "command_line_help"); activated => { root.action("cli-help"); root.open-menu = 0; } }
+                MenuRow { label: L.s(L.revision, "amp_check_for_update"); activated => { root.action("check-update"); root.open-menu = 0; } }
                 MenuRow { label: L.s(L.revision, "amp_about"); activated => { root.action("about"); root.open-menu = 0; } }
         }
     }
@@ -1623,8 +1627,13 @@ export component AddMagnetDialog inherits Window {
     icon: @image-url("../../res/app.png");
     title: L.s(L.revision, "add_magnet_link_s");
     preferred-width: 560px;
-    preferred-height: 300px;
+    preferred-height: min(300px, root.screen-limit);
     background: Palette.background;
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    max-height: root.screen-limit;
 
     in-out property <string> links;
     callback accepted();
@@ -1684,8 +1693,13 @@ export component AddTorrentDialog inherits Window {
     icon: @image-url("../../res/app.png");
     title: L.s(L.revision, "add_torrent_s");
     preferred-width: 640px;
-    preferred-height: 540px;
+    preferred-height: min(540px, root.screen-limit);
     background: Palette.background;
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    max-height: root.screen-limit;
 
     in property <string> torrent-name;
     in property <string> torrent-size;

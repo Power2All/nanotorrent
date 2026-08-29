@@ -104,6 +104,10 @@ struct Ui {
     magnet_dialog: RefCell<Option<AddMagnetDialog>>,
     prefs_dialog: RefCell<Option<PreferencesDialog>>,
     about_dialog: RefCell<Option<AboutDialog>>,
+    cli_help_dialog: RefCell<Option<CliHelpDialog>>,
+    update_dialog: RefCell<Option<UpdateDialog>>,
+    /// Where a finished update check leaves its report.
+    update_slot: crate::updatechecker::Slot,
     create_dialog: RefCell<Option<CreateTorrentDialog>>,
     /// Where a background create-torrent run leaves its result.
     create_slot: Arc<std::sync::Mutex<Option<crate::bittorrent::session::CreateTorrentOutcome>>>,
@@ -283,6 +287,9 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         magnet_dialog: RefCell::new(None),
         prefs_dialog: RefCell::new(None),
         about_dialog: RefCell::new(None),
+        cli_help_dialog: RefCell::new(None),
+        update_dialog: RefCell::new(None),
+        update_slot: ctx.update_slot.clone(),
         create_dialog: RefCell::new(None),
         create_slot: Arc::new(std::sync::Mutex::new(None)),
         env: ctx.env.clone(),
@@ -386,6 +393,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
                     handle_params(&ui, &forwarded);
                 }
                 poll_create_torrent(&ui);
+                poll_update(&ui);
                 if let Some(window) = w.upgrade() {
                     if let Some(tray) = tray.as_ref() {
                         // Only on a change: show()/hide() re-register with the
@@ -419,6 +427,15 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
                 "preferences" => open_preferences(&u),
                 "create" => open_create_torrent(&u),
                 "about" => open_about(&u),
+                "cli-help" => open_cli_help(&u),
+                // Not a dialog, but the same purpose: it exercises the manual
+                // check - the only path that reports "no update available".
+                "check-update" => crate::updatechecker::check(
+                    &u.session.handle(),
+                    &u.cfg,
+                    u.update_slot.clone(),
+                    true,
+                ),
                 other => tracing::warn!("unknown NANOTORRENT_OPEN_DIALOG: {other}"),
             }
             let _ = window;
@@ -1065,6 +1082,8 @@ fn any_dialog_open(ui: &Rc<Ui>, owner: &MainWindow) -> bool {
         dialog_visible(&ui.magnet_dialog, owner),
         dialog_visible(&ui.prefs_dialog, owner),
         dialog_visible(&ui.about_dialog, owner),
+        dialog_visible(&ui.cli_help_dialog, owner),
+        dialog_visible(&ui.update_dialog, owner),
         dialog_visible(&ui.create_dialog, owner),
         dialog_visible(&ui.torrent_dialog, owner),
         dialog_visible(&ui.close_prompt, owner),
@@ -1818,6 +1837,7 @@ fn open_remove_prompt(window: &MainWindow, ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
+    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
     let _ = window; // owner is set by wire_dialog_close
     *ui.remove_dialog.borrow_mut() = Some(dialog);
 }
@@ -1883,6 +1903,17 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
             "add-torrent" => pick_and_queue_torrents(&u),
             "preferences" => open_preferences(&u),
             "about" => open_about(&u),
+            "cli-help" => open_cli_help(&u),
+            "check-update" => {
+                // Runs even when the startup check is switched off:
+                // this one was asked for.
+                crate::updatechecker::check(
+                    &u.session.handle(),
+                    &u.cfg,
+                    u.update_slot.clone(),
+                    true,
+                );
+            }
             "create" => open_create_torrent(&u),
             "docs" => {
                 if let Err(err) = open::that(WEBSITE) {
@@ -2066,6 +2097,7 @@ fn open_add_magnet(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
+    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
     *ui.magnet_dialog.borrow_mut() = Some(dialog);
 }
 
@@ -2361,6 +2393,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
+    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
     *ui.torrent_dialog.borrow_mut() = Some(dialog);
 }
 
@@ -2444,6 +2477,21 @@ fn web_warning(d: &PreferencesDialog, tr: &Translator, password_set: bool) -> St
 
 /// The Web interface tab: the same settings `--webui-set` exposes, plus the
 /// password, which the CLI can only take through a prompt.
+/// Show an `Advanced` in the eight Advanced fields.
+///
+/// Shared by the initial load and the Reset button so the two cannot disagree
+/// about which field holds which knob.
+fn put_advanced(dialog: &PreferencesDialog, adv: &crate::webui::Advanced) {
+    dialog.set_web_req_timeout(adv.client_request_timeout.to_string().into());
+    dialog.set_web_disconnect_timeout(adv.client_disconnect_timeout.to_string().into());
+    dialog.set_web_keep_alive(adv.keep_alive.to_string().into());
+    dialog.set_web_shutdown_timeout(adv.shutdown_timeout.to_string().into());
+    dialog.set_web_max_connections(adv.max_connections.to_string().into());
+    dialog.set_web_max_conn_rate(adv.max_connection_rate.to_string().into());
+    dialog.set_web_workers(adv.workers.to_string().into());
+    dialog.set_web_max_body(adv.max_body_size.to_string().into());
+}
+
 fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
     let cfg = &ui.cfg;
 
@@ -2484,15 +2532,18 @@ fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
     // Shown through Advanced::load rather than read raw, so the fields display
     // the value the server will actually use - a clamped or missing setting
     // would otherwise show one number here and behave as another.
-    let adv = crate::webui::Advanced::load(cfg);
-    dialog.set_web_req_timeout(adv.client_request_timeout.to_string().into());
-    dialog.set_web_disconnect_timeout(adv.client_disconnect_timeout.to_string().into());
-    dialog.set_web_keep_alive(adv.keep_alive.to_string().into());
-    dialog.set_web_shutdown_timeout(adv.shutdown_timeout.to_string().into());
-    dialog.set_web_max_connections(adv.max_connections.to_string().into());
-    dialog.set_web_max_conn_rate(adv.max_connection_rate.to_string().into());
-    dialog.set_web_workers(adv.workers.to_string().into());
-    dialog.set_web_max_body(adv.max_body_size.to_string().into());
+    put_advanced(dialog, &crate::webui::Advanced::load(cfg));
+
+    // Reset puts the defaults in the fields only; OK still does the writing,
+    // so it is undoable with Cancel like every other edit here.
+    {
+        let weak = dialog.as_weak();
+        dialog.on_web_advanced_reset(move || {
+            if let Some(d) = weak.upgrade() {
+                put_advanced(&d, &crate::webui::Advanced::default());
+            }
+        });
+    }
 
     let refresh = {
         let (weak, u) = (dialog.as_weak(), ui.clone());
@@ -3034,6 +3085,7 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     d.set_show_in_tray(cfg.get_bool("show_in_notification_area"));
     d.set_minimize_to_tray(cfg.get_bool("minimize_to_notification_area"));
     d.set_notify_complete(cfg.get_bool(crate::core::toast::ENABLED_KEY));
+    d.set_check_updates(cfg.get_bool("update_checks.enabled"));
     d.set_can_associate(cfg!(windows));
 
     d.set_save_path(
@@ -3131,6 +3183,7 @@ fn save_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     cfg.set("show_in_notification_area", &d.get_show_in_tray());
     cfg.set("minimize_to_notification_area", &d.get_minimize_to_tray());
     cfg.set(crate::core::toast::ENABLED_KEY, &d.get_notify_complete());
+    cfg.set("update_checks.enabled", &d.get_check_updates());
 
     cfg.set("default_save_path", &d.get_save_path().to_string());
     cfg.set("pause_on_low_disk_space", &d.get_pause_on_low_disk());
@@ -3404,7 +3457,124 @@ fn open_about(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
+    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
     *ui.about_dialog.borrow_mut() = Some(dialog);
+}
+
+/// Help > Command line: the same text `--help` prints.
+///
+/// It exists because the Windows release build is a GUI subsystem binary with
+/// no console of its own, so that text is easy to never see.
+fn open_cli_help(ui: &Rc<Ui>) {
+    if let Some(existing) = ui.cli_help_dialog.borrow().as_ref() {
+        let _ = existing.show();
+        return;
+    }
+
+    let dialog = match CliHelpDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the command line help dialog: {err}");
+            return;
+        }
+    };
+
+    dialog.set_text(crate::help_text(&ui.tr.borrow()).into());
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_closed(move || {
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+        });
+    }
+
+    wire_dialog_close(&dialog, ui);
+    let _ = dialog.show();
+    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    *ui.cli_help_dialog.borrow_mut() = Some(dialog);
+}
+
+/// Show what an update check found.
+///
+/// Only a check the user asked for reports the quiet outcomes - the checker
+/// does not even fill the slot for an automatic "nothing new".
+fn poll_update(ui: &Rc<Ui>) {
+    let report = ui.update_slot.lock().ok().and_then(|mut slot| slot.take());
+    let Some(report) = report else { return };
+
+    if let Some(info) = report.update {
+        open_update(ui, &info);
+        return;
+    }
+
+    // Everything below is a toast: neither "up to date" nor a failed check is
+    // worth a window someone has to dismiss.
+    let Some(window) = ui.main.borrow().as_ref().and_then(|w| w.upgrade()) else {
+        return;
+    };
+    match report.error {
+        Some(err) => {
+            tracing::warn!("update check failed: {err}");
+            show_error_toast(&window, &ui.tr.borrow().i18n("update_check_failed"));
+        }
+        None => show_toast(&window, &ui.tr.borrow().i18n("no_update_available")),
+    }
+}
+
+/// The "a new version is available" window.
+fn open_update(ui: &Rc<Ui>, info: &crate::updatechecker::UpdateInfo) {
+    // Rebuilt rather than re-shown: unlike the other dialogs this one carries
+    // the version it was opened for, and a second check can find a different
+    // one.
+    let dialog = match UpdateDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the update dialog: {err}");
+            return;
+        }
+    };
+
+    dialog.set_new_version(info.version.as_str().into());
+    dialog.set_current_version(crate::buildinfo::version().into());
+
+    {
+        let url = info.url.clone();
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_download(move || {
+            if let Err(err) = open::that(&url) {
+                tracing::error!("cannot open {url}: {err}");
+            }
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+        });
+    }
+    {
+        // Recorded so the startup check stops raising this one. A check asked
+        // for from the menu ignores it again.
+        let version = info.version.clone();
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_ignore(move || {
+            u.cfg.set("update_checks.ignored_version", &version);
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_closed(move || {
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+        });
+    }
+
+    wire_dialog_close(&dialog, ui);
+    let _ = dialog.show();
+    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    *ui.update_dialog.borrow_mut() = Some(dialog);
 }
 
 /// Piece sizes offered by the Create dialog, and the values behind them.
@@ -3869,6 +4039,7 @@ fn ask_on_close(window: &MainWindow, ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
+    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
     *ui.close_prompt.borrow_mut() = Some(dialog);
 }
 

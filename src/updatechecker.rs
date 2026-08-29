@@ -17,6 +17,24 @@ pub struct UpdateInfo {
     pub url: String,
 }
 
+/// What a finished check found.
+///
+/// The check used to write the slot only when there was something newer, which
+/// is all the startup check needs. A check the user asked for has to be able to
+/// say "you are up to date" and "I could not reach GitHub" as well - a menu
+/// item that silently does nothing four times out of five is worse than none.
+pub struct Report {
+    pub update: Option<UpdateInfo>,
+    pub error: Option<String>,
+    /// True when this came from Help > Check for update. Only then are the
+    /// quiet outcomes worth showing: nobody wants "no update available" every
+    /// time the application opens.
+    pub manual: bool,
+}
+
+/// Where a finished check leaves its [`Report`]. The UI polls it.
+pub type Slot = Arc<Mutex<Option<Report>>>;
+
 /// Compare dotted version strings, e.g. "0.26.0" < "0.27.1".
 fn is_newer(remote: &str, local: &str) -> bool {
     let parse = |s: &str| -> Vec<u64> {
@@ -49,22 +67,27 @@ fn is_newer(remote: &str, local: &str) -> bool {
 
 /// Spawns the update check on the session's tokio runtime; the result is
 /// delivered through the shared slot which the UI polls.
-pub fn check(
-    handle: &tokio::runtime::Handle,
-    cfg: &Configuration,
-    slot: Arc<Mutex<Option<UpdateInfo>>>,
-) {
-    if !cfg.get_bool("update_checks.enabled") {
+pub fn check(handle: &tokio::runtime::Handle, cfg: &Configuration, slot: Slot, manual: bool) {
+    // The preference governs the check at startup. Asking for one from the
+    // menu is an explicit request and runs either way - otherwise the menu
+    // item would appear to do nothing for anyone who turned the setting off.
+    if !manual && !cfg.get_bool("update_checks.enabled") {
         return;
     }
 
     let Some(url) = cfg.get_string("update_checks.url") else {
+        report(&slot, None, Some(String::from("no update URL is configured")), manual);
         return;
     };
 
-    let ignored = cfg
-        .get_string("update_checks.ignored_version")
-        .unwrap_or_default();
+    // A version dismissed with "Ignore this update" stays dismissed for the
+    // automatic check only. Asking directly overrides it.
+    let ignored = if manual {
+        String::new()
+    } else {
+        cfg.get_string("update_checks.ignored_version")
+            .unwrap_or_default()
+    };
 
     handle.spawn(async move {
         let client = match reqwest::Client::builder()
@@ -72,28 +95,41 @@ pub fn check(
             .build()
         {
             Ok(c) => c,
-            Err(_) => return,
+            Err(err) => {
+                report(&slot, None, Some(err.to_string()), manual);
+                return;
+            }
         };
 
-        let Ok(response) = client
+        let response = match client
             .get(&url)
             .header("Accept", "application/vnd.github+json")
             .send()
             .await
-        else {
-            return;
+        {
+            Ok(r) => r,
+            Err(err) => {
+                report(&slot, None, Some(err.to_string()), manual);
+                return;
+            }
         };
 
         // A repo with no releases yet answers 404, and an over-quota client gets
         // 403 - both come back as JSON that would otherwise parse into "no new
         // version", which is right but silent. Say which it was.
         if !response.status().is_success() {
-            tracing::info!("update check: {} returned {}", url, response.status());
+            let status = response.status();
+            tracing::info!("update check: {url} returned {status}");
+            report(&slot, None, Some(format!("{url} returned {status}")), manual);
             return;
         }
 
-        let Ok(json) = response.json::<serde_json::Value>().await else {
-            return;
+        let json = match response.json::<serde_json::Value>().await {
+            Ok(j) => j,
+            Err(err) => {
+                report(&slot, None, Some(err.to_string()), manual);
+                return;
+            }
         };
 
         // Release tags are conventionally "v0.1.2"; carry the bare number so the
@@ -115,12 +151,34 @@ pub fn check(
             && is_newer(&version, crate::buildinfo::version())
         {
             tracing::info!("update available: {version} ({dl_url})");
-            *slot.lock().unwrap() = Some(UpdateInfo {
-                version,
-                url: dl_url,
-            });
+            report(
+                &slot,
+                Some(UpdateInfo {
+                    version,
+                    url: dl_url,
+                }),
+                None,
+                manual,
+            );
+        } else {
+            report(&slot, None, None, manual);
         }
     });
+}
+
+/// Leave a report in the slot, unless the automatic check found nothing worth
+/// saying - the UI would only have to throw that away.
+fn report(slot: &Slot, update: Option<UpdateInfo>, error: Option<String>, manual: bool) {
+    if !manual && update.is_none() {
+        return;
+    }
+    if let Ok(mut slot) = slot.lock() {
+        *slot = Some(Report {
+            update,
+            error,
+            manual,
+        });
+    }
 }
 
 #[cfg(test)]

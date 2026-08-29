@@ -135,7 +135,7 @@ jobs:
         run: cargo build --release --locked
 
       - name: Strip
-        run: strip target/release/nanotorrent
+        run: strip target/release/nanotorrent-gui
 
       # --no-build for both: the binary above is the one to package, and
       # letting each tool rebuild it would triple the job for no difference.
@@ -166,7 +166,7 @@ jobs:
           chmod +x linuxdeploy
 
           mkdir -p AppDir/usr/bin
-          cp target/release/nanotorrent AppDir/usr/bin/
+          cp target/release/nanotorrent-gui AppDir/usr/bin/nanotorrent
 
           # Passed with -d/-i rather than pre-placed: linuxdeploy installs them
           # into the AppDir AND writes the top-level .desktop and .DirIcon that
@@ -233,7 +233,7 @@ jobs:
           set -euo pipefail
           APP="dist/NanoTorrent.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp target/release/nanotorrent "$APP/Contents/MacOS/nanotorrent"
+          cp target/release/nanotorrent-gui "$APP/Contents/MacOS/nanotorrent"
           strip "$APP/Contents/MacOS/nanotorrent"
 
           # .icns from res/app.png. iconutil wants a full iconset, and sips is

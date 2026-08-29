@@ -1,0 +1,78 @@
+// "A new version is available" - shown by the startup check and by
+// Help > Check for update.
+//
+// Three choices rather than two: Download opens the release page, Ignore
+// records the version so the automatic check stops raising it, and Close says
+// "not now" without either. Ignore has to be distinct from Close, or the only
+// way to stop being told would be to turn the whole check off.
+
+import { ScrollView, Button, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
+
+export component UpdateDialog inherits Window {
+    icon: @image-url("../../res/app.png");
+    title: L.s(L.revision, "update_available");
+    min-width: 460px;
+    max-width: 460px;
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    min-height: min(body.preferred-height, root.screen-limit);
+    max-height: min(body.preferred-height, root.screen-limit);
+    background: Palette.background;
+
+    in property <string> new-version;
+    in property <string> current-version;
+
+    callback download();
+    callback ignore();
+    callback closed();
+
+    ScrollView {
+        vertical-scrollbar-policy: as-needed;
+        body := VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            Text {
+                text: L.s(L.revision, "update_available");
+                font-size: 18px;
+                font-weight: 700;
+                color: Palette.foreground;
+            }
+
+            Text {
+                text: L.s(L.revision, "version") + " " + root.new-version;
+                font-size: 14px;
+                color: Palette.foreground;
+            }
+
+            Text {
+                text: L.s(L.revision, "current_version") + " " + root.current-version;
+                font-size: 12px;
+                color: #888;
+            }
+
+            Rectangle { height: 4px; }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Button {
+                    text: L.s(L.revision, "download");
+                    primary: true;
+                    clicked => { root.download(); }
+                }
+                Button {
+                    text: L.s(L.revision, "ignore_update");
+                    clicked => { root.ignore(); }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: L.s(L.revision, "close");
+                    clicked => { root.closed(); }
+                }
+            }
+        }
+    }
+}

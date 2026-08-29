@@ -8,25 +8,34 @@ pushd "%ROOT%"
 cargo build --release
 if errorlevel 1 ( echo   cargo build failed & popd & exit /b 1 )
 popd
-if not exist "%ROOT%\target\release\nanotorrent.exe" (
-  echo   nanotorrent.exe not found & exit /b 1
+if not exist "%ROOT%\target\release\nanotorrent-gui.exe" (
+  echo   nanotorrent-gui.exe not found & exit /b 1
+)
+if not exist "%ROOT%\target\release\nanotorrent-cli.exe" (
+  echo   nanotorrent-cli.exe not found & exit /b 1
 )
 
-rem Optional: drop upx.exe next to this script to shrink the packaged exe.
+rem Optional: drop upx.exe next to this script to shrink the packaged exes.
 echo [2/5] UPX compression...
 if not exist "%~dp0upx.exe" (
   echo   skipped ^(no upx.exe in installer folder - get it from https://upx.github.io^)
 ) else (
+  rem Both binaries: the GUI is the bulk of the download, and the launcher
+  rem ships beside it twice - once under its own name and once as
+  rem nanotorrent.exe - so it is worth packing too.
+  rem
   rem `upx -t` exits 0 on an already-packed file, 2 on an unpacked one.
   rem In practice packing breaks cargo's hardlink from target\release\deps, so
   rem the next build re-links a fresh unpacked exe and this never triggers -
   rem it is here so a leftover packed exe can't fail the build on AlreadyPacked.
-  "%~dp0upx.exe" -qt "%ROOT%\target\release\nanotorrent.exe" >nul 2>&1
-  if not errorlevel 1 (
-    echo   already packed, leaving as is
-  ) else (
-    "%~dp0upx.exe" --best --lzma "%ROOT%\target\release\nanotorrent.exe"
-    if errorlevel 1 ( echo   upx failed & exit /b 1 )
+  for %%B in (nanotorrent-gui.exe nanotorrent-cli.exe) do (
+    "%~dp0upx.exe" -qt "%ROOT%\target\release\%%B" >nul 2>&1
+    if not errorlevel 1 (
+      echo   %%B already packed, leaving as is
+    ) else (
+      "%~dp0upx.exe" --best --lzma "%ROOT%\target\release\%%B"
+      if errorlevel 1 ( echo   upx failed on %%B & exit /b 1 )
+    )
   )
 )
 

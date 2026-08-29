@@ -132,6 +132,10 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   reports only the v1 id and a hybrid is otherwise indistinguishable from a
   plain v1 torrent.
 
+  Every dialog now sizes itself to the screen: one whose content is taller
+  than the monitor is capped to what fits and scrolls the remainder, instead
+  of extending past the bottom edge with its buttons out of reach.
+
   Files, Peers and Trackers have the same resizable, remembered columns as the
   torrent list, each with their own saved widths and their own horizontal
   scrollbar. The Overview's divider is draggable too, and **sizes itself to
@@ -169,10 +173,8 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   maximum request body — each clamped on load, so nothing typed there can stop
   the interface coming up. Configurable from Preferences ▸ Web interface —
   pressing OK restarts it in place, and keeps the dialog open with the reason
-  if it refuses to start — or from the command line with
-  `--webui`, `--set-web-password`, `--webui-status` and `--webui-set`.
-  `--version` and `--help` work too, though on Windows the GUI build has no
-  console to print to.
+  if it refuses to start — or from the command line, along with everything
+  else (see below).
 - **Notifications** — real Windows 11 toasts on download-complete under a
   registered AppUserModelID, switchable off in Preferences; a notification-area
   (tray) icon with close-to-tray prompt, shown for both the window's close
@@ -194,6 +196,42 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **Labels** — colors, save paths, per-torrent assignment, filtering,
   auto-apply. Both labels and filters are managed from Preferences ▸ Labels and
   filters, with the filter expression validated as you type.
+- **Command line** — **every** preference the dialog offers is also settable
+  without it: `--list-settings` prints all of them with their current values,
+  units and accepted ranges, `--get NAME` reads one and `--set NAME VALUE`
+  changes one. That covers rate limits, save path, queue limits, DHT/LSD/PEX,
+  encryption, the proxy, the listen address and port, and the whole web
+  interface including its Advanced tuning — which matters on a headless build,
+  where there is no dialog at all. Values are validated and refused rather than
+  clamped silently, and the names are the CLI's own: nothing there exposes the
+  `libtorrent.` prefix half the stored keys still carry from PicoTorrent. The
+  web-specific `--webui`, `--set-web-password`, `--webui-status` and
+  `--webui-set` remain, sharing one validation path with `--set`. **Help ▸
+  Command line** shows the same text in a window for when there is no terminal
+  at hand.
+
+  `--help` is **translated**, in all 41 languages, and follows the language set
+  in Preferences — in the terminal as well as in that window. Flag and setting
+  names stay English, because they are what you type; only the prose around
+  them changes. The descriptions live in the locale files rather than in the
+  settings table, and a test fails the build if a setting is ever added without
+  one.
+
+  Windows ships **two** executables, the way Python ships `python.exe` and
+  `pythonw.exe`. `nanotorrent-gui.exe` is the application; `nanotorrent-cli.exe`
+  is a small console-subsystem launcher that forwards argv to it and waits.
+  That split is not cosmetic: cmd and PowerShell decide whether to wait for a
+  process from its PE subsystem field, before any of its code runs, and they
+  never wait for a GUI binary — so `--help` used to return the prompt *before*
+  printing, which looked like a hung command. Nothing inside a GUI binary can
+  change that, so the name a shell resolves has to belong to a console program.
+  The launcher is installed a second time as plain `nanotorrent.exe`, so the
+  command this README and `--help` itself use is the one that works. It waits
+  only for flag runs: opening a torrent returns the prompt immediately, and
+  every shortcut, file association and the magnet handler points straight at
+  `nanotorrent-gui.exe`, so an ordinary launch never opens a console. On Linux
+  and macOS none of this applies — the GUI binary is simply installed as
+  `nanotorrent`.
 - **Single-instance** — a second launch forwards its command line (torrent
   files / magnet links) to the running instance and exits.
 - **Translations** — all 41 languages, **complete**: every string the UI can
@@ -202,10 +240,17 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   ("Nederlands (Nederland)"). A fresh install always starts in English
   (the OS locale is deliberately not consulted) and English is the first entry.
   **Changing the language applies immediately** — no restart.
-- **Update check** — asks GitHub for this repo's latest release on startup
-  (`/releases/latest`, so never a draft or prerelease) and reports when its tag
-  beats the running version. Endpoint and the enabled/ignored-version toggles
-  live in `update_checks.*`, so it can be pointed at a fork.
+- **Update check** — asks GitHub for this repo's latest release
+  (`/releases/latest`, so never a draft or prerelease) and opens a window when
+  its tag beats the running version, offering the release page or **Ignore this
+  update**, which silences that one version without switching the check off.
+  It runs at startup unless Preferences ▸ General ▸ *Check for updates on
+  startup* is cleared, and on demand from **Help ▸ Check for update** — which
+  runs whatever that preference says, since asking is explicit, and is the only
+  path that also reports "no update available" or a failure to reach GitHub.
+  The startup check stays silent unless there is something to say. Endpoint and
+  toggles live in `update_checks.*` (`--set check-updates`, `--set update-url`),
+  so it can be pointed at a fork.
 - **Crash log** — a panic hook writes a backtrace to the logs folder (the
   original used Crashpad; there is no upload). A failure during startup, before
   the window exists, is shown in a message box rather than lost to the GUI
@@ -327,3 +372,22 @@ rather than being fatal.
 bringing Linux and macOS support, and added the web interface, live language
 switching and the labels/filters management UI. The original UI is in the
 history up to that tag.
+
+## A note on the translations
+
+**Every language other than English is machine-translated.** The 40 non-English
+locales in `lang/`, and the `--help` text they render, were produced by an AI
+without review by a native speaker of any of them. English (`en-US`) is the
+source and the only one written by hand.
+
+Expect the usual failure modes: wording that is grammatical but not what a
+person would say, an inconsistent choice between two valid terms, and technical
+strings — "TLS handshakes in flight", "grace period on shutdown" — that read
+more literally than they should. Nothing here is a placeholder or an empty
+stub; the files are complete, and the risk is quality rather than coverage.
+
+Corrections are welcome and cheap to make: each locale is a flat
+`lang/<code>.json`, and a `lang/` folder placed next to the executable
+overrides the compiled-in copy per locale, so a fix can be tested without
+rebuilding. See also [AI-DECLARATION.md](AI-DECLARATION.md), which covers the
+rest of the project.

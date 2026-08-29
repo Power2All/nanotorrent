@@ -23,7 +23,7 @@ install -m 0644 res/app.png "$ICONS/org.nanotorrent.NanoTorrent.png"
 # Exec=nanotorrent only resolves if the binary is on PATH; point the entry at
 # wherever it actually is otherwise.
 if ! command -v nanotorrent >/dev/null; then
-    BIN="$(pwd)/target/release/nanotorrent"
+    BIN="$(pwd)/target/release/nanotorrent-gui"
     if [ -x "$BIN" ]; then
         sed -i "s|^Exec=nanotorrent|Exec=$BIN|" "$APPS/org.nanotorrent.NanoTorrent.desktop"
         echo "==> Exec points at $BIN (not on PATH)"
