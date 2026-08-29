@@ -283,6 +283,7 @@
     "remove_tracker_s": "Удалить трекер(ы)",
     "require_encryption_incoming": "Шифровать входящие соединения",
     "require_encryption_outgoing": "Шифровать исходящие соединения",
+    "reset_column_widths": "Сбросить ширину столбцов",
     "resolve_peer_countries": "Определять страны пиров (GeoIP)",
     "restart_picotorrent": "Перезапустить PicoTorrent",
     "restore_defaults": "Восстановить настройки по умолчанию",

@@ -283,6 +283,7 @@
     "remove_tracker_s": "ट्रैकर निकालें",
     "require_encryption_incoming": "आने वाले कनेक्शन के लिए आवश्यकता है",
     "require_encryption_outgoing": "निवर्तमान कनेक्शन के लिए आवश्यकता है",
+    "reset_column_widths": "कॉलम की चौड़ाई रीसेट करें",
     "resolve_peer_countries": "पीयर के देश पता करें (GeoIP)",
     "restart_picotorrent": "PicoTorrent को पुनर्प्रारंभ करें",
     "restore_defaults": "डिफॉल्ट्स पुनःस्थापन करें",

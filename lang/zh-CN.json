@@ -271,6 +271,7 @@
     "remove_tracker_s": "移除tracker(s)",
     "require_encryption_incoming": "强制加密连入",
     "require_encryption_outgoing": "强制加密连出",
+    "reset_column_widths": "重置列宽",
     "resolve_peer_countries": "解析节点所在国家/地区（GeoIP）",
     "restart_picotorrent": "重启 PicoTorrent",
     "restart_required": "需要重启",

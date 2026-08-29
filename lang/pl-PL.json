@@ -274,6 +274,7 @@
     "remove_tracker_s": "Usuń tracker(y)",
     "require_encryption_incoming": "Wymagaj szyfrowania połączeń przychodzących",
     "require_encryption_outgoing": "Wymagaj szyfrowania połączeń wychodzących",
+    "reset_column_widths": "Przywróć szerokości kolumn",
     "resolve_peer_countries": "Ustalaj kraje peerów (GeoIP)",
     "restart_picotorrent": "Zrestartuj PicoTorrent",
     "restart_required": "Wymagane ponowne uruchomienie",

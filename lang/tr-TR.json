@@ -257,6 +257,7 @@
     "remove_tracker_s": "Tracker sil",
     "require_encryption_incoming": "Gelen bağlantılardan iste",
     "require_encryption_outgoing": "Giden bağlantılardan iste",
+    "reset_column_widths": "Sütun genişliklerini sıfırla",
     "resolve_peer_countries": "Eşlerin ülkelerini çöz (GeoIP)",
     "restart_picotorrent": "PicoTorrent'i yeniden başlat",
     "restore_defaults": "Varsayılanları geri yükle",

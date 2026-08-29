@@ -226,6 +226,7 @@
     "remove_torrent_and_files": "Ukloni torent i datoteke",
     "require_encryption_incoming": "Zahtevaj za dolazne veze",
     "require_encryption_outgoing": "Zahtevaj za odlazne veze",
+    "reset_column_widths": "Врати ширине колона",
     "resolve_peer_countries": "Одреди државе клијената (GeoIP)",
     "restart_picotorrent": "Ponovo pokrenite PicoTorrent",
     "restore_defaults": "Vrati podrazumevane vrednosti",

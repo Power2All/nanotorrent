@@ -226,6 +226,7 @@
     "remove_torrent_and_files": "Xóa torrent đã chọn và tệp đã tải xuống",
     "require_encryption_incoming": "Bắt buộc cho kết nối đến",
     "require_encryption_outgoing": "Bắt buộc cho kết nối đi",
+    "reset_column_widths": "Đặt lại độ rộng cột",
     "resolve_peer_countries": "Tra cứu quốc gia của peer (GeoIP)",
     "restart_picotorrent": "Khởi động lại PicoTorrent",
     "restore_defaults": "Khôi phục mặc định",

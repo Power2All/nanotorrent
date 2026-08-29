@@ -227,6 +227,7 @@
     "remove_torrent_and_files": "刪除種子和檔案",
     "require_encryption_incoming": "連入連線必須加密",
     "require_encryption_outgoing": "連出連線必須加密",
+    "reset_column_widths": "重設欄寬",
     "resolve_peer_countries": "解析節點所在國家/地區（GeoIP）",
     "restart_picotorrent": "重新啟動 NanoTorrent",
     "restore_defaults": "還原預設值",

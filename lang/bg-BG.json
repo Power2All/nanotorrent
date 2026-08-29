@@ -280,6 +280,7 @@
     "remove_torrent_and_files": "Премахване на торент и файлове",
     "require_encryption_incoming": "Шифроване на входяща връзка",
     "require_encryption_outgoing": "Шифроване на изходяща връзка",
+    "reset_column_widths": "Нулиране на ширините на колоните",
     "resolve_peer_countries": "Определяне на държавите на пиъровете (GeoIP)",
     "restart_picotorrent": "Рестартиране на PicoTorrent",
     "restore_defaults": "Стандартни настройки",

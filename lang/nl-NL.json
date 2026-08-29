@@ -284,6 +284,7 @@
     "remove_tracker_s": "Verwijder tracker(s)",
     "require_encryption_incoming": "Verplicht voor inkomende verbindingen",
     "require_encryption_outgoing": "Verplicht voor uitgaande verbindingen",
+    "reset_column_widths": "Kolombreedtes herstellen",
     "resolve_peer_countries": "Landen van peers opzoeken (GeoIP)",
     "restart_picotorrent": "PicoTorrent opnieuw starten",
     "restart_required": "Opnieuw opstarten vereist",

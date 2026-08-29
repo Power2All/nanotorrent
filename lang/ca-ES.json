@@ -266,6 +266,7 @@
     "remove_tracker_s": "Elimina tracker(s)",
     "require_encryption_incoming": "Requerir per les connexions d'entrada",
     "require_encryption_outgoing": "Requerir per les connexions de sortida",
+    "reset_column_widths": "Restableix l'amplada de les columnes",
     "resolve_peer_countries": "Resol el país dels parells (GeoIP)",
     "restart_picotorrent": "Reinicia el NanoTorrent",
     "restore_defaults": "Restaura els valors predeterminats",

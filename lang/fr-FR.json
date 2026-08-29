@@ -284,6 +284,7 @@
     "remove_tracker_s": "Supprimer le(s) traqueur(s)",
     "require_encryption_incoming": "Exiger pour les connexions entrantes",
     "require_encryption_outgoing": "Exiger pour les connexions sortantes",
+    "reset_column_widths": "Réinitialiser la largeur des colonnes",
     "resolve_peer_countries": "Résoudre le pays des pairs (GeoIP)",
     "restart_picotorrent": "Redémarrer PicoTorrent",
     "restart_required": "Redémarrage requis",

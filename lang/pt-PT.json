@@ -241,6 +241,7 @@
     "remove_torrent_and_files": "Remover torrent e ficheiros",
     "require_encryption_incoming": "Exigir para ligações de entrada",
     "require_encryption_outgoing": "Exigir para ligações de saída",
+    "reset_column_widths": "Repor a largura das colunas",
     "resolve_peer_countries": "Resolver o país dos pares (GeoIP)",
     "restart_picotorrent": "Reiniciar o NanoTorrent",
     "restore_defaults": "Repor predefinições",

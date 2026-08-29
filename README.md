@@ -113,7 +113,11 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   labels, copy info hash / magnet, open in file manager). **Ctrl+A** selects
   everything the current filter shows; **Delete** asks whether to remove the
   selection with or without its data. Paused torrents blank their live columns.
-  Column widths follow the language, so a longer translation still fits.
+  Column widths follow the language, so a longer translation still fits, and
+  they are **resizable and remembered**: drag a header's edge, double-click it
+  to fit that one column to its contents, or right-click a header for **Reset
+  width of columns**, which fits them all at once. A fit always covers the
+  header as well as the cells, so no translation can clip its own caption.
   View ▸ Details panel / Status bar / Console are ticked when shown. Progress
   never rounds up: a torrent one piece short reads 99.9%, not a full bar over
   a Downloading status.
@@ -126,7 +130,17 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   torrent shows **Info hash**, a hybrid shows **Info hash (v1)** and **Info
   hash (v2)** — read from the torrent's own info dictionary, because librqbit
   reports only the v1 id and a hybrid is otherwise indistinguishable from a
-  plain v1 torrent. The divider between the panel's two columns is draggable.
+  plain v1 torrent.
+
+  Files, Peers and Trackers have the same resizable, remembered columns as the
+  torrent list, each with their own saved widths and their own horizontal
+  scrollbar. The Overview's divider is draggable too, and **sizes itself to
+  the window**: its right half takes exactly the width its content needs -
+  a v2 info hash is 64 characters that mean nothing truncated - and the left
+  half, which holds the name and save path, absorbs the rest. It re-fits when
+  the window is resized and when a different torrent is selected, but not
+  while you are reading it, so a divider you drag by hand stays where you put
+  it. The panel's height and the divider position are both remembered.
 - **Add flows** — Add torrent(s): pick any number of `.torrent` files and they
   arrive in **one dialog**, listed down the side, with each one's file tree
   shown as you select it. File selection is per torrent; save path and start
@@ -161,7 +175,13 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **Notifications** — real Windows 11 toasts on download-complete under a
   registered AppUserModelID, switchable off in Preferences; a notification-area
   (tray) icon with close-to-tray prompt, shown for both the window's close
-  button and File ▸ Exit.
+  button and File ▸ Exit. Hovering the tray icon reports the current transfer
+  rates and how many torrents are actively seeding and downloading. In-app
+  toasts cover everything that happens without a dialog - a failed add or a
+  session error is **red** rather than the same blue as "Copied to clipboard",
+  wraps to as many lines as the message needs, and stays up for five seconds,
+  which is set by the longest thing a toast has to say rather than the
+  shortest.
 - **File associations** — register NanoTorrent for `.torrent` files and
   `magnet:` links from Preferences.
 - **GeoIP & IP filter** — DB-IP country lookup for peers; eMule/PeerGuardian
@@ -261,6 +281,15 @@ dragged. The View menu ticks the panels that are showing. A torrent that
 cannot be added now says so in a red toast instead of only reaching the log,
 and a BitTorrent v2-only torrent is named as such rather than failing with the
 engine's "missing field `pieces`".
+
+Lists gained the sizing behaviour they were missing. Columns can be dragged,
+double-clicked to fit one column, or reset from a right-click menu, in the
+torrent list and in all three details tabs - which previously had fixed widths
+and no way to see a long file name. Widths are remembered per list, in the
+`column_state` table PicoTorrent has carried since 2018 and NanoTorrent had
+migrated but never read. The details panel's height and its divider are
+remembered too, and the Overview's divider now sizes its right half to fit the
+info hashes rather than cutting them in half.
 
 The web interface gained an Advanced section for the HTTP server's own tuning
 (timeouts, keep-alive, connection limits, worker threads, request size), every

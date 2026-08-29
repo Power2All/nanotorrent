@@ -283,6 +283,7 @@
     "remove_tracker_s": "Rimuovi tracker",
     "require_encryption_incoming": "Richiedi per le connessioni in entrata",
     "require_encryption_outgoing": "Richiedi per le connessioni in uscita",
+    "reset_column_widths": "Reimposta la larghezza delle colonne",
     "resolve_peer_countries": "Risolvi il paese dei peer (GeoIP)",
     "restart_picotorrent": "Riavvia PicoTorrent",
     "restart_required": "Riavvio richiesto",

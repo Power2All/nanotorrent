@@ -276,6 +276,7 @@
     "remove_tracker_s": "Ta bort tracker(s)",
     "require_encryption_incoming": "Tvång för inkommande anslutningar",
     "require_encryption_outgoing": "Tvång för utgående anslutningar",
+    "reset_column_widths": "Återställ kolumnbredder",
     "resolve_peer_countries": "Slå upp länder för peers (GeoIP)",
     "restart_picotorrent": "Starta om NanoTorrent",
     "restart_required": "Omstart krävs",

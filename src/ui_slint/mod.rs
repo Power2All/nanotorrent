@@ -304,6 +304,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     {
         let saved = ui.cfg.get_column_widths(TORRENT_LIST);
         let (widths, titles, total) = columns(&ui.tr.borrow(), &saved);
+        apply_detail_columns(&window, &ui);
         let cols = window.global::<Cols>();
         cols.set_w(ModelRc::new(VecModel::from(widths)));
         cols.set_titles(ModelRc::new(VecModel::from(titles)));
@@ -606,9 +607,301 @@ fn caption_width(text: &str) -> f32 {
 /// Each column is the wider of its designed width and what its caption needs,
 /// so switching language cannot clip a header. Returns the widths, the
 /// captions and their total.
-/// Identifies the torrent list in `column_state`. PicoTorrent keyed the same
-/// table by list, and the details tabs will want their own rows one day.
+/// Identifies each list in `column_state`. PicoTorrent keyed the same table
+/// by list, which is what lets the four of them keep separate widths.
 pub const TORRENT_LIST: &str = "torrents";
+pub const DETAIL_LISTS: [&str; 3] = ["files", "peers", "trackers"];
+
+/// The details tabs' columns: caption key and designed width, in the order
+/// they are drawn. The tab order matches `DETAIL_LISTS` and the `int` the
+/// markup sends back.
+///
+/// Widths that used to be `horizontal-stretch: 1` get a real number here -
+/// a column that can be dragged has to be a number the header and the rows
+/// both read, and "whatever is left" is not one.
+const DETAIL_COLUMNS: [&[(&str, f32)]; 3] = [
+    &[
+        ("name", 260.0),
+        ("size", 110.0),
+        ("progress", 110.0),
+        ("included", 90.0),
+    ],
+    &[
+        ("address", 190.0),
+        ("country", 200.0),
+        ("status", 130.0),
+        ("downloaded", 120.0),
+        ("pieces", 80.0),
+    ],
+    &[
+        ("url", 300.0),
+        ("status", 110.0),
+        ("seeds", 60.0),
+        ("leeches", 70.0),
+        ("fails", 50.0),
+        ("next_announce", 130.0),
+    ],
+];
+
+/// Every list whose columns can be sized, in the order the markup sends.
+pub const RESIZABLE_LISTS: [&str; 4] = ["torrents", "files", "peers", "trackers"];
+
+/// Widen every column to the widest thing in it - caption or cell.
+///
+/// This is what "optimal" means here: nothing is clipped and nothing is
+/// padded. Measured from the rows the list is actually showing, so it answers
+/// for the torrent in front of you rather than for a hypothetical one.
+///
+/// Capped at 600px because one absurd file name should not push every other
+/// column off the panel; the column can still be dragged wider by hand.
+fn fit_to_content(captions: &[SharedString], cells: &[Vec<String>]) -> Vec<f32> {
+    const PADDING: f32 = 18.0;
+    const MIN: f32 = 40.0;
+    const MAX: f32 = 600.0;
+
+    captions
+        .iter()
+        .enumerate()
+        .map(|(i, caption)| {
+            let widest = cells
+                .iter()
+                .filter_map(|row| row.get(i))
+                .map(|text| caption_width(text))
+                .fold(caption_width(caption), f32::max);
+            (widest + PADDING).clamp(MIN, MAX)
+        })
+        .collect()
+}
+
+/// Widths, captions and total for one details tab.
+///
+/// Same rules as the torrent list: a saved width wins over the designed one
+/// but never over what the caption needs, so a longer translation cannot clip
+/// its own header.
+fn detail_columns(
+    tab: usize,
+    tr: &Translator,
+    saved: &std::collections::HashMap<i64, f32>,
+) -> (Vec<f32>, Vec<SharedString>, f32) {
+    // 12px of cell padding. No sort arrow here - the detail lists do not sort.
+    const PADDING: f32 = 12.0;
+    const MIN_COLUMN: f32 = 40.0;
+
+    let mut widths = Vec::new();
+    let mut titles = Vec::new();
+    for (i, (key, base)) in DETAIL_COLUMNS[tab].iter().enumerate() {
+        let caption = ui_string(tr, key);
+        let fits = base.max(caption_width(&caption) + PADDING);
+        widths.push(match saved.get(&(i as i64)) {
+            Some(w) => w.max(MIN_COLUMN),
+            None => fits,
+        });
+        titles.push(caption);
+    }
+    let total = widths.iter().sum();
+    (widths, titles, total)
+}
+
+/// The strings each list is currently showing, one Vec per row.
+///
+/// Read back out of the Slint models rather than from the session: what a
+/// column has to fit is what is drawn in it, and these are already the
+/// formatted values.
+fn visible_cells(window: &MainWindow, list: usize) -> Vec<Vec<String>> {
+    fn collect<T: 'static>(m: ModelRc<T>, f: impl Fn(&T) -> Vec<String>) -> Vec<Vec<String>> {
+        m.iter().map(|row| f(&row)).collect()
+    }
+    match list {
+        0 => collect(window.get_rows(), |r| {
+            vec![
+                r.name.to_string(),
+                r.queue.to_string(),
+                r.size.to_string(),
+                r.remaining.to_string(),
+                r.status.to_string(),
+                String::from("100 %"),
+                r.eta.to_string(),
+                r.dl.to_string(),
+                r.ul.to_string(),
+                r.availability.to_string(),
+                r.ratio.to_string(),
+                r.seeds.to_string(),
+                r.peers.to_string(),
+                r.added.to_string(),
+                r.completed.to_string(),
+                r.label.to_string(),
+            ]
+        }),
+        1 => collect(window.get_detail_files(), |f| {
+            vec![
+                // The tree indent is part of what the name column has to fit.
+                " ".repeat((f.depth.max(0) as usize) * 3) + f.name.as_str(),
+                f.size.to_string(),
+                String::from("100 %"),
+                String::from("Yes"),
+            ]
+        }),
+        2 => collect(window.get_detail_peers(), |p| {
+            vec![
+                p.addr.to_string(),
+                // The flag sits in this column too - 28px of it.
+                format!("     {}", p.country),
+                p.status.to_string(),
+                p.downloaded.to_string(),
+                p.pieces.to_string(),
+            ]
+        }),
+        3 => collect(window.get_detail_trackers(), |t| {
+            vec![
+                if t.indented { format!("   {}", t.url) } else { t.url.to_string() },
+                t.status.to_string(),
+                t.seeds.to_string(),
+                t.leeches.to_string(),
+                t.fails.to_string(),
+                t.next_announce.to_string(),
+            ]
+        }),
+        _ => Vec::new(),
+    }
+}
+
+/// Captions, for measuring - the header has to fit as well as the cells.
+fn current_titles(window: &MainWindow, list: usize) -> Vec<SharedString> {
+    let d = window.global::<DCols>();
+    let model = match list {
+        0 => window.global::<Cols>().get_titles(),
+        1 => d.get_files_titles(),
+        2 => d.get_peers_titles(),
+        3 => d.get_trackers_titles(),
+        _ => return Vec::new(),
+    };
+    model.iter().collect()
+}
+
+/// Write widths back, keeping the total the scrollbars read in step.
+fn put_widths(window: &MainWindow, list: usize, widths: &[f32]) {
+    let total: f32 = widths.iter().sum();
+    let model = ModelRc::new(VecModel::from(widths.to_vec()));
+    let d = window.global::<DCols>();
+    match list {
+        0 => {
+            let c = window.global::<Cols>();
+            c.set_w(model);
+            c.set_total(total);
+        }
+        1 => {
+            d.set_files(model);
+            d.set_files_total(total);
+        }
+        2 => {
+            d.set_peers(model);
+            d.set_peers_total(total);
+        }
+        3 => {
+            d.set_trackers(model);
+            d.set_trackers_total(total);
+        }
+        _ => {}
+    }
+}
+
+/// Remember a whole list's widths, so a reset or an auto-fit survives a
+/// restart the same way a hand drag does.
+fn save_widths(ui: &Rc<Ui>, list: usize, widths: &[f32]) {
+    let Some(name) = RESIZABLE_LISTS.get(list) else {
+        return;
+    };
+    for (i, w) in widths.iter().enumerate() {
+        ui.cfg.set_column_width(name, i as i64, *w);
+    }
+}
+
+/// The window's size in LOGICAL pixels, which is what layouts speak in.
+///
+/// `size()` is physical: on a 200% display it is twice the number every width
+/// here is expressed in, so scaling columns against it would double them.
+fn logical_size(window: &MainWindow) -> (f32, f32) {
+    let handle = window.window();
+    let size = handle.size();
+    let scale = handle.scale_factor();
+    let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    (size.width as f32 / scale, size.height as f32 / scale)
+}
+
+/// How much width a list has to play with, minus what the scrollbar takes.
+fn available_width(window: &MainWindow) -> f32 {
+    logical_size(window).0 - 24.0
+}
+
+/// Put the Overview's divider where the right-hand column stops needing room.
+///
+/// The right column is the one with a hard requirement: it carries the info
+/// hashes, and a v2 hash is 64 hex characters that mean nothing truncated. So
+/// it gets exactly the width its widest row needs and the LEFT column takes
+/// whatever is left over - the left side holds the name and the save path,
+/// which elide without losing the point.
+///
+/// Measured from the values on screen rather than from a constant, because
+/// the labels are translated: "Info hash (v2)" is longer in some languages
+/// than others, and a fixed number would clip the caption in those.
+fn fit_overview(window: &MainWindow) {
+    // Field's label column, plus its spacing and the cell padding either side.
+    const LABEL: f32 = 110.0;
+    const CHROME: f32 = 8.0 + 12.0;
+
+    let widest = |label: &SharedString, value: &SharedString| {
+        caption_width(label.as_str()).max(LABEL) + CHROME + caption_width(value.as_str())
+    };
+
+    // Every pair drawn on the right, the hashes included - whichever of them
+    // is showing.
+    let need = [
+        widest(&window.get_d_hash_label(), &window.get_d_hash()),
+        widest(&window.get_d_hash2_label(), &window.get_d_hash2()),
+        widest(&SharedString::from(""), &window.get_d_status()),
+        widest(&SharedString::from(""), &window.get_d_uploaded()),
+        widest(&SharedString::from(""), &window.get_d_peers()),
+        widest(&SharedString::from(""), &window.get_d_completed()),
+    ]
+    .into_iter()
+    .fold(0.0f32, f32::max);
+
+    let available = available_width(window);
+    // The left column keeps a floor of its own: handing the whole panel to the
+    // right side would leave the name and save path unreadable, which is worse
+    // than eliding a hash the context menu can widen again.
+    let split = (available - need).clamp(200.0, (available - 220.0).max(200.0));
+    window.set_details_split(split);
+}
+
+/// Push all three tabs' columns into the window.
+fn apply_detail_columns(window: &MainWindow, ui: &Rc<Ui>) {
+    let d = window.global::<DCols>();
+    let tr = ui.tr.borrow();
+    for (tab, list) in DETAIL_LISTS.iter().enumerate() {
+        let saved = ui.cfg.get_column_widths(list);
+        let (w, titles, total) = detail_columns(tab, &tr, &saved);
+        let w = ModelRc::new(VecModel::from(w));
+        let titles = ModelRc::new(VecModel::from(titles));
+        match tab {
+            0 => {
+                d.set_files(w);
+                d.set_files_titles(titles);
+                d.set_files_total(total);
+            }
+            1 => {
+                d.set_peers(w);
+                d.set_peers_titles(titles);
+                d.set_peers_total(total);
+            }
+            _ => {
+                d.set_trackers(w);
+                d.set_trackers_titles(titles);
+                d.set_trackers_total(total);
+            }
+        }
+    }
+}
 
 fn columns(tr: &Translator, saved: &std::collections::HashMap<i64, f32>)
 -> (Vec<f32>, Vec<SharedString>, f32) {
@@ -1232,10 +1525,20 @@ fn set_details(window: &MainWindow, t: &TorrentStatus, tr: &Translator) {
         // Metadata not resolved yet: the id is all there is to show.
         (None, None) => (hash_label, t.info_hash.as_str(), String::new(), ""),
     };
+    // Re-fit the divider when the torrent on show changes, not on every tick:
+    // the hashes are the widest thing in the panel and a different torrent can
+    // need a different width, but re-fitting every second would undo a drag of
+    // the divider a second after making it.
+    let changed = window.get_d_hash() != value || window.get_d_hash2() != value2;
+
     window.set_d_hash_label(label.into());
     window.set_d_hash(value.into());
     window.set_d_hash2_label(label2.into());
     window.set_d_hash2(value2.into());
+
+    if changed {
+        fit_overview(window);
+    }
     window.set_d_save_path(t.save_path.as_str().into());
     // The same translated state the list column shows, or the error if there
     // is one. (An earlier version read `t.error.is_empty().then(|| "")`, which
@@ -1605,6 +1908,80 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
     // Remembered so the list comes back the way it was left. Written on
     // release rather than on every move: the markup fires this once the drag
     // ends, and a database write per mouse event would be absurd.
+    // --- column sizing menu -------------------------------------------------
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        window.on_columns_reset(move |list| {
+            let Some(window) = w.upgrade() else { return };
+            let list = list.max(0) as usize;
+            let widths = fit_to_content(
+                &current_titles(&window, list),
+                &visible_cells(&window, list),
+            );
+            put_widths(&window, list, &widths);
+            save_widths(&u, list, &widths);
+        });
+    }
+
+    // Double-clicking a column's edge fits that one column, which is what the
+    // same gesture does in Explorer and every list that has ever had draggable
+    // columns. Shares its measurement with "Reset width of columns", so the
+    // two can never disagree about what a column needs.
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        window.on_column_fit(move |list, column| {
+            let Some(window) = w.upgrade() else { return };
+            let list = list.max(0) as usize;
+            let column = column.max(0) as usize;
+            let titles = current_titles(&window, list);
+            if column >= titles.len() {
+                return;
+            }
+            let fitted = fit_to_content(&titles, &visible_cells(&window, list));
+
+            // Only this column moves: the gesture is about one edge, and
+            // rewriting the others would undo widths set by hand next to it.
+            let mut widths: Vec<f32> = match list {
+                0 => window.global::<Cols>().get_w().iter().collect(),
+                1 => window.global::<DCols>().get_files().iter().collect(),
+                2 => window.global::<DCols>().get_peers().iter().collect(),
+                _ => window.global::<DCols>().get_trackers().iter().collect(),
+            };
+            if widths.len() != fitted.len() {
+                return;
+            }
+            widths[column] = fitted[column];
+            put_widths(&window, list, &widths);
+            if let Some(name) = RESIZABLE_LISTS.get(list) {
+                u.cfg.set_column_width(name, column as i64, widths[column]);
+            }
+        });
+    }
+
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        window.on_window_width_changed(move |_width| {
+            let Some(window) = w.upgrade() else { return };
+            fit_overview(&window);
+            // Remembered so the next start opens at the same shape rather than
+            // waiting for the first resize to settle it.
+            u.cfg
+                .set_persistent("ui.details_split", &window.get_details_split().to_string());
+        });
+    }
+
+    {
+        let u = ui.clone();
+        window.on_detail_column_resized(move |tab, column, width| {
+            // The markup sends the tab as an index into DETAIL_LISTS; anything
+            // else is a markup bug rather than something to store under a
+            // wrong list id.
+            if let Some(list) = DETAIL_LISTS.get(tab.max(0) as usize) {
+                u.cfg.set_column_width(list, column.max(0) as i64, width);
+            }
+        });
+    }
+
     {
         let u = ui.clone();
         window.on_column_resized(move |column, width| {
@@ -2003,6 +2380,7 @@ fn apply_language(window: &MainWindow, ui: &Rc<Ui>) {
     // may need to grow - but a width the user chose is still theirs.
     let saved = ui.cfg.get_column_widths(TORRENT_LIST);
     let (widths, titles, total) = columns(&ui.tr.borrow(), &saved);
+    apply_detail_columns(window, ui);
     let cols = window.global::<Cols>();
     cols.set_w(ModelRc::new(VecModel::from(widths)));
     cols.set_titles(ModelRc::new(VecModel::from(titles)));
@@ -3263,6 +3641,36 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     window.set_show_console(ui.cfg.get_bool("ui.show_console_input"));
     window.set_show_details(ui.cfg.get_bool("ui.show_details_panel"));
     window.set_show_status(ui.cfg.get_bool("ui.show_status_bar"));
+
+    // The two splitter positions, in logical pixels. Free-form persistent
+    // state rather than a `setting` row: these are window geometry, which is
+    // what the persistent_object table is for (it already holds
+    // ui.close_action), and they have no place in a Preferences dialog.
+    //
+    // Anything unparseable or absurd falls back to the markup's default. A
+    // saved height taller than the screen would otherwise be unrecoverable
+    // without editing the database, since the panel it sizes is the thing you
+    // would need to reach.
+    let saved_len = |key: &str, min: f32, max: f32| -> Option<f32> {
+        ui.cfg
+            .get_persistent(key)
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite() && *v >= min && *v <= max)
+    };
+    if let Some(h) = saved_len("ui.details_height", 120.0, 4000.0) {
+        window.set_details_height(h);
+    }
+    if let Some(w) = saved_len("ui.details_split", 200.0, 4000.0) {
+        window.set_details_split(w);
+    }
+
+    {
+        let u = ui.clone();
+        window.on_panel_resized(move |height, split| {
+            u.cfg.set_persistent("ui.details_height", &height.to_string());
+            u.cfg.set_persistent("ui.details_split", &split.to_string());
+        });
+    }
     {
         let u = ui.clone();
         window.on_view_toggled(move |key, shown| u.cfg.set(key.as_str(), &shown));

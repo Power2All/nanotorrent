@@ -278,6 +278,7 @@
     "remove_tracker_s": "Αφαίρεση ιχνηλάτη(ων)",
     "require_encryption_incoming": "Απαιτείται για εισερχόμενες συνδεσεις",
     "require_encryption_outgoing": "Απαιτείται για εξερχόμενες συνδεσεις",
+    "reset_column_widths": "Επαναφορά πλάτους στηλών",
     "resolve_peer_countries": "Εύρεση χωρών ομοτίμων (GeoIP)",
     "restart_picotorrent": "Επανεκκίνηση PicoTorrent",
     "restart_required": "Απαιτείται επανεκκίνηση",

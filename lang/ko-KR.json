@@ -267,6 +267,7 @@
     "remove_tracker_s": "트래커 삭제",
     "require_encryption_incoming": "수신 연결에 요구",
     "require_encryption_outgoing": "송신 연결에 요구",
+    "reset_column_widths": "열 너비 초기화",
     "resolve_peer_countries": "피어 국가 확인 (GeoIP)",
     "restart_picotorrent": "NanoTorrent 다시 시작",
     "restore_defaults": "기본값 복원",

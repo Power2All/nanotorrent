@@ -249,6 +249,7 @@
     "remove_torrent_and_files": "Noņemt torrentu un failus",
     "require_encryption_incoming": "Pieprasīt ienākošajiem savienojumiem",
     "require_encryption_outgoing": "Pieprasīt izejošajiem savienojumiem",
+    "reset_column_widths": "Atiestatīt kolonnu platumu",
     "resolve_peer_countries": "Noteikt dalībnieku valstis (GeoIP)",
     "restart_picotorrent": "Pārstartēt NanoTorrent",
     "restore_defaults": "Atjaunot noklusējumus",

@@ -226,6 +226,7 @@
     "remove_torrent_and_files": "Fjern torrent og filer",
     "require_encryption_incoming": "Kræv for indgående forbindelser",
     "require_encryption_outgoing": "Kræv for udgående forbindelser",
+    "reset_column_widths": "Nulstil kolonnebredder",
     "resolve_peer_countries": "Slå landene for peers op (GeoIP)",
     "restart_picotorrent": "Genstart NanoTorrent",
     "restore_defaults": "Gendan standardværdier",

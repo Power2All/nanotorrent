@@ -226,6 +226,7 @@
     "remove_torrent_and_files": "Odstrániť torrent a súbory",
     "require_encryption_incoming": "Vyžadované pre prichádzajúce spojenia",
     "require_encryption_outgoing": "Vyžadované pre odchádzajúce spojenia",
+    "reset_column_widths": "Obnoviť šírky stĺpcov",
     "resolve_peer_countries": "Zisťovať krajiny partnerov (GeoIP)",
     "restart_picotorrent": "Reštartovať PicoTorrent",
     "restore_defaults": "obnoviť pôvodné",

@@ -226,6 +226,7 @@
     "remove_torrent_and_files": "Verwyder torrent en lêers",
     "require_encryption_incoming": "Vereis vir inkomende verbindings",
     "require_encryption_outgoing": "Vereis vir uitgaande verbindings",
+    "reset_column_widths": "Herstel kolombreedtes",
     "resolve_peer_countries": "Bepaal eweknieë se lande (GeoIP)",
     "restart_picotorrent": "Herbegin NanoTorrent",
     "restore_defaults": "Herstel verstekwaardes",

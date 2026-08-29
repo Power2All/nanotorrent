@@ -274,6 +274,7 @@
     "remove_tracker_s": "Poista seurantapalvelin",
     "require_encryption_incoming": "Vaadi saapuville yhteyksille",
     "require_encryption_outgoing": "Vaadi lähteville yhteyksille",
+    "reset_column_widths": "Palauta sarakkeiden leveydet",
     "resolve_peer_countries": "Selvitä vertaisten maat (GeoIP)",
     "restart_picotorrent": "Käynnistä NanoTorrent uudelleen",
     "restart_required": "Tarvitaan uudelleenkäynnistys",

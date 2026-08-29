@@ -226,6 +226,7 @@
     "remove_torrent_and_files": "Remove torrent and files",
     "require_encryption_incoming": "Require for incoming connections",
     "require_encryption_outgoing": "Require for outgoing connections",
+    "reset_column_widths": "Reset width of columns",
     "resolve_peer_countries": "Resolve peer countries (GeoIP)",
     "restart_picotorrent": "Restart NanoTorrent",
     "restore_defaults": "Restore defaults",

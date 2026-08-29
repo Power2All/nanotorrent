@@ -283,6 +283,7 @@
     "remove_tracker_s": "Видалити трекер(и)",
     "require_encryption_incoming": "Вимагати для вхідних зʼєднань",
     "require_encryption_outgoing": "Вимагати для вихідних зʼєднань",
+    "reset_column_widths": "Скинути ширину стовпців",
     "resolve_peer_countries": "Визначати країни пірів (GeoIP)",
     "restart_picotorrent": "Перезапустити PicoTorrent",
     "restore_defaults": "Відновити стандартні значення",

@@ -283,6 +283,7 @@
     "remove_tracker_s": "مسح الملحق",
     "require_encryption_incoming": "مطلوب للإتصالات القادمة",
     "require_encryption_outgoing": "مطلوب للإتصالات الخارجة",
+    "reset_column_widths": "إعادة تعيين عرض الأعمدة",
     "resolve_peer_countries": "تحديد بلدان الأقران (GeoIP)",
     "restart_picotorrent": "إعادة تشغيل بيكوتورنت",
     "restore_defaults": "ارجاع للافتراضية",

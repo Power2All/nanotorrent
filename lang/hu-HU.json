@@ -279,6 +279,7 @@
     "remove_tracker_s": "Tracker(ek) eltávolítása",
     "require_encryption_incoming": "Kötelező bejövő titkosítás",
     "require_encryption_outgoing": "Kötelező kimenő titkosítás",
+    "reset_column_widths": "Oszlopszélességek visszaállítása",
     "resolve_peer_countries": "Partnerek országának feloldása (GeoIP)",
     "restart_picotorrent": "NanoTorrent újraindítása",
     "restart_required": "Újraindítás szükséges",

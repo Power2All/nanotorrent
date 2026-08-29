@@ -276,6 +276,7 @@
     "remove_tracker_s": "Šalinti sekiklį (-ius)",
     "require_encryption_incoming": "Reikalauti įeinantiems ryšiams",
     "require_encryption_outgoing": "Reikalauti išeinantiems ryšiams",
+    "reset_column_widths": "Atkurti stulpelių plotį",
     "resolve_peer_countries": "Nustatyti siuntėjų šalis (GeoIP)",
     "restart_picotorrent": "Perkrauti PicoTorrent",
     "restart_required": "Būtina perleisti programą",

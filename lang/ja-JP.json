@@ -229,6 +229,7 @@
     "remove_torrent_and_files": "トレントとファイルを削除します",
     "require_encryption_incoming": "着信接続で必須にする",
     "require_encryption_outgoing": "発信接続で必須にする",
+    "reset_column_widths": "列の幅をリセット",
     "resolve_peer_countries": "ピアの国を解決する (GeoIP)",
     "restart_picotorrent": "再起動PicoTorrent",
     "restore_defaults": "既定値に戻す",

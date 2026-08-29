@@ -226,6 +226,7 @@
     "remove_torrent_and_files": "torrent සහ ගොනු ඉවත් කරන්න",
     "require_encryption_incoming": "පැමිණෙන සම්බන්ධතා සඳහා අවශ්‍යයි",
     "require_encryption_outgoing": "පිටතට යන සම්බන්ධතා සඳහා අවශ්‍යයි",
+    "reset_column_widths": "තීරු පළල යළි සකසන්න",
     "resolve_peer_countries": "සම වයසේ රටවල් හඳුනාගන්න (GeoIP)",
     "restart_picotorrent": "NanoTorrent නැවත අරඹන්න",
     "restore_defaults": "පෙරනිමි යළි පිහිටුවන්න",

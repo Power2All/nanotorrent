@@ -265,6 +265,7 @@
     "remove_tracker_s": "Elimină tracker(e)",
     "require_encryption_incoming": "Necesar pentru conexiunile de intrare",
     "require_encryption_outgoing": "Necesar pentru conexiunile de ieșire",
+    "reset_column_widths": "Resetează lățimea coloanelor",
     "resolve_peer_countries": "Determină țările partenerilor (GeoIP)",
     "restart_picotorrent": "Repornește NanoTorrent",
     "restore_defaults": "Restaurează valorile implicite",

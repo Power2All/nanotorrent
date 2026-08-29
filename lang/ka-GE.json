@@ -253,6 +253,7 @@
     "remove_tracker_s": "ტრეკერ(ებ)ის წაშლა",
     "require_encryption_incoming": "სავალდებულო შემომავალი კავშირებისთვის",
     "require_encryption_outgoing": "სავალდებულო გამავალი კავშირებისთვის",
+    "reset_column_widths": "სვეტების სიგანის აღდგენა",
     "resolve_peer_countries": "თანატოლების ქვეყნების დადგენა (GeoIP)",
     "restart_picotorrent": "NanoTorrent-ის გადატვირთვა",
     "restore_defaults": "ნაგულისხმევის აღდგენა",

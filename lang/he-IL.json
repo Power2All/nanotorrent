@@ -226,6 +226,7 @@
     "remove_torrent_and_files": "הסר טורנט וקבצים",
     "require_encryption_incoming": "נדרש בשביל חיבורים נכנסים",
     "require_encryption_outgoing": "נדרש בשביל חיבורים יוצאים",
+    "reset_column_widths": "איפוס רוחב העמודות",
     "resolve_peer_countries": "זיהוי מדינות העמיתים (GeoIP)",
     "restart_picotorrent": "הפעל מחדש את PicoTorrent",
     "restore_defaults": "שחזור ברירת מחדל",

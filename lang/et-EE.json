@@ -226,6 +226,7 @@
     "remove_torrent_and_files": "Eemalda torrent ja failid",
     "require_encryption_incoming": "Nõua sissetulevatel ühendustel",
     "require_encryption_outgoing": "Nõua väljuvatel ühendustel",
+    "reset_column_widths": "Lähtesta veergude laius",
     "resolve_peer_countries": "Tuvasta partnerite riigid (GeoIP)",
     "restart_picotorrent": "Taaskäivita PicoTorrent",
     "restore_defaults": "Taasta algseaded",

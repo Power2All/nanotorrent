@@ -284,6 +284,7 @@
     "remove_tracker_s": "Fjern sporer(e)",
     "require_encryption_incoming": "Krev for innkommende tilkoblinger",
     "require_encryption_outgoing": "Krev for utgående tilkoblinger",
+    "reset_column_widths": "Tilbakestill kolonnebredder",
     "resolve_peer_countries": "Slå opp land for peers (GeoIP)",
     "restart_picotorrent": "Start PicoTorrent på ny",
     "restart_required": "Programomstart kreves",

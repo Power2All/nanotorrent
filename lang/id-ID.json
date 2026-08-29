@@ -283,6 +283,7 @@
     "remove_tracker_s": "Hapus pelacak",
     "require_encryption_incoming": "Enkripsi untuk koneksi masuk",
     "require_encryption_outgoing": "Enkripsi untuk koneksi keluar",
+    "reset_column_widths": "Atur ulang lebar kolom",
     "resolve_peer_countries": "Cari negara peer (GeoIP)",
     "restart_picotorrent": "Mulai ulang PicoTorrent",
     "restore_defaults": "Kembalikan ke bawaan",
