@@ -290,7 +290,9 @@ and no way to see a long file name. Widths are remembered per list, in the
 `column_state` table PicoTorrent has carried since 2018 and NanoTorrent had
 migrated but never read. The details panel's height and its divider are
 remembered too, and the Overview's divider now sizes its right half to fit the
-info hashes rather than cutting them in half.
+info hashes rather than cutting them in half. The Add torrent(s) dialog got a
+divider of its own, so a batch of long file names is readable without guessing
+at elided text.
 
 The web interface gained an Advanced section for the HTTP server's own tuning
 (timeouts, keep-alive, connection limits, worker threads, request size), every
