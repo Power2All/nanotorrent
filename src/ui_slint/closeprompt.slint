@@ -1,7 +1,7 @@
 // What closing the window does while `ui.close_action` is still "ask":
 // exit, or minimise to the notification area.
 
-import { Button, CheckBox, Palette } from "std-widgets.slint";
+import { ScrollView, Button, CheckBox, Palette } from "std-widgets.slint";
 import { L } from "globals.slint";
 
 export component ClosePromptDialog inherits Window {
@@ -15,7 +15,15 @@ export component ClosePromptDialog inherits Window {
     // short for it - that is when the ScrollView earns its keep.
     min-width: 440px;
     max-width: 440px;
-    min-height: 200px;
+    // min == max, both bound to the limit: binding only max leaves an
+    // already-shown window at its old height, because nothing forces a
+    // re-layout. This is the shape the Preferences dialog uses.
+    min-height: min(body.preferred-height, root.screen-limit);
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    max-height: min(body.preferred-height, root.screen-limit);
     background: Palette.background;
 
     in-out property <bool> remember;
@@ -25,31 +33,36 @@ export component ClosePromptDialog inherits Window {
     callback chosen(bool);
     callback cancelled();
 
-    VerticalLayout {
-        padding: 16px;
-        spacing: 14px;
+    // Scrolls rather than clipping when the clamp above wins on a
+    // screen too short for the content.
+    ScrollView {
+        vertical-scrollbar-policy: as-needed;
+        body := VerticalLayout {
+            padding: 16px;
+            spacing: 14px;
 
-        Text {
-            text: L.s(L.revision, "close_prompt_body");
-            wrap: word-wrap;
-            vertical-stretch: 1;
-        }
-
-        CheckBox {
-            text: L.s(L.revision, "close_remember");
-            checked <=> root.remember;
-        }
-
-        HorizontalLayout {
-            spacing: 8px;
-            Rectangle { horizontal-stretch: 1; }
-            Button { text: L.s(L.revision, "amp_exit"); clicked => { root.chosen(true); } }
-            Button {
-                text: L.s(L.revision, "close_minimize");
-                primary: true;
-                clicked => { root.chosen(false); }
+            Text {
+                text: L.s(L.revision, "close_prompt_body");
+                wrap: word-wrap;
+                vertical-stretch: 1;
             }
-            Button { text: L.s(L.revision, "cancel"); clicked => { root.cancelled(); } }
+
+            CheckBox {
+                text: L.s(L.revision, "close_remember");
+                checked <=> root.remember;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: L.s(L.revision, "amp_exit"); clicked => { root.chosen(true); } }
+                Button {
+                    text: L.s(L.revision, "close_minimize");
+                    primary: true;
+                    clicked => { root.chosen(false); }
+                }
+                Button { text: L.s(L.revision, "cancel"); clicked => { root.cancelled(); } }
+            }
         }
     }
 }

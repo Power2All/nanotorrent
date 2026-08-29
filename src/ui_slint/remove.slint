@@ -10,7 +10,7 @@
 // are different acts, one of them irreversible, and a ticked box is easy to
 // miss on the way to a button that reads the same either way.
 
-import { Button, Palette } from "std-widgets.slint";
+import { ScrollView, Button, Palette } from "std-widgets.slint";
 import { L } from "globals.slint";
 
 export component RemoveDialog inherits Window {
@@ -24,7 +24,15 @@ export component RemoveDialog inherits Window {
     // short for it - that is when the ScrollView earns its keep.
     min-width: 500px;
     max-width: 500px;
-    min-height: 200px;
+    // min == max, both bound to the limit: binding only max leaves an
+    // already-shown window at its old height, because nothing forces a
+    // re-layout. This is the shape the Preferences dialog uses.
+    min-height: min(body.preferred-height, root.screen-limit);
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    max-height: min(body.preferred-height, root.screen-limit);
     background: Palette.background;
 
     /// What is being removed: one torrent's name, or "N torrents".
@@ -46,53 +54,58 @@ export component RemoveDialog inherits Window {
         }
     }
 
-    VerticalLayout {
-        padding: 16px;
-        spacing: 12px;
+    // Scrolls rather than clipping when the clamp above wins on a
+    // screen too short for the content.
+    ScrollView {
+        vertical-scrollbar-policy: as-needed;
+        body := VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
 
-        Text {
-            text: L.s(L.revision, "remove_confirm");
-            font-size: 13px;
-            font-weight: 700;
-            color: Palette.foreground;
-            wrap: word-wrap;
-        }
-
-        Text {
-            text: root.subject;
-            font-size: 13px;
-            color: Palette.foreground;
-            wrap: word-wrap;
-            overflow: elide;
-        }
-
-        Text {
-            text: L.s(L.revision, "remove_keeps_files");
-            font-size: 12px;
-            color: #888;
-            wrap: word-wrap;
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        HorizontalLayout {
-            spacing: 8px;
-            Rectangle { horizontal-stretch: 1; }
-            Button {
-                text: L.s(L.revision, "cancel");
-                clicked => { root.cancelled(); }
+            Text {
+                text: L.s(L.revision, "remove_confirm");
+                font-size: 13px;
+                font-weight: 700;
+                color: Palette.foreground;
+                wrap: word-wrap;
             }
-            // The irreversible one is not primary: the safe choice is the one
-            // under the cursor's resting place and the one Enter would reach
-            // if Enter were bound.
-            Button {
-                text: L.s(L.revision, "remove_torrent_and_files");
-                clicked => { root.chosen(true); }
+
+            Text {
+                text: root.subject;
+                font-size: 13px;
+                color: Palette.foreground;
+                wrap: word-wrap;
+                overflow: elide;
             }
-            Button {
-                text: L.s(L.revision, "remove_torrent");
-                primary: true;
-                clicked => { root.chosen(false); }
+
+            Text {
+                text: L.s(L.revision, "remove_keeps_files");
+                font-size: 12px;
+                color: #888;
+                wrap: word-wrap;
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: L.s(L.revision, "cancel");
+                    clicked => { root.cancelled(); }
+                }
+                // The irreversible one is not primary: the safe choice is the one
+                // under the cursor's resting place and the one Enter would reach
+                // if Enter were bound.
+                Button {
+                    text: L.s(L.revision, "remove_torrent_and_files");
+                    clicked => { root.chosen(true); }
+                }
+                Button {
+                    text: L.s(L.revision, "remove_torrent");
+                    primary: true;
+                    clicked => { root.chosen(false); }
+                }
             }
         }
     }

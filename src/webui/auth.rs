@@ -15,6 +15,64 @@ use argon2::{Argon2, password_hash::rand_core::OsRng};
 use base64::Engine;
 use subtle::ConstantTimeEq;
 
+/// How many failures from one address before it is refused, and for how long.
+///
+/// Argon2 already makes each guess expensive, which is most of the defence.
+/// This exists because nothing previously stopped a client simply trying
+/// forever - and `bind_address` can be set to 0.0.0.0.
+const MAX_FAILURES: u32 = 10;
+const LOCKOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Failed attempts per client address.
+///
+/// Keyed by address, not by username: there is only one account, so counting
+/// per user would be one global counter that any passer-by could use to lock
+/// the owner out.
+#[derive(Default)]
+pub struct Attempts(std::sync::Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>);
+
+impl Attempts {
+    /// How long this address must wait, or `None` if it may try now.
+    ///
+    /// A lapsed window resets the count on read, so the map does not need a
+    /// sweeper task - an address that stops trying is forgotten the next time
+    /// it appears.
+    fn locked_for(&self, who: &str) -> Option<std::time::Duration> {
+        let mut map = self.0.lock().unwrap();
+        let (count, since) = *map.get(who)?;
+        let elapsed = since.elapsed();
+        if elapsed >= LOCKOUT {
+            map.remove(who);
+            return None;
+        }
+        (count >= MAX_FAILURES).then(|| LOCKOUT - elapsed)
+    }
+
+    fn record_failure(&self, who: &str) {
+        let mut map = self.0.lock().unwrap();
+        let now = std::time::Instant::now();
+        let entry = map.entry(who.to_string()).or_insert((0, now));
+        // Restart the window if the last failure was long enough ago, so
+        // occasional typos never accumulate into a lockout.
+        if entry.1.elapsed() >= LOCKOUT {
+            *entry = (0, now);
+        }
+        entry.0 += 1;
+        entry.1 = now;
+
+        // Unbounded growth is the obvious way to turn a rate limiter into the
+        // denial of service it was meant to prevent. Only entries that have
+        // gone quiet are dropped, so an active attacker cannot flush their own.
+        if map.len() > 1024 {
+            map.retain(|_, (_, seen)| seen.elapsed() < LOCKOUT);
+        }
+    }
+
+    fn record_success(&self, who: &str) {
+        self.0.lock().unwrap().remove(who);
+    }
+}
+
 /// The single configured account. There is one user; this is a personal
 /// client, not a multi-tenant service.
 pub struct Credentials {
@@ -82,6 +140,17 @@ fn parse_basic(header: &str) -> Option<(String, String)> {
 ///
 /// One shape for all of them - wrong password, wrong username, no header at
 /// all - so the reply never says which part was wrong.
+/// Refuse an address that has failed too often, telling it when to come back.
+///
+/// 429 rather than another 401: the credentials were not even looked at, and
+/// a client that keeps seeing 401 has no way to tell it is being throttled.
+fn too_many_requests(req: ServiceRequest, wait: std::time::Duration) -> ServiceResponse<BoxBody> {
+    let res = HttpResponse::TooManyRequests()
+        .insert_header(("Retry-After", wait.as_secs().max(1).to_string()))
+        .body("too many failed attempts");
+    req.into_response(res)
+}
+
 fn unauthorized(req: ServiceRequest) -> ServiceResponse<BoxBody> {
     // The realm makes browsers show their own credential prompt, which is all
     // the login UI a personal client needs.
@@ -110,6 +179,29 @@ where
         return Ok(unauthorized(req));
     };
 
+    // peer_addr, NOT connection_info().realip_remote_addr(): that one trusts
+    // Forwarded / X-Forwarded-For, which the client sends. Keying on a header
+    // the attacker controls means a fresh counter per request and no limit at
+    // all. Behind a reverse proxy this collapses to the proxy's address, which
+    // is the honest answer - the proxy is the peer.
+    //
+    // .ip() and not the SocketAddr: the port differs on every connection, so
+    // keying on the pair would also be a counter that never counts past one.
+    let who = req
+        .peer_addr()
+        .map_or_else(|| String::from("unknown"), |a| a.ip().to_string());
+
+    // Checked BEFORE the password is verified: an Argon2 hash per attempt is
+    // the expensive part, so a locked-out address must not be able to make the
+    // server do that work at all.
+    let attempts = req.app_data::<web::Data<Attempts>>().cloned();
+    if let Some(a) = attempts.as_ref()
+        && let Some(wait) = a.locked_for(&who)
+    {
+        tracing::warn!("locked out {who} for another {}s", wait.as_secs());
+        return Ok(too_many_requests(req, wait));
+    }
+
     let supplied = req
         .headers()
         .get("Authorization")
@@ -118,17 +210,16 @@ where
 
     match supplied {
         Some((user, pass)) if creds.verify(&user, &pass) => {
+            if let Some(a) = attempts.as_ref() {
+                a.record_success(&who);
+            }
             next.call(req).await.map(|res| res.map_into_boxed_body())
         }
         _ => {
-            tracing::warn!(
-                "rejected web request to {} from {}",
-                req.path(),
-                req.connection_info()
-                    .realip_remote_addr()
-                    .unwrap_or("unknown")
-                    .to_string()
-            );
+            if let Some(a) = attempts.as_ref() {
+                a.record_failure(&who);
+            }
+            tracing::warn!("rejected web request to {} from {who}", req.path());
             Ok(unauthorized(req))
         }
     }
@@ -182,6 +273,28 @@ mod tests {
         assert!(parse_basic(&format!("Basic {enc}")).is_none());
     }
 
+
+    /// The limiter must actually latch, and a success must clear it - a
+    /// counter that never trips, or one that keeps the owner out after they
+    /// finally type the right password, are both worse than no limiter.
+    #[test]
+    fn lockout_latches_and_clears() {
+        let a = super::Attempts::default();
+
+        for _ in 0..super::MAX_FAILURES - 1 {
+            a.record_failure("10.0.0.1");
+        }
+        assert!(a.locked_for("10.0.0.1").is_none(), "tripped one attempt early");
+
+        a.record_failure("10.0.0.1");
+        assert!(a.locked_for("10.0.0.1").is_some(), "did not trip at the limit");
+
+        // Per address, or one attacker locks the owner out of their own client.
+        assert!(a.locked_for("10.0.0.2").is_none());
+
+        a.record_success("10.0.0.1");
+        assert!(a.locked_for("10.0.0.1").is_none(), "success did not clear it");
+    }
     #[test]
     fn hashes_are_salted() {
         // Two hashes of the same password must differ, or the stored value

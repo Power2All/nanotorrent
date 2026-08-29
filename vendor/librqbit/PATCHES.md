@@ -226,3 +226,28 @@ Covered by `session::tests::concurrent_adds_all_land`, which fails with
 "only 1 of 5 concurrent adds landed" when this is reverted. Note that the test
 must enable persistence - with `persistence: None` it passes either way, which
 is exactly why this went unnoticed.
+
+## 0014 - flush the have-bitfield when pausing
+
+`patches/0013-flush-bitfield-on-pause.patch`
+
+The per-torrent `.bitv` file - the record of which pieces have been downloaded
+AND hash-checked - is an mmap. It is written back in exactly two places:
+
+- every `FLUSH_BITV_EVERY_BYTES` (16 MB) of completed pieces, and
+- once, when the torrent finishes.
+
+`TorrentStateLive::pause` moves the chunk tracker into `TorrentStatePaused`
+without flushing, and pause is also the shutdown path. So up to 16 MB of
+verified pieces can exist only as dirty pages. A clean exit survives on the
+kernel writing the mapping back; a crash, a power cut or a force-kill does not.
+
+The piece DATA is already on disk - only the record of having verified it is
+lost. The torrent therefore comes back a few pieces short of complete, with a
+file that is fully allocated and plays almost to the end. If the swarm still
+has those pieces it silently re-downloads them; if it does not, the torrent
+never finishes and a Force recheck is the only way out.
+
+`pause()` now calls `try_flush_bitv()` while the tracker is still owned by the
+live state. Not in `Drop`: a failed msync should be logged, not swallowed.
+

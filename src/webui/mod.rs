@@ -68,6 +68,102 @@ pub struct WebConfig {
     pub username: String,
     pub password_hash: String,
     pub tls: TlsMode,
+    pub advanced: Advanced,
+}
+
+/// The actix knobs behind the Preferences "Advanced" toggle.
+///
+/// These used to be literals in `build`. They are configurable because the
+/// right value depends on where the server sits - a slow link needs a longer
+/// request timeout than the slowloris guard wants to allow, and a machine
+/// serving one browser needs nothing like the connection ceiling a shared one
+/// does. The defaults are the old literals, so leaving them alone changes
+/// nothing.
+///
+/// Every field is clamped by `Advanced::load`, never taken raw: a zero worker
+/// count or a zero connection limit is a server that binds and then answers
+/// nothing, which looks like a crash and is far harder to diagnose than a
+/// value that quietly refused to apply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Advanced {
+    /// Seconds a client may take to send its request headers.
+    pub client_request_timeout: u64,
+    /// Seconds a client that stopped reading may hold its worker slot.
+    pub client_disconnect_timeout: u64,
+    /// Seconds an idle connection is kept open. Zero disables keep-alive.
+    pub keep_alive: u64,
+    pub max_connections: usize,
+    /// TLS handshakes in flight - the expensive half of a connection flood.
+    pub max_connection_rate: usize,
+    pub workers: usize,
+    pub shutdown_timeout: u64,
+    /// Request body ceiling in MEGABYTES, as typed; `build` converts.
+    pub max_body_size: usize,
+}
+
+impl Default for Advanced {
+    fn default() -> Self {
+        Advanced {
+            client_request_timeout: 5,
+            client_disconnect_timeout: 5,
+            keep_alive: 30,
+            max_connections: 256,
+            max_connection_rate: 64,
+            workers: 2,
+            shutdown_timeout: 5,
+            max_body_size: 8,
+        }
+    }
+}
+
+impl Advanced {
+    /// Read the tuning settings, clamping each into a range that still yields a
+    /// working server.
+    ///
+    /// Out-of-range is clamped rather than rejected, and missing falls back to
+    /// the default: this runs on the startup path, and no value typed into a
+    /// preferences field should be able to stop the interface coming up.
+    pub fn load(cfg: &Configuration) -> Advanced {
+        let d = Advanced::default();
+        // Named closures over `cfg` so each line below reads as the range it
+        // allows rather than as three lines of Option plumbing.
+        let secs = |key: &str, lo: u64, hi: u64, fallback: u64| -> u64 {
+            cfg.get_int(key)
+                .map_or(fallback, |v| (v.max(0) as u64).clamp(lo, hi))
+        };
+        let count = |key: &str, lo: usize, hi: usize, fallback: usize| -> usize {
+            cfg.get_int(key)
+                .map_or(fallback, |v| (v.max(0) as usize).clamp(lo, hi))
+        };
+
+        Advanced {
+            // At least a second: a zero timeout would cut off every request
+            // before it arrived. The hour ceiling is arbitrary but finite -
+            // "no timeout" is the one setting that must not be reachable.
+            client_request_timeout: secs("webui.client_request_timeout", 1, 3600, d.client_request_timeout),
+            client_disconnect_timeout: secs(
+                "webui.client_disconnect_timeout",
+                1,
+                3600,
+                d.client_disconnect_timeout,
+            ),
+            // Zero is meaningful here, and only here: actix reads it as
+            // "close after every response".
+            keep_alive: secs("webui.keep_alive", 0, 86400, d.keep_alive),
+            max_connections: count("webui.max_connections", 1, 100_000, d.max_connections),
+            max_connection_rate: count("webui.max_connection_rate", 1, 100_000, d.max_connection_rate),
+            // Capped well under any real core count: each worker is a thread,
+            // and this serves one person.
+            workers: count("webui.workers", 1, 64, d.workers),
+            // Zero means "drop connections at once on shutdown", which is a
+            // legitimate choice for a desktop app being closed.
+            shutdown_timeout: secs("webui.shutdown_timeout", 0, 3600, d.shutdown_timeout),
+            // Below 1 MB would reject ordinary .torrent uploads; the ceiling
+            // keeps an unbounded body from being free memory for anyone
+            // holding the password.
+            max_body_size: count("webui.max_body_size", 1, 1024, d.max_body_size),
+        }
+    }
 }
 
 impl WebConfig {
@@ -105,6 +201,7 @@ impl WebConfig {
                 .unwrap_or_else(|| String::from("nanotorrent")),
             password_hash: cfg.get_string("webui.password_hash").unwrap_or_default(),
             tls,
+            advanced: Advanced::load(cfg),
         }
     }
 
@@ -758,13 +855,15 @@ pub fn spawn(
     let (tx, rx) = std::sync::mpsc::channel::<Result<ServerHandle>>();
     let addr = wc.socket_addr();
     let scheme = if tls_config.is_some() { "https" } else { "http" };
+    // Cloned out of `wc` because the thread below outlives this scope.
+    let advanced = wc.advanced.clone();
 
     std::thread::Builder::new()
         .name(String::from("nt-webui"))
         .spawn(move || {
             let system = actix_web::rt::System::new();
             system.block_on(async move {
-                match build(&addr, session, cfg, creds, tls_config) {
+                match build(&addr, session, cfg, creds, tls_config, advanced) {
                     Ok(server) => {
                         let _ = tx.send(Ok(server.handle()));
                         if let Err(err) = server.await {
@@ -805,6 +904,7 @@ fn build(
     cfg: Arc<Configuration>,
     creds: Credentials,
     tls_config: Option<rustls::ServerConfig>,
+    advanced: Advanced,
 ) -> Result<actix_web::dev::Server> {
     // Subscribed once for the lifetime of the server, not per request: a
     // per-request subscription would only ever see events raised while that
@@ -816,17 +916,33 @@ fn build(
         errors,
     });
     let creds = web::Data::new(creds);
+    // Built out here, not in the factory closure: the closure runs once per
+    // worker, so constructing it there would give each worker its own counter
+    // and multiply the real attempt limit by the worker count.
+    let attempts = web::Data::new(auth::Attempts::default());
+
+    // Megabytes in the setting, bytes here. Computed outside the factory
+    // closure, which runs per worker and cannot borrow `advanced` - it is
+    // moved into the builder calls below.
+    let body_limit = advanced.max_body_size * 1024 * 1024;
+    // Zero is not "no keep-alive" to actix's Duration form, it is a zero-length
+    // one; KeepAlive::Disabled is the setting the field actually offers.
+    let keep_alive = match advanced.keep_alive {
+        0 => actix_web::http::KeepAlive::Disabled,
+        secs => actix_web::http::KeepAlive::Timeout(Duration::from_secs(secs)),
+    };
 
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
             .app_data(creds.clone())
+            .app_data(attempts.clone())
             .wrap(from_fn(auth::require_auth))
             // A .torrent with thousands of files runs to a few MB once
             // base64'd; actix's 2 KB default would reject them. Still a cap,
             // because an unbounded body is free memory for anyone with the
             // password.
-            .app_data(web::JsonConfig::default().limit(8 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(body_limit))
             .route("/", web::get().to(h_index))
             .service(
                 web::scope("/api")
@@ -849,24 +965,25 @@ fn build(
     })
     // Actix's defaults are tuned for a public server; these are for a personal
     // client, and every one of them is a cheap bound on a misbehaving or
-    // hostile peer.
+    // hostile peer. All of them come from Preferences > Web interface >
+    // Advanced, defaulting to the values that used to be written here.
     //
     // client_request_timeout defaults to 5s already and is the slowloris
     // guard - restated so it is visible rather than inherited silently.
-    .client_request_timeout(Duration::from_secs(5))
+    .client_request_timeout(Duration::from_secs(advanced.client_request_timeout))
     // Defaults to ZERO, i.e. disabled: a client that stops reading mid-response
     // would otherwise hold its worker slot indefinitely.
-    .client_disconnect_timeout(Duration::from_secs(5))
-    .keep_alive(Duration::from_secs(30))
+    .client_disconnect_timeout(Duration::from_secs(advanced.client_disconnect_timeout))
+    .keep_alive(keep_alive)
     // 25600 per worker by default. A handful of browser tabs need double
     // digits; this is the cheapest bound on connection flooding.
-    .max_connections(256)
+    .max_connections(advanced.max_connections)
     // Caps TLS handshakes in flight. Handshakes are the expensive half, so
     // this is what stops a flood costing far more CPU than bandwidth.
-    .max_connection_rate(64)
+    .max_connection_rate(advanced.max_connection_rate)
     // One per core by default. This serves one person, not a load test.
-    .workers(2)
-    .shutdown_timeout(5);
+    .workers(advanced.workers)
+    .shutdown_timeout(advanced.shutdown_timeout);
 
     let server = match tls_config {
         Some(config) => server
@@ -882,6 +999,51 @@ fn build(
 
 #[cfg(test)]
 mod tests {
+    /// The tuning fields decide whether the server comes up at all, so the
+    /// clamp is the thing under test: nothing typed into a preferences field
+    /// may produce a listener that binds and then answers nothing.
+    ///
+    /// Migration defaults are checked in the same test on purpose - a default
+    /// that disagrees with `Advanced::default` would mean the Preferences
+    /// fields show one thing on a fresh install and the server does another.
+    #[test]
+    fn advanced_clamps_and_defaults_match_the_migration() {
+        use crate::core::configuration::Configuration;
+        use crate::core::database::Database;
+        use std::sync::Arc;
+
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        db.migrate().unwrap();
+        let cfg = Configuration::new(db.clone());
+
+        assert_eq!(super::Advanced::load(&cfg), super::Advanced::default());
+
+        // Zero workers or zero connections is the dangerous case: actix accepts
+        // both and the result is a server that listens and serves nothing.
+        cfg.set("webui.workers", &0i64);
+        cfg.set("webui.max_connections", &0i64);
+        cfg.set("webui.client_request_timeout", &0i64);
+        // Negative reaches the same floor rather than wrapping to a huge usize.
+        cfg.set("webui.max_body_size", &-5i64);
+        let adv = super::Advanced::load(&cfg);
+        assert_eq!(adv.workers, 1);
+        assert_eq!(adv.max_connections, 1);
+        assert_eq!(adv.client_request_timeout, 1);
+        assert_eq!(adv.max_body_size, 1);
+
+        // Absurdly large is capped, not accepted: 64 threads is already far
+        // more than this serves.
+        cfg.set("webui.workers", &10_000i64);
+        assert_eq!(super::Advanced::load(&cfg).workers, 64);
+
+        // Zero is legitimate for exactly these two and must survive the clamp.
+        cfg.set("webui.keep_alive", &0i64);
+        cfg.set("webui.shutdown_timeout", &0i64);
+        let adv = super::Advanced::load(&cfg);
+        assert_eq!(adv.keep_alive, 0);
+        assert_eq!(adv.shutdown_timeout, 0);
+    }
+
     /// The web remote shows a file list only if inspection returns the same
     /// thing the desktop dialog sees, in the same order - only_files indexes
     /// by that order, so a mismatch would untick the wrong file.
@@ -977,6 +1139,7 @@ mod tests {
             username: String::from("u"),
             password_hash: String::new(),
             tls: TlsMode::Off,
+            advanced: Advanced::default(),
         };
         assert!(!wc.is_exposed());
         wc.bind_address = String::from("::1");
@@ -1024,6 +1187,8 @@ mod tests {
             download_payload_rate: 0,
             error: String::new(),
             eta: None,
+            info_hash_v1: None,
+            info_hash_v2: None,
             info_hash: String::from("abc"),
             label_id: None,
             label_name: String::new(),

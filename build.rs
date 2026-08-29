@@ -229,6 +229,11 @@ fn verify_librqbit_patches() {
             "patches/0012-session-persistence.patch (next_id must reserve, not              report - without it a batch add collapses into one torrent)",
         ),
         (
+            "vendor/librqbit/src/torrent_state/live/mod.rs",
+            "g.try_flush_bitv();",
+            "patches/0013-flush-bitfield-on-pause.patch (without it an unclean              exit loses up to 16 MB of verified pieces)",
+        ),
+        (
             "vendor/librqbit-tracker-comms/src/tracker_comms.rs",
             "pub struct TrackerStat",
             "patches/0008-tracker-stats.patch (tracker-comms side; this crate is \

@@ -17,32 +17,53 @@ use anyhow::{Context, Result};
 use crate::core::configuration::Configuration;
 use crate::core::database::Database;
 use crate::core::environment::Environment;
+use crate::ui::translator::Translator;
 
-pub const USAGE: &str = "\
-NanoTorrent web interface setup:
-
-  nanotorrent --webui on|off        enable or disable the web interface
-  nanotorrent --set-web-password    read a new password from stdin
-  nanotorrent --webui-status        show the current settings
-  nanotorrent --webui-set KEY VALUE change one setting
-
-Settings for --webui-set:
-
-  bind_address    127.0.0.1 (default) or 0.0.0.0 to reach it from the LAN
-  port            1-65535, default 8443
-  username        default 'nanotorrent'
-  tls_mode        self-signed (default) | custom | off
-  tls_cert_path   PEM certificate, for tls_mode=custom
-  tls_key_path    PEM private key, for tls_mode=custom
-
-tls_mode=off is refused at startup on anything but 127.0.0.1, because Basic
-auth credentials would then cross the network in clear text.
-
-Setting a password without a terminal echoing it:
-
-  echo -n 'your password' | nanotorrent --set-web-password
-
-Changes apply the next time NanoTorrent starts.";
+/// The web-interface half of `--help`, in the configured language.
+pub fn usage(tr: &Translator) -> String {
+    format!(
+        concat!(
+            "{}\n",
+            "\n",
+            "  nanotorrent --webui on|off        {}\n",
+            "  nanotorrent --set-web-password    {}\n",
+            "  nanotorrent --webui-status        {}\n",
+            "  nanotorrent --webui-set KEY VALUE {}\n",
+            "\n",
+            "{}\n",
+            "\n",
+            "  bind_address    {}\n",
+            "  port            {}\n",
+            "  username        {}\n",
+            "  tls_mode        {}\n",
+            "  tls_cert_path   {}\n",
+            "  tls_key_path    {}\n",
+            "\n",
+            "{}\n",
+            "\n",
+            "{}\n",
+            "\n",
+            "  echo -n 'your password' | nanotorrent --set-web-password\n",
+            "\n",
+            "{}",
+        ),
+        tr.i18n("cli_web_header"),
+        tr.i18n("cli_web_flag_onoff"),
+        tr.i18n("cli_web_flag_password"),
+        tr.i18n("cli_web_flag_status"),
+        tr.i18n("cli_web_flag_set"),
+        tr.i18n("cli_web_settings_header"),
+        tr.i18n("cli_web_bind_address"),
+        tr.i18n("cli_web_port"),
+        tr.i18n("cli_web_username"),
+        tr.i18n("cli_web_tls_mode"),
+        tr.i18n("cli_web_cert"),
+        tr.i18n("cli_web_key"),
+        tr.i18n("cli_web_tls_off_note"),
+        tr.i18n("cli_web_password_note"),
+        tr.i18n("cli_applies_note"),
+    )
+}
 
 /// Returns `Ok(true)` when a flag was handled and the process should exit.
 pub fn handle(args: &[String]) -> Result<bool> {
@@ -60,6 +81,7 @@ pub fn handle(args: &[String]) -> Result<bool> {
     let db = Arc::new(Database::open(&env).context("cannot open the settings database")?);
     db.migrate().context("cannot migrate the settings database")?;
     let cfg = Configuration::new(db);
+    let tr = crate::load_translator(&env, &cfg);
 
     match flag {
         "--webui" => {
@@ -67,7 +89,7 @@ pub fn handle(args: &[String]) -> Result<bool> {
             let on = match state {
                 Some("on") | Some("true") | Some("1") => true,
                 Some("off") | Some("false") | Some("0") => false,
-                _ => anyhow::bail!("{USAGE}"),
+                _ => anyhow::bail!("{}", usage(&tr)),
             };
             cfg.set("webui.enabled", &on);
 
@@ -103,9 +125,9 @@ pub fn handle(args: &[String]) -> Result<bool> {
 
         "--webui-set" => {
             let (Some(key), Some(value)) = (args.get(1), args.get(2)) else {
-                anyhow::bail!("{USAGE}");
+                anyhow::bail!("{}", usage(&tr));
             };
-            set_setting(&cfg, key, value)?;
+            set_setting(&cfg, key, value, &tr)?;
             println!("webui.{key} = {value}. Restart NanoTorrent for it to take effect.");
         }
 
@@ -131,7 +153,12 @@ pub fn handle(args: &[String]) -> Result<bool> {
 /// Whitelisted rather than a generic key/value setter over the settings table.
 /// A typo would otherwise write a key nothing ever reads and report success,
 /// which is the worst possible outcome for a security-relevant setting.
-fn set_setting(cfg: &Configuration, key: &str, value: &str) -> Result<()> {
+pub(crate) fn set_setting(
+    cfg: &Configuration,
+    key: &str,
+    value: &str,
+    tr: &Translator,
+) -> Result<()> {
     match key {
         "port" => {
             let port: i64 = value
@@ -179,7 +206,7 @@ fn set_setting(cfg: &Configuration, key: &str, value: &str) -> Result<()> {
             );
             cfg.set(&format!("webui.{key}"), &value);
         }
-        _ => anyhow::bail!("unknown setting '{key}'\n\n{USAGE}"),
+        _ => anyhow::bail!("unknown setting '{key}'\n\n{}", usage(tr)),
     }
     Ok(())
 }
@@ -220,7 +247,14 @@ mod tests {
     /// path by the normal startup route.
     #[test]
     fn every_documented_flag_is_handled() {
-        for line in super::USAGE.lines() {
+        // Rendered in English: the flags are English in every language, and an
+        // embedded locale needs no files on disk.
+        let tr = crate::ui::translator::Translator::load(
+            std::path::Path::new(""),
+            crate::DEFAULT_LOCALE,
+        );
+        let usage = super::usage(&tr);
+        for line in usage.lines() {
             for word in line.split_whitespace() {
                 if let Some(flag) = word.strip_prefix("--") {
                     let flag = format!("--{}", flag.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '-'));
@@ -232,7 +266,7 @@ mod tests {
                                 | "--webui-status"
                                 | "--webui-set"
                         ),
-                        "USAGE mentions {flag} but handle() does not match it"
+                        "the usage text mentions {flag} but handle() does not match it"
                     );
                 }
             }

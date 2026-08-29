@@ -1,9 +1,30 @@
 [package]
 name = "nanotorrent"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
+default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
 license = "MIT"
+
+# Two binaries, and the plain name belongs to the CONSOLE one.
+#
+# cmd and PowerShell decide whether to wait for a process from the PE subsystem
+# field, before any of its code runs - they never wait for a GUI binary. So
+# `nanotorrent --help` could only return the prompt after its own output unless
+# the thing the shell launches is a console program. This is the split Python
+# ships as python.exe / pythonw.exe, for the same reason.
+#
+# The GUI is `nanotorrent-gui`; the installer points every shortcut, file
+# association and the magnet handler at it, so an ordinary launch never opens a
+# console. On Linux and macOS the packaging installs it AS `nanotorrent` - the
+# subsystem problem is Windows-only and the shim is not shipped there.
+[[bin]]
+name = "nanotorrent-cli"
+path = "src/bin/console.rs"
+
+[[bin]]
+name = "nanotorrent-gui"
+path = "src/main.rs"
 
 [features]
 default = ["ui-slint"]
@@ -130,7 +151,7 @@ tauri-winrt-notification = "0.8"
 # NOT tied to any UI feature: core/toast.rs, core/file_assoc.rs, the startup
 # message box in main.rs and ui_slint/modal.rs all need winapi under plain
 # cfg(windows), whether or not a UI is built.
-winapi = { version = "0.3.9", features = ["winuser", "windef", "winreg", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "wtypes", "winerror"] }
+winapi = { version = "0.3.9", features = ["winuser", "windef", "winreg", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "wtypes", "winerror", "wincon", "processenv", "handleapi"] }
 
 # --- Linux packaging -------------------------------------------------------
 # Consumed by `cargo deb` and `cargo generate-rpm` in .github/workflows/release.yml.
@@ -152,14 +173,14 @@ priority = "optional"
 depends = "$auto, libfontconfig1"
 extended-description = """A tiny, hackable BitTorrent client - a Rust port of PicoTorrent. DHT, UDP trackers, MSE/PE encryption, labels and filters, a details pane with per-file control, and an optional authenticated web interface."""
 assets = [
-    ["target/release/nanotorrent", "usr/bin/", "755"],
+    ["target/release/nanotorrent-gui", "usr/bin/nanotorrent", "755"],
     ["packaging/linux/org.nanotorrent.NanoTorrent.desktop", "usr/share/applications/", "644"],
     ["res/app.png", "usr/share/icons/hicolor/256x256/apps/org.nanotorrent.NanoTorrent.png", "644"],
 ]
 
 [package.metadata.generate-rpm]
 assets = [
-    { source = "target/release/nanotorrent", dest = "/usr/bin/nanotorrent", mode = "755" },
+    { source = "target/release/nanotorrent-gui", dest = "/usr/bin/nanotorrent", mode = "755" },
     { source = "packaging/linux/org.nanotorrent.NanoTorrent.desktop", dest = "/usr/share/applications/org.nanotorrent.NanoTorrent.desktop", mode = "644" },
     { source = "res/app.png", dest = "/usr/share/icons/hicolor/256x256/apps/org.nanotorrent.NanoTorrent.png", mode = "644" },
 ]

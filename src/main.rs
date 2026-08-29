@@ -28,6 +28,7 @@
 
 mod bittorrent;
 mod buildinfo;
+mod cli;
 mod core;
 mod ipc;
 mod ui;
@@ -51,7 +52,6 @@ use crate::core::configuration::Configuration;
 use crate::core::database::Database;
 use crate::core::environment::Environment;
 use crate::ui::translator::Translator;
-use crate::updatechecker::UpdateInfo;
 
 /// Everything the UI layer needs, assembled during startup.
 // A headless build reads almost none of these yet - the HTTP API is what will
@@ -66,12 +66,88 @@ pub struct AppContext {
     pub translator: Translator,
     pub ipc: Option<ipc::Server>,
     pub args: Vec<String>,
-    pub update_slot: Arc<Mutex<Option<UpdateInfo>>>,
+    /// Where the update check leaves what it found; the UI polls it.
+    pub update_slot: updatechecker::Slot,
     pub geoip: Arc<core::geoip::GeoIp>,
     /// The running web interface, handed to the UI so Preferences can restart
     /// it in place rather than asking for an app restart. `None` when it is
     /// disabled or failed to start.
     pub web: Option<actix_web::dev::ServerHandle>,
+}
+
+/// Borrow the launching terminal's console, on Windows.
+///
+/// A release GUI build is a `windows` subsystem binary (see the attribute at
+/// the top), which starts with no console at all - so `--help`, `--version`
+/// and `--webui-status` printed into nothing and looked broken. Attaching to
+/// the parent gives those flags somewhere to print when the app was started
+/// from a terminal. Failure is the normal case (launched from Explorer, or a
+/// console is already attached) and is ignored: the flags then print nowhere,
+/// exactly as before, and Help > Command line covers that reader instead.
+#[cfg(windows)]
+fn attach_parent_console() {
+    // SAFETY: no arguments, no output parameters; the only effect is to give
+    // this process the parent's console handles, and a failure is a no-op.
+    unsafe {
+        winapi::um::wincon::AttachConsole(winapi::um::wincon::ATTACH_PARENT_PROCESS);
+    }
+}
+
+#[cfg(not(windows))]
+fn attach_parent_console() {}
+
+/// The `--help` text.
+///
+/// A function rather than a const because the version is in it, and one text
+/// rather than two because Help > Command line shows this exact string - a
+/// window that disagreed with the terminal would be worse than no window.
+pub fn help_text(tr: &Translator) -> String {
+    format!(
+        concat!(
+            "NanoTorrent {} - {}\n",
+            "\n",
+            "{}\n",
+            "\n",
+            "{}\n",
+            "\n",
+            "{}\n",
+            "\n",
+            "{}\n",
+            "{}",
+        ),
+        buildinfo::version(),
+        tr.i18n("cli_tagline"),
+        tr.i18n("cli_usage_line"),
+        tr.i18n("cli_forwarded_note"),
+        cli::usage(tr),
+        cli::settings_help(tr),
+        webui::cli::usage(tr)
+    )
+}
+
+/// The translator for the configured language.
+///
+/// Shared by startup and by the command-line paths, which each open their own
+/// database and would otherwise each decide what "no locale set" means.
+pub fn load_translator(env: &Environment, cfg: &Configuration) -> Translator {
+    let locale = cfg
+        .get_string("locale_name")
+        .filter(|l| !l.is_empty())
+        .unwrap_or_else(|| String::from(DEFAULT_LOCALE));
+    Translator::load(&env.get_lang_path(), &locale)
+}
+
+/// The same, for a path that has no database open yet - `--help` runs before
+/// one exists. A database that will not open falls back to English rather than
+/// stopping the flag from printing.
+fn help_translator() -> Translator {
+    let env = Environment::create();
+    let translator = Database::open(&env).ok().and_then(|db| {
+        let db = Arc::new(db);
+        db.migrate().ok()?;
+        Some(load_translator(&env, &Configuration::new(db)))
+    });
+    translator.unwrap_or_else(|| Translator::load(&env.get_lang_path(), DEFAULT_LOCALE))
 }
 
 /// Thin wrapper around [`run`]: its job is to turn a startup failure into
@@ -139,26 +215,19 @@ fn run() -> anyhow::Result<()> {
     // `nanotorrent --version` has to print and exit, not hand itself to a
     // running window as though it were a torrent to open.
     //
-    // Windows GUI builds detach from the console (see windows_subsystem at the
-    // top), so these print nowhere there. They are for the packaged Linux and
-    // macOS binaries, where the executable sits on PATH.
+    // The console has to be borrowed first on Windows, or every print below
+    // this line goes nowhere in a release GUI build.
+    if !args.is_empty() {
+        attach_parent_console();
+    }
+
     if let Some(flag) = args.first().map(String::as_str)
         && matches!(flag, "--version" | "-V" | "--help" | "-h")
     {
         if flag == "--version" || flag == "-V" {
             println!("NanoTorrent {}", buildinfo::version());
         } else {
-            println!(
-                "NanoTorrent {} - a tiny, hackable BitTorrent client.",
-                buildinfo::version()
-            );
-            println!();
-            println!("Usage: nanotorrent [FILE|MAGNET]...");
-            println!();
-            println!("Torrent files and magnet links are opened in the running");
-            println!("instance if there is one.");
-            println!();
-            println!("{}", webui::cli::USAGE);
+            println!("{}", help_text(&help_translator()));
         }
         return Ok(());
     }
@@ -166,8 +235,26 @@ fn run() -> anyhow::Result<()> {
     // BEFORE the IPC check below, which forwards argv to a running instance and
     // exits - a --set-web-password would otherwise be handed to the running
     // window as though it were a torrent to open.
-    if webui::cli::handle(&args)? {
-        return Ok(());
+    //
+    // Their errors do NOT go through `?`. A rejected value is a usage error,
+    // not a failure to start: bubbling it up would print it under "NanoTorrent
+    // could not start" and, in a release GUI build, put it in a modal box that
+    // a script has nobody to dismiss.
+    // Sequential, not an array of both calls: each one may consume stdin or
+    // write a setting, so the second must not run when the first took the flag.
+    let usage_error = |err: anyhow::Error| -> ! {
+        eprintln!("{err:#}");
+        std::process::exit(2);
+    };
+    match webui::cli::handle(&args) {
+        Ok(true) => return Ok(()),
+        Ok(false) => {}
+        Err(err) => usage_error(err),
+    }
+    match cli::handle(&args) {
+        Ok(true) => return Ok(()),
+        Ok(false) => {}
+        Err(err) => usage_error(err),
     }
 
     // Port of the IPC single-instance handling in main.cpp.
@@ -247,17 +334,15 @@ fn run() -> anyhow::Result<()> {
     // This also matches the Preferences dialog, which already fell back to
     // en-US - so an unset locale_name used to start the app in the system
     // language while the picker claimed English was selected.
-    let locale = cfg
-        .get_string("locale_name")
-        .filter(|l| !l.is_empty())
-        .unwrap_or_else(|| String::from(DEFAULT_LOCALE));
-    let translator = Translator::load(&env.get_lang_path(), &locale);
+    let translator = load_translator(&env, &cfg);
 
     let session = Arc::new(bittorrent::session::Session::new(&env, db.clone(), &cfg)?);
 
     // Fire off the update check in the background.
     let update_slot = Arc::new(Mutex::new(None));
-    updatechecker::check(&session.handle(), &cfg, update_slot.clone());
+    // false: the automatic check. It stays quiet unless there is something
+    // newer - Help > Check for update passes true and reports either way.
+    updatechecker::check(&session.handle(), &cfg, update_slot.clone(), false);
 
     // GeoIP database for peer countries, loaded in the background.
     let geoip = core::geoip::GeoIp::new();

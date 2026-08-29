@@ -1,6 +1,6 @@
 // The About box: version, build stamp and a link to the project site.
 
-import { Button, Palette } from "std-widgets.slint";
+import { ScrollView, Button, Palette } from "std-widgets.slint";
 import { L } from "globals.slint";
 
 export component AboutDialog inherits Window {
@@ -14,7 +14,15 @@ export component AboutDialog inherits Window {
     // short for it - that is when the ScrollView earns its keep.
     min-width: 400px;
     max-width: 400px;
-    min-height: 200px;
+    // min == max, both bound to the limit: binding only max leaves an
+    // already-shown window at its old height, because nothing forces a
+    // re-layout. This is the shape the Preferences dialog uses.
+    min-height: min(body.preferred-height, root.screen-limit);
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    max-height: min(body.preferred-height, root.screen-limit);
     background: Palette.background;
 
     in property <string> version;
@@ -26,94 +34,99 @@ export component AboutDialog inherits Window {
     callback open-developer();
     callback closed();
 
-    VerticalLayout {
-        padding: 20px;
-        spacing: 8px;
+    // Scrolls rather than clipping when the clamp above wins on a
+    // screen too short for the content.
+    ScrollView {
+        vertical-scrollbar-policy: as-needed;
+        body := VerticalLayout {
+            padding: 20px;
+            spacing: 8px;
 
-        Text {
-            text: "NanoTorrent";
-            font-size: 26px;
-            font-weight: 700;
-            color: Palette.foreground;
-        }
-        Text {
-            text: L.s(L.revision, "version") + " " + root.version;
-            font-size: 13px;
-            color: Palette.foreground;
-        }
-        Text {
-            text: L.s(L.revision, "build") + " " + root.build-stamp;
-            font-size: 12px;
-            color: #888;
-        }
-
-        Rectangle { height: 6px; }
-
-        Text {
-            text: L.s(L.revision, "app_description");
-            font-size: 13px;
-            color: Palette.foreground;
-        }
-
-        // Styled as a link and clickable. Slint has no hyperlink widget, so
-        // this is a TouchArea over coloured text - which is all the Win32
-        // dialog does too.
-        TouchArea {
-            height: 22px;
-            mouse-cursor: pointer;
-            clicked => { root.open-website(); }
             Text {
-                text: root.website;
-                font-size: 13px;
-                color: Palette.accent-background;
-                vertical-alignment: center;
-                // The TouchArea is full width, so without this the link
-                // centres itself while everything above is left-aligned.
-                horizontal-alignment: left;
-                width: parent.width;
+                text: "NanoTorrent";
+                font-size: 26px;
+                font-weight: 700;
+                color: Palette.foreground;
             }
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        Text {
-            text: L.s(L.revision, "app_credit");
-            font-size: 12px;
-            color: #888;
-        }
-
-        // "Developed by <name>", the name being the clickable half. Two Texts
-        // in a row rather than one, because only the name is a link and Slint
-        // has no rich text.
-        HorizontalLayout {
-            spacing: 4px;
-            alignment: start;
             Text {
-                text: L.s(L.revision, "developed_by");
+                text: L.s(L.revision, "version") + " " + root.version;
+                font-size: 13px;
+                color: Palette.foreground;
+            }
+            Text {
+                text: L.s(L.revision, "build") + " " + root.build-stamp;
                 font-size: 12px;
                 color: #888;
-                vertical-alignment: center;
             }
+
+            Rectangle { height: 6px; }
+
+            Text {
+                text: L.s(L.revision, "app_description");
+                font-size: 13px;
+                color: Palette.foreground;
+            }
+
+            // Styled as a link and clickable. Slint has no hyperlink widget, so
+            // this is a TouchArea over coloured text - which is all the Win32
+            // dialog does too.
             TouchArea {
-                width: link-text.preferred-width;
-                height: 18px;
+                height: 22px;
                 mouse-cursor: pointer;
-                clicked => { root.open-developer(); }
-                link-text := Text {
-                    text: root.developer;
-                    font-size: 12px;
+                clicked => { root.open-website(); }
+                Text {
+                    text: root.website;
+                    font-size: 13px;
                     color: Palette.accent-background;
                     vertical-alignment: center;
+                    // The TouchArea is full width, so without this the link
+                    // centres itself while everything above is left-aligned.
+                    horizontal-alignment: left;
+                    width: parent.width;
                 }
             }
-        }
 
-        HorizontalLayout {
-            Rectangle { horizontal-stretch: 1; }
-            Button {
-                text: L.s(L.revision, "close");
-                primary: true;
-                clicked => { root.closed(); }
+            Rectangle { vertical-stretch: 1; }
+
+            Text {
+                text: L.s(L.revision, "app_credit");
+                font-size: 12px;
+                color: #888;
+            }
+
+            // "Developed by <name>", the name being the clickable half. Two Texts
+            // in a row rather than one, because only the name is a link and Slint
+            // has no rich text.
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: start;
+                Text {
+                    text: L.s(L.revision, "developed_by");
+                    font-size: 12px;
+                    color: #888;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    width: link-text.preferred-width;
+                    height: 18px;
+                    mouse-cursor: pointer;
+                    clicked => { root.open-developer(); }
+                    link-text := Text {
+                        text: root.developer;
+                        font-size: 12px;
+                        color: Palette.accent-background;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: L.s(L.revision, "close");
+                    primary: true;
+                    clicked => { root.closed(); }
+                }
             }
         }
     }

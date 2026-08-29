@@ -113,16 +113,43 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   labels, copy info hash / magnet, open in file manager). **Ctrl+A** selects
   everything the current filter shows; **Delete** asks whether to remove the
   selection with or without its data. Paused torrents blank their live columns.
-  Column widths follow the language, so a longer translation still fits.
+  Column widths follow the language, so a longer translation still fits, and
+  they are **resizable and remembered**: drag a header's edge, double-click it
+  to fit that one column to its contents, or right-click a header for **Reset
+  width of columns**, which fits them all at once. A fit always covers the
+  header as well as the cells, so no translation can clip its own caption.
+  View ▸ Details panel / Status bar / Console are ticked when shown. Progress
+  never rounds up: a torrent one piece short reads 99.9%, not a full bar over
+  a Downloading status.
 - **Details tabs** — Overview (with a piece-availability bar), Files (per-file
   include toggles), Peers (with GeoIP country **and its flag**), and
   **Trackers** grouped into announce tiers with per-tracker
   seeds/leeches/fails/next-announce plus DHT/LSD/PeX source rows. Any value
   that is too long to fit shows in full on hover, and a click copies it.
+  Overview labels the info hash by what the torrent actually carries — a v1
+  torrent shows **Info hash**, a hybrid shows **Info hash (v1)** and **Info
+  hash (v2)** — read from the torrent's own info dictionary, because librqbit
+  reports only the v1 id and a hybrid is otherwise indistinguishable from a
+  plain v1 torrent.
+
+  Every dialog now sizes itself to the screen: one whose content is taller
+  than the monitor is capped to what fits and scrolls the remainder, instead
+  of extending past the bottom edge with its buttons out of reach.
+
+  Files, Peers and Trackers have the same resizable, remembered columns as the
+  torrent list, each with their own saved widths and their own horizontal
+  scrollbar. The Overview's divider is draggable too, and **sizes itself to
+  the window**: its right half takes exactly the width its content needs -
+  a v2 info hash is 64 characters that mean nothing truncated - and the left
+  half, which holds the name and save path, absorbs the rest. It re-fits when
+  the window is resized and when a different torrent is selected, but not
+  while you are reading it, so a divider you drag by hand stays where you put
+  it. The panel's height and the divider position are both remembered.
 - **Add flows** — Add torrent(s): pick any number of `.torrent` files and they
-  arrive in **one dialog**, listed down the side, with each one's file tree
-  shown as you select it. File selection is per torrent; save path and start
-  apply to the batch. Add magnet, which **fetches the metadata first** and then
+  arrive in **one dialog**, listed down the side behind a draggable divider -
+  long names need the room - with each one's file tree shown as you select it.
+  The divider's position is remembered. File selection is per torrent; save
+  path and start apply to the batch. Add magnet, which **fetches the metadata first** and then
   shows the same dialog with the real file list. Every add reports back: how
   many were added, and how many were already in the list rather than silently
   doing nothing.
@@ -138,15 +165,26 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   order (which `only_files` indexes by). Argon2id password hashing, HTTP Basic
   over TLS
   (self-signed by default, or bring your own certificate), and it refuses to
-  listen off-loopback in plaintext. Configurable from Preferences ▸ Web
-  interface — pressing OK restarts it in place — or from the command line with
-  `--webui`, `--set-web-password`, `--webui-status` and `--webui-set`.
-  `--version` and `--help` work too, though on Windows the GUI build has no
-  console to print to.
+  listen off-loopback in plaintext. Repeated failed logins from one address are
+  refused with a 429: Argon2 makes each guess expensive, but nothing else
+  stopped a client simply trying forever. Preferences ▸ Web interface ▸
+  **Advanced** exposes the HTTP server's own tuning — request / disconnect /
+  shutdown timeouts, keep-alive, connection ceiling and rate, worker threads,
+  maximum request body — each clamped on load, so nothing typed there can stop
+  the interface coming up. Configurable from Preferences ▸ Web interface —
+  pressing OK restarts it in place, and keeps the dialog open with the reason
+  if it refuses to start — or from the command line, along with everything
+  else (see below).
 - **Notifications** — real Windows 11 toasts on download-complete under a
   registered AppUserModelID, switchable off in Preferences; a notification-area
   (tray) icon with close-to-tray prompt, shown for both the window's close
-  button and File ▸ Exit.
+  button and File ▸ Exit. Hovering the tray icon reports the current transfer
+  rates and how many torrents are actively seeding and downloading. In-app
+  toasts cover everything that happens without a dialog - a failed add or a
+  session error is **red** rather than the same blue as "Copied to clipboard",
+  wraps to as many lines as the message needs, and stays up for five seconds,
+  which is set by the longest thing a toast has to say rather than the
+  shortest.
 - **File associations** — register NanoTorrent for `.torrent` files and
   `magnet:` links from Preferences.
 - **GeoIP & IP filter** — DB-IP country lookup for peers; eMule/PeerGuardian
@@ -158,17 +196,61 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **Labels** — colors, save paths, per-torrent assignment, filtering,
   auto-apply. Both labels and filters are managed from Preferences ▸ Labels and
   filters, with the filter expression validated as you type.
+- **Command line** — **every** preference the dialog offers is also settable
+  without it: `--list-settings` prints all of them with their current values,
+  units and accepted ranges, `--get NAME` reads one and `--set NAME VALUE`
+  changes one. That covers rate limits, save path, queue limits, DHT/LSD/PEX,
+  encryption, the proxy, the listen address and port, and the whole web
+  interface including its Advanced tuning — which matters on a headless build,
+  where there is no dialog at all. Values are validated and refused rather than
+  clamped silently, and the names are the CLI's own: nothing there exposes the
+  `libtorrent.` prefix half the stored keys still carry from PicoTorrent. The
+  web-specific `--webui`, `--set-web-password`, `--webui-status` and
+  `--webui-set` remain, sharing one validation path with `--set`. **Help ▸
+  Command line** shows the same text in a window for when there is no terminal
+  at hand.
+
+  `--help` is **translated**, in all 41 languages, and follows the language set
+  in Preferences — in the terminal as well as in that window. Flag and setting
+  names stay English, because they are what you type; only the prose around
+  them changes. The descriptions live in the locale files rather than in the
+  settings table, and a test fails the build if a setting is ever added without
+  one.
+
+  Windows ships **two** executables, the way Python ships `python.exe` and
+  `pythonw.exe`. `nanotorrent-gui.exe` is the application; `nanotorrent-cli.exe`
+  is a small console-subsystem launcher that forwards argv to it and waits.
+  That split is not cosmetic: cmd and PowerShell decide whether to wait for a
+  process from its PE subsystem field, before any of its code runs, and they
+  never wait for a GUI binary — so `--help` used to return the prompt *before*
+  printing, which looked like a hung command. Nothing inside a GUI binary can
+  change that, so the name a shell resolves has to belong to a console program.
+  The launcher is installed a second time as plain `nanotorrent.exe`, so the
+  command this README and `--help` itself use is the one that works. It waits
+  only for flag runs: opening a torrent returns the prompt immediately, and
+  every shortcut, file association and the magnet handler points straight at
+  `nanotorrent-gui.exe`, so an ordinary launch never opens a console. On Linux
+  and macOS none of this applies — the GUI binary is simply installed as
+  `nanotorrent`.
 - **Single-instance** — a second launch forwards its command line (torrent
   files / magnet links) to the running instance and exits.
-- **Translations** — all original language files, compiled into the executable
-  and picked from a scrollable list in Preferences, each shown by its native
-  name ("Nederlands (Nederland)"). A fresh install always starts in English
+- **Translations** — all 41 languages, **complete**: every string the UI can
+  show is translated in every locale, compiled into the executable and picked
+  from a scrollable list in Preferences, each shown by its native name
+  ("Nederlands (Nederland)"). A fresh install always starts in English
   (the OS locale is deliberately not consulted) and English is the first entry.
   **Changing the language applies immediately** — no restart.
-- **Update check** — asks GitHub for this repo's latest release on startup
-  (`/releases/latest`, so never a draft or prerelease) and reports when its tag
-  beats the running version. Endpoint and the enabled/ignored-version toggles
-  live in `update_checks.*`, so it can be pointed at a fork.
+- **Update check** — asks GitHub for this repo's latest release
+  (`/releases/latest`, so never a draft or prerelease) and opens a window when
+  its tag beats the running version, offering the release page or **Ignore this
+  update**, which silences that one version without switching the check off.
+  It runs at startup unless Preferences ▸ General ▸ *Check for updates on
+  startup* is cleared, and on demand from **Help ▸ Check for update** — which
+  runs whatever that preference says, since asking is explicit, and is the only
+  path that also reports "no update available" or a failure to reach GitHub.
+  The startup check stays silent unless there is something to say. Endpoint and
+  toggles live in `update_checks.*` (`--set check-updates`, `--set update-url`),
+  so it can be pointed at a fork.
 - **Crash log** — a panic hook writes a backtrace to the logs folder (the
   original used Crashpad; there is no upload). A failure during startup, before
   the window exists, is shown in a message box rather than lost to the GUI
@@ -176,15 +258,15 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 
 ## Known differences / not yet ported
 
-- **uTP peer transport** is deferred until librqbit 9 ships a stable release,
-  at which point it will be implemented. librqbit 9 integrates
-  [librqbit-utp](https://crates.io/crates/librqbit-utp) (BEP 29) and configures
-  it through `SessionOptions.listen`, so this becomes an engine upgrade rather
-  than a transport to write — but 9.x is currently a prerelease (9.0.0-rc.0),
-  its restructured transport layer is exactly where the MSE stream-transform
-  patches (0003 / 0005) sit, and upstream has not yet enabled uTP by default.
-  The vendored 8.1.1 is stable, so we wait. UDP trackers and DHT work today;
-  only µTP peer connections are missing.
+- **uTP peer transport** is not implemented. librqbit 9 (9.0.1, August 2026)
+  integrates [librqbit-utp](https://crates.io/crates/librqbit-utp) (BEP 29) and
+  configures it through `SessionOptions.listen`, so this becomes an engine
+  upgrade rather than a transport to write. We are still on the vendored 8.1.1:
+  9.x's restructured transport layer is exactly where the MSE stream-transform
+  patches (0003 / 0005) sit, and upstream still gates uTP behind an
+  experimental flag (`--experimental-enable-utp-listen`) rather than enabling
+  it by default. UDP trackers and DHT work today; only µTP peer connections are
+  missing.
 - **LSD** is deferred to the same librqbit 9 upgrade as uTP above — 9.x
   configures it through `SessionOptions.disable_local_service_discovery`; 8.1.1
   has no equivalent. Its Preferences checkbox is disabled until then, and
@@ -192,6 +274,22 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   applying. Separately, librqbit does not attribute peer counts to a discovery
   source, so the DHT/LSD/PeX tracker rows are status-only (no seeds/leeches
   numbers there) — that part is unchanged by the upgrade.
+- **Pure v2 torrents cannot be added**, and this one is not waiting on a
+  version bump: librqbit has no BEP 52 support in any release, 9.x included.
+  It is an open upstream design proposal
+  ([rqbit#546](https://github.com/ikatson/rqbit/issues/546)) — 9.x shipped the
+  SHA-256 groundwork and the BEP 52 error types, but not parsing, merkle
+  verification or the v2 wire protocol.
+
+  NanoTorrent *creates* v1, v2 and hybrid torrents — that side is written here
+  (`src/bittorrent/torrent_create.rs`), not delegated to the engine — and
+  *reads* v1 and hybrid. A hybrid works because it carries the v1 keys as well
+  and librqbit simply downloads it as v1, ignoring the v2 half. A v2-only
+  torrent has no `pieces` key, and librqbit-core's metainfo struct requires
+  one, so it cannot be parsed at all — the add is refused up front with a
+  message naming the format, rather than the engine's `missing field 'pieces'`.
+  Hybrids cover the interoperable case meanwhile, which is what the create
+  dialog defaults to.
 - **Desktop toasts are Windows-only.** Linux and macOS get the in-app toast;
   the OS-level notification is not wired up on those platforms yet.
 - Windows will not let an app force-set the **magnet** protocol default when
@@ -203,11 +301,51 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   `target/release` shows a generic icon until
   `packaging/linux/install-desktop-entry.sh` has been run. The packages do this
   for you.
-- Language files other than `en-US.json` are PicoTorrent's original
-  translations and still name that product in a few strings; `en-US` is the
-  fallback and has been corrected.
+- The **translations are machine-assisted**. They started as PicoTorrent's
+  original files, which stopped well short of covering this port, and the gaps
+  were filled in during development rather than by native speakers. Any
+  inherited string still naming the old product is renamed on load — except
+  the credit in About, which is meant to say PicoTorrent. Corrections are
+  welcome: the failure mode here is a wrong word in a language none of us
+  reads, not a missing one.
 
 ## History
+
+**v0.2.4** finishes the translations - all 41 languages are complete, where
+before only English covered the whole UI - and fixes two things that were
+quietly wrong. The Progress column rounded up, so a torrent one piece short of
+done showed a full bar over a Downloading status; it now floors, and reads
+100% only when it is. And the engine's record of which pieces it had verified
+was only written every 16 MB and never when pausing, so an unclean exit could
+lose it: the data was still on disk, but the torrent came back a few pieces
+short with a file that played almost to the end. It is now flushed on pause
+(vendored patch 0013).
+
+The details panel labels its info hash by what the torrent actually carries -
+a hybrid shows both v1 and v2 - and the divider between its two columns can be
+dragged. The View menu ticks the panels that are showing. A torrent that
+cannot be added now says so in a red toast instead of only reaching the log,
+and a BitTorrent v2-only torrent is named as such rather than failing with the
+engine's "missing field `pieces`".
+
+Lists gained the sizing behaviour they were missing. Columns can be dragged,
+double-clicked to fit one column, or reset from a right-click menu, in the
+torrent list and in all three details tabs - which previously had fixed widths
+and no way to see a long file name. Widths are remembered per list, in the
+`column_state` table PicoTorrent has carried since 2018 and NanoTorrent had
+migrated but never read. The details panel's height and its divider are
+remembered too, and the Overview's divider now sizes its right half to fit the
+info hashes rather than cutting them in half. The Add torrent(s) dialog got a
+divider of its own, so a batch of long file names is readable without guessing
+at elided text.
+
+The web interface gained an Advanced section for the HTTP server's own tuning
+(timeouts, keep-alive, connection limits, worker threads, request size), every
+value clamped so nothing typed there can stop it starting. Repeated failed
+logins from one address are now refused with a 429 rather than being allowed
+to continue forever, and Preferences keeps its dialog open, with the reason,
+when the interface declines to start - previously the error was written to a
+window that closed on top of it.
 
 **v0.2.3** is a Linux release. Opening a torrent's download folder opened the
 parent directory and said nothing when it failed; the window icon fell back to
@@ -234,3 +372,22 @@ rather than being fatal.
 bringing Linux and macOS support, and added the web interface, live language
 switching and the labels/filters management UI. The original UI is in the
 history up to that tag.
+
+## A note on the translations
+
+**Every language other than English is machine-translated.** The 40 non-English
+locales in `lang/`, and the `--help` text they render, were produced by an AI
+without review by a native speaker of any of them. English (`en-US`) is the
+source and the only one written by hand.
+
+Expect the usual failure modes: wording that is grammatical but not what a
+person would say, an inconsistent choice between two valid terms, and technical
+strings — "TLS handshakes in flight", "grace period on shutdown" — that read
+more literally than they should. Nothing here is a placeholder or an empty
+stub; the files are complete, and the risk is quality rather than coverage.
+
+Corrections are welcome and cheap to make: each locale is a flat
+`lang/<code>.json`, and a `lang/` folder placed next to the executable
+overrides the compiled-in copy per locale, so a fix can be tested without
+rebuilding. See also [AI-DECLARATION.md](AI-DECLARATION.md), which covers the
+rest of the project.

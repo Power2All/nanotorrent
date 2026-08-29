@@ -15,11 +15,13 @@ import { Clip, L } from "globals.slint";
 export { Clip, L }
 
 import { PreferencesDialog } from "preferences.slint";
+import { CliHelpDialog } from "clihelp.slint";
+import { UpdateDialog } from "update.slint";
 import { AboutDialog } from "about.slint";
 import { CreateTorrentDialog } from "create.slint";
 import { ClosePromptDialog } from "closeprompt.slint";
 import { RemoveDialog } from "remove.slint";
-export { PreferencesDialog, AboutDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
+export { PreferencesDialog, AboutDialog, CliHelpDialog, UpdateDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
 
 import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette } from "std-widgets.slint";
 
@@ -89,9 +91,120 @@ export struct Row {
 // short of the real total, which left the last column outside the painted row
 // background and showing through as black.
 export global Cols {
-    in property <[length]> w;
+    // in-out, not in: Rust computes the starting widths, and the header's
+    // drag handles write them back. `total` is kept in step by hand rather
+    // than summed, because Slint has no fold over a model - and it drives the
+    // ScrollView's viewport, so letting it drift would leave the last column
+    // outside the painted row background, which is exactly how the
+    // hand-written constant it replaced went wrong.
+    in-out property <[length]> w;
     in property <[string]> titles;
-    in property <length> total;
+    in-out property <length> total;
+}
+
+// The detail tabs' columns, one set each. Separate from `Cols` because they
+// are separate lists with their own saved widths - `column_state` keys by
+// list_id for exactly this reason.
+export global DCols {
+    in-out property <[length]> files;
+    in property <[string]> files-titles;
+    in-out property <length> files-total;
+
+    in-out property <[length]> peers;
+    in property <[string]> peers-titles;
+    in-out property <length> peers-total;
+
+    in-out property <[length]> trackers;
+    in property <[string]> trackers-titles;
+    in-out property <length> trackers-total;
+}
+
+/// A cell in a detail tab's list: 12px text in a fixed-width box.
+///
+/// The tabs used a HorizontalLayout with padding and spacing, which cannot be
+/// resized - a column has to be one number the header and the rows both read.
+/// `indent` is the Files tree, which was the layout's padding before.
+component DCell inherits Rectangle {
+    in property <length> w;
+    in property <string> text;
+    in property <TextHorizontalAlignment> align: left;
+    in property <bool> bold;
+    in property <length> indent: 0px;
+    width: root.w;
+    Text {
+        text: root.text;
+        x: 6px + root.indent;
+        width: parent.width - 12px - root.indent;
+        height: parent.height;
+        font-size: 12px;
+        font-weight: root.bold ? 700 : 400;
+        horizontal-alignment: root.align;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+/// The grab handle on a column's right edge.
+///
+/// Hand-rolled like the two splitters, and for the same reason - Slint has no
+/// header widget. Works in ABSOLUTE x: the handle sits inside the column it
+/// resizes, so it moves as that column grows, and measuring against its own
+/// `mouse-x` would cancel the delta out and the drag would do nothing.
+component ColResize inherits Rectangle {
+    /// The width it is currently resizing. Passed in rather than read from a
+    /// global, so the same handle serves the torrent list and each of the
+    /// three detail tabs.
+    in property <length> current;
+    /// Live, on every move - the caller writes it into whichever model it
+    /// owns, and keeps that model's total in step.
+    callback resized(length);
+    /// Once, when the drag ends. Persisting is a database write, and `moved`
+    /// runs per mouse event.
+    callback done(length);
+    /// Double-clicked: fit this one column to its contents, the way every
+    /// other list with draggable columns does.
+    callback fit();
+    private property <length> start-w;
+    private property <length> start-x;
+    // Sits ENTIRELY inside its column rather than straddling the boundary:
+    // Slint does not deliver pointer events to the part of a child that falls
+    // outside its parent, so a straddling handle is only half grabbable - and
+    // the dead half is the one on the side people aim at.
+    //
+    // `x` and `height` are set where it is used: a component's own root has
+    // no `parent` to measure against.
+    width: 8px;
+    Rectangle {
+        // Hard against the right edge, so it still reads as the boundary.
+        x: 7px;
+        width: 1px;
+        height: parent.height;
+        // Always drawn, not only on hover: an invisible resize edge is one
+        // nobody finds. Faint until the pointer is on it.
+        background: touch.has-hover ? Palette.accent-background : Palette.border;
+    }
+    touch := TouchArea {
+        mouse-cursor: col-resize;
+        // `clicked` fires before this, and the press/release pair below runs
+        // twice on the way here - both harmless, because neither changes a
+        // width unless the pointer actually moved.
+        double-clicked => { root.fit(); }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.start-w = root.current;
+                root.start-x = self.absolute-position.x + self.mouse-x;
+            }
+            if (e.kind == PointerEventKind.up) {
+                root.done(root.current);
+            }
+        }
+        moved => {
+            // 40px floor: narrower and the caption has nothing left to elide
+            // into, so the column reads as a gap rather than a column.
+            root.resized(max(40px,
+                root.start-w + ((self.absolute-position.x + self.mouse-x) - root.start-x)));
+        }
+    }
 }
 
 // A Rectangle wrapping a Text, not a Text: `padding-left` is not a Text
@@ -119,6 +232,12 @@ component Cell inherits Rectangle {
 // see the note on ctx-popup for why that is not a style choice.
 component MenuRow inherits Rectangle {
     in property <string> label;
+    /// Draws a tick to the left of the label, the way a Win32 menu marks a
+    /// toggle. Only the View menu's three panel toggles opt in, and they sit
+    /// together between separators, so the gutter lines up with itself
+    /// without indenting every other row in the menu.
+    in property <bool> checkable;
+    in property <bool> checked;
     // Greyed and inert, the way a disabled Win32 menu item is - Pause on an
     // already-paused torrent, say.
     in property <bool> enabled: true;
@@ -132,9 +251,20 @@ component MenuRow inherits Rectangle {
         clicked => { root.activated(); }
     }
     Text {
-        text: root.label;
+        // Always laid out, so the label never shifts as the toggle flips -
+        // only the glyph appears and disappears.
+        text: root.checkable && root.checked ? "\u{2713}" : "";
         x: 12px;
-        width: parent.width - 24px;
+        width: 14px;
+        height: parent.height;
+        vertical-alignment: center;
+        font-size: 13px;
+        color: touch.has-hover ? Palette.accent-foreground : Palette.foreground;
+    }
+    Text {
+        text: root.label;
+        x: root.checkable ? 30px : 12px;
+        width: parent.width - (root.checkable ? 42px : 24px);
         height: parent.height;
         vertical-alignment: center;
         overflow: elide;
@@ -232,10 +362,50 @@ component DataText inherits Rectangle {
 }
 
 // One "Name: value" pair in the Overview grid.
+/// The draggable line between the Overview's two columns.
+///
+/// Hand-rolled for the same reason as the horizontal splitter above the
+/// details panel - Slint has no splitter widget. It reports positions in
+/// ABSOLUTE coordinates and lets the window do the arithmetic, because this
+/// element moves as the column it resizes changes width: measuring against
+/// its own `mouse-x` would cancel the delta out and the drag would appear to
+/// do nothing (the same trap the horizontal one documents).
+component VDivider inherits Rectangle {
+    /// Absolute x of the press, and of each subsequent move.
+    callback grabbed(length);
+    callback dragged(length);
+    /// Fired once when the drag ends, so the result can be persisted.
+    callback released();
+    // Wider than the line it draws: 1px is a pixel-hunt to grab.
+    width: 11px;
+    Rectangle {
+        x: 5px;
+        width: 1px;
+        height: parent.height;
+        background: touch.has-hover ? Palette.accent-background : Palette.border;
+    }
+    touch := TouchArea {
+        mouse-cursor: col-resize;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.grabbed(self.absolute-position.x + self.mouse-x);
+            }
+            if (e.kind == PointerEventKind.up) {
+                root.released();
+            }
+        }
+        moved => { root.dragged(self.absolute-position.x + self.mouse-x); }
+    }
+}
+
 component Field inherits HorizontalLayout {
     in property <string> label;
     in property <string> value;
     spacing: 8px;
+    // The row rhythm lives here rather than in the grid's spacing: the
+    // divider between the two columns has to be one unbroken line, and a
+    // 6px gap between rows would have chopped it into dashes.
+    min-height: 26px;
     Text {
         text: root.label;
         font-weight: 700;
@@ -251,6 +421,10 @@ component Field inherits HorizontalLayout {
 }
 
 export component MainWindow inherits Window {
+    // Fires while the window is being dragged, not only when it settles -
+    // columns that lag behind the frame look broken, and the handler is a few
+    // multiplications.
+    changed width => { root.window-width-changed(self.width); }
     // Title bar and taskbar icon. The exe gets its icon from a Win32 resource
     // in build.rs; the window needs telling separately.
     icon: @image-url("../../res/app.png");
@@ -279,6 +453,12 @@ export component MainWindow inherits Window {
     // Details of the selected torrent.
     in property <string> d-name: "-";
     in property <string> d-hash: "-";
+    /// Set from Rust because which hashes exist is a property of the torrent,
+    /// not of the layout: a v1 torrent keeps the plain "Info hash", a v2 one
+    /// says so, and only a hybrid shows two rows.
+    in property <string> d-hash-label;
+    in property <string> d-hash2;
+    in property <string> d-hash2-label;
     in property <string> d-save-path: "-";
     in property <string> d-status: "-";
     in property <string> d-downloaded: "-";
@@ -304,6 +484,11 @@ export component MainWindow inherits Window {
     // Captured when the splitter is grabbed - see the note on its TouchArea.
     private property <length> drag-start-height;
     private property <length> drag-start-y;
+    /// Width of the Overview's left column. Not persisted, matching
+    /// `details-height` above - both reset to a sane default each launch.
+    in-out property <length> details-split: 420px;
+    private property <length> drag-start-split;
+    private property <length> drag-start-x;
     in-out property <bool> show-details: true;
     in-out property <bool> show-status: true;
 
@@ -330,6 +515,33 @@ export component MainWindow inherits Window {
     // has no modal loop, so the selection paints normally and every click lands
     // where it was aimed. It also follows the Palette, which the native menu
     // did not - that rendered light on a dark window.
+    // Right-clicking a column header. Separate from the row menu below: that
+    // one acts on the selected torrents, this one on the list's geometry, and
+    // sharing it would put six torrent actions on the Files tab.
+    col-popup := PopupWindow {
+        x: root.menu-x;
+        y: root.menu-y;
+        width: 260px;
+        height: col-menu.preferred-height;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Palette.background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 4px;
+            col-menu := VerticalLayout {
+                padding: 4px;
+                MenuRow {
+                    label: L.s(L.revision, "reset_column_widths");
+                    activated => {
+                        root.columns-reset(root.header-menu-list);
+                        col-popup.close();
+                    }
+                }
+            }
+        }
+    }
+
     ctx-popup := PopupWindow {
         x: root.menu-x;
         y: root.menu-y;
@@ -409,6 +621,29 @@ export component MainWindow inherits Window {
     }
 
     callback sort(int);
+    /// A column's new width, once the drag has finished. Rust remembers it.
+    callback column-resized(int, length);
+    /// The details panel's height and its internal divider, once a drag has
+    /// finished. Same reason as above: persisting is a database write, and the
+    /// drag handlers run per mouse event.
+    callback panel-resized(length, length);
+    /// Which tab (0 files, 1 peers, 2 trackers), which column, new width.
+    callback detail-column-resized(int, int, length);
+
+    // --- column sizing menu ------------------------------------------------
+    /// Which list the header menu was opened on: 0 torrents, 1 files,
+    /// 2 peers, 3 trackers. Matches RESIZABLE_LISTS in Rust.
+    private property <int> header-menu-list;
+    /// Fit every column in this list to its content, once.
+    callback columns-reset(int);
+    /// Fit ONE column to its content: which list, which column. The list index
+    /// is the RESIZABLE_LISTS one, so the detail tabs are 1..3 here even
+    /// though `detail-column-resized` numbers the tabs 0..2.
+    callback column-fit(int, int);
+    /// The window got wider or narrower. Only the Overview reacts: its right
+    /// half holds the info hashes, which have a width worth keeping whole,
+    /// so the left half takes the change.
+    callback window-width-changed(length);
     callback row-pressed(int, bool, bool);
     /// Delete on the torrent list. Named for what it opens rather than what it
     /// does, because it does nothing until the dialog comes back.
@@ -572,7 +807,18 @@ export component MainWindow inherits Window {
                         // font is wider than the Windows one.
                         for title[i] in Cols.titles: Rectangle {
                             width: Cols.w[i];
-                            TouchArea { clicked => { root.sort(i); } }
+                            TouchArea {
+                                clicked => { root.sort(i); }
+                                pointer-event(e) => {
+                                    if (e.button == PointerEventButton.right
+                                        && e.kind == PointerEventKind.down) {
+                                        root.menu-x = self.absolute-position.x + self.mouse-x;
+                                        root.menu-y = self.absolute-position.y + self.mouse-y;
+                                        root.header-menu-list = 0;
+                                        col-popup.show();
+                                    }
+                                }
+                            }
                             Text {
                                 // The arrow goes in the caption rather than a
                                 // separate element so it cannot drift out of
@@ -587,6 +833,20 @@ export component MainWindow inherits Window {
                                 height: parent.height;
                                 vertical-alignment: center;
                                 overflow: elide;
+                            }
+                            // Declared after the sort TouchArea above, so a
+                            // drag on the edge resizes rather than re-sorting:
+                            // later siblings win the hit test.
+                            ColResize {
+                                current: Cols.w[i];
+                                x: parent.width - 8px;
+                                height: parent.height;
+                                resized(width) => {
+                                    Cols.total += width - Cols.w[i];
+                                    Cols.w[i] = width;
+                                }
+                                done(width) => { root.column-resized(i, width); }
+                                fit() => { root.column-fit(0, i); }
                             }
                         }
                     }
@@ -679,7 +939,15 @@ export component MainWindow inherits Window {
                                         border-radius: 3px;
                                     }
                                     Text {
-                                        text: round(row.progress * 1000) / 10 + " %";
+                                        // floor, not round: round() turns a torrent that is
+                                        // 99.98% done into "100 %" while the Status column
+                                        // still - correctly - says Downloading. The files are
+                                        // preallocated at full size, so on disk it looks
+                                        // finished too, and the only honest reading was the
+                                        // remaining-size column. Never claim 100 until it is.
+                                        text: row.progress >= 1.0
+                                            ? "100 %"
+                                            : floor(row.progress * 1000) / 10 + " %";
                                         font-size: 11px;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
@@ -738,6 +1006,9 @@ export component MainWindow inherits Window {
                         root.drag-start-height = root.details-height;
                         root.drag-start-y = self.absolute-position.y + self.mouse-y;
                     }
+                    if (e.kind == PointerEventKind.up) {
+                        root.panel-resized(root.details-height, root.details-split);
+                    }
                 }
                 moved => {
                     root.details-height = min(
@@ -783,28 +1054,78 @@ export component MainWindow inherits Window {
                         }
                     }
 
+                    // Cells are placed by explicit row/col rather than with
+                    // `Row`, so the divider can rowspan the whole grid: one
+                    // continuous line and one drag target instead of five
+                    // stacked ones. Keeping the GridLayout (rather than two
+                    // side-by-side columns) is what keeps the left and right
+                    // labels on the same baseline - including when a hybrid
+                    // torrent makes the first row two lines tall.
                     GridLayout {
-                        spacing: 6px;
-                        Row {
-                            Field { label: L.s(L.revision, "name"); value: root.d-name; }
-                            Field { label: L.s(L.revision, "info_hash"); value: root.d-hash; }
+                        spacing: 0px;
+
+                        VDivider {
+                            row: 0;
+                            col: 1;
+                            rowspan: 5;
+                            grabbed(x) => {
+                                root.drag-start-split = root.details-split;
+                                root.drag-start-x = x;
+                            }
+                            released => {
+                                root.panel-resized(root.details-height, root.details-split);
+                            }
+                            dragged(x) => {
+                                // Floor before ceiling: on a narrow window the
+                                // upper bound can fall below the lower one, and
+                                // min() of a smaller max would pin the column
+                                // shut.
+                                root.details-split = min(
+                                    max(root.drag-start-split + (x - root.drag-start-x), 200px),
+                                    max(220px, root.width - 320px));
+                            }
                         }
-                        Row {
-                            Field { label: L.s(L.revision, "save_path"); value: root.d-save-path; }
-                            Field { label: L.s(L.revision, "status"); value: root.d-status; }
+
+                        Field {
+                            row: 0; col: 0; width: root.details-split;
+                            label: L.s(L.revision, "name"); value: root.d-name;
                         }
-                        Row {
-                            Field { label: L.s(L.revision, "downloaded"); value: root.d-downloaded; }
-                            Field { label: L.s(L.revision, "uploaded"); value: root.d-uploaded; }
+                        // Stacked inside the one cell rather than added as
+                        // another grid row: the second hash belongs beside
+                        // the first, and this leaves every other row's
+                        // alignment alone.
+                        VerticalLayout {
+                            row: 0; col: 2;
+                            Field { label: root.d-hash-label; value: root.d-hash; }
+                            if root.d-hash2 != "": Field {
+                                label: root.d-hash2-label;
+                                value: root.d-hash2;
+                            }
                         }
-                        Row {
-                            Field { label: L.s(L.revision, "ratio"); value: root.d-ratio; }
-                            Field { label: L.s(L.revision, "peers"); value: root.d-peers; }
+
+                        Field {
+                            row: 1; col: 0; width: root.details-split;
+                            label: L.s(L.revision, "save_path"); value: root.d-save-path;
                         }
-                        Row {
-                            Field { label: L.s(L.revision, "added_on"); value: root.d-added; }
-                            Field { label: L.s(L.revision, "completed_on"); value: root.d-completed; }
+                        Field { row: 1; col: 2; label: L.s(L.revision, "status"); value: root.d-status; }
+
+                        Field {
+                            row: 2; col: 0; width: root.details-split;
+                            label: L.s(L.revision, "downloaded"); value: root.d-downloaded;
                         }
+                        Field { row: 2; col: 2; label: L.s(L.revision, "uploaded"); value: root.d-uploaded; }
+
+                        Field {
+                            row: 3; col: 0; width: root.details-split;
+                            label: L.s(L.revision, "ratio"); value: root.d-ratio;
+                        }
+                        Field { row: 3; col: 2; label: L.s(L.revision, "peers"); value: root.d-peers; }
+
+                        Field {
+                            row: 4; col: 0; width: root.details-split;
+                            label: L.s(L.revision, "added_on"); value: root.d-added;
+                        }
+                        Field { row: 4; col: 2; label: L.s(L.revision, "completed_on"); value: root.d-completed; }
                     }
                     Rectangle { vertical-stretch: 1; }
                     }
@@ -813,46 +1134,90 @@ export component MainWindow inherits Window {
 
             Tab {
                 title: L.s(L.revision, "files");
-                VerticalLayout {
-                    padding: 0px;
+                // Scrolls horizontally like the torrent list: once columns can
+                // be widened they can exceed the panel, and without this the
+                // far ones would simply be unreachable. The ListView owns
+                // vertical scrolling - two of them fight.
+                ScrollView {
+                    viewport-width: DCols.files-total;
+                    vertical-scrollbar-policy: always-off;
+                    VerticalLayout {
+                        padding: 0px;
                     Rectangle {
                         height: 24px;
                         background: Palette.alternate-background;
                         HorizontalLayout {
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            spacing: 12px;
-                            Text { text: L.s(L.revision, "name"); font-weight: 700; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "size"); font-weight: 700; font-size: 12px; width: 110px; horizontal-alignment: right; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "progress"); font-weight: 700; font-size: 12px; width: 110px; horizontal-alignment: right; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "included"); font-weight: 700; font-size: 12px; width: 90px; vertical-alignment: center; }
+                            for title[i] in DCols.files-titles: Rectangle {
+                                width: DCols.files[i];
+                                Text {
+                                    text: title;
+                                    font-weight: 700;
+                                    font-size: 12px;
+                                    x: 6px;
+                                    width: parent.width - 12px;
+                                    height: parent.height;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                                TouchArea {
+                                    pointer-event(e) => {
+                                        if (e.button == PointerEventButton.right
+                                            && e.kind == PointerEventKind.down) {
+                                            root.menu-x = self.absolute-position.x + self.mouse-x;
+                                            root.menu-y = self.absolute-position.y + self.mouse-y;
+                                            root.header-menu-list = 1;
+                                            col-popup.show();
+                                        }
+                                    }
+                                }
+                                ColResize {
+                                    current: DCols.files[i];
+                                    x: parent.width - 8px;
+                                    height: parent.height;
+                                    resized(width) => {
+                                        DCols.files-total += width - DCols.files[i];
+                                        DCols.files[i] = width;
+                                    }
+                                    done(width) => { root.detail-column-resized(0, i, width); }
+                                    fit() => { root.column-fit(1, i); }
+                                }
+                            }
                         }
                     }
-                    ListView {
-                        for f[i] in root.detail-files: Rectangle {
-                            height: 22px;
-                            background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
-                            HorizontalLayout {
-                                // Indentation is the tree: Slint has no tree
-                                // widget, so depth becomes padding. A folder
-                                // row (index -1) shows only its name.
-                                padding-left: 8px + f.depth * 16px;
-                                padding-right: 8px;
-                                spacing: 12px;
-                                DataText {
-                                    text: f.name;
-                                    horizontal-stretch: 1;
-                                    bold: f.index < 0;
-                                }
-                                DataText { text: f.size; width: 110px; align: right; }
-                                DataText {
-                                    text: f.index < 0 ? "" : round(f.progress * 1000) / 10 + " %";
-                                    width: 110px;
-                                    align: right;
-                                }
-                                DataText {
-                                    text: f.index < 0 ? "" : (f.included ? L.s(L.revision, "yes") : L.s(L.revision, "no"));
-                                    width: 90px;
+                        Rectangle {
+                            vertical-stretch: 1;
+                            ListView {
+                                for f[i] in root.detail-files: Rectangle {
+                                    height: 22px;
+                                    background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                                    HorizontalLayout {
+                                        // Indentation is the tree: Slint has no
+                                        // tree widget, so depth becomes an
+                                        // indent inside the name cell - it used
+                                        // to be the row layout's padding, which
+                                        // a fixed-width column cannot carry.
+                                        DCell {
+                                            w: DCols.files[0];
+                                            text: f.name;
+                                            bold: f.index < 0;
+                                            indent: f.depth * 16px;
+                                        }
+                                        DCell { w: DCols.files[1]; text: f.size; align: right; }
+                                        DCell {
+                                            w: DCols.files[2];
+                                            align: right;
+                                            // Same flooring as the Progress column.
+                                            text: f.index < 0
+                                                ? ""
+                                                : (f.progress >= 1.0
+                                                    ? "100 %"
+                                                    : floor(f.progress * 1000) / 10 + " %");
+                                        }
+                                        DCell {
+                                            w: DCols.files[3];
+                                            text: f.index < 0 ? "" : (f.included ? L.s(L.revision, "yes") : L.s(L.revision, "no"));
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -862,48 +1227,90 @@ export component MainWindow inherits Window {
 
             Tab {
                 title: L.s(L.revision, "peers");
-                VerticalLayout {
-                    padding: 0px;
-                    Rectangle {
-                        height: 24px;
-                        background: Palette.alternate-background;
-                        HorizontalLayout {
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            spacing: 12px;
-                            Text { text: L.s(L.revision, "address"); font-weight: 700; font-size: 12px; width: 190px; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "country"); font-weight: 700; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "status"); font-weight: 700; font-size: 12px; width: 130px; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "downloaded"); font-weight: 700; font-size: 12px; width: 120px; horizontal-alignment: right; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "pieces"); font-weight: 700; font-size: 12px; width: 80px; horizontal-alignment: right; vertical-alignment: center; }
-                        }
-                    }
-                    ListView {
-                        for p[i] in root.detail-peers: Rectangle {
-                            height: 22px;
-                            background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                ScrollView {
+                    viewport-width: DCols.peers-total;
+                    vertical-scrollbar-policy: always-off;
+                    VerticalLayout {
+                        padding: 0px;
+                        Rectangle {
+                            height: 24px;
+                            background: Palette.alternate-background;
                             HorizontalLayout {
-                                padding-left: 8px;
-                                padding-right: 8px;
-                                spacing: 12px;
-                                Text { text: p.addr; font-size: 12px; width: 190px; overflow: elide; vertical-alignment: center; }
-                                // Flag then country name. The PNG is decoded
-                                // on first use of that country - see flags.rs.
-                                HorizontalLayout {
-                                    horizontal-stretch: 1;
-                                    spacing: 6px;
-                                    Image {
-                                        source: p.flag;
-                                        width: 16px;
-                                        height: 12px;
-                                        image-fit: contain;
-                                        y: (parent.height - self.height) / 2;
+                                for title[i] in DCols.peers-titles: Rectangle {
+                                    width: DCols.peers[i];
+                                    Text {
+                                        text: title;
+                                        font-weight: 700;
+                                        font-size: 12px;
+                                        x: 6px;
+                                        width: parent.width - 12px;
+                                        height: parent.height;
+                                        vertical-alignment: center;
+                                        overflow: elide;
                                     }
-                                    DataText { text: p.country; horizontal-stretch: 1; }
+                                    TouchArea {
+                                        pointer-event(e) => {
+                                            if (e.button == PointerEventButton.right
+                                                && e.kind == PointerEventKind.down) {
+                                                root.menu-x = self.absolute-position.x + self.mouse-x;
+                                                root.menu-y = self.absolute-position.y + self.mouse-y;
+                                                root.header-menu-list = 2;
+                                                col-popup.show();
+                                            }
+                                        }
+                                    }
+                                    ColResize {
+                                        current: DCols.peers[i];
+                                        x: parent.width - 8px;
+                                        height: parent.height;
+                                        resized(width) => {
+                                            DCols.peers-total += width - DCols.peers[i];
+                                            DCols.peers[i] = width;
+                                        }
+                                        done(width) => { root.detail-column-resized(1, i, width); }
+                                        fit() => { root.column-fit(2, i); }
+                                    }
                                 }
-                                DataText { text: p.status; width: 130px; }
-                                DataText { text: p.downloaded; width: 120px; align: right; }
-                                DataText { text: p.pieces; width: 80px; align: right; }
+                            }
+                        }
+                        Rectangle {
+                            vertical-stretch: 1;
+                            ListView {
+                                for p[i] in root.detail-peers: Rectangle {
+                                    height: 22px;
+                                    background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                                    HorizontalLayout {
+                                        DCell { w: DCols.peers[0]; text: p.addr; }
+                                        // Flag then country name, in one cell:
+                                        // the flag is part of the country
+                                        // column, so it has to resize with it.
+                                        // The PNG is decoded on first use of
+                                        // that country - see flags.rs.
+                                        Rectangle {
+                                            width: DCols.peers[1];
+                                            Image {
+                                                source: p.flag;
+                                                x: 6px;
+                                                width: 16px;
+                                                height: 12px;
+                                                image-fit: contain;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            Text {
+                                                text: p.country;
+                                                x: 28px;
+                                                width: max(0px, parent.width - 34px);
+                                                height: parent.height;
+                                                font-size: 12px;
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                            }
+                                        }
+                                        DCell { w: DCols.peers[2]; text: p.status; }
+                                        DCell { w: DCols.peers[3]; text: p.downloaded; align: right; }
+                                        DCell { w: DCols.peers[4]; text: p.pieces; align: right; }
+                                    }
+                                }
                             }
                         }
                     }
@@ -912,39 +1319,75 @@ export component MainWindow inherits Window {
 
             Tab {
                 title: L.s(L.revision, "trackers");
-                VerticalLayout {
-                    padding: 0px;
-                    Rectangle {
-                        height: 24px;
-                        background: Palette.alternate-background;
-                        HorizontalLayout {
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            spacing: 12px;
-                            Text { text: L.s(L.revision, "url"); font-weight: 700; font-size: 12px; horizontal-stretch: 1; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "status"); font-weight: 700; font-size: 12px; width: 110px; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "seeds"); font-weight: 700; font-size: 12px; width: 60px; horizontal-alignment: right; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "leeches"); font-weight: 700; font-size: 12px; width: 70px; horizontal-alignment: right; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "fails"); font-weight: 700; font-size: 12px; width: 50px; horizontal-alignment: right; vertical-alignment: center; }
-                            Text { text: L.s(L.revision, "next_announce"); font-weight: 700; font-size: 12px; width: 130px; vertical-alignment: center; }
-                        }
-                    }
-                    ListView {
-                        for t[i] in root.detail-trackers: Rectangle {
-                            height: 22px;
-                            background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                ScrollView {
+                    viewport-width: DCols.trackers-total;
+                    vertical-scrollbar-policy: always-off;
+                    VerticalLayout {
+                        padding: 0px;
+                        Rectangle {
+                            height: 24px;
+                            background: Palette.alternate-background;
                             HorizontalLayout {
-                                // Tracker rows sit under their tier heading, as
-                                // the Win32 list indents them.
-                                padding-left: t.indented ? 26px : 8px;
-                                padding-right: 8px;
-                                spacing: 12px;
-                                DataText { text: t.url; horizontal-stretch: 1; }
-                                DataText { text: t.status; width: 110px; }
-                                DataText { text: t.seeds; width: 60px; align: right; }
-                                DataText { text: t.leeches; width: 70px; align: right; }
-                                DataText { text: t.fails; width: 50px; align: right; }
-                                DataText { text: t.next-announce; width: 130px; }
+                                for title[i] in DCols.trackers-titles: Rectangle {
+                                    width: DCols.trackers[i];
+                                    Text {
+                                        text: title;
+                                        font-weight: 700;
+                                        font-size: 12px;
+                                        x: 6px;
+                                        width: parent.width - 12px;
+                                        height: parent.height;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                    TouchArea {
+                                        pointer-event(e) => {
+                                            if (e.button == PointerEventButton.right
+                                                && e.kind == PointerEventKind.down) {
+                                                root.menu-x = self.absolute-position.x + self.mouse-x;
+                                                root.menu-y = self.absolute-position.y + self.mouse-y;
+                                                root.header-menu-list = 3;
+                                                col-popup.show();
+                                            }
+                                        }
+                                    }
+                                    ColResize {
+                                        current: DCols.trackers[i];
+                                        x: parent.width - 8px;
+                                        height: parent.height;
+                                        resized(width) => {
+                                            DCols.trackers-total += width - DCols.trackers[i];
+                                            DCols.trackers[i] = width;
+                                        }
+                                        done(width) => { root.detail-column-resized(2, i, width); }
+                                        fit() => { root.column-fit(3, i); }
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle {
+                            vertical-stretch: 1;
+                            ListView {
+                                for t[i] in root.detail-trackers: Rectangle {
+                                    height: 22px;
+                                    background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                                    HorizontalLayout {
+                                        // Tracker rows sit under their tier
+                                        // heading, as the Win32 list indents
+                                        // them - now an indent inside the URL
+                                        // cell rather than the row's padding.
+                                        DCell {
+                                            w: DCols.trackers[0];
+                                            text: t.url;
+                                            indent: t.indented ? 18px : 0px;
+                                        }
+                                        DCell { w: DCols.trackers[1]; text: t.status; }
+                                        DCell { w: DCols.trackers[2]; text: t.seeds; align: right; }
+                                        DCell { w: DCols.trackers[3]; text: t.leeches; align: right; }
+                                        DCell { w: DCols.trackers[4]; text: t.fails; align: right; }
+                                        DCell { w: DCols.trackers[5]; text: t.next-announce; }
+                                    }
+                                }
                             }
                         }
                     }
@@ -971,22 +1414,35 @@ export component MainWindow inherits Window {
     /// Transient confirmation, cleared by a timer on the Rust side. Empty
     /// means nothing to say.
     in property <string> toast;
+    /// Red instead of accent. A failed add has to look different from "copied
+    /// to clipboard" - both used to be the same blue pill, so the one that
+    /// mattered read as confirmation.
+    in property <bool> toast-error;
 
     // Bottom centre, above the status bar, and outside the main layout so it
     // floats rather than taking room. No TouchArea, so it never swallows a
     // click even while it is fading out.
     Rectangle {
+        // Errors carry a sentence, not two words, so the pill wraps rather
+        // than growing wider than the window. Capped at 560px because a
+        // full-width band of text stops reading as a toast.
+        property <length> limit: min(root.width - 40px, 560px);
         x: (parent.width - self.width) / 2;
         y: parent.height - self.height - (root.show-status ? 46px : 20px);
-        width: label.width + 32px;
-        height: 34px;
-        background: Palette.accent-background;
+        width: min(label.preferred-width + 32px, self.limit);
+        height: max(34px, label.preferred-height + 18px);
+        background: root.toast-error ? #b3261e : Palette.accent-background;
         border-radius: 6px;
         opacity: root.toast == "" ? 0 : 1;
         animate opacity { duration: 150ms; }
         label := Text {
             text: root.toast;
-            color: Palette.accent-foreground;
+            width: parent.width - 32px;
+            wrap: word-wrap;
+            // White on the red, which the accent foreground is not guaranteed
+            // to be - it follows the theme's accent, and this background does
+            // not.
+            color: root.toast-error ? #ffffff : Palette.accent-foreground;
             font-size: 13px;
             vertical-alignment: center;
             horizontal-alignment: center;
@@ -1080,6 +1536,8 @@ export component MainWindow inherits Window {
                 MenuSep { }
                 MenuRow {
                     label: L.s(L.revision, "amp_details_panel");
+                    checkable: true;
+                    checked: root.show-details;
                     activated => {
                         root.show-details = !root.show-details;
                         root.view-toggled("ui.show_details_panel", root.show-details);
@@ -1088,6 +1546,8 @@ export component MainWindow inherits Window {
                 }
                 MenuRow {
                     label: L.s(L.revision, "amp_status_bar");
+                    checkable: true;
+                    checked: root.show-status;
                     activated => {
                         root.show-status = !root.show-status;
                         root.view-toggled("ui.show_status_bar", root.show-status);
@@ -1096,6 +1556,8 @@ export component MainWindow inherits Window {
                 }
                 MenuRow {
                     label: L.s(L.revision, "amp_console");
+                    checkable: true;
+                    checked: root.show-console;
                     activated => {
                         root.show-console = !root.show-console;
                         root.view-toggled("ui.show_console_input", root.show-console);
@@ -1142,6 +1604,8 @@ export component MainWindow inherits Window {
         help-layout := VerticalLayout {
                 padding: 4px;
                 MenuRow { label: L.s(L.revision, "documentation"); activated => { root.action("docs"); root.open-menu = 0; } }
+                MenuRow { label: L.s(L.revision, "command_line_help"); activated => { root.action("cli-help"); root.open-menu = 0; } }
+                MenuRow { label: L.s(L.revision, "amp_check_for_update"); activated => { root.action("check-update"); root.open-menu = 0; } }
                 MenuRow { label: L.s(L.revision, "amp_about"); activated => { root.action("about"); root.open-menu = 0; } }
         }
     }
@@ -1163,8 +1627,13 @@ export component AddMagnetDialog inherits Window {
     icon: @image-url("../../res/app.png");
     title: L.s(L.revision, "add_magnet_link_s");
     preferred-width: 560px;
-    preferred-height: 300px;
+    preferred-height: min(300px, root.screen-limit);
     background: Palette.background;
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    max-height: root.screen-limit;
 
     in-out property <string> links;
     callback accepted();
@@ -1224,8 +1693,13 @@ export component AddTorrentDialog inherits Window {
     icon: @image-url("../../res/app.png");
     title: L.s(L.revision, "add_torrent_s");
     preferred-width: 640px;
-    preferred-height: 540px;
+    preferred-height: min(540px, root.screen-limit);
     background: Palette.background;
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    max-height: root.screen-limit;
 
     in property <string> torrent-name;
     in property <string> torrent-size;
@@ -1243,6 +1717,14 @@ export component AddTorrentDialog inherits Window {
     callback browse();
     callback toggle-file(int);
     callback select-torrent(int);
+
+    /// Width of the queue column. Rust seeds it from the last time and stores
+    /// it again when a drag ends - a batch add is short-lived, so re-dragging
+    /// it on every add would be the whole interaction.
+    in-out property <length> queue-width: 200px;
+    callback queue-width-changed(length);
+    private property <length> queue-drag-start;
+    private property <length> queue-drag-x;
 
     VerticalLayout {
         padding: 12px;
@@ -1270,7 +1752,7 @@ export component AddTorrentDialog inherits Window {
         // The queue column, only when there is a queue. A single add keeps the
         // original full-width layout rather than growing an empty sidebar.
         if root.queue.length > 1: Rectangle {
-            width: 200px;
+            width: root.queue-width;
             border-color: Palette.border;
             border-width: 1px;
             border-radius: 4px;
@@ -1324,6 +1806,21 @@ export component AddTorrentDialog inherits Window {
                     }
                 }
             }
+        }
+
+        if root.queue.length > 1: VDivider {
+            grabbed(x) => {
+                root.queue-drag-start = root.queue-width;
+                root.queue-drag-x = x;
+            }
+            dragged(x) => {
+                // Floor keeps the names readable; ceiling keeps the file tree
+                // on the right from being squeezed out of its own dialog.
+                root.queue-width = min(
+                    max(root.queue-drag-start + (x - root.queue-drag-x), 120px),
+                    max(140px, root.width - 320px));
+            }
+            released => { root.queue-width-changed(root.queue-width); }
         }
 
         VerticalLayout {

@@ -31,6 +31,18 @@ pub struct TorrentStatus {
     pub download_payload_rate: i64,
     pub error: String,
     pub eta: Option<std::time::Duration>,
+    /// The v1 (SHA-1) info hash, when the torrent has one. A pure v2 torrent
+    /// does not, which is the whole reason this is an Option.
+    pub info_hash_v1: Option<String>,
+    /// The v2 (SHA-256) info hash, when the torrent has one - so a v2 or a
+    /// hybrid torrent. `None` on the plain v1 torrents that are still most of
+    /// what exists.
+    ///
+    /// Both are `None` until the metadata resolves: a magnet has an id before
+    /// it has an info dictionary to hash.
+    pub info_hash_v2: Option<String>,
+    /// The identity librqbit knows the torrent by, and the key every lookup
+    /// here uses. Always present, unlike the two above.
     pub info_hash: String,
     pub label_id: Option<i32>,
     pub label_name: String,

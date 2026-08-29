@@ -358,6 +358,8 @@ mod tests {
             download_payload_rate: 0,
             error: String::new(),
             eta: None,
+            info_hash_v1: None,
+            info_hash_v2: None,
             info_hash: String::new(),
             label_id: None,
             label_name: String::new(),

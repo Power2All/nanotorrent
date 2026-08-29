@@ -132,7 +132,7 @@ $env:NANOTORRENT_OPEN_DIALOG = "preferences"
 # and the scrollbar on a machine whose screen is perfectly big enough
 $env:NANOTORRENT_SCREEN_LIMIT = "360"
 
-Start-Process target\release\nanotorrent.exe
+Start-Process target\release\nanotorrent-gui.exe
 tools\screenshot.ps1 -Title Preferences -PrintWindow -Out shot.png
 ```
 

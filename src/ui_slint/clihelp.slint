@@ -1,0 +1,78 @@
+// Help > Command line: the `--help` text in a window, for the reader who has
+// no terminal in front of them.
+
+import { Button, ScrollView, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
+
+export component CliHelpDialog inherits Window {
+    icon: @image-url("../../res/app.png");
+    title: L.s(L.revision, "command_line_help");
+    preferred-width: 700px;
+    preferred-height: min(660px, root.screen-limit);
+    min-width: 400px;
+    min-height: 300px;
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    max-height: root.screen-limit;
+    background: Palette.background;
+
+    in property <string> text;
+
+    callback closed();
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        Text {
+            text: L.s(L.revision, "command_line_help_hint");
+            font-size: 12px;
+            color: #888;
+            wrap: word-wrap;
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            background: Palette.alternate-background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 4px;
+
+            ScrollView {
+                x: 1px;
+                y: 1px;
+                width: parent.width - 2px;
+                height: parent.height - 2px;
+                // The text decides the scrollable extent. It is preformatted -
+                // the usage lines align their columns with spaces - so it must
+                // not wrap, which means the viewport has to be as wide as the
+                // longest line rather than as wide as the window.
+                viewport-width: usage.preferred-width + 20px;
+                viewport-height: usage.preferred-height + 20px;
+
+                usage := Text {
+                    x: 10px;
+                    y: 10px;
+                    text: root.text;
+                    // Consolas on Windows, and whatever the platform maps the
+                    // name to elsewhere - Slint takes one family, not a stack.
+                    font-family: "Consolas";
+                    font-size: 13px;
+                    color: Palette.foreground;
+                    wrap: no-wrap;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: L.s(L.revision, "close");
+                primary: true;
+                clicked => { root.closed(); }
+            }
+        }
+    }
+}
