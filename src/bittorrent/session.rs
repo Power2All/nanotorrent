@@ -985,6 +985,98 @@ impl Session {
         });
     }
 
+    /// Point a torrent at data that has already been moved, without moving
+    /// anything.
+    ///
+    /// The counterpart to [`Session::move_storage`]: that one relocates the
+    /// FILES, this one relocates the TORRENT. It is what you want when the data
+    /// was moved outside the application - by hand, onto another drive, or
+    /// restored from a backup to a different path - which otherwise leaves the
+    /// torrent erroring or re-downloading everything it already has.
+    ///
+    /// Re-adding at the new folder makes librqbit verify what is there, so an
+    /// intact copy comes straight back as complete, and a partial one keeps
+    /// whatever pieces check out. Nothing is deleted either way: the worst case
+    /// for a wrong folder is a recheck that finds nothing.
+    pub fn set_location(&self, hash: &str, new_folder: &str) {
+        let Some((bytes, _old_folder, paused)) = self.torrent_readd_info(hash) else {
+            return;
+        };
+        let Some(handle) = self.find(hash) else {
+            return;
+        };
+
+        // Where the data has to be for this to be a relocation rather than a
+        // fresh download.
+        //
+        // librqbit is handed an explicit output folder, and an explicit one is
+        // used VERBATIM - it does not append the torrent's own directory the
+        // way it does for its default folder. A multi-file torrent's relative
+        // paths exclude that directory too (BEP 3 puts it in `info.name`), so
+        // the folder wanted here is the one that DIRECTLY contains the files.
+        //
+        // Picking the parent instead is the easy mistake, and an expensive one:
+        // the files are simply not found, empty ones are created in their place
+        // and the whole torrent downloads again. So try the obvious correction
+        // before giving up - if <picked>/<torrent name> is where the data
+        // actually is, use that.
+        let meta = handle.metadata.load_full();
+        let first = meta
+            .as_ref()
+            .and_then(|m| m.file_infos.first().map(|fi| fi.relative_filename.clone()));
+        let picked = std::path::Path::new(new_folder);
+        let mut new_folder = new_folder.to_string();
+        let mut first_missing = false;
+
+        if let Some(rel) = &first
+            && !picked.join(rel).exists()
+        {
+            let nested = handle.name().map(|n| picked.join(n));
+            match nested.filter(|n| n.join(rel).exists()) {
+                Some(n) => {
+                    tracing::info!("data is one level down; using {}", n.display());
+                    new_folder = n.to_string_lossy().into_owned();
+                }
+                None => first_missing = true,
+            }
+        }
+
+        let rq = self.rq();
+        let events = self.events.clone();
+        let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
+
+        self.rt.spawn(async move {
+            if first_missing {
+                report_error(
+                    &events,
+                    format!("No data found in {new_folder} - it will be downloaded again."),
+                );
+            }
+
+            // `false`: the files stay exactly where they are. This forgets the
+            // torrent, not the data.
+            if let Err(err) = rq.delete(id, false).await {
+                report_error(&events, format!("Failed to set the location: {err:#}"));
+                return;
+            }
+
+            let opts = AddTorrentOptions {
+                paused,
+                output_folder: Some(new_folder),
+                // The files are expected to be there already - that is the
+                // whole point - so this is a verify, not a clobber.
+                overwrite: true,
+                ..Default::default()
+            };
+            if let Err(err) = rq
+                .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
+                .await
+            {
+                report_error(&events, format!("Failed to re-add at the new location: {err:#}"));
+            }
+        });
+    }
+
     /// Enforce the active-downloads / active-seeds limits (port of
     /// libtorrent's queueing): the lowest queue positions run, the rest are
     /// paused by the scheduler. Torrents paused by the USER are left alone.
@@ -1767,6 +1859,7 @@ fn on_torrent_added(
     fn spawn_scan_task(&self) {
         let inner = self.inner.clone();
         let events = self.events.clone();
+        let meta = self.meta.clone();
 
         self.rt.spawn(async move {
             // Owned by the task, not by `meta`: this is "what the previous tick
@@ -1774,6 +1867,30 @@ fn on_torrent_added(
             // with the persisted per-torrent metadata.
             let mut live: HashMap<String, String> = HashMap::new();
             let mut finished: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+            // Torrents that had already completed before this run started.
+            //
+            // `primed` alone is not enough. It skips the FIRST tick, but a
+            // torrent restored from the previous run reports finished=false
+            // while librqbit verifies it, and flips to true a tick or two
+            // later - which is indistinguishable from a real completion. On a
+            // client holding a shelf of finished torrents that is a burst of
+            // "download complete" notifications on every launch.
+            //
+            // Read once, here, rather than consulted per tick: the stats loop
+            // writes `completed_on` the moment it sees a torrent finish, so a
+            // genuine first completion would race it and be swallowed too.
+            //
+            // Each entry suppresses exactly ONE completion - the one that ends
+            // startup verification - and is then dropped, so a later recheck
+            // still announces when it finishes again.
+            let mut preexisting: std::collections::HashSet<String> = meta
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(_, m)| m.completed_on.is_some())
+                .map(|(hash, _)| hash.clone())
+                .collect();
             let mut primed = false;
 
             loop {
@@ -1806,11 +1923,17 @@ fn on_torrent_added(
                             });
                         }
                         if is_finished && !finished.contains(&hash) {
-                            tracing::info!("torrent finished: {name}");
-                            events.emit(SessionEvent::TorrentCompleted {
-                                hash: hash.clone(),
-                                name: name.clone(),
-                            });
+                            if preexisting.remove(&hash) {
+                                tracing::debug!(
+                                    "{name} finished verifying; it was already complete"
+                                );
+                            } else {
+                                tracing::info!("torrent finished: {name}");
+                                events.emit(SessionEvent::TorrentCompleted {
+                                    hash: hash.clone(),
+                                    name: name.clone(),
+                                });
+                            }
                         }
                     }
 

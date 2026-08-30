@@ -58,6 +58,10 @@ pub struct Setting {
     pub name: &'static str,
     /// The `setting` table key. Empty for the kinds that live elsewhere.
     pub key: &'static str,
+    /// Locale KEY of the Preferences group this belongs to - not the English
+    /// name, so the web drawer's headings translate with everything else. The
+    /// CLI ignores it; a flat list of 51 controls would be unusable in a panel.
+    pub section: &'static str,
     pub kind: Kind,
 }
 
@@ -82,69 +86,69 @@ const PROXY_TYPES: &[&str] = &[
 /// change nothing.
 pub const SETTINGS: &[Setting] = &[
     // --- General ---------------------------------------------------------
-    Setting { name: "language", key: "locale_name", kind: Kind::Locale },
-    Setting { name: "theme", key: "theme_id", kind: Kind::Choice(THEMES) },
-    Setting { name: "close-action", key: "ui.close_action", kind: Kind::Persist(CLOSE_ACTIONS) },
-    Setting { name: "skip-add-dialog", key: "skip_add_torrent_dialog", kind: Kind::Bool },
-    Setting { name: "tray-icon", key: "show_in_notification_area", kind: Kind::Bool },
-    Setting { name: "minimize-to-tray", key: "minimize_to_notification_area", kind: Kind::Bool },
-    Setting { name: "notify-complete", key: crate::core::toast::ENABLED_KEY, kind: Kind::Bool },
-    Setting { name: "check-updates", key: "update_checks.enabled", kind: Kind::Bool },
-    Setting { name: "update-url", key: "update_checks.url", kind: Kind::Text },
+    Setting { name: "language", key: "locale_name", section: "general", kind: Kind::Locale },
+    Setting { name: "theme", key: "theme_id", section: "general", kind: Kind::Choice(THEMES) },
+    Setting { name: "close-action", key: "ui.close_action", section: "general", kind: Kind::Persist(CLOSE_ACTIONS) },
+    Setting { name: "skip-add-dialog", key: "skip_add_torrent_dialog", section: "general", kind: Kind::Bool },
+    Setting { name: "tray-icon", key: "show_in_notification_area", section: "general", kind: Kind::Bool },
+    Setting { name: "minimize-to-tray", key: "minimize_to_notification_area", section: "general", kind: Kind::Bool },
+    Setting { name: "notify-complete", key: crate::core::toast::ENABLED_KEY, section: "general", kind: Kind::Bool },
+    Setting { name: "check-updates", key: "update_checks.enabled", section: "general", kind: Kind::Bool },
+    Setting { name: "update-url", key: "update_checks.url", section: "general", kind: Kind::Text },
 
     // --- Downloads -------------------------------------------------------
-    Setting { name: "save-path", key: "default_save_path", kind: Kind::Dir },
-    Setting { name: "pause-on-low-disk", key: "pause_on_low_disk_space", kind: Kind::Bool },
-    Setting { name: "low-disk-limit", key: "pause_on_low_disk_space_limit", kind: Kind::Int { lo: 0, hi: 100, unit: "%" } },
-    Setting { name: "active-limit", key: "libtorrent.active_limit", kind: Kind::Int { lo: 0, hi: 100_000, unit: "torrents" } },
-    Setting { name: "active-downloads", key: "libtorrent.active_downloads", kind: Kind::Int { lo: 0, hi: 100_000, unit: "torrents" } },
-    Setting { name: "active-seeds", key: "libtorrent.active_seeds", kind: Kind::Int { lo: 0, hi: 100_000, unit: "torrents" } },
-    Setting { name: "limit-download", key: "libtorrent.enable_download_rate_limit", kind: Kind::Bool },
-    Setting { name: "download-rate-limit", key: "libtorrent.download_rate_limit", kind: Kind::Int { lo: 0, hi: 10_000_000, unit: "KB/s" } },
-    Setting { name: "limit-upload", key: "libtorrent.enable_upload_rate_limit", kind: Kind::Bool },
-    Setting { name: "upload-rate-limit", key: "libtorrent.upload_rate_limit", kind: Kind::Int { lo: 0, hi: 10_000_000, unit: "KB/s" } },
+    Setting { name: "save-path", key: "default_save_path", section: "downloads", kind: Kind::Dir },
+    Setting { name: "pause-on-low-disk", key: "pause_on_low_disk_space", section: "downloads", kind: Kind::Bool },
+    Setting { name: "low-disk-limit", key: "pause_on_low_disk_space_limit", section: "downloads", kind: Kind::Int { lo: 0, hi: 100, unit: "%" } },
+    Setting { name: "active-limit", key: "libtorrent.active_limit", section: "downloads", kind: Kind::Int { lo: 0, hi: 100_000, unit: "torrents" } },
+    Setting { name: "active-downloads", key: "libtorrent.active_downloads", section: "downloads", kind: Kind::Int { lo: 0, hi: 100_000, unit: "torrents" } },
+    Setting { name: "active-seeds", key: "libtorrent.active_seeds", section: "downloads", kind: Kind::Int { lo: 0, hi: 100_000, unit: "torrents" } },
+    Setting { name: "limit-download", key: "libtorrent.enable_download_rate_limit", section: "downloads", kind: Kind::Bool },
+    Setting { name: "download-rate-limit", key: "libtorrent.download_rate_limit", section: "downloads", kind: Kind::Int { lo: 0, hi: 10_000_000, unit: "KB/s" } },
+    Setting { name: "limit-upload", key: "libtorrent.enable_upload_rate_limit", section: "downloads", kind: Kind::Bool },
+    Setting { name: "upload-rate-limit", key: "libtorrent.upload_rate_limit", section: "downloads", kind: Kind::Int { lo: 0, hi: 10_000_000, unit: "KB/s" } },
 
     // --- Connection ------------------------------------------------------
-    Setting { name: "listen-address", key: "", kind: Kind::ListenAddress },
-    Setting { name: "listen-port", key: "", kind: Kind::ListenPort },
-    Setting { name: "dht", key: "libtorrent.enable_dht", kind: Kind::Bool },
-    Setting { name: "lsd", key: "libtorrent.enable_lsd", kind: Kind::Bool },
-    Setting { name: "pex", key: "libtorrent.enable_pex", kind: Kind::Bool },
-    Setting { name: "geoip", key: "geoip.enabled", kind: Kind::Bool },
-    Setting { name: "ipfilter", key: "ipfilter.enabled", kind: Kind::Bool },
-    Setting { name: "ipfilter-path", key: "ipfilter.file_path", kind: Kind::Text },
-    Setting { name: "encrypt-incoming", key: "libtorrent.require_incoming_encryption", kind: Kind::Bool },
-    Setting { name: "encrypt-outgoing", key: "libtorrent.require_outgoing_encryption", kind: Kind::Bool },
-    Setting { name: "anonymous-mode", key: "libtorrent.anonymous_mode", kind: Kind::Bool },
+    Setting { name: "listen-address", key: "", section: "connection", kind: Kind::ListenAddress },
+    Setting { name: "listen-port", key: "", section: "connection", kind: Kind::ListenPort },
+    Setting { name: "dht", key: "libtorrent.enable_dht", section: "connection", kind: Kind::Bool },
+    Setting { name: "lsd", key: "libtorrent.enable_lsd", section: "connection", kind: Kind::Bool },
+    Setting { name: "pex", key: "libtorrent.enable_pex", section: "connection", kind: Kind::Bool },
+    Setting { name: "geoip", key: "geoip.enabled", section: "connection", kind: Kind::Bool },
+    Setting { name: "ipfilter", key: "ipfilter.enabled", section: "connection", kind: Kind::Bool },
+    Setting { name: "ipfilter-path", key: "ipfilter.file_path", section: "connection", kind: Kind::Text },
+    Setting { name: "encrypt-incoming", key: "libtorrent.require_incoming_encryption", section: "connection", kind: Kind::Bool },
+    Setting { name: "encrypt-outgoing", key: "libtorrent.require_outgoing_encryption", section: "connection", kind: Kind::Bool },
+    Setting { name: "anonymous-mode", key: "libtorrent.anonymous_mode", section: "connection", kind: Kind::Bool },
 
     // --- Proxy -----------------------------------------------------------
-    Setting { name: "proxy-type", key: "libtorrent.proxy_type", kind: Kind::Index(PROXY_TYPES) },
-    Setting { name: "proxy-host", key: "libtorrent.proxy_host", kind: Kind::Text },
-    Setting { name: "proxy-port", key: "libtorrent.proxy_port", kind: Kind::Int { lo: 1, hi: 65535, unit: "" } },
-    Setting { name: "proxy-hostnames", key: "libtorrent.proxy_hostnames", kind: Kind::Bool },
-    Setting { name: "proxy-peers", key: "libtorrent.proxy_peers", kind: Kind::Bool },
-    Setting { name: "proxy-trackers", key: "libtorrent.proxy_trackers", kind: Kind::Bool },
+    Setting { name: "proxy-type", key: "libtorrent.proxy_type", section: "proxy", kind: Kind::Index(PROXY_TYPES) },
+    Setting { name: "proxy-host", key: "libtorrent.proxy_host", section: "proxy", kind: Kind::Text },
+    Setting { name: "proxy-port", key: "libtorrent.proxy_port", section: "proxy", kind: Kind::Int { lo: 1, hi: 65535, unit: "" } },
+    Setting { name: "proxy-hostnames", key: "libtorrent.proxy_hostnames", section: "proxy", kind: Kind::Bool },
+    Setting { name: "proxy-peers", key: "libtorrent.proxy_peers", section: "proxy", kind: Kind::Bool },
+    Setting { name: "proxy-trackers", key: "libtorrent.proxy_trackers", section: "proxy", kind: Kind::Bool },
 
     // --- Web interface ---------------------------------------------------
     // The first six delegate, so `--set web-port` and `--webui-set port` are
     // the same code and cannot validate differently.
-    Setting { name: "web-enabled", key: "webui.enabled", kind: Kind::Bool },
-    Setting { name: "web-bind", key: "webui.bind_address", kind: Kind::Web("bind_address") },
-    Setting { name: "web-port", key: "webui.port", kind: Kind::Web("port") },
-    Setting { name: "web-username", key: "webui.username", kind: Kind::Web("username") },
-    Setting { name: "web-tls-mode", key: "webui.tls_mode", kind: Kind::Web("tls_mode") },
-    Setting { name: "web-cert", key: "webui.tls_cert_path", kind: Kind::Web("tls_cert_path") },
-    Setting { name: "web-key", key: "webui.tls_key_path", kind: Kind::Web("tls_key_path") },
+    Setting { name: "web-enabled", key: "webui.enabled", section: "web_interface", kind: Kind::Bool },
+    Setting { name: "web-bind", key: "webui.bind_address", section: "web_interface", kind: Kind::Web("bind_address") },
+    Setting { name: "web-port", key: "webui.port", section: "web_interface", kind: Kind::Web("port") },
+    Setting { name: "web-username", key: "webui.username", section: "web_interface", kind: Kind::Web("username") },
+    Setting { name: "web-tls-mode", key: "webui.tls_mode", section: "web_interface", kind: Kind::Web("tls_mode") },
+    Setting { name: "web-cert", key: "webui.tls_cert_path", section: "web_interface", kind: Kind::Web("tls_cert_path") },
+    Setting { name: "web-key", key: "webui.tls_key_path", section: "web_interface", kind: Kind::Web("tls_key_path") },
 
     // Advanced. Ranges match Advanced::load, which clamps on the way out too.
-    Setting { name: "web-request-timeout", key: "webui.client_request_timeout", kind: Kind::Int { lo: 1, hi: 3600, unit: "s" } },
-    Setting { name: "web-disconnect-timeout", key: "webui.client_disconnect_timeout", kind: Kind::Int { lo: 1, hi: 3600, unit: "s" } },
-    Setting { name: "web-keep-alive", key: "webui.keep_alive", kind: Kind::Int { lo: 0, hi: 86400, unit: "s" } },
-    Setting { name: "web-max-connections", key: "webui.max_connections", kind: Kind::Int { lo: 1, hi: 100_000, unit: "" } },
-    Setting { name: "web-max-connection-rate", key: "webui.max_connection_rate", kind: Kind::Int { lo: 1, hi: 100_000, unit: "/s" } },
-    Setting { name: "web-workers", key: "webui.workers", kind: Kind::Int { lo: 1, hi: 64, unit: "threads" } },
-    Setting { name: "web-shutdown-timeout", key: "webui.shutdown_timeout", kind: Kind::Int { lo: 0, hi: 3600, unit: "s" } },
-    Setting { name: "web-max-body", key: "webui.max_body_size", kind: Kind::Int { lo: 1, hi: 1024, unit: "MB" } },
+    Setting { name: "web-request-timeout", key: "webui.client_request_timeout", section: "web_interface", kind: Kind::Int { lo: 1, hi: 3600, unit: "s" } },
+    Setting { name: "web-disconnect-timeout", key: "webui.client_disconnect_timeout", section: "web_interface", kind: Kind::Int { lo: 1, hi: 3600, unit: "s" } },
+    Setting { name: "web-keep-alive", key: "webui.keep_alive", section: "web_interface", kind: Kind::Int { lo: 0, hi: 86400, unit: "s" } },
+    Setting { name: "web-max-connections", key: "webui.max_connections", section: "web_interface", kind: Kind::Int { lo: 1, hi: 100_000, unit: "" } },
+    Setting { name: "web-max-connection-rate", key: "webui.max_connection_rate", section: "web_interface", kind: Kind::Int { lo: 1, hi: 100_000, unit: "/s" } },
+    Setting { name: "web-workers", key: "webui.workers", section: "web_interface", kind: Kind::Int { lo: 1, hi: 64, unit: "threads" } },
+    Setting { name: "web-shutdown-timeout", key: "webui.shutdown_timeout", section: "web_interface", kind: Kind::Int { lo: 0, hi: 3600, unit: "s" } },
+    Setting { name: "web-max-body", key: "webui.max_body_size", section: "web_interface", kind: Kind::Int { lo: 1, hi: 1024, unit: "MB" } },
 ];
 
 /// The `--set` / `--get` half of `--help`, in the configured language.
@@ -201,6 +205,93 @@ pub fn settings_help(tr: &Translator) -> String {
 /// visible enough in `--help` to get noticed.
 fn help_key(s: &Setting) -> String {
     format!("cli_set_{}", s.name.replace('-', "_"))
+}
+
+/// A setting described so a UI can build the right control for it, without
+/// knowing what [`Kind`] is.
+///
+/// The web interface renders its Preferences drawer from these. Keeping the
+/// mapping here means a new Kind is handled in one place rather than in every
+/// front end that grew a switch on it.
+pub struct Field {
+    /// One of: bool, int, text, dir, choice.
+    pub kind: &'static str,
+    /// Allowed values, for `choice`. Empty otherwise.
+    pub options: Vec<String>,
+    /// What to SHOW for each option, when that differs from the value itself -
+    /// a language picker reads "Nederlands", not "nl-NL". Empty when the values
+    /// are their own labels.
+    pub labels: Vec<String>,
+    pub min: Option<i64>,
+    pub max: Option<i64>,
+    /// Shown next to a number, e.g. "KB/s". Empty when there is none.
+    pub unit: &'static str,
+}
+
+pub fn field(s: &Setting) -> Field {
+    let plain = |kind| Field {
+        kind,
+        options: Vec::new(),
+        labels: Vec::new(),
+        min: None,
+        max: None,
+        unit: "",
+    };
+    let choice = |v: &[&str]| Field {
+        kind: "choice",
+        options: v.iter().map(|s| String::from(*s)).collect(),
+        labels: Vec::new(),
+        min: None,
+        max: None,
+        unit: "",
+    };
+    let int = |lo, hi, unit| Field {
+        kind: "int",
+        options: Vec::new(),
+        labels: Vec::new(),
+        min: Some(lo),
+        max: Some(hi),
+        unit,
+    };
+
+    match &s.kind {
+        Kind::Bool => plain("bool"),
+        Kind::Int { lo, hi, unit } => int(*lo, *hi, unit),
+        Kind::Text => plain("text"),
+        Kind::Dir => plain("dir"),
+        Kind::Choice(v) | Kind::Index(v) | Kind::Persist(v) => choice(v),
+        // The picker is worth more than free text here: a typo in a locale
+        // code is rejected, and the list is exactly what this build embeds.
+        // Endonyms, like the desktop picker: someone looking for their own
+        // language is looking for "Nederlands", not for "nl-NL".
+        Kind::Locale => Field {
+            kind: "choice",
+            options: crate::ui::translator::EMBEDDED_LANGS
+                .iter()
+                .map(|(l, _)| String::from(*l))
+                .collect(),
+            labels: crate::ui::translator::EMBEDDED_LANGS
+                .iter()
+                .map(|(l, _)| String::from(crate::ui::translator::endonym(l)))
+                .collect(),
+            min: None,
+            max: None,
+            unit: "",
+        },
+        Kind::ListenAddress => plain("text"),
+        Kind::ListenPort => int(1, 65535, ""),
+        Kind::Web("port") => int(1, 65535, ""),
+        Kind::Web("tls_mode") => choice(TLS_MODES),
+        Kind::Web("tls_cert_path" | "tls_key_path") => plain("text"),
+        Kind::Web(_) => plain("text"),
+    }
+}
+
+/// The locale key holding a setting's description, for callers outside this
+/// module - the web interface labels its controls with the same text `--help`
+/// prints.
+pub fn description(s: &Setting, tr: &Translator) -> String {
+    tr.i18n(&help_key(s))
 }
 
 pub fn find(name: &str) -> Option<&'static Setting> {

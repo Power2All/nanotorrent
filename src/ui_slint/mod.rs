@@ -1893,6 +1893,27 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
                     u.session.move_storage(hash, &dir);
                 }
             }
+            "set-location" => {
+                // Starts in the torrent's current save path: the new location
+                // is usually a sibling of the old one, not somewhere unrelated.
+                let start = u
+                    .rows
+                    .borrow()
+                    .iter()
+                    .find(|r| targets.contains(&r.info_hash))
+                    .map(|r| r.save_path.clone());
+                let mut picker = rfd::FileDialog::new().set_title(u.tr.borrow().i18n("set_location"));
+                if let Some(start) = start.filter(|p| std::path::Path::new(p).is_dir()) {
+                    picker = picker.set_directory(start);
+                }
+                let Some(dir) = picker.pick_folder() else {
+                    return;
+                };
+                let dir = dir.to_string_lossy().into_owned();
+                for hash in &targets {
+                    u.session.set_location(hash, &dir);
+                }
+            }
             "open-folder" => {
                 let rows = u.rows.borrow();
                 if let Some(row) = rows.iter().find(|r| targets.contains(&r.info_hash)) {

@@ -72,7 +72,7 @@ const ENDONYMS: [(&str, &str); 41] = [
 ];
 
 /// The native name for a locale, or the code itself when it is not known.
-fn endonym(locale: &str) -> &str {
+pub fn endonym(locale: &str) -> &str {
     ENDONYMS
         .iter()
         .find(|(l, _)| l.eq_ignore_ascii_case(locale))

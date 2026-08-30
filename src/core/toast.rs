@@ -108,11 +108,24 @@ fn ensure_shortcut() -> anyhow::Result<()> {
     let lnk = std::path::Path::new(&appdata)
         .join(r"Microsoft\Windows\Start Menu\Programs\NanoTorrent.lnk");
     let exe = std::env::current_exe()?;
-    // Recreate the shortcut once to add the icon: older builds created it without
-    // SetIconLocation, leaving the toast header on the generic app glyph. The
-    // marker means "shortcut already has an icon" so we don't rewrite it every run.
-    let marker = icon_path().map(|p| p.with_file_name(".shortcut_iconed"));
-    if lnk.exists() && marker.as_ref().is_some_and(|m| m.exists()) {
+    // Rewrite the shortcut whenever it does not point at the running exe.
+    //
+    // This used to early-out on the mere existence of the .lnk plus a marker
+    // file, which meant a shortcut written by an older install pointed at that
+    // install forever. That is not cosmetic: `register` below tags this process
+    // with the AUMID, and Windows resolves the TASKBAR icon through the
+    // shortcut carrying it - so a stale target left the taskbar on the generic
+    // app glyph. Renaming the executable (0.2.5 split the GUI out as
+    // nanotorrent-gui.exe) is exactly the case that broke it.
+    //
+    // The marker holds the path it was last written for, so the common case is
+    // still one small file read and no COM at all.
+    let marker = icon_path().map(|p| p.with_file_name(".shortcut_target"));
+    let want = exe.display().to_string();
+    let current = marker
+        .as_ref()
+        .and_then(|m| std::fs::read_to_string(m).ok());
+    if lnk.exists() && current.as_deref() == Some(want.as_str()) {
         return Ok(());
     }
 
@@ -165,7 +178,7 @@ fn ensure_shortcut() -> anyhow::Result<()> {
             if SUCCEEDED((*pf).Save(wide(lnk.as_os_str()).as_ptr(), 1))
                 && let Some(m) = &marker
             {
-                let _ = std::fs::write(m, b"");
+                let _ = std::fs::write(m, want.as_bytes());
             }
             (*pf).Release();
         }

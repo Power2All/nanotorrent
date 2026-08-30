@@ -7,8 +7,9 @@
   include_str! - same approach as lang/*.json and res/flags/*.png.
 
   Deliberately a REMOTE, not a second full client: add, watch, pause, resume,
-  remove, and pick a folder on the machine NanoTorrent runs on. The desktop UI
-  keeps the things that only make sense sitting in front of it.
+  remove, set a torrent's location, and pick a folder on the machine
+  NanoTorrent runs on. The desktop UI keeps the things that only make sense
+  sitting in front of it.
 
   Two rules worth keeping if you edit this:
 
@@ -52,6 +53,49 @@ body {
   margin: 0; background: var(--bg); color: var(--fg);
   font: 14px/1.45 system-ui, "Segoe UI", sans-serif;
 }
+/* Preferences drawer. A panel rather than a <dialog>: it slides in from the
+   right, and dialog's own backdrop cannot be animated independently of it.
+   translateX keeps the transition on the compositor. */
+#scrim {
+  position: fixed; inset: 0; background: rgba(0,0,0,.35);
+  opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 8;
+}
+#scrim.open { opacity: 1; pointer-events: auto; }
+#drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(30rem, 100vw);
+  background: var(--panel); border-left: 1px solid var(--line);
+  transform: translateX(100%); transition: transform .22s ease;
+  z-index: 9; display: flex; flex-direction: column;
+}
+#drawer.open { transform: translateX(0); }
+@media (prefers-reduced-motion: reduce) {
+  #drawer, #scrim { transition: none; }
+}
+#drawer header {
+  position: static; display: flex; align-items: center; gap: .5rem;
+  border-bottom: 1px solid var(--line);
+}
+#drawer h2 { font-size: 1rem; margin: 0 auto 0 0; font-weight: 600; }
+#drawer-body { overflow-y: auto; padding: .75rem 1rem 1rem; flex: 1; }
+#drawer-foot {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .7rem 1rem; border-top: 1px solid var(--line);
+}
+#drawer-note { color: var(--muted); font-size: .78rem; flex: 1; }
+#drawer-body h3 {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); margin: 1.25rem 0 .5rem; font-weight: 600;
+}
+#drawer-body h3:first-child { margin-top: .25rem; }
+.pref { display: grid; gap: .25rem; margin-bottom: .8rem; }
+.pref label { font-size: .85rem; }
+.pref .desc { color: var(--muted); font-size: .78rem; }
+.pref .row { display: flex; gap: .4rem; align-items: center; }
+.pref .row input[type=text], .pref .row select { flex: 1; min-width: 0; }
+.pref .row input[type=number] { width: 8rem; }
+.pref .unit { color: var(--muted); font-size: .8rem; }
+.pref code { font-size: .75rem; color: var(--muted); }
+.hamburger { line-height: 1; padding: .3rem .55rem; }
 header {
   display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: center;
   padding: .7rem 1rem; border-bottom: 1px solid var(--line); background: var(--panel);
@@ -196,45 +240,60 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
   <span class="stat">&uarr; <b id="ul">0 B/s</b></span>
   <span class="stat">DHT <b id="dht">-</b></span>
   <span class="stat"><b id="count">0</b> torrents</span>
-  <select id="theme" title="Theme" aria-label="Theme">
-    <option value="auto">Auto</option>
-    <option value="light">Light</option>
-    <option value="dark">Dark</option>
+  <select id="theme" title="{{theme}}" aria-label="{{theme}}">
+    <option value="auto">{{theme_system}}</option>
+    <option value="light">{{light_theme}}</option>
+    <option value="dark">{{theme_dark}}</option>
   </select>
-  <button class="primary" id="btn-add">Add torrent</button>
+  <button class="primary" id="btn-add">{{add_torrent_s}}</button>
+  <button class="hamburger" id="btn-prefs" title="{{preferences}}" aria-label="{{preferences}}"
+          aria-controls="drawer" aria-expanded="false">&#9776;</button>
 </header>
+
+<div id="scrim"></div>
+<aside id="drawer" aria-hidden="true" aria-label="{{preferences}}">
+  <header>
+    <h2>{{preferences}}</h2>
+    <button type="button" id="drawer-close" aria-label="Close">&times;</button>
+  </header>
+  <div id="drawer-body"></div>
+  <div id="drawer-foot">
+    <span id="drawer-note"></span>
+    <button type="button" class="primary" id="drawer-save" disabled>{{save_changes}}</button>
+  </div>
+</aside>
 
 <main>
   <div class="tablewrap">
     <table>
       <thead><tr>
-        <th>Name</th><th>Size</th><th>Progress</th><th>Status</th>
+        <th>{{name}}</th><th>{{size}}</th><th>{{progress}}</th><th>{{status}}</th>
         <th class="num">&darr;</th><th class="num">&uarr;</th>
-        <th class="num">Peers</th><th class="num">Ratio</th><th>Actions</th>
+        <th class="num">{{peers}}</th><th class="num">{{ratio}}</th><th>{{actions}}</th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
   </div>
-  <div class="empty" id="empty" hidden>No torrents yet.</div>
+  <div class="empty" id="empty" hidden>{{no_torrents_yet}}</div>
 </main>
 
 <dialog id="add">
   <form method="dialog">
-    <div class="dlg-head">Add torrent(s)</div>
+    <div class="dlg-head">{{add_torrent_s}}</div>
     <div class="dlg-body">
-      <label>Magnet link<span class="hint"> - one per line for several</span>
+      <label>{{magnet_link}}<span class="hint"> - {{magnet_hint}}</span>
         <textarea id="add-magnet" rows="2" placeholder="magnet:?xt=urn:btih:..."></textarea>
       </label>
-      <label>...or .torrent files<span class="hint"> - pick as many as you like</span>
+      <label>{{or_torrent_files}}<span class="hint"> - {{files_hint}}</span>
         <input type="file" id="add-file" multiple accept=".torrent,application/x-bittorrent">
       </label>
       <div class="row">
-        <label>Save to
+        <label>{{save_to}}
           <input type="text" id="add-path" placeholder="server default">
         </label>
-        <button type="button" id="add-browse">Browse...</button>
+        <button type="button" id="add-browse">{{browse_folder}}</button>
       </div>
-      <label class="check"><input type="checkbox" id="add-start" checked> Start immediately</label>
+      <label class="check"><input type="checkbox" id="add-start" checked> {{start_immediately}}</label>
 
       <!-- Appears once the chosen .torrent files have been read by
            /api/torrents/inspect. Same two panes as the desktop dialog: the
@@ -248,25 +307,25 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
       </div>
     </div>
     <div class="dlg-foot">
-      <button value="cancel">Cancel</button>
-      <button class="primary" id="add-ok" value="ok">Add</button>
+      <button value="cancel">{{cancel}}</button>
+      <button class="primary" id="add-ok" value="ok">{{add}}</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="browser">
-  <div class="dlg-head">Choose a folder on the NanoTorrent machine</div>
+  <div class="dlg-head">{{choose_folder}}</div>
   <div class="dlg-body">
     <div id="browser-path"></div>
     <div class="row">
       <button type="button" id="browser-up">Up</button>
-      <button type="button" id="browser-mkdir">New folder</button>
+      <button type="button" id="browser-mkdir">{{new_folder}}</button>
     </div>
     <div id="browser-list"></div>
   </div>
   <div class="dlg-foot">
-    <button type="button" id="browser-cancel">Cancel</button>
-    <button type="button" class="primary" id="browser-pick">Use this folder</button>
+    <button type="button" id="browser-cancel">{{cancel}}</button>
+    <button type="button" class="primary" id="browser-pick">{{use_this_folder}}</button>
   </div>
 </dialog>
 
@@ -392,6 +451,14 @@ function renderRows(list) {
       t.paused
         ? actionButton("Resume", "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/resume`)))
         : actionButton("Pause", "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/pause`))),
+      // Points the torrent at data that has already been moved; it does not
+      // move anything. The browser opens at the current save path because the
+      // new location is usually a sibling of the old one.
+      actionButton("Location", "", () => {
+        openBrowser(t.save_path || null, (path) => {
+          act(() => api("POST", `/api/torrents/${t.info_hash}/location`, { path }));
+        });
+      }),
       actionButton("Remove", "danger", () => {
         // Two questions, because the second one is unrecoverable.
         if (!confirm(`Remove "${t.name}" from NanoTorrent?`)) return;
@@ -402,6 +469,194 @@ function renderRows(list) {
     actions.append(box);
   }
 }
+
+// Translations for the strings this script builds. Injected by the server
+// so the page never renders English first and repaints.
+const T = {{__T__}};
+
+// --- preferences drawer -----------------------------------------------------
+// Rendered from /api/settings, which describes every preference and the control
+// it needs. Nothing about the individual settings is written here: the server
+// owns the list, the types and the validation, so a setting added to the CLI
+// registry shows up in this drawer with no change to this file.
+let prefsLoaded = false;
+// name -> value, for the controls touched since the drawer was filled.
+const pending = new Map();
+
+function prefControl(s) {
+  const wrap = document.createElement("div");
+  wrap.className = "pref";
+
+  const id = "pref-" + s.name;
+  const label = document.createElement("label");
+  label.htmlFor = id;
+  label.textContent = s.description;
+  wrap.append(label);
+
+  const row = document.createElement("div");
+  row.className = "row";
+  let input;
+
+  if (s.kind === "bool") {
+    input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = s.value === "true";
+  } else if (s.kind === "choice") {
+    input = document.createElement("select");
+    // A setting that has never been written reads back as "(unset)", which
+    // matches no option and would leave the box blank - looking broken rather
+    // than unset. Show it, disabled, so it cannot be chosen deliberately.
+    if (!s.options.includes(s.value)) {
+      const ph = document.createElement("option");
+      ph.value = s.value; ph.textContent = s.value; ph.disabled = true;
+      input.append(ph);
+    }
+    for (let i = 0; i < s.options.length; i++) {
+      const opt = document.createElement("option");
+      opt.value = s.options[i];
+      // Labels differ from values where the value is a code: the language
+      // picker lists "Nederlands", not "nl-NL".
+      opt.textContent = (s.labels && s.labels[i]) || s.options[i];
+      input.append(opt);
+    }
+    input.value = s.value;
+  } else if (s.kind === "int") {
+    input = document.createElement("input");
+    input.type = "number";
+    if (s.min !== undefined) input.min = s.min;
+    if (s.max !== undefined) input.max = s.max;
+    // "(unset)" is not a number; leave the box empty rather than showing it.
+    input.value = /^-?\d+$/.test(s.value) ? s.value : "";
+  } else {
+    input = document.createElement("input");
+    input.type = "text";
+    input.value = s.value === "(unset)" ? "" : s.value;
+  }
+  input.id = id;
+  row.append(input);
+
+  if (s.unit) {
+    const u = document.createElement("span");
+    u.className = "unit";
+    u.textContent = s.unit;
+    row.append(u);
+  }
+  // A folder setting gets the same picker the Add dialog uses.
+  if (s.kind === "dir") {
+    const browse = document.createElement("button");
+    browse.type = "button";
+    browse.textContent = T.browse_folder;
+    browse.addEventListener("click", () => {
+      openBrowser(input.value || null, (path) => {
+        input.value = path;
+        input.dispatchEvent(new Event("change"));
+      });
+    });
+    row.append(browse);
+  }
+  wrap.append(row);
+
+  const desc = document.createElement("div");
+  desc.className = "desc";
+  desc.innerHTML = "";
+  const code = document.createElement("code");
+  code.textContent = s.name;
+  desc.append(code);
+  wrap.append(desc);
+
+  // Edits are collected, not sent: Save writes them, applies them and reloads.
+  // Per-control saving meant a half-changed configuration was live the whole
+  // time it took to fill the panel in.
+  const read = () => (s.kind === "bool" ? String(input.checked) : input.value);
+  const initial = read();
+  function changed() {
+    const now = read();
+    if (now === initial) pending.delete(s.name);
+    else pending.set(s.name, now);
+    $("drawer-save").disabled = pending.size === 0;
+    $("drawer-note").textContent = pending.size
+      ? pending.size + " " + T.changes_to_save
+      : "";
+  }
+  input.addEventListener("change", changed);
+  input.addEventListener("input", changed);
+  return wrap;
+}
+
+async function loadPrefs() {
+  const body = $("drawer-body");
+  body.textContent = T.loading;
+  try {
+    const sections = await api("GET", "/api/settings");
+    body.textContent = "";
+    for (const sec of sections) {
+      const h = document.createElement("h3");
+      h.textContent = sec.name;
+      body.append(h);
+      for (const s of sec.settings) body.append(prefControl(s));
+    }
+    prefsLoaded = true;
+    pending.clear();
+    $("drawer-save").disabled = true;
+    $("drawer-note").textContent = "";
+  } catch (e) {
+    body.textContent = e.message;
+  }
+}
+
+// Writes every pending change, asks the session to pick them up, then reloads.
+//
+// Reloading rather than patching the page in place: a language change has to
+// redraw every caption, and a theme change the whole palette. One reload is
+// both simpler and more obviously correct than replaying each of those.
+async function savePrefs() {
+  const btn = $("drawer-save");
+  btn.disabled = true;
+  $("drawer-note").textContent = T.saving;
+
+  for (const [name, value] of pending) {
+    try {
+      await api("POST", "/api/settings", { name, value });
+    } catch (e) {
+      // Stop on the first rejection, with the offending field named: carrying
+      // on would leave some of the panel applied and some not.
+      toast(name + ": " + e.message);
+      $("drawer-note").textContent = "";
+      btn.disabled = false;
+      return;
+    }
+  }
+
+  try {
+    await api("POST", "/api/settings/apply");
+  } catch (e) {
+    toast(e.message);
+  }
+  location.reload();
+}
+$("drawer-save").addEventListener("click", savePrefs);
+
+function openPrefs() {
+  $("drawer").classList.add("open");
+  $("scrim").classList.add("open");
+  $("drawer").setAttribute("aria-hidden", "false");
+  $("btn-prefs").setAttribute("aria-expanded", "true");
+  if (!prefsLoaded) loadPrefs();
+}
+function closePrefs() {
+  $("drawer").classList.remove("open");
+  $("scrim").classList.remove("open");
+  $("drawer").setAttribute("aria-hidden", "true");
+  $("btn-prefs").setAttribute("aria-expanded", "false");
+}
+$("btn-prefs").addEventListener("click", openPrefs);
+$("drawer-close").addEventListener("click", closePrefs);
+$("scrim").addEventListener("click", closePrefs);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("drawer").classList.contains("open")) closePrefs();
+});
+// Deep link, so the drawer can be bookmarked and linked to.
+if (location.hash === "#preferences") openPrefs();
 
 // --- polling ----------------------------------------------------------------
 let failures = 0;
@@ -424,7 +679,7 @@ async function refresh() {
   } catch (e) {
     // Only complain once per outage, or a closed laptop lid produces a wall
     // of identical toasts.
-    if (failures++ === 0) toast("Lost contact with NanoTorrent: " + e.message);
+    if (failures++ === 0) toast(T.lost_contact + ": " + e.message);
   }
 }
 
@@ -447,7 +702,7 @@ async function browseTo(path) {
       const none = document.createElement("div");
       none.style.padding = ".6rem";
       none.style.color = "var(--muted)";
-      none.textContent = "No subfolders here.";
+      none.textContent = T.no_subfolders;
       box.append(none);
     }
     for (const d of dirs) {
@@ -625,8 +880,8 @@ $("add").addEventListener("close", async () => {
   const files = [...$("add-file").files];
   const savePath = $("add-path").value.trim();
 
-  if (!magnets.length && !files.length) { toast("Give a magnet link or choose a .torrent file."); return; }
-  if (magnets.length && files.length) { toast("Give magnet links or files, not both."); return; }
+  if (!magnets.length && !files.length) { toast(T.give_magnet_or_file); return; }
+  if (magnets.length && files.length) { toast(T.give_not_both); return; }
 
   // Every entry carries the same save path and start flag - the form only
   // offers one of each, and the endpoint takes them per torrent.
@@ -646,9 +901,9 @@ $("add").addEventListener("close", async () => {
           return item;
         });
 
-    if (!items.length) { toast("Nothing to add."); return; }
+    if (!items.length) { toast(T.nothing_to_add); return; }
     if (items.some(i => i.only_files && !i.only_files.length)) {
-      toast("Every file is unticked in at least one torrent.");
+      toast(T.all_files_unticked);
       return;
     }
 
