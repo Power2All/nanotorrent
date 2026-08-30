@@ -29,6 +29,24 @@ On first run NanoTorrent does a one-time copy of an existing
 `%LOCALAPPDATA%\PicoTorrent` data folder (settings + session state) into
 `%LOCALAPPDATA%\NanoTorrent`, leaving the original untouched.
 
+## Screenshots
+
+![NanoTorrent's main window](images/01-main-window-dark.webp)
+
+The torrent list, the icon toolbar, and the details panel below it. Everything
+here is drawn by Slint, so it is the same window on Windows, Linux and macOS.
+
+|  |  |
+| --- | --- |
+| <img src="images/02-main-window-light.webp" alt="The light theme"> | <img src="images/03-details-files.webp" alt="The Files tab"> |
+| **Light theme.** Follows the OS by default, or is pinned in Preferences. The toolbar glyphs are drawn rather than shipped as images, so one set works on both. | **Details ▸ Files.** Per-file size, progress and an include toggle, as a tree for multi-file torrents. Peers and Trackers sit beside it. |
+| <img src="images/04-preferences.webp" alt="Preferences"> | <img src="images/07-web-preferences.webp" alt="The web interface's Preferences drawer"> |
+| **Preferences.** Six tabs, applied live on OK - the session is rebuilt rather than requiring a restart. | **The same settings, remotely.** The web interface's drawer is generated from the command line's settings registry, so all three surfaces share one list and one validator. |
+| <img src="images/05-web-interface-dark.webp" alt="The web interface, dark"> | <img src="images/06-web-interface-light.webp" alt="The web interface, light"> |
+| **Web interface.** An authenticated HTTPS remote: add, watch, pause, resume, remove, set a location. | **It follows the theme too**, and renders in the configured language. |
+
+<sub>The torrents shown are Linux distribution images, used as sample data.</sub>
+
 ## Installing
 
 Download an installer from [Releases](https://github.com/Power2All/nanotorrent/releases),
