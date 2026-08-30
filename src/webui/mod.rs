@@ -219,11 +219,22 @@ impl WebConfig {
 struct AppState {
     session: Arc<Session>,
     cfg: Arc<Configuration>,
+    /// Needed to apply settings to the running session, and to let a `lang/`
+    /// folder next to the executable override the compiled-in translations.
+    env: Arc<Environment>,
     /// This layer's own subscription to session events, so /errors no longer
     /// competes with the desktop window for them. Both used to drain one
     /// shared queue, which meant whichever polled first won and the other
     /// silently lost the error.
     errors: Arc<std::sync::Mutex<std::sync::mpsc::Receiver<SessionEvent>>>,
+}
+
+impl AppState {
+    /// The configured language, for the setting descriptions and the strings
+    /// the page itself renders.
+    fn translator(&self) -> crate::ui::translator::Translator {
+        crate::load_translator(&self.env, &self.cfg)
+    }
 }
 
 // --- wire types -------------------------------------------------------------
@@ -334,7 +345,83 @@ async fn h_health() -> impl Responder {
 /// Embedded rather than served from disk for the same reason `lang/*.json` is:
 /// a single executable with nothing beside it to lose, and no path to get
 /// wrong on three platforms.
-async fn h_index() -> impl Responder {
+/// Fill the page's `{{key}}` placeholders from the configured language.
+///
+/// Substituted here rather than fetched by the page: a second round trip would
+/// show English first and then repaint, and this costs one pass over a page
+/// that is already in memory.
+///
+/// `{{__T__}}` is special - it becomes a JSON object of every key the page
+/// asked for, which the script uses for the strings it builds at runtime.
+/// Serialising it as JSON is what keeps an apostrophe in a French translation
+/// from ending a JavaScript string literal.
+fn render_page(tr: &crate::ui::translator::Translator) -> String {
+    let html = include_str!("index.html");
+
+    let keys: Vec<&str> = {
+        let mut keys = Vec::new();
+        let mut rest = html;
+        while let Some(start) = rest.find("{{") {
+            let Some(end) = rest[start..].find("}}") else { break };
+            let key = &rest[start + 2..start + end];
+            if key != "__T__" && !keys.contains(&key) {
+                keys.push(key);
+            }
+            rest = &rest[start + end + 2..];
+        }
+
+        // The script also reaches for strings the markup never names, as
+        // `T.some_key`. Those have to be in the table or they arrive as
+        // `undefined` - which is exactly how the first version shipped a toast
+        // reading "undefined: Failed to fetch". `T` is only ever the string
+        // table in this file, so matching on it is unambiguous.
+        let mut rest = html;
+        while let Some(at) = rest.find("T.") {
+            let tail = &rest[at + 2..];
+            let len = tail
+                .find(|c: char| !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_')
+                .unwrap_or(tail.len());
+            let key = &tail[..len];
+            if !key.is_empty() && !keys.contains(&key) {
+                keys.push(key);
+            }
+            rest = &rest[at + 2 + len..];
+        }
+        keys
+    };
+
+    let table: std::collections::BTreeMap<&str, String> =
+        keys.iter().map(|k| (*k, tr.i18n(k))).collect();
+    let json = serde_json::to_string(&table).unwrap_or_else(|_| String::from("{}"));
+
+    let mut out = String::with_capacity(html.len() + json.len() + 512);
+    let mut rest = html;
+    while let Some(start) = rest.find("{{") {
+        let Some(end) = rest[start..].find("}}") else { break };
+        out.push_str(&rest[..start]);
+        let key = &rest[start + 2..start + end];
+        if key == "__T__" {
+            out.push_str(&json);
+        } else {
+            // Escaped: a translation is data, and one containing < or & would
+            // otherwise change the shape of the page.
+            for c in tr.i18n(key).chars() {
+                match c {
+                    '&' => out.push_str("&amp;"),
+                    '<' => out.push_str("&lt;"),
+                    '>' => out.push_str("&gt;"),
+                    '"' => out.push_str("&quot;"),
+                    _ => out.push(c),
+                }
+            }
+        }
+        rest = &rest[start + end + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
+async fn h_index(state: web::Data<AppState>) -> impl Responder {
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         // Everything is inline, so 'unsafe-inline' is unavoidable - but the
@@ -352,7 +439,7 @@ async fn h_index() -> impl Responder {
         // The remote shows filesystem paths and torrent names; keep them out
         // of any Referer sent to a site someone clicks through to.
         .insert_header(("Referrer-Policy", "no-referrer"))
-        .body(include_str!("index.html"))
+        .body(render_page(&state.translator()))
 }
 
 /// `GET /api/session` - version, listen port, DHT node count, current rates
@@ -723,6 +810,142 @@ async fn h_move(
     .await
 }
 
+/// `POST /api/torrents/{hash}/location` - point a torrent at data that has
+/// already been moved.
+///
+/// The counterpart to `/move`: that one relocates the files, this one relocates
+/// the torrent and leaves the data alone. Same absolute-path rule.
+async fn h_set_location(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<MoveRequest>,
+) -> actix_web::Result<HttpResponse> {
+    let path = body.into_inner().path;
+    if !std::path::Path::new(&path).is_absolute() {
+        return Err(ErrorBadRequest("path must be absolute"));
+    }
+    with_torrent(&state, hash.into_inner(), move |s, h| {
+        s.set_location(h, &path)
+    })
+    .await
+}
+
+// --- settings ---------------------------------------------------------------
+
+#[derive(Serialize)]
+struct SettingDto {
+    name: String,
+    /// Current value, rendered exactly as `--set` would accept it back.
+    value: String,
+    /// bool | int | text | dir | choice
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    options: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    labels: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max: Option<i64>,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    unit: &'static str,
+    description: String,
+}
+
+#[derive(Serialize)]
+struct SectionDto {
+    #[serde(skip)]
+    key: &'static str,
+    name: String,
+    settings: Vec<SettingDto>,
+}
+
+/// `GET /api/settings` - every preference, grouped the way Preferences groups
+/// them.
+///
+/// Built from the same registry the command line uses, so the three surfaces
+/// cannot drift: adding a setting there makes it appear here with the right
+/// control and the right validation, with nothing to change in this file.
+async fn h_settings(state: web::Data<AppState>) -> actix_web::Result<HttpResponse> {
+    let tr = state.translator();
+    let mut sections: Vec<SectionDto> = Vec::new();
+
+    for s in crate::cli::SETTINGS {
+        let f = crate::cli::field(s);
+        let dto = SettingDto {
+            name: String::from(s.name),
+            value: crate::cli::show(&state.cfg, s),
+            kind: f.kind,
+            options: f.options,
+            labels: f.labels,
+            min: f.min,
+            max: f.max,
+            unit: f.unit,
+            description: crate::cli::description(s, &tr),
+        };
+        // Grouped by walking the registry in order, which is already grouped -
+        // so the drawer's sections match the Preferences tabs without a second
+        // list to keep in step.
+        match sections.last_mut() {
+            Some(last) if last.key == s.section => last.settings.push(dto),
+            _ => sections.push(SectionDto {
+                key: s.section,
+                name: tr.i18n(s.section),
+                settings: vec![dto],
+            }),
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(sections))
+}
+
+#[derive(Deserialize)]
+struct SettingRequest {
+    name: String,
+    value: String,
+}
+
+/// `POST /api/settings` - change one preference.
+///
+/// One at a time rather than a whole document: each value is validated on its
+/// own terms and a rejected one has to name itself, which a bulk write cannot
+/// do without inventing a per-field error shape.
+///
+/// Note that `web-*` changes are stored but NOT applied to the running server -
+/// restarting the interface out from under the request that changed it would
+/// answer with a dropped connection. They take effect the next time it starts.
+async fn h_set_setting(
+    state: web::Data<AppState>,
+    body: web::Json<SettingRequest>,
+) -> actix_web::Result<HttpResponse> {
+    let body = body.into_inner();
+    let setting = crate::cli::find(&body.name)
+        .ok_or_else(|| ErrorBadRequest(format!("unknown setting '{}'", body.name)))?;
+
+    let tr = state.translator();
+    crate::cli::set(&state.cfg, setting, &body.value, &tr)
+        .map_err(|e| ErrorBadRequest(format!("{e:#}")))?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "name": setting.name,
+        "value": crate::cli::show(&state.cfg, setting),
+    })))
+}
+
+/// `POST /api/settings/apply` - make the stored settings take effect now.
+///
+/// The same rebuild the desktop does when Preferences is accepted: the librqbit
+/// session is torn down and recreated from the settings, so rate limits, DHT,
+/// PeX, encryption and the proxy change without restarting the application.
+///
+/// The `webui.*` settings are the exception and are NOT applied here. Restarting
+/// the HTTP server from inside one of its own requests would answer that request
+/// by dropping the connection; they take effect when NanoTorrent next starts.
+async fn h_apply_settings(state: web::Data<AppState>) -> actix_web::Result<HttpResponse> {
+    state.session.apply_settings(&state.env, &state.cfg);
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "applied": true })))
+}
+
 #[derive(Deserialize)]
 struct LabelRequest {
     /// null clears the label.
@@ -863,7 +1086,7 @@ pub fn spawn(
         .spawn(move || {
             let system = actix_web::rt::System::new();
             system.block_on(async move {
-                match build(&addr, session, cfg, creds, tls_config, advanced) {
+                match build(&addr, session, cfg, env, creds, tls_config, advanced) {
                     Ok(server) => {
                         let _ = tx.send(Ok(server.handle()));
                         if let Err(err) = server.await {
@@ -902,6 +1125,7 @@ fn build(
     addr: &str,
     session: Arc<Session>,
     cfg: Arc<Configuration>,
+    env: Arc<Environment>,
     creds: Credentials,
     tls_config: Option<rustls::ServerConfig>,
     advanced: Advanced,
@@ -913,6 +1137,7 @@ fn build(
     let state = web::Data::new(AppState {
         session,
         cfg,
+        env,
         errors,
     });
     let creds = web::Data::new(creds);
@@ -957,6 +1182,10 @@ fn build(
                     .route("/torrents/{hash}/resume", web::post().to(h_resume))
                     .route("/torrents/{hash}/recheck", web::post().to(h_recheck))
                     .route("/torrents/{hash}/move", web::post().to(h_move))
+                    .route("/torrents/{hash}/location", web::post().to(h_set_location))
+                    .route("/settings", web::get().to(h_settings))
+                    .route("/settings", web::post().to(h_set_setting))
+                    .route("/settings/apply", web::post().to(h_apply_settings))
                     .route("/torrents/{hash}/label", web::post().to(h_label))
                     .route("/fs/roots", web::get().to(h_fs_roots))
                     .route("/fs/list", web::get().to(h_fs_list))

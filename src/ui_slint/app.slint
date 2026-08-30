@@ -370,6 +370,285 @@ component DataText inherits Rectangle {
 /// element moves as the column it resizes changes width: measuring against
 /// its own `mouse-x` would cancel the delta out and the drag would appear to
 /// do nothing (the same trap the horizontal one documents).
+// A toolbar button: an icon, a colour, and nothing else.
+//
+// Colours are chosen to read on both palettes rather than taken from Palette:
+// these are the "traffic light" set (add / remove / start / stop), and their
+// meaning IS the colour. They sit on both backgrounds because they are all
+// mid-saturation - the same reason qBittorrent's toolbar works in both themes.
+component IconButton inherits Rectangle {
+    in property <color> tint;
+    in property <bool> enabled: true;
+    in property <string> tip;
+    callback activated();
+
+    width: 34px;
+    height: 30px;
+    border-radius: 5px;
+    // Hover is the only affordance an icon-only button has, so it has to be
+    // visible without being loud.
+    background: !root.enabled ? transparent
+        : touch.has-hover ? Palette.alternate-background : transparent;
+
+    // Greyed rather than hidden: a disabled button still says the action
+    // exists and needs a selection. `out` so the glyph placed inside can read
+    // it - the caller supplies the shape, this supplies the colour.
+    out property <color> ink: root.enabled ? root.tint
+        : Palette.foreground.mix(Palette.background, 0.45);
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    touch := TouchArea {
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        clicked => { if (root.enabled) { root.activated(); } }
+    }
+
+    // Centred: a Rectangle is not a layout, so without this the glyph would
+    // sit in the top-left corner of the button.
+    HorizontalLayout {
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            @children
+        }
+    }
+
+    // An icon-only button says nothing about itself until you hover it. Same
+    // hand-rolled tooltip the details lists use, for the same reason: styled
+    // text would need @markdown, and markdown eats the punctuation in these.
+    Tooltip {
+        Rectangle {
+            background: Palette.alternate-background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 4px;
+            HorizontalLayout {
+                padding: 6px;
+                Text {
+                    text: root.tip;
+                    font-size: 12px;
+                    color: Palette.foreground;
+                }
+            }
+        }
+    }
+}
+
+// --- the glyphs -----------------------------------------------------------
+// Each is 20x20, centred, and takes its colour from `ink`.
+
+// Two interlocking links, for "add magnet".
+component LinkIcon inherits Rectangle {
+    in property <color> ink;
+    width: 20px;
+    height: 20px;
+    // Stepped diagonally rather than side by side: a horizontal chain is only
+    // as tall as one capsule, and at 8px it read as sitting higher than its
+    // neighbours even though it was centred. Every glyph here is ~16px tall so
+    // they carry the same weight on the shared centre line.
+    Rectangle {
+        x: 0px; y: 2px; width: 13px; height: 9px;
+        border-radius: 4.5px; border-width: 2px; border-color: root.ink;
+    }
+    Rectangle {
+        x: 7px; y: 9px; width: 13px; height: 9px;
+        border-radius: 4.5px; border-width: 2px; border-color: root.ink;
+    }
+    // Joins the two so they read as linked rather than as two separate rings.
+    Rectangle {
+        x: 8.5px; y: 8px; width: 3px; height: 4px;
+        background: root.ink;
+    }
+}
+
+// A plus inside a ring, for "add torrent".
+component PlusIcon inherits Rectangle {
+    in property <color> ink;
+    width: 20px;
+    height: 20px;
+    Rectangle {
+        x: 2px; y: 2px; width: 16px; height: 16px;
+        border-radius: 8px; border-width: 2px; border-color: root.ink;
+    }
+    Rectangle { x: 6px; y: 9px; width: 8px; height: 2px; background: root.ink; }
+    Rectangle { x: 9px; y: 6px; width: 2px; height: 8px; background: root.ink; }
+}
+
+// A waste bin, for "remove".
+component TrashIcon inherits Rectangle {
+    in property <color> ink;
+    width: 20px;
+    height: 20px;
+    // Handle.
+    Rectangle { x: 7px; y: 2px; width: 6px; height: 2px; background: root.ink; }
+    // Lid.
+    Rectangle { x: 2.5px; y: 5px; width: 15px; height: 2px; background: root.ink; }
+    // Body.
+    Rectangle {
+        x: 4px; y: 8px; width: 12px; height: 10px;
+        border-radius: 2px; border-width: 2px; border-color: root.ink;
+    }
+    Rectangle { x: 8px; y: 10.5px; width: 1.5px; height: 5px; background: root.ink; }
+    Rectangle { x: 10.5px; y: 10.5px; width: 1.5px; height: 5px; background: root.ink; }
+}
+
+// A play triangle, for "start / resume".
+component PlayIcon inherits Rectangle {
+    in property <color> ink;
+    width: 20px;
+    height: 20px;
+    Path {
+        width: 20px;
+        height: 20px;
+        viewbox-width: 20;
+        viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 4 2 L 17 10 L 4 18 Z";
+    }
+}
+
+// A filled square, for "stop / pause".
+component StopIcon inherits Rectangle {
+    in property <color> ink;
+    width: 20px;
+    height: 20px;
+    Rectangle {
+        x: 2px; y: 2px; width: 16px; height: 16px;
+        border-radius: 2px;
+        background: root.ink;
+    }
+}
+
+// A cog, for "preferences". A straight-line polygon: see the note on
+// IconButton about not depending on SVG arc support.
+component GearIcon inherits Rectangle {
+    in property <color> ink;
+    width: 20px;
+    height: 20px;
+    // A solid cog, hub and all. The hub used to be punched out in the colour
+    // behind it, which only works while that colour is known - the button is
+    // transparent until hovered, so the punch did nothing and the deep teeth
+    // left it reading as an asterisk. Shallower teeth and no hole is the shape
+    // that survives being 16px tall.
+    Path {
+        x: 1px;
+        y: 1px;
+        width: 18px;
+        height: 18px;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: root.ink;
+        commands: "M 22.67 9.34 L 22.67 14.66 L 20.18 14.66 L 19.66 15.90 L 21.43 17.67 L 17.67 21.43 L 15.90 19.66 L 14.66 20.18 L 14.66 22.67 L 9.34 22.67 L 9.34 20.18 L 8.10 19.66 L 6.33 21.43 L 2.57 17.67 L 4.34 15.90 L 3.82 14.66 L 1.33 14.66 L 1.33 9.34 L 3.82 9.34 L 4.34 8.10 L 2.57 6.33 L 6.33 2.57 L 8.10 4.34 L 9.34 3.82 L 9.34 1.33 L 14.66 1.33 L 14.66 3.82 L 15.90 4.34 L 17.67 2.57 L 21.43 6.33 L 19.66 8.10 L 20.18 9.34 Z";
+    }
+}
+
+// --- details tab bar ------------------------------------------------------
+// The built-in TabWidget stretches its tabs across the full width and takes a
+// title string only. These are sized to their own content and carry an icon,
+// which is what every other client's detail pane looks like.
+
+// Bar chart, for Overview.
+component OverviewIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Rectangle { x: 1px;  y: 8px;  width: 3px; height: 7px; background: root.ink; }
+    Rectangle { x: 6px;  y: 4px;  width: 3px; height: 11px; background: root.ink; }
+    Rectangle { x: 11px; y: 1px;  width: 3px; height: 14px; background: root.ink; }
+}
+
+// A sheet of paper, for Files.
+component FilesIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Rectangle {
+        x: 2px; y: 1px; width: 12px; height: 14px;
+        border-radius: 2px; border-width: 1.5px; border-color: root.ink;
+    }
+    Rectangle { x: 5px; y: 5px;  width: 6px; height: 1.5px; background: root.ink; }
+    Rectangle { x: 5px; y: 8px;  width: 6px; height: 1.5px; background: root.ink; }
+    Rectangle { x: 5px; y: 11px; width: 4px; height: 1.5px; background: root.ink; }
+}
+
+// Two figures, for Peers.
+component PeersIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Rectangle { x: 2px; y: 2px; width: 5px; height: 5px; border-radius: 2.5px; background: root.ink; }
+    Rectangle { x: 0.5px; y: 8px; width: 8px; height: 6px; border-radius: 3px; background: root.ink; }
+    Rectangle { x: 9px; y: 3.5px; width: 4px; height: 4px; border-radius: 2px; background: root.ink; }
+    Rectangle { x: 8px; y: 9px; width: 7.5px; height: 5px; border-radius: 2.5px; background: root.ink; }
+}
+
+// Concentric rings, for Trackers - the announce going out.
+component TrackersIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Rectangle {
+        x: 1px; y: 1px; width: 14px; height: 14px;
+        border-radius: 7px; border-width: 1.5px; border-color: root.ink;
+    }
+    Rectangle {
+        x: 4.5px; y: 4.5px; width: 7px; height: 7px;
+        border-radius: 3.5px; border-width: 1.5px; border-color: root.ink;
+    }
+    Rectangle { x: 6.75px; y: 6.75px; width: 2.5px; height: 2.5px; border-radius: 1.25px; background: root.ink; }
+}
+
+component DetailTab inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback picked();
+
+    // Sized to its content, not to a share of the width.
+    horizontal-stretch: 0;
+    height: 28px;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    background: root.selected ? Palette.background
+        : tab-touch.has-hover ? Palette.alternate-background : transparent;
+
+    // Mixed toward the background rather than a fixed grey: an unselected tab
+    // has to read as available-but-not-current on BOTH palettes, and #8a8a8a
+    // against the light background looked disabled.
+    //
+    // Weighted heavily toward the foreground (0.85, not 0.65) because at the
+    // lower value it still read as disabled: ~#6a6a6a on white and ~#8a8a8a on
+    // near-black. What separates the current tab is the accent icon, the bold
+    // label and the underline - it does not also need the others to be faint.
+    out property <color> muted: Palette.foreground.mix(Palette.background, 0.85);
+    out property <color> ink: root.selected ? Palette.accent-background : root.muted;
+
+    tab-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.picked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 6px;
+        alignment: center;
+        VerticalLayout { alignment: center; @children }
+        Text {
+            text: root.label;
+            font-size: 13px;
+            font-weight: root.selected ? 700 : 400;
+            vertical-alignment: center;
+            color: root.selected ? Palette.foreground : root.muted;
+        }
+    }
+
+    // The selected tab joins the panel below it.
+    if root.selected: Rectangle {
+        y: parent.height - 2px;
+        height: 2px;
+        background: Palette.accent-background;
+    }
+}
+
 component VDivider inherits Rectangle {
     /// Absolute x of the press, and of each subsequent move.
     callback grabbed(length);
@@ -586,6 +865,7 @@ export component MainWindow inherits Window {
                 MenuRow { label: L.s(L.revision, "force_recheck"); activated => { root.action("recheck"); ctx-popup.close(); } }
                 MenuSep { }
                 MenuRow { label: L.s(L.revision, "move"); activated => { root.action("move"); ctx-popup.close(); } }
+                MenuRow { label: L.s(L.revision, "set_location"); activated => { root.action("set-location"); ctx-popup.close(); } }
                 // Assigning a label, as opposed to View > Labels which filters
                 // by one. Drawn inline rather than as a nested PopupWindow:
                 // the outer popup closes on any click outside itself, so a
@@ -781,6 +1061,92 @@ export component MainWindow inherits Window {
                     placeholder-text: "name contains \"linux\" and size > 100mb";
                     text <=> root.console-text;
                     edited => { root.console-changed(self.text); }
+                }
+            }
+        }
+
+        // --- toolbar ---------------------------------------------------------
+        // Icon-only, like every other torrent client's: the actions are the
+        // ones reached constantly, and the menus keep the rest. The three that
+        // act on a selection disable themselves without one rather than
+        // failing silently when pressed.
+        Rectangle {
+            height: 38px;
+            background: Palette.background;
+
+            HorizontalLayout {
+                // A Rectangle is not a layout, so a child without explicit
+                // geometry is placed at its own preferred size in the top-left
+                // corner - which left the 30px button row hard against the top
+                // of a 38px bar with 8px of dead space under it. Filling the
+                // parent and padding evenly is what centres the row.
+                width: 100%;
+                height: 100%;
+                padding-top: 4px;
+                padding-bottom: 4px;
+                alignment: start;
+                padding-left: 6px;
+                padding-right: 6px;
+                spacing: 2px;
+
+                IconButton {
+                    tint: #2f80ed;
+                    tip: L.s(L.revision, "add_magnet_link_s");
+                    activated => { root.action("add-magnet"); }
+                    LinkIcon { ink: parent.ink; }
+                }
+                IconButton {
+                    tint: #2f80ed;
+                    tip: L.s(L.revision, "add_torrent_s");
+                    activated => { root.action("add-torrent"); }
+                    PlusIcon { ink: parent.ink; }
+                }
+
+                // Separator, as in the reference clients: adding is one group,
+                // acting on a selection is another.
+                Rectangle {
+                    width: 9px;
+                    Rectangle {
+                        x: 4px; y: 7px; width: 1px; height: 16px;
+                        background: Palette.border;
+                    }
+                }
+
+                IconButton {
+                    tint: #e5484d;
+                    enabled: root.selected-count > 0;
+                    tip: L.s(L.revision, "remove");
+                    activated => { root.action("remove"); }
+                    TrashIcon { ink: parent.ink; }
+                }
+                IconButton {
+                    tint: #2ea043;
+                    enabled: root.selected-count > 0;
+                    tip: L.s(L.revision, "resume");
+                    activated => { root.action("resume"); }
+                    PlayIcon { ink: parent.ink; }
+                }
+                IconButton {
+                    tint: #e8912d;
+                    enabled: root.selected-count > 0;
+                    tip: L.s(L.revision, "pause");
+                    activated => { root.action("pause"); }
+                    StopIcon { ink: parent.ink; }
+                }
+
+                Rectangle {
+                    width: 9px;
+                    Rectangle {
+                        x: 4px; y: 7px; width: 1px; height: 16px;
+                        background: Palette.border;
+                    }
+                }
+
+                IconButton {
+                    tint: #8b5cf6;
+                    tip: L.s(L.revision, "preferences");
+                    activated => { root.action("preferences"); }
+                    GearIcon { ink: parent.ink; }
                 }
             }
         }
@@ -1021,8 +1387,10 @@ export component MainWindow inherits Window {
         }
 
         // --- details panel ---------------------------------------------------
-        if root.show-details: TabWidget {
-            current-index <=> root.current-tab;
+        if root.show-details: VerticalLayout {
+            // Was a TabWidget. Replaced because that widget stretches its tabs
+            // over the full width and has no room for an icon; `current-tab`
+            // was already an in-out property, so only the chrome changed.
             // NOT `height:`. A VerticalLayout assigns its children's geometry,
             // so an explicit height competes with the layout rather than
             // constraining it - which is why dragging the splitter changed
@@ -1031,8 +1399,49 @@ export component MainWindow inherits Window {
             min-height: root.details-height;
             max-height: root.details-height;
 
-            Tab {
-                title: L.s(L.revision, "overview");
+            Rectangle {
+                height: 29px;
+                background: Palette.alternate-background;
+                // The line the selected tab breaks out of.
+                Rectangle {
+                    y: parent.height - 1px;
+                    height: 1px;
+                    background: Palette.border;
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    padding-left: 6px;
+                    padding-top: 1px;
+                    spacing: 2px;
+                    DetailTab {
+                        label: L.s(L.revision, "overview");
+                        selected: root.current-tab == 0;
+                        picked => { root.current-tab = 0; }
+                        OverviewIcon { ink: parent.ink; }
+                    }
+                    DetailTab {
+                        label: L.s(L.revision, "files");
+                        selected: root.current-tab == 1;
+                        picked => { root.current-tab = 1; }
+                        FilesIcon { ink: parent.ink; }
+                    }
+                    DetailTab {
+                        label: L.s(L.revision, "peers");
+                        selected: root.current-tab == 2;
+                        picked => { root.current-tab = 2; }
+                        PeersIcon { ink: parent.ink; }
+                    }
+                    DetailTab {
+                        label: L.s(L.revision, "trackers");
+                        selected: root.current-tab == 3;
+                        picked => { root.current-tab = 3; }
+                        TrackersIcon { ink: parent.ink; }
+                    }
+                }
+            }
+
+            if root.current-tab == 0: VerticalLayout {
+                vertical-stretch: 1;
                 // Scrolls: drag the splitter far enough up and the fields no
                 // longer fit, and without this they were simply unreachable.
                 ScrollView {
@@ -1132,8 +1541,8 @@ export component MainWindow inherits Window {
                 }
             }
 
-            Tab {
-                title: L.s(L.revision, "files");
+            if root.current-tab == 1: VerticalLayout {
+                vertical-stretch: 1;
                 // Scrolls horizontally like the torrent list: once columns can
                 // be widened they can exceed the panel, and without this the
                 // far ones would simply be unreachable. The ListView owns
@@ -1225,8 +1634,8 @@ export component MainWindow inherits Window {
                 }
             }
 
-            Tab {
-                title: L.s(L.revision, "peers");
+            if root.current-tab == 2: VerticalLayout {
+                vertical-stretch: 1;
                 ScrollView {
                     viewport-width: DCols.peers-total;
                     vertical-scrollbar-policy: always-off;
@@ -1317,8 +1726,8 @@ export component MainWindow inherits Window {
                 }
             }
 
-            Tab {
-                title: L.s(L.revision, "trackers");
+            if root.current-tab == 3: VerticalLayout {
+                vertical-stretch: 1;
                 ScrollView {
                     viewport-width: DCols.trackers-total;
                     vertical-scrollbar-policy: always-off;

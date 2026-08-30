@@ -110,6 +110,7 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **Main window** — torrent list with all 16 columns, a **rendered progress
   bar** in the Progress column, click-to-sort, multi-select, context menu
   (pause/resume, remove with/without files, force recheck, move storage,
+  **set location** — for data you moved yourself, see below —
   labels, copy info hash / magnet, open in file manager). **Ctrl+A** selects
   everything the current filter shows; **Delete** asks whether to remove the
   selection with or without its data. Paused torrents blank their live columns.
@@ -121,6 +122,11 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   View ▸ Details panel / Status bar / Console are ticked when shown. Progress
   never rounds up: a torrent one piece short reads 99.9%, not a full bar over
   a Downloading status.
+- **Toolbar** — icon-only buttons above the list for add magnet, add torrent,
+  remove, start and stop, and Preferences, each in its own colour. The three
+  that act on a selection grey themselves out without one. The glyphs are drawn
+  from Slint primitives rather than shipped as images, so one set works on both
+  palettes and there is no light/dark pair of PNGs to keep in step.
 - **Details tabs** — Overview (with a piece-availability bar), Files (per-file
   include toggles), Peers (with GeoIP country **and its flag**), and
   **Trackers** grouped into announce tiers with per-tracker
@@ -156,7 +162,12 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **Torrent creation** — BitTorrent v1, v2 and hybrid (BEP 52), with tracker /
   comment / private options.
 - **Web interface** — an optional authenticated HTTPS remote: session and
-  torrent listings, add / pause / resume / recheck / remove / move / label, and
+  torrent listings, add / pause / resume / recheck / remove / move / set location / label, a
+  **Preferences drawer** behind the hamburger (every setting the desktop dialog
+  offers, grouped the same way, rendered from `GET /api/settings` and written
+  through `POST /api/settings`; **Save changes** writes them, calls
+  `POST /api/settings/apply` to rebuild the session the way Preferences ▸ OK
+  does, and reloads the page), and
   a save-path browser. Adding takes several at once — magnet links one per
   line, or a multi-file `.torrent` picker — and `POST /api/torrents/inspect`
   reads them server-side so the remote shows the same name, size and file tree
@@ -256,6 +267,35 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   the window exists, is shown in a message box rather than lost to the GUI
   subsystem's absent stderr.
 
+## Protocol support (BEPs)
+
+What the engine actually does, not what the settings database has a key for.
+Verified against the vendored librqbit 8.1.1 sources rather than assumed.
+
+| BEP | Title | Status | Notes |
+| --- | --- | --- | --- |
+| [3](https://www.bittorrent.org/beps/bep_0003.html) | The BitTorrent protocol | **Full** | |
+| [5](https://www.bittorrent.org/beps/bep_0005.html) | DHT | **Full** | Routing table persisted to `dht.json`. Skipped for private torrents. |
+| [9](https://www.bittorrent.org/beps/bep_0009.html) | Metadata exchange | **Full** | `ut_metadata` — what makes magnet links work. |
+| [10](https://www.bittorrent.org/beps/bep_0010.html) | Extension protocol | **Full** | Carries the `NanoTorrent <version>` client string. |
+| [11](https://www.bittorrent.org/beps/bep_0011.html) | Peer exchange | **Full** | `ut_pex`, toggleable in Preferences. |
+| [12](https://www.bittorrent.org/beps/bep_0012.html) | Multitracker metadata | **Full** | Tiers are announced to and shown per-tier in the Trackers tab. |
+| [15](https://www.bittorrent.org/beps/bep_0015.html) | UDP tracker protocol | **Full** | |
+| [20](https://www.bittorrent.org/beps/bep_0020.html) | Peer ID conventions | **Full** | Azureus-style `-NT-`, or fully random in anonymous mode. |
+| [23](https://www.bittorrent.org/beps/bep_0023.html) | Compact peer lists | **Full** | |
+| [27](https://www.bittorrent.org/beps/bep_0027.html) | Private torrents | **Full** | Honoured on add (no DHT), and settable when creating one. |
+| [47](https://www.bittorrent.org/beps/bep_0047.html) | Padding files | **Partial** | Padding files are recognised and skipped; none are generated. |
+| [52](https://www.bittorrent.org/beps/bep_0052.html) | BitTorrent v2 | **Partial** | Hybrid torrents work through their v1 half, and the details panel reads both hashes out of the info dictionary. **v2-only torrents are refused** — no librqbit release implements BEP 52 ([rqbit#546](https://github.com/ikatson/rqbit/issues/546)). Creating v2 and hybrid torrents does work, since that is our own code. |
+| [6](https://www.bittorrent.org/beps/bep_0006.html) | Fast extension | No | |
+| [14](https://www.bittorrent.org/beps/bep_0014.html) | Local service discovery | No | The preference is stored and round-trips, but nothing applies it. |
+| [19](https://www.bittorrent.org/beps/bep_0019.html) | WebSeed (HTTP/FTP seeding) | No | |
+| [29](https://www.bittorrent.org/beps/bep_0029.html) | uTP | No | Not present in librqbit 8.1.1 at all. |
+
+Not a BEP, but worth listing beside them: **MSE/PE** connection encryption (the
+Vuze/Azureus specification) is implemented in `src/bittorrent/mse.rs` and wired
+into the engine through a vendored transform seam, in both directions, with
+require-encryption toggles for each.
+
 ## Known differences / not yet ported
 
 - **uTP peer transport** is not implemented. librqbit 9 (9.0.1, August 2026)
@@ -310,6 +350,62 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   reads, not a missing one.
 
 ## History
+
+**v0.2.5** adds a **toolbar** above the torrent list - add magnet, add torrent,
+remove, start, stop and Preferences as coloured icon buttons, with the
+selection-dependent three disabled until something is selected - and gives the
+details panel a tab bar of its own. The built-in TabWidget stretched its tabs
+across the full width and had nowhere to put an icon; the replacement sizes each
+tab to its content and puts a glyph in front of the label.
+
+It also gives the web interface a **Preferences drawer** - the hamburger at
+the top right slides in a panel with every setting the desktop dialog has, in the
+same five groups, and **in the configured language** - the page's own strings
+are substituted server-side from the same `lang/*.json` the desktop uses, so
+there is no flash of English and no second request. The language picker lists
+endonyms, like the desktop one. It is generated from the command line's own registry,
+so all three surfaces share one list, one set of types and one validator: a
+setting added there appears in the drawer with the right control and the right
+range, and a rejected value comes back with the same message `--set` would print.
+Edits are collected rather than written as you go: **Save changes** writes them,
+asks the session to pick them up (the same rebuild Preferences ▸ OK performs, so
+rate limits, DHT, PeX, encryption and the proxy take effect at once) and reloads
+the page. `web-*` changes are the exception - they are stored but not applied to
+the running server, since restarting the interface out from under the request
+that changed it would answer with a dropped connection.
+
+It also adds **Set location**, the counterpart to Move storage: Move
+relocates the *files*, Set location relocates the *torrent*, for data you moved
+by hand, onto another drive, or restored from a backup somewhere else. Re-adding
+at the new folder makes the engine verify what is there, so an intact copy comes
+straight back as complete and a partial one keeps whatever checks out. Nothing is
+deleted either way, and pointing it somewhere with no data warns rather than
+quietly starting an 18 GB re-download.
+
+The folder it wants is the one that *directly contains* the files. An explicit
+output folder is used verbatim by the engine, and a multi-file torrent's paths
+exclude its own directory (BEP 3 keeps that in `info.name`), so naming the parent
+finds nothing, creates empty files and downloads the lot again - the likeliest
+reading of "changed the path and everything started downloading". Set location
+now tries `<chosen>/<torrent name>` before giving up, which is where the data
+actually is when it came from a client that does create that folder. Also on the
+web interface, as a **Location** button and `POST /api/torrents/{hash}/location`.
+
+The README gained a **BEP support table**, checked against the vendored engine
+rather than against the settings database - which is how it records that the
+`lsd` preference round-trips but BEP 14 is not implemented.
+
+Two things that were wrong are fixed. Starting the app fired a **burst of
+"download complete" notifications** for torrents that were already finished: a
+restored torrent reports unfinished while the engine verifies it and flips to
+finished a tick or two later, which the completion watcher could not tell from a
+real download. It now suppresses exactly one completion per torrent that already
+had a recorded finish, so a later recheck still announces properly. And the
+**taskbar icon** went generic after 0.2.4 renamed the executable — the Start
+Menu shortcut that carries the AppUserModelID, which is what Windows resolves the
+icon through, was only ever written once and still pointed at the old path. It is
+now rewritten whenever the target moves.
+
 
 **v0.2.4** finishes the translations - all 41 languages are complete, where
 before only English covered the whole UI - and fixes two things that were
