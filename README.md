@@ -354,6 +354,10 @@ require-encryption toggles for each.
   `a_real_v2_magnet_resolves_against_the_live_swarm` therefore fails for want of
   a seed rather than for want of code; `who_has_this_infohash` tells those two
   apart before you go looking for a bug.
+- On **macOS**, local service discovery trips Local Network Privacy: the system
+  asks for permission on first launch, because LSD sends multicast and LSD is on
+  by default. The bundle carries an `NSLocalNetworkUsageDescription` so the
+  dialog says why. Declining disables LSD and nothing else.
 - **Desktop toasts are Windows-only.** Linux and macOS get the in-app toast;
   the OS-level notification is not wired up on those platforms yet.
 - Windows will not let an app force-set the **magnet** protocol default when
