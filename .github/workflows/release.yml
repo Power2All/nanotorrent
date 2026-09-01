@@ -261,6 +261,13 @@ jobs:
             <key>CFBundlePackageType</key>       <string>APPL</string>
             <key>LSMinimumSystemVersion</key>    <string>11.0</string>
             <key>NSHighResolutionCapable</key>   <true/>
+            <!-- Local service discovery (BEP 14) sends multicast, which macOS
+                 gates behind Local Network Privacy. Without this key the user
+                 gets the permission dialog with no explanation of why a
+                 torrent client wants their local network. LSD is on by
+                 default, so this prompt appears on first launch. -->
+            <key>NSLocalNetworkUsageDescription</key>
+            <string>NanoTorrent finds peers sharing the same torrents on your local network, so transfers between your own machines do not go out over the internet. Declining only disables that; everything else keeps working.</string>
             <key>CFBundleDocumentTypes</key>
             <array>
               <dict>
