@@ -1,0 +1,598 @@
+--- a/src/dht_utils.rs
++++ b/src/dht_utils.rs
+@@ -35,6 +35,8 @@
+     peer_connection_options: Option<PeerConnectionOptions>,
+     connector: Arc<StreamConnector>,
+     client_name_and_version: String,
++    // NanoTorrent seam, see MetadataInterceptor.
++    interceptor: Option<Arc<dyn crate::piece_verify::MetadataInterceptor>>,
+ ) -> ReadMetainfoResult<A> {
+     let mut seen = HashSet::<SocketAddr>::new();
+     let mut addrs = addrs_stream;
+@@ -45,6 +47,7 @@
+         let semaphore = &semaphore;
+         let connector = connector.clone();
+         let client_name_and_version = client_name_and_version.clone();
++        let interceptor = interceptor.clone();
+         async move {
+             let token = semaphore.acquire().await?;
+             let ret = peer_info_reader::read_metainfo_from_peer(
+@@ -57,6 +60,7 @@
+                 BlockingSpawner::new(1),
+                 connector,
+                 client_name_and_version,
++                interceptor,
+             )
+             .instrument(debug_span!("read_metainfo_from_peer", ?addr))
+             .await
+--- a/src/file_ops.rs
++++ b/src/file_ops.rs
+@@ -19,12 +19,14 @@
+     type_aliases::{BF, FileInfos, PeerHandle},
+ };
+ 
+-pub fn update_hash_from_file<Sha1: ISha1>(
++// NanoTorrent seam: takes a sink rather than a concrete hasher, so the same
++// read loop feeds either the engine's SHA-1 or a plugged-in verifier.
++pub fn update_hash_from_file(
+     file_id: usize,
+     file_info: &FileInfo,
+     mut pos: u64,
+     files: &dyn TorrentStorage,
+-    hash: &mut Sha1,
++    sink: &mut dyn FnMut(&[u8]),
+     buf: &mut [u8],
+     mut bytes_to_read: usize,
+ ) -> anyhow::Result<()> {
+@@ -43,15 +45,46 @@
+         bytes_to_read -= chunk;
+         read += chunk;
+         pos += chunk as u64;
+-        hash.update(&buf[..chunk]);
++        sink(&buf[..chunk]);
+     }
+     Ok(())
+ }
+ 
++/// NanoTorrent seam: the hash accumulator for one piece - either the engine's
++/// own SHA-1, or a verifier supplied by the embedder.
++enum PieceHash {
++    V1(Sha1),
++    Plugged(Box<dyn crate::piece_verify::PieceHasher>),
++}
++
++impl PieceHash {
++    fn update(&mut self, buf: &[u8]) {
++        match self {
++            PieceHash::V1(h) => h.update(buf),
++            PieceHash::Plugged(p) => p.update(buf),
++        }
++    }
++
++    /// `None` means the piece index was out of range, which is the same signal
++    /// `compare_hash` gives and which both call sites already handle.
++    fn verify(
++        self,
++        info: &librqbit_core::torrent_metainfo::TorrentMetaV1Info<ByteBufOwned>,
++        piece_index: u32,
++    ) -> Option<bool> {
++        match self {
++            PieceHash::V1(h) => info.compare_hash(piece_index, h.finish()),
++            PieceHash::Plugged(p) => Some(p.verify()),
++        }
++    }
++}
++
+ pub(crate) struct FileOps<'a> {
+     torrent: &'a ValidatedTorrentMetaV1Info<ByteBufOwned>,
+     files: &'a dyn TorrentStorage,
+     file_infos: &'a FileInfos,
++    // NanoTorrent seam. None = the engine's own SHA-1 path, unchanged.
++    verifier: Option<&'a dyn crate::piece_verify::PieceVerifier>,
+     phantom_data: PhantomData<Sha1>,
+ }
+ 
+@@ -60,15 +93,25 @@
+         torrent: &'a ValidatedTorrentMetaV1Info<ByteBufOwned>,
+         files: &'a dyn TorrentStorage,
+         file_infos: &'a FileInfos,
++        verifier: Option<&'a dyn crate::piece_verify::PieceVerifier>,
+     ) -> Self {
+         Self {
+             torrent,
+             files,
+             file_infos,
++            verifier,
+             phantom_data: PhantomData,
+         }
+     }
+ 
++    /// NanoTorrent seam: the accumulator for one piece.
++    fn piece_hasher(&self, piece_index: u32) -> PieceHash {
++        match self.verifier.and_then(|v| v.hasher(piece_index)) {
++            Some(p) => PieceHash::Plugged(p),
++            None => PieceHash::V1(Sha1::new()),
++        }
++    }
++
+     // Returns the bitvector with pieces we have.
+     pub fn initial_check(
+         &self,
+@@ -115,7 +158,7 @@
+             }
+ 
+             piece_files.clear();
+-            let mut computed_hash = Sha1::new();
++            let mut computed_hash = self.piece_hasher(piece_info.piece_index.get());
+             let mut piece_remaining = piece_info.len as usize;
+             let mut some_files_broken = false;
+             progress.fetch_add(piece_info.len as u64, Ordering::Relaxed);
+@@ -149,7 +192,7 @@
+                     current_file.fi,
+                     pos,
+                     self.files,
+-                    &mut computed_hash,
++                    &mut |b| computed_hash.update(b),
+                     &mut read_buffer,
+                     to_read_in_file,
+                 ) {
+@@ -170,10 +213,8 @@
+                 continue;
+             }
+ 
+-            if self
+-                .torrent
+-                .info()
+-                .compare_hash(piece_info.piece_index.get(), computed_hash.finish())
++            if computed_hash
++                .verify(self.torrent.info(), piece_info.piece_index.get())
+                 .context("bug: either torrent info broken or we have a bug - piece index invalid")?
+             {
+                 have_pieces.set(piece_info.piece_index.get() as usize, true);
+@@ -188,7 +229,7 @@
+             return Ok(true);
+         }
+ 
+-        let mut h = Sha1::new();
++        let mut h = self.piece_hasher(piece_index.get());
+         let piece_length = self.torrent.lengths().piece_length(piece_index);
+         let mut absolute_offset = self.torrent.lengths().piece_offset(piece_index);
+         let mut buf = vec![0u8; std::cmp::min(65536, piece_length as usize)];
+@@ -214,7 +255,7 @@
+                 fi,
+                 absolute_offset,
+                 self.files,
+-                &mut h,
++                &mut |b| h.update(b),
+                 &mut buf,
+                 to_read_in_file,
+             )
+@@ -234,11 +275,7 @@
+             absolute_offset = 0;
+         }
+ 
+-        match self
+-            .torrent
+-            .info()
+-            .compare_hash(piece_index.get(), h.finish())
+-        {
++        match h.verify(self.torrent.info(), piece_index.get()) {
+             Some(true) => {
+                 trace!("piece={} hash matches", piece_index);
+                 Ok(true)
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -64,6 +64,7 @@
+ mod peer_connection;
+ mod peer_info_reader;
+ mod piece_tracker;
++mod piece_verify;
+ mod read_buf;
+ mod session;
+ mod session_persistence;
+@@ -96,6 +97,7 @@
+     SUPPORTED_SCHEMES, Session, SessionOptions, SessionPersistenceConfig,
+ };
+ pub use librqbit_core::hash_id::Id20;
++pub use piece_verify::{MetadataInterceptor, PieceHasher, PieceVerifier};
+ pub use stream_connect::{
+     BoxAsyncRead, ConnectionOptions, IncomingStreamTransform, StreamTransform,
+ };
+--- a/src/peer_info_reader/mod.rs
++++ b/src/peer_info_reader/mod.rs
+@@ -1,5 +1,6 @@
+ use std::{net::SocketAddr, sync::Arc};
+ 
++use anyhow::Context;
+ use bencode::from_bytes;
+ use buffers::{ByteBuf, ByteBufOwned};
+ use bytes::Bytes;
+@@ -38,6 +39,8 @@
+     spawner: BlockingSpawner,
+     connector: Arc<StreamConnector>,
+     client_name_and_version: String,
++    // NanoTorrent seam, see MetadataInterceptor. None = upstream behaviour.
++    interceptor: Option<Arc<dyn crate::piece_verify::MetadataInterceptor>>,
+ ) -> anyhow::Result<TorrentAndInfoBytes> {
+     let (result_tx, result_rx) = tokio::sync::oneshot::channel::<
+         Result<(TorrentMetaV1Info<ByteBufOwned>, ByteBufOwned), bencode::DeserializeError>,
+@@ -50,6 +53,8 @@
+         result_tx: Mutex::new(Some(result_tx)),
+         locked: RwLock::new(None),
+         client_name_and_version,
++        interceptor,
++        pending_info: Mutex::new(None),
+     };
+     let connection = PeerConnection::new(
+         addr,
+@@ -133,17 +138,11 @@
+         d.copy_to_slice(&mut self.buffer[offset..offset + d.len()]);
+         self.received_pieces[piece as usize] = true;
+ 
+-        if self.received_pieces.iter().all(|p| *p) {
+-            // check metadata
+-            let mut hash = Sha1::new();
+-            hash.update(&self.buffer);
+-            if hash.finish() != info_hash.0 {
+-                anyhow::bail!("info checksum invalid");
+-            }
+-            Ok(true)
+-        } else {
+-            Ok(false)
+-        }
++        // NanoTorrent: the integrity check moved to the caller, which is the
++        // only place that knows whether SHA-1 is even the right function -
++        // a v2-only torrent's info hash is a truncated SHA-256.
++        let _ = info_hash;
++        Ok(self.received_pieces.iter().all(|p| *p))
+     }
+ }
+ 
+@@ -160,6 +159,39 @@
+     >,
+     locked: RwLock<Option<HandlerLocked>>,
+     client_name_and_version: String,
++    // NanoTorrent seam.
++    interceptor: Option<Arc<dyn crate::piece_verify::MetadataInterceptor>>,
++    // The assembled info dict, held while the hash exchange finishes.
++    pending_info: Mutex<Option<Bytes>>,
++}
++
++impl Handler {
++    /// NanoTorrent: parse the (possibly substituted) info dict and hand it to
++    /// the waiting caller. The bytes RETURNED are the originals - they are
++    /// what peers verify against the info hash, and what gets persisted.
++    fn finish(&self, buf: Bytes) -> anyhow::Result<()> {
++        let to_parse = match self.interceptor.as_ref() {
++            Some(i) => Bytes::from(i.substitute_info(&buf)?),
++            None => buf.clone(),
++        };
++        let info = from_bytes::<TorrentMetaV1Info<ByteBuf>>(&to_parse)
++            .map(|i| {
++                use clone_to_owned::CloneToOwned;
++                i.clone_to_owned(Some(&to_parse))
++            })
++            .map_err(|e| {
++                trace!("error deserializing TorrentMetaV1Info: {e:#}");
++                e.into_kind()
++            })
++            .map(|i| (i, ByteBufOwned(buf)));
++
++        self.result_tx
++            .lock()
++            .take()
++            .ok_or_else(|| anyhow::anyhow!("oneshot is consumed"))?
++            .send(info)
++            .map_err(|_| anyhow::anyhow!("torrent info deserialized, but consumer closed"))
++    }
+ }
+ 
+ impl PeerConnectionHandler for Handler {
+@@ -183,37 +215,69 @@
+     async fn on_received_message(&self, msg: Message<'_>) -> anyhow::Result<()> {
+         trace!("{}: received message: {:?}", self.addr, msg);
+ 
+-        if let Message::Extended(ExtendedMessage::UtMetadata(UtMetadata::Data(utdata))) = msg {
+-            let piece_ready = self
+-                .locked
+-                .write()
+-                .as_mut()
+-                .unwrap()
+-                .record_piece(&utdata, &self.info_hash)?;
+-            if piece_ready {
++        match msg {
++            Message::Extended(ExtendedMessage::UtMetadata(UtMetadata::Data(utdata))) => {
++                let piece_ready = self
++                    .locked
++                    .write()
++                    .as_mut()
++                    .unwrap()
++                    .record_piece(&utdata, &self.info_hash)?;
++                if !piece_ready {
++                    return Ok(());
++                }
+                 let buf = Bytes::from(self.locked.write().take().unwrap().buffer);
+-                let info = from_bytes::<TorrentMetaV1Info<ByteBuf>>(&buf)
+-                    .map(|i| {
+-                        use clone_to_owned::CloneToOwned;
+-                        i.clone_to_owned(Some(&buf))
+-                    })
+-                    .map_err(|e| {
+-                        trace!("error deserializing TorrentMetaV1Info: {e:#}");
+-                        e.into_kind()
+-                    })
+-                    .map(|i| (i, ByteBufOwned(buf)));
+ 
+-                self.result_tx
++                // Integrity. SHA-1 unless the interceptor knows better.
++                let ok = match self.interceptor.as_ref() {
++                    Some(i) => i.verify_info(&buf, self.info_hash),
++                    None => {
++                        let mut hash = Sha1::new();
++                        hash.update(&buf);
++                        hash.finish() == self.info_hash.0
++                    }
++                };
++                if !ok {
++                    anyhow::bail!("info checksum invalid");
++                }
++
++                // NanoTorrent: a v2 magnet needs `piece layers`, which are not
++                // in the info dict. Ask this peer for them before finishing.
++                let requests = match self.interceptor.as_ref() {
++                    Some(i) => i.hash_requests(&buf)?,
++                    None => Vec::new(),
++                };
++                if requests.is_empty() {
++                    return self.finish(buf);
++                }
++                trace!(count = requests.len(), "requesting piece layers");
++                *self.pending_info.lock() = Some(buf);
++                for r in requests {
++                    self.writer_tx
++                        .send(WriterRequest::Message(Message::HashRequest(r)))?;
++                }
++                Ok(())
++            }
++            Message::Hashes(h) => {
++                let Some(interceptor) = self.interceptor.as_ref() else {
++                    return Ok(());
++                };
++                let hashes: Vec<[u8; 32]> = h.iter_hashes().collect();
++                if !interceptor.on_hashes(&h.request, &hashes)? {
++                    return Ok(());
++                }
++                let buf = self
++                    .pending_info
+                     .lock()
+                     .take()
+-                    .ok_or_else(|| anyhow::anyhow!("oneshot is consumed"))?
+-                    .send(info)
+-                    .map_err(|_| {
+-                        anyhow::anyhow!("torrent info deserialized, but consumer closed")
+-                    })?;
++                    .context("bug: hashes completed with no pending info dict")?;
++                self.finish(buf)
+             }
++            Message::HashReject(_) => {
++                anyhow::bail!("peer rejected our hash request")
++            }
++            _ => Ok(()),
+         }
+-        Ok(())
+     }
+ 
+     fn on_uploaded_bytes(&self, _bytes: u32) {}
+--- a/src/piece_verify.rs
++++ b/src/piece_verify.rs
+@@ -0,0 +1,58 @@
++//! NanoTorrent seam: pluggable piece verification.
++//!
++//! Exists for BitTorrent v2 (BEP 52), where a piece hash is the root of a
++//! SHA-256 merkle subtree over the piece's 16 KiB blocks rather than a hash of
++//! the piece's bytes. That cannot be expressed by swapping the hash function,
++//! because the comparison target is not in the `pieces` blob either - so the
++//! engine hands out the accumulator and asks the answer, and the embedder
++//! supplies both.
++//!
++//! When no verifier is installed the engine uses its own SHA-1 path unchanged.
++
++/// Supplies a hasher for each piece of one torrent.
++pub trait PieceVerifier: Send + Sync + std::fmt::Debug {
++    /// A fresh hasher for `piece_index`, or `None` if this verifier does not
++    /// know that piece - the engine then falls back to its own SHA-1 check.
++    fn hasher(&self, piece_index: u32) -> Option<Box<dyn PieceHasher>>;
++}
++
++/// Takes over metadata handling for a torrent the engine cannot model itself.
++///
++/// Used for BitTorrent v2 magnets, where the info dict is not a v1 dict, its
++/// hash is not a SHA-1, and the piece hashes are not in it at all.
++pub trait MetadataInterceptor: Send + Sync + std::fmt::Debug {
++    /// Does this info dict match the torrent's info hash? The engine's own
++    /// check is SHA-1, which is the wrong function for a v2 torrent.
++    fn verify_info(&self, info_bytes: &[u8], info_hash: librqbit_core::hash_id::Id20) -> bool;
++
++    /// What else to ask this peer for before the metadata is usable. Empty
++    /// means nothing, and the engine carries on as it always did.
++    fn hash_requests(
++        &self,
++        info_bytes: &[u8],
++    ) -> anyhow::Result<Vec<peer_binary_protocol::HashRequest>>;
++
++    /// One `hashes` answer. Returns true once everything asked for has arrived.
++    fn on_hashes(
++        &self,
++        request: &peer_binary_protocol::HashRequest,
++        hashes: &[[u8; 32]],
++    ) -> anyhow::Result<bool>;
++
++    /// The bytes the engine should parse as the info dict. The ORIGINAL bytes
++    /// are still what gets served to peers and persisted - only the model the
++    /// engine drives is substituted.
++    fn substitute_info(&self, info_bytes: &[u8]) -> anyhow::Result<Vec<u8>>;
++}
++
++/// Accumulates one piece's bytes and answers whether they are correct.
++///
++/// The engine feeds the piece in order and in arbitrary-sized slices. An
++/// implementation that only covers part of the piece (v2's last piece of a
++/// file is shorter than the piece length, the rest being alignment padding)
++/// is expected to ignore the remainder itself.
++pub trait PieceHasher: Send {
++    fn update(&mut self, buf: &[u8]);
++    /// True when the bytes fed in match this piece's expected hash.
++    fn verify(self: Box<Self>) -> bool;
++}
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -299,6 +299,29 @@
+     /// Max concurrent connected peers.
+     pub peer_limit: Option<usize>,
+ 
++    /// NanoTorrent seam: override how this torrent's pieces are verified.
++    /// Used for BitTorrent v2, whose piece hashes are merkle roots rather than
++    /// SHA-1 of the piece. `None` = the engine's own SHA-1 check.
++    #[serde(skip)]
++    pub piece_verifier: Option<Arc<dyn crate::piece_verify::PieceVerifier>>,
++
++    /// NanoTorrent seam: the info hash this torrent is known by on the wire,
++    /// when that is not the hash of the bytes handed in. BEP 52 identifies a
++    /// v2-only torrent by its SHA-256 info hash truncated to 20 bytes.
++    #[serde(skip)]
++    pub override_info_hash: Option<Id20>,
++
++    /// NanoTorrent seam: the info dict to serve over BEP 9, when that is not
++    /// the one handed in. Peers verify what they receive against the info
++    /// hash, so serving anything else would be rejected.
++    #[serde(skip)]
++    pub override_info_bytes: Option<Bytes>,
++
++    /// NanoTorrent seam: takes over metadata verification, the BEP 52 hash
++    /// exchange and the info dict the engine parses, for a v2 magnet.
++    #[serde(skip)]
++    pub metadata_interceptor: Option<Arc<dyn crate::piece_verify::MetadataInterceptor>>,
++
+     /// This is used to restore the session from serialized state.
+     pub preferred_id: Option<usize>,
+ 
+@@ -1176,7 +1199,7 @@
+     ) -> BoxFuture<'a, anyhow::Result<AddTorrentResponse>> {
+         async move {
+             let mut opts = opts.unwrap_or_default();
+-            let add_res = match add {
++            let mut add_res = match add {
+                 AddTorrent::Url(magnet) if magnet.starts_with("magnet:") || magnet.len() == 40 => {
+                     let magnet = Magnet::parse(&magnet)
+                         .context("provided path is not a valid magnet URL")?;
+@@ -1271,6 +1294,18 @@
+                 }
+             };
+ 
++            // NanoTorrent seam: the identity and the metadata served to
++            // peers are the real torrent's, even when the model above was
++            // built from synthesised bytes. See AddTorrentOptions.
++            if let Some(info_hash) = opts.override_info_hash {
++                add_res.info_hash = info_hash;
++            }
++            if let Some(info_bytes) = opts.override_info_bytes.clone()
++                && let Some(metadata) = add_res.metadata.as_mut()
++            {
++                metadata.info_bytes = info_bytes;
++            }
++
+             self.add_torrent_internal(add_res, opts).await
+         }
+         .instrument(debug_span!(parent: self.rs(), "add_torrent"))
+@@ -1361,7 +1396,13 @@
+                         "no known way to resolve peers (no DHT, no trackers, no initial_peers)",
+                     )?;
+                     let resolved_magnet = self
+-                        .resolve_magnet(info_hash, peer_rx, &trackers, opts.peer_opts)
++                        .resolve_magnet(
++                            info_hash,
++                            peer_rx,
++                            &trackers,
++                            opts.peer_opts,
++                            opts.metadata_interceptor.clone(),
++                        )
+                         .await?;
+ 
+                     // Add back seen_peers into the peer stream, as we consumed some peers
+@@ -1462,6 +1503,7 @@
+                     peer_limit: opts.peer_limit.or(self.peer_limit),
+                     disable_pex: self.disable_pex,
+                     anonymize: self.anonymize,
++                    piece_verifier: opts.piece_verifier.clone(),
+                     #[cfg(feature = "disable-upload")]
+                     _disable_upload: self._disable_upload,
+                 },
+@@ -1791,6 +1833,7 @@
+         peer_rx: PeerStream,
+         trackers: &[url::Url],
+         peer_opts: Option<PeerConnectionOptions>,
++        interceptor: Option<Arc<dyn crate::piece_verify::MetadataInterceptor>>,
+     ) -> anyhow::Result<ResolveMagnetResult> {
+         match read_metainfo_from_peer_receiver(
+             self.peer_id,
+@@ -1800,6 +1843,7 @@
+             Some(self.merge_peer_opts(peer_opts)),
+             self.connector.clone(),
+             self.client_name_and_version.clone(),
++            interceptor,
+         )
+         .await
+         {
+--- a/src/torrent_state/initializing.rs
++++ b/src/torrent_state/initializing.rs
+@@ -108,6 +108,7 @@
+                     &self.metadata.info,
+                     &self.files,
+                     &self.metadata.file_infos,
++                    self.shared.options.piece_verifier.as_deref(),
+                 );
+ 
+                 let mut to_validate = BF::from_boxed_slice(
+@@ -217,8 +218,13 @@
+                     .shared
+                     .spawner
+                     .block_in_place_with_semaphore(|| {
+-                        FileOps::new(&self.metadata.info, &self.files, &self.metadata.file_infos)
+-                            .initial_check(&self.checked_bytes, &self.pause_requested)
++                        FileOps::new(
++                            &self.metadata.info,
++                            &self.files,
++                            &self.metadata.file_infos,
++                            self.shared.options.piece_verifier.as_deref(),
++                        )
++                        .initial_check(&self.checked_bytes, &self.pause_requested)
+                     })
+                     .await?;
+                 bitv_factory
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -687,7 +687,12 @@
+         self.shared.peer_id
+     }
+     pub(crate) fn file_ops(&self) -> FileOps<'_> {
+-        FileOps::new(&self.metadata.info, &*self.files, &self.metadata.file_infos)
++        FileOps::new(
++            &self.metadata.info,
++            &*self.files,
++            &self.metadata.file_infos,
++            self.shared.options.piece_verifier.as_deref(),
++        )
+     }
+ 
+     pub(crate) fn lock_read(
+--- a/src/torrent_state/mod.rs
++++ b/src/torrent_state/mod.rs
+@@ -121,6 +121,8 @@
+     pub disable_pex: bool,
+     // NanoTorrent: drop the client version from the extended handshake.
+     pub anonymize: bool,
++    // NanoTorrent: per-torrent piece verification override (BEP 52).
++    pub piece_verifier: Option<Arc<dyn crate::piece_verify::PieceVerifier>>,
+     #[cfg(feature = "disable-upload")]
+     pub _disable_upload: bool,
+ }

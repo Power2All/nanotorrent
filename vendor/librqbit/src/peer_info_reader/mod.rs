@@ -1,18 +1,23 @@
 use std::{net::SocketAddr, sync::Arc};
 
+use anyhow::Context;
 use bencode::from_bytes;
 use buffers::{ByteBuf, ByteBufOwned};
 use bytes::Bytes;
 use librqbit_core::{
     constants::CHUNK_SIZE,
     hash_id::Id20,
-    lengths::{last_element_size, ChunkInfo},
+    lengths::{ChunkInfo, last_element_size},
     torrent_metainfo::TorrentMetaV1Info,
 };
 use parking_lot::{Mutex, RwLock};
 use peer_binary_protocol::{
-    extended::{handshake::ExtendedHandshake, ut_metadata::UtMetadata, ExtendedMessage},
     Handshake, Message,
+    extended::{
+        ExtendedMessage,
+        handshake::ExtendedHandshake,
+        ut_metadata::{UtMetadata, UtMetadataData},
+    },
 };
 use sha1w::{ISha1, Sha1};
 use tokio::sync::mpsc::UnboundedSender;
@@ -23,7 +28,7 @@ use crate::{
         PeerConnection, PeerConnectionHandler, PeerConnectionOptions, WriterRequest,
     },
     spawn_utils::BlockingSpawner,
-    stream_connect::StreamConnector,
+    stream_connect::{ConnectionKind, StreamConnector},
 };
 
 pub(crate) async fn read_metainfo_from_peer(
@@ -33,9 +38,12 @@ pub(crate) async fn read_metainfo_from_peer(
     peer_connection_options: Option<PeerConnectionOptions>,
     spawner: BlockingSpawner,
     connector: Arc<StreamConnector>,
+    client_name_and_version: String,
+    // NanoTorrent seam, see MetadataInterceptor. None = upstream behaviour.
+    interceptor: Option<Arc<dyn crate::piece_verify::MetadataInterceptor>>,
 ) -> anyhow::Result<TorrentAndInfoBytes> {
     let (result_tx, result_rx) = tokio::sync::oneshot::channel::<
-        anyhow::Result<(TorrentMetaV1Info<ByteBufOwned>, ByteBufOwned)>,
+        Result<(TorrentMetaV1Info<ByteBufOwned>, ByteBufOwned), bencode::DeserializeError>,
     >();
     let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterRequest>();
     let handler = Handler {
@@ -44,6 +52,9 @@ pub(crate) async fn read_metainfo_from_peer(
         writer_tx,
         result_tx: Mutex::new(Some(result_tx)),
         locked: RwLock::new(None),
+        client_name_and_version,
+        interceptor,
+        pending_info: Mutex::new(None),
     };
     let connection = PeerConnection::new(
         addr,
@@ -55,15 +66,15 @@ pub(crate) async fn read_metainfo_from_peer(
         connector,
     );
 
-    let result_reader = async move { result_rx.await? };
+    let result_reader = result_rx;
     let (_, brx) = tokio::sync::broadcast::channel(1);
     let connection_runner = async move { connection.manage_peer_outgoing(writer_rx, brx).await };
 
     tokio::select! {
-        result = result_reader => result,
+        result = result_reader => Ok(result??),
         whatever = connection_runner => match whatever {
             Ok(_) => anyhow::bail!("connection runner completed first"),
-            Err(e) => Err(e)
+            Err(e) => Err(e.into())
         }
     }
 }
@@ -102,38 +113,36 @@ impl HandlerLocked {
             CHUNK_SIZE as usize
         }
     }
-    fn record_piece(&mut self, index: u32, data: &[u8], info_hash: Id20) -> anyhow::Result<bool> {
-        if index as usize >= self.total_pieces {
+    fn record_piece(
+        &mut self,
+        d: &UtMetadataData<ByteBuf>,
+        info_hash: &Id20,
+    ) -> anyhow::Result<bool> {
+        let piece = d.piece();
+        if piece as usize >= self.total_pieces {
             anyhow::bail!("wrong index");
         }
-        let offset = (index * CHUNK_SIZE) as usize;
-        let size = self.piece_size(index);
-        if data.len() != size {
+        let offset = (piece * CHUNK_SIZE) as usize;
+        let size = self.piece_size(piece);
+        if d.len() != size {
             anyhow::bail!(
                 "expected length of piece {} to be {}, but got {}",
-                index,
+                piece,
                 size,
-                data.len()
+                d.len()
             );
         }
-        if self.received_pieces[index as usize] {
-            anyhow::bail!("already received piece {}", index);
+        if self.received_pieces[piece as usize] {
+            anyhow::bail!("already received piece {}", piece);
         }
-        let offset_end = offset + size;
-        self.buffer[offset..offset_end].copy_from_slice(data);
-        self.received_pieces[index as usize] = true;
+        d.copy_to_slice(&mut self.buffer[offset..offset + d.len()]);
+        self.received_pieces[piece as usize] = true;
 
-        if self.received_pieces.iter().all(|p| *p) {
-            // check metadata
-            let mut hash = Sha1::new();
-            hash.update(&self.buffer);
-            if hash.finish() != info_hash.0 {
-                anyhow::bail!("info checksum invalid");
-            }
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        // NanoTorrent: the integrity check moved to the caller, which is the
+        // only place that knows whether SHA-1 is even the right function -
+        // a v2-only torrent's info hash is a truncated SHA-256.
+        let _ = info_hash;
+        Ok(self.received_pieces.iter().all(|p| *p))
     }
 }
 
@@ -143,8 +152,46 @@ struct Handler {
     addr: SocketAddr,
     info_hash: Id20,
     writer_tx: UnboundedSender<WriterRequest>,
-    result_tx: Mutex<Option<tokio::sync::oneshot::Sender<anyhow::Result<TorrentAndInfoBytes>>>>,
+    result_tx: Mutex<
+        Option<
+            tokio::sync::oneshot::Sender<Result<TorrentAndInfoBytes, bencode::DeserializeError>>,
+        >,
+    >,
     locked: RwLock<Option<HandlerLocked>>,
+    client_name_and_version: String,
+    // NanoTorrent seam.
+    interceptor: Option<Arc<dyn crate::piece_verify::MetadataInterceptor>>,
+    // The assembled info dict, held while the hash exchange finishes.
+    pending_info: Mutex<Option<Bytes>>,
+}
+
+impl Handler {
+    /// NanoTorrent: parse the (possibly substituted) info dict and hand it to
+    /// the waiting caller. The bytes RETURNED are the originals - they are
+    /// what peers verify against the info hash, and what gets persisted.
+    fn finish(&self, buf: Bytes) -> anyhow::Result<()> {
+        let to_parse = match self.interceptor.as_ref() {
+            Some(i) => Bytes::from(i.substitute_info(&buf)?),
+            None => buf.clone(),
+        };
+        let info = from_bytes::<TorrentMetaV1Info<ByteBuf>>(&to_parse)
+            .map(|i| {
+                use clone_to_owned::CloneToOwned;
+                i.clone_to_owned(Some(&to_parse))
+            })
+            .map_err(|e| {
+                trace!("error deserializing TorrentMetaV1Info: {e:#}");
+                e.into_kind()
+            })
+            .map(|i| (i, ByteBufOwned(buf)));
+
+        self.result_tx
+            .lock()
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("oneshot is consumed"))?
+            .send(info)
+            .map_err(|_| anyhow::anyhow!("torrent info deserialized, but consumer closed"))
+    }
 }
 
 impl PeerConnectionHandler for Handler {
@@ -152,52 +199,85 @@ impl PeerConnectionHandler for Handler {
         false
     }
 
-    fn serialize_bitfield_message_to_buf(&self, _buf: &mut Vec<u8>) -> anyhow::Result<usize> {
+    fn serialize_bitfield_message_to_buf(&self, _buf: &mut [u8]) -> anyhow::Result<usize> {
         Ok(0)
     }
 
-    fn on_handshake<B>(&self, handshake: Handshake<B>) -> anyhow::Result<()> {
+    fn on_handshake(&self, handshake: Handshake, _kind: ConnectionKind) -> anyhow::Result<()> {
         if !handshake.supports_extended() {
-            anyhow::bail!("this peer does not support extended handshaking, which is a prerequisite to download metadata")
+            anyhow::bail!(
+                "this peer does not support extended handshaking, which is a prerequisite to download metadata"
+            )
         }
         Ok(())
     }
 
-    async fn on_received_message(&self, msg: Message<ByteBuf<'_>>) -> anyhow::Result<()> {
+    async fn on_received_message(&self, msg: Message<'_>) -> anyhow::Result<()> {
         trace!("{}: received message: {:?}", self.addr, msg);
 
-        if let Message::Extended(ExtendedMessage::UtMetadata(UtMetadata::Data {
-            piece,
-            total_size: _,
-            data,
-        })) = msg
-        {
-            let piece_ready =
-                self.locked
+        match msg {
+            Message::Extended(ExtendedMessage::UtMetadata(UtMetadata::Data(utdata))) => {
+                let piece_ready = self
+                    .locked
                     .write()
                     .as_mut()
                     .unwrap()
-                    .record_piece(piece, &data, self.info_hash)?;
-            if piece_ready {
+                    .record_piece(&utdata, &self.info_hash)?;
+                if !piece_ready {
+                    return Ok(());
+                }
                 let buf = Bytes::from(self.locked.write().take().unwrap().buffer);
-                let info = from_bytes::<TorrentMetaV1Info<ByteBuf>>(&buf)
-                    .map(|i| {
-                        use clone_to_owned::CloneToOwned;
-                        i.clone_to_owned(Some(&buf))
-                    })
-                    .map(|i| (i, ByteBufOwned(buf)));
 
-                self.result_tx
+                // Integrity. SHA-1 unless the interceptor knows better.
+                let ok = match self.interceptor.as_ref() {
+                    Some(i) => i.verify_info(&buf, self.info_hash),
+                    None => {
+                        let mut hash = Sha1::new();
+                        hash.update(&buf);
+                        hash.finish() == self.info_hash.0
+                    }
+                };
+                if !ok {
+                    anyhow::bail!("info checksum invalid");
+                }
+
+                // NanoTorrent: a v2 magnet needs `piece layers`, which are not
+                // in the info dict. Ask this peer for them before finishing.
+                let requests = match self.interceptor.as_ref() {
+                    Some(i) => i.hash_requests(&buf)?,
+                    None => Vec::new(),
+                };
+                if requests.is_empty() {
+                    return self.finish(buf);
+                }
+                trace!(count = requests.len(), "requesting piece layers");
+                *self.pending_info.lock() = Some(buf);
+                for r in requests {
+                    self.writer_tx
+                        .send(WriterRequest::Message(Message::HashRequest(r)))?;
+                }
+                Ok(())
+            }
+            Message::Hashes(h) => {
+                let Some(interceptor) = self.interceptor.as_ref() else {
+                    return Ok(());
+                };
+                let hashes: Vec<[u8; 32]> = h.iter_hashes().collect();
+                if !interceptor.on_hashes(&h.request, &hashes)? {
+                    return Ok(());
+                }
+                let buf = self
+                    .pending_info
                     .lock()
                     .take()
-                    .ok_or_else(|| anyhow::anyhow!("oneshot is consumed"))?
-                    .send(info)
-                    .map_err(|_| {
-                        anyhow::anyhow!("torrent info deserialized, but consumer closed")
-                    })?;
+                    .context("bug: hashes completed with no pending info dict")?;
+                self.finish(buf)
             }
+            Message::HashReject(_) => {
+                anyhow::bail!("peer rejected our hash request")
+            }
+            _ => Ok(()),
         }
-        Ok(())
     }
 
     fn on_uploaded_bytes(&self, _bytes: u32) {}
@@ -215,7 +295,7 @@ impl PeerConnectionHandler for Handler {
             None => anyhow::bail!("peer does not have metadata_size"),
         };
 
-        if extended_handshake.ut_metadata().is_none() {
+        if extended_handshake.m.ut_metadata.is_none() {
             anyhow::bail!("peer does not support ut_metadata");
         }
 
@@ -241,46 +321,8 @@ impl PeerConnectionHandler for Handler {
     fn should_transmit_have(&self, _id: librqbit_core::lengths::ValidPieceIndex) -> bool {
         false
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-    use std::{net::SocketAddr, str::FromStr, sync::Once};
-
-    use librqbit_core::hash_id::Id20;
-    use librqbit_core::peer_id::generate_peer_id;
-
-    use crate::spawn_utils::BlockingSpawner;
-
-    use super::read_metainfo_from_peer;
-
-    static LOG_INIT: Once = std::sync::Once::new();
-
-    fn init_logging() {
-        #[allow(unused_must_use)]
-        LOG_INIT.call_once(|| {
-            // pretty_env_logger::try_init();
-        })
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_get_torrent_metadata_from_localhost_bittorrent_client() {
-        init_logging();
-
-        let addr = SocketAddr::from_str("127.0.0.1:27311").unwrap();
-        let peer_id = generate_peer_id(b"-xx1234-");
-        let info_hash = Id20::from_str("9905f844e5d8787ecd5e08fb46b2eb0a42c131d7").unwrap();
-        dbg!(read_metainfo_from_peer(
-            addr,
-            peer_id,
-            info_hash,
-            None,
-            BlockingSpawner::new(true),
-            Arc::new(Default::default())
-        )
-        .await
-        .unwrap());
+    fn client_name_and_version(&self) -> &str {
+        &self.client_name_and_version
     }
 }

@@ -1,0 +1,49 @@
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -32,8 +32,8 @@
+         BoxStorageFactory, StorageFactoryExt, TorrentStorage, filesystem::FilesystemStorageFactory,
+     },
+     stream_connect::{
+-        ConnectionKind, ConnectionOptions, IncomingStreamTransform, SocksProxyConfig,
+-        StreamConnector, StreamConnectorArgs, StreamTransform,
++        BoxAsyncRead, ConnectionKind, ConnectionOptions, IncomingStreamTransform,
++        SocksProxyConfig, StreamConnector, StreamConnectorArgs, StreamTransform,
+     },
+     torrent_state::{
+         ManagedTorrentHandle, ManagedTorrentLocked, ManagedTorrentOptions, ManagedTorrentState,
+@@ -1085,6 +1085,35 @@
+         ))
+     }
+ 
++    /// NanoTorrent seam: add a peer whose transport is not a socket.
++    ///
++    /// `reader`/`writer` are a byte stream on which the caller speaks the
++    /// BitTorrent peer protocol: it must send a handshake for a torrent this
++    /// session holds, and is then an ordinary peer as far as the engine is
++    /// concerned. `addr` is what the peer is called - use a loopback address,
++    /// which is what PeX already refuses to pass on to remote peers.
++    pub async fn add_synthetic_peer(
++        self: &Arc<Self>,
++        addr: SocketAddr,
++        reader: BoxAsyncRead,
++        writer: BoxAsyncWrite,
++    ) -> anyhow::Result<()> {
++        let (live, checked) = self
++            .clone()
++            .check_incoming_connection(
++                addr,
++                ConnectionKind::Tcp,
++                Box::new(reader.into_vectored_compat()),
++                writer,
++            )
++            .await
++            .context("error checking synthetic peer")?;
++        // AddIncomingPeerResult tells us whether it was taken; the caller only
++        // needs to know it did not error.
++        live.add_incoming_peer(checked)?;
++        Ok(())
++    }
++
+     async fn task_listener<A: Accept>(
+         self: Arc<Self>,
+         l: A,

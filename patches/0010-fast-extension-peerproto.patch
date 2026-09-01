@@ -1,0 +1,220 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -47,6 +47,12 @@
+ const MSGID_PIECE: MsgId = 7;
+ const MSGID_CANCEL: MsgId = 8;
+ const MSGID_EXTENDED: MsgId = 20;
++// BEP 6 (fast extension). NanoTorrent addition.
++const MSGID_SUGGEST_PIECE: MsgId = 0x0D;
++const MSGID_HAVE_ALL: MsgId = 0x0E;
++const MSGID_HAVE_NONE: MsgId = 0x0F;
++const MSGID_REJECT_REQUEST: MsgId = 0x10;
++const MSGID_ALLOWED_FAST: MsgId = 0x11;
+ // BEP 52 (BitTorrent v2) hash exchange. NanoTorrent addition.
+ const MSGID_HASH_REQUEST: MsgId = 21;
+ const MSGID_HASHES: MsgId = 22;
+@@ -73,6 +79,11 @@
+             MSGID_PIECE => "piece",
+             MSGID_CANCEL => "cancel",
+             MSGID_EXTENDED => "extended",
++            MSGID_SUGGEST_PIECE => "suggest_piece",
++            MSGID_HAVE_ALL => "have_all",
++            MSGID_HAVE_NONE => "have_none",
++            MSGID_REJECT_REQUEST => "reject_request",
++            MSGID_ALLOWED_FAST => "allowed_fast",
+             MSGID_HASH_REQUEST => "hash_request",
+             MSGID_HASHES => "hashes",
+             MSGID_HASH_REJECT => "hash_reject",
+@@ -303,6 +314,12 @@
+     NotInterested,
+     Piece(Piece<ByteBuf<'a>>),
+     Extended(ExtendedMessage<ByteBuf<'a>>),
++    /// BEP 6 (fast extension). NanoTorrent addition.
++    SuggestPiece(u32),
++    HaveAll,
++    HaveNone,
++    RejectRequest(Request),
++    AllowedFast(u32),
+     /// BEP 52. NanoTorrent addition.
+     HashRequest(HashRequest),
+     Hashes(Hashes<'a>),
+@@ -407,6 +424,32 @@
+                 write_preamble!(msg_len as u32, MSGID_EXTENDED);
+                 Ok(PREAMBLE_LEN + msg_len)
+             }
++            Message::SuggestPiece(p) | Message::AllowedFast(p) => {
++                check_len!(PREAMBLE_LEN + INTEGER_LEN);
++                let msg_id = match self {
++                    Message::SuggestPiece(..) => MSGID_SUGGEST_PIECE,
++                    _ => MSGID_ALLOWED_FAST,
++                };
++                write_preamble!(INTEGER_LEN as u32, msg_id);
++                out[5..9].copy_from_slice(&p.to_be_bytes());
++                Ok(PREAMBLE_LEN + INTEGER_LEN)
++            }
++            Message::HaveAll | Message::HaveNone => {
++                check_len!(PREAMBLE_LEN);
++                let msg_id = match self {
++                    Message::HaveAll => MSGID_HAVE_ALL,
++                    _ => MSGID_HAVE_NONE,
++                };
++                write_preamble!(0, msg_id);
++                Ok(PREAMBLE_LEN)
++            }
++            Message::RejectRequest(request) => {
++                const TOTAL_LEN: usize = PREAMBLE_LEN + INTEGER_LEN * 3;
++                check_len!(TOTAL_LEN);
++                write_preamble!((INTEGER_LEN * 3) as u32, MSGID_REJECT_REQUEST);
++                request.serialize_unchecked_len(&mut out[PREAMBLE_LEN..]);
++                Ok(TOTAL_LEN)
++            }
+             Message::HashRequest(r) | Message::HashReject(r) => {
+                 const TOTAL_LEN: usize = PREAMBLE_LEN + HashRequest::WIRE_LEN;
+                 check_len!(TOTAL_LEN);
+@@ -503,6 +546,37 @@
+                 let have = buf.read_u32_be().unwrap();
+                 Ok((Message::Have(have), total_len))
+             }
++            MSGID_SUGGEST_PIECE | MSGID_ALLOWED_FAST => {
++                check_msg_len!(4);
++                let piece = buf.read_u32_be().unwrap();
++                let msg = if msg_id == MSGID_SUGGEST_PIECE {
++                    Message::SuggestPiece(piece)
++                } else {
++                    Message::AllowedFast(piece)
++                };
++                Ok((msg, total_len))
++            }
++            MSGID_HAVE_ALL => {
++                check_msg_len!(0);
++                Ok((Message::HaveAll, total_len))
++            }
++            MSGID_HAVE_NONE => {
++                check_msg_len!(0);
++                Ok((Message::HaveNone, total_len))
++            }
++            MSGID_REJECT_REQUEST => {
++                check_msg_len!(12);
++                const I32: usize = 4;
++                let req = buf.consume::<{ I32 * 3 }>().unwrap();
++                Ok((
++                    Message::RejectRequest(Request {
++                        index: BE::read_u32(&req[0..I32]),
++                        begin: BE::read_u32(&req[I32..I32 * 2]),
++                        length: BE::read_u32(&req[I32 * 2..I32 * 3]),
++                    }),
++                    total_len,
++                ))
++            }
+             MSGID_HASH_REQUEST | MSGID_HASH_REJECT => {
+                 // Not check_msg_len!: it needs one token usable as both usize
+                 // and u32, which an unsuffixed literal is and a const is not.
+@@ -628,6 +702,9 @@
+         let mut reserved: u64 = 0;
+         // supports extended messaging
+         reserved |= 1 << 20;
++        // BEP 6 fast extension. NanoTorrent: advertised because the semantics
++        // are implemented - see librqbit patch 0010.
++        reserved |= 1 << 2;
+ 
+         Handshake {
+             reserved,
+@@ -660,6 +737,19 @@
+         self.reserved.to_be_bytes()[5] & 0x10 > 0
+     }
+ 
++    /// BEP 6: the peer understands the fast extension.
++    ///
++    /// Byte 7, mask 0x04. Fast messages are only exchanged when both sides set
++    /// it. NanoTorrent addition.
++    pub fn supports_fast(&self) -> bool {
++        self.reserved.to_be_bytes()[7] & 0x04 > 0
++    }
++
++    /// Advertise the fast extension on an outgoing handshake.
++    pub fn set_supports_fast(&mut self) {
++        self.reserved |= 1 << 2;
++    }
++
+     /// BEP 52: the peer understands BitTorrent v2 and the hash messages.
+     ///
+     /// Byte 7, mask 0x10 - the same bit libtorrent sets. NanoTorrent addition.
+@@ -800,6 +890,78 @@
+         assert!(Message::deserialize(&out[..n], &[]).is_err());
+     }
+ 
++    /// Byte offsets spelled out, not derived from the code - a round-trip
++    /// test agrees with a wrong format perfectly happily.
++    #[test]
++    fn fast_extension_messages_have_the_right_bytes() {
++        let mut out = [0u8; 64];
++
++        let n = Message::HaveAll.serialize(&mut out, &Default::default).unwrap();
++        assert_eq!(n, 5);
++        assert_eq!(&out[0..4], &1u32.to_be_bytes());
++        assert_eq!(out[4], 0x0E);
++
++        let n = Message::HaveNone.serialize(&mut out, &Default::default).unwrap();
++        assert_eq!(n, 5);
++        assert_eq!(out[4], 0x0F);
++
++        let n = Message::SuggestPiece(7).serialize(&mut out, &Default::default).unwrap();
++        assert_eq!(n, 9);
++        assert_eq!(&out[0..4], &5u32.to_be_bytes());
++        assert_eq!(out[4], 0x0D);
++        assert_eq!(&out[5..9], &7u32.to_be_bytes());
++
++        let n = Message::AllowedFast(9).serialize(&mut out, &Default::default).unwrap();
++        assert_eq!(out[4], 0x11);
++        assert_eq!(&out[5..9], &9u32.to_be_bytes());
++        assert_eq!(n, 9);
++
++        let req = Request { index: 1, begin: 2, length: 3 };
++        let n = Message::RejectRequest(req).serialize(&mut out, &Default::default).unwrap();
++        assert_eq!(n, 17);
++        assert_eq!(&out[0..4], &13u32.to_be_bytes());
++        assert_eq!(out[4], 0x10);
++        assert_eq!(&out[5..9], &1u32.to_be_bytes());
++        assert_eq!(&out[9..13], &2u32.to_be_bytes());
++        assert_eq!(&out[13..17], &3u32.to_be_bytes());
++    }
++
++    #[test]
++    fn fast_extension_messages_round_trip() {
++        let mut out = [0u8; 64];
++        let req = Request { index: 4, begin: 5, length: 6 };
++        for msg in [
++            Message::HaveAll,
++            Message::HaveNone,
++            Message::SuggestPiece(11),
++            Message::AllowedFast(12),
++            Message::RejectRequest(req),
++        ] {
++            let expect = format!("{msg:?}");
++            let n = msg.serialize(&mut out, &Default::default).unwrap();
++            let (back, consumed) = Message::deserialize(&out[..n], &[]).unwrap();
++            assert_eq!(consumed, n);
++            assert_eq!(format!("{back:?}"), expect);
++        }
++    }
++
++    #[test]
++    fn the_fast_handshake_bit_is_byte_7_mask_0x04() {
++        // Advertised by default now that the semantics are implemented, so a
++        // fresh handshake already has it - that IS the behaviour under test.
++        let mut h = Handshake::new(Id20::new([1u8; 20]), Id20::new([2u8; 20]));
++        assert!(h.supports_fast(), "fast is not advertised by default");
++        assert_eq!(h.reserved.to_be_bytes()[7], 0x04);
++        assert!(h.supports_extended(), "the fast bit clobbered the extended bit");
++
++        // Idempotent, and coexists with the v2 bit, which shares the byte.
++        h.set_supports_fast();
++        assert_eq!(h.reserved.to_be_bytes()[7], 0x04);
++        h.set_supports_v2();
++        assert!(h.supports_fast() && h.supports_v2());
++        assert_eq!(h.reserved.to_be_bytes()[7], 0x14);
++    }
++
+     #[test]
+     fn the_v2_handshake_bit_is_byte_7_mask_0x10() {
+         let mut h = Handshake::new(Id20::new([1u8; 20]), Id20::new([2u8; 20]));

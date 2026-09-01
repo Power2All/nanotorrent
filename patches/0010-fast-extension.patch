@@ -1,0 +1,97 @@
+--- a/src/piece_tracker.rs
++++ b/src/piece_tracker.rs
+@@ -243,6 +243,22 @@
+     ///
+     /// Moves all pieces owned by the peer from IN_FLIGHT back to QUEUED.
+     /// Returns the number of pieces released.
++    /// NanoTorrent: release ONE piece, if this peer is the one holding it.
++    ///
++    /// The single-piece counterpart of `release_pieces_owned_by`, for BEP 6
++    /// `reject request`: the peer is telling us it will not serve this piece
++    /// after all, so it goes back in the queue for someone else rather than
++    /// waiting out a timeout.
++    pub fn release_piece_owned_by(&mut self, peer: PeerHandle, piece: ValidPieceIndex) -> bool {
++        match self.inflight.get(&piece) {
++            Some(info) if info.peer == peer => {}
++            _ => return false,
++        }
++        self.inflight.remove(&piece);
++        self.chunks.mark_piece_broken_if_not_have(piece);
++        true
++    }
++
+     pub fn release_pieces_owned_by(&mut self, peer: PeerHandle) -> usize {
+         // Collect pieces to release (can't modify while iterating)
+         let pieces_to_release: Vec<_> = self
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -1093,6 +1093,13 @@
+                 .on_bitfield(b.clone_to_owned(None))
+                 .context("on_bitfield")?,
+             Message::Choke => self.on_i_am_choked(),
++            // BEP 6. NanoTorrent addition.
++            Message::HaveAll => self.on_have_all_or_none(true),
++            Message::HaveNone => self.on_have_all_or_none(false),
++            Message::RejectRequest(request) => self.on_reject_request(request),
++            // Hints. The BEP allows ignoring both, and librqbit picks pieces
++            // by its own strategy rather than taking suggestions.
++            Message::SuggestPiece(_) | Message::AllowedFast(_) => {}
+             Message::Unchoke => self.on_i_am_unchoked(),
+             Message::Interested => self.on_peer_interested(),
+             Message::Piece(piece) => self
+@@ -1549,10 +1556,16 @@
+             .get_chunks()?
+             .is_chunk_ready_to_upload(&chunk_info)
+         {
+-            anyhow::bail!(
+-                "got request for a chunk that is not ready to upload. chunk {:?}",
+-                chunk_info
+-            );
++            // BEP 6: once fast is negotiated a request we will not serve
++            // must be answered with a reject, not ignored. Previously this
++            // dropped the connection, which told the peer even less. Sending
++            // it unconditionally is harmless - a peer that did not negotiate
++            // fast will not have asked for something we cannot serve, and
++            // ignores what it does not understand.
++            let _ = self
++                .tx
++                .send(WriterRequest::Message(Message::RejectRequest(request)));
++            return Ok(());
+         }
+ 
+         self.state
+@@ -1595,6 +1608,34 @@
+         self.on_bitfield_notify.notify_waiters();
+     }
+ 
++    /// BEP 6 `have all` / `have none`: the whole bitfield in one message,
++    /// which a peer may send instead of a bitfield once fast is negotiated.
++    fn on_have_all_or_none(&self, all: bool) {
++        let mut bf = make_piece_bitfield(&self.state.lengths);
++        if all {
++            bf.fill(true);
++        }
++        trace!(all, "peer sent have_all/have_none");
++        self.state.peers.update_bitfield(self.addr, bf);
++        self.on_bitfield_notify.notify_waiters();
++    }
++
++    /// BEP 6 `reject request`: this peer will not serve that chunk. Put the
++    /// piece back in the queue instead of waiting for it to time out.
++    fn on_reject_request(&self, request: Request) {
++        let Some(piece) = self.state.lengths.validate_piece_index(request.index) else {
++            return;
++        };
++        let released = match self.state.lock_write("on_reject_request").get_pieces_mut() {
++            Ok(pieces) => pieces.release_piece_owned_by(self.addr, piece),
++            Err(_) => false,
++        };
++        trace!(?request, released, "peer rejected a request");
++        if released {
++            self.notify_request_slots_changed();
++        }
++    }
++
+     fn on_bitfield(&self, bitfield: ByteBufOwned) -> anyhow::Result<()> {
+         if bitfield.as_ref().len() != self.state.lengths.piece_bitfield_bytes() {
+             anyhow::bail!(

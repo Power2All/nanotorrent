@@ -1,0 +1,328 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -47,6 +47,10 @@
+ const MSGID_PIECE: MsgId = 7;
+ const MSGID_CANCEL: MsgId = 8;
+ const MSGID_EXTENDED: MsgId = 20;
++// BEP 52 (BitTorrent v2) hash exchange. NanoTorrent addition.
++const MSGID_HASH_REQUEST: MsgId = 21;
++const MSGID_HASHES: MsgId = 22;
++const MSGID_HASH_REJECT: MsgId = 23;
+ 
+ pub const EXTENDED_UT_METADATA_KEY: &[u8] = b"ut_metadata";
+ pub const MY_EXTENDED_UT_METADATA: u8 = 3;
+@@ -69,6 +73,9 @@
+             MSGID_PIECE => "piece",
+             MSGID_CANCEL => "cancel",
+             MSGID_EXTENDED => "extended",
++            MSGID_HASH_REQUEST => "hash_request",
++            MSGID_HASHES => "hashes",
++            MSGID_HASH_REJECT => "hash_reject",
+             _ => return None,
+         };
+         Some(n)
+@@ -216,6 +223,73 @@
+     }
+ }
+ 
++/// BEP 52 hash request / reject payload - 48 bytes on the wire.
++///
++/// The BEP describes the fields but not their encoding; this is libtorrent's
++/// layout, which is the one in use on the network.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub struct HashRequest {
++    /// The merkle root of the file the hashes belong to.
++    pub pieces_root: [u8; 32],
++    /// How many layers above the leaves the requested hashes sit. 0 is the
++    /// leaf (16 KiB block) layer.
++    pub base_layer: u32,
++    /// Offset, in hashes, of the first requested hash within `base_layer`.
++    /// MUST be a multiple of `length`.
++    pub index: u32,
++    /// How many hashes to return from `base_layer`. MUST be a power of two and
++    /// at least 2; SHOULD NOT exceed 512.
++    pub length: u32,
++    /// How many ancestor ("uncle") hashes to include, so the receiver can walk
++    /// up to `pieces_root`.
++    pub proof_layers: u32,
++}
++
++impl HashRequest {
++    /// pieces_root + four u32s.
++    pub const WIRE_LEN: usize = 32 + INTEGER_LEN * 4;
++
++    fn serialize_unchecked_len(&self, out: &mut [u8]) -> usize {
++        out[..32].copy_from_slice(&self.pieces_root);
++        BE::write_u32(&mut out[32..36], self.base_layer);
++        BE::write_u32(&mut out[36..40], self.index);
++        BE::write_u32(&mut out[40..44], self.length);
++        BE::write_u32(&mut out[44..48], self.proof_layers);
++        Self::WIRE_LEN
++    }
++
++    fn parse(b: &[u8; HashRequest::WIRE_LEN]) -> Self {
++        Self {
++            pieces_root: b[..32].try_into().unwrap(),
++            base_layer: BE::read_u32(&b[32..36]),
++            index: BE::read_u32(&b[36..40]),
++            length: BE::read_u32(&b[40..44]),
++            proof_layers: BE::read_u32(&b[44..48]),
++        }
++    }
++}
++
++/// A BEP 52 `hashes` message: the request it answers, plus the hashes.
++///
++/// `hashes` is a flat run of 32-byte SHA-256 values - the base layer first,
++/// then the proof layers, ending with the uncle hash closest to the root.
++#[derive(Debug)]
++pub struct Hashes<'a> {
++    pub request: HashRequest,
++    pub hashes: ByteBuf<'a>,
++}
++
++impl Hashes<'_> {
++    /// The hashes as 32-byte chunks. Any trailing partial hash is dropped -
++    /// `deserialize` refuses those, so this cannot silently lose data.
++    pub fn iter_hashes(&self) -> impl Iterator<Item = [u8; 32]> + '_ {
++        self.hashes
++            .as_ref()
++            .chunks_exact(32)
++            .map(|c| <[u8; 32]>::try_from(c).unwrap())
++    }
++}
++
+ #[derive(Debug)]
+ pub enum Message<'a> {
+     Request(Request),
+@@ -229,6 +303,10 @@
+     NotInterested,
+     Piece(Piece<ByteBuf<'a>>),
+     Extended(ExtendedMessage<ByteBuf<'a>>),
++    /// BEP 52. NanoTorrent addition.
++    HashRequest(HashRequest),
++    Hashes(Hashes<'a>),
++    HashReject(HashRequest),
+ }
+ 
+ #[derive(thiserror::Error, Debug)]
+@@ -329,6 +407,28 @@
+                 write_preamble!(msg_len as u32, MSGID_EXTENDED);
+                 Ok(PREAMBLE_LEN + msg_len)
+             }
++            Message::HashRequest(r) | Message::HashReject(r) => {
++                const TOTAL_LEN: usize = PREAMBLE_LEN + HashRequest::WIRE_LEN;
++                check_len!(TOTAL_LEN);
++                let msg_id = match self {
++                    Message::HashRequest(..) => MSGID_HASH_REQUEST,
++                    _ => MSGID_HASH_REJECT,
++                };
++                write_preamble!(HashRequest::WIRE_LEN as u32, msg_id);
++                r.serialize_unchecked_len(&mut out[PREAMBLE_LEN..]);
++                Ok(TOTAL_LEN)
++            }
++            Message::Hashes(h) => {
++                let hashes = h.hashes.as_ref();
++                let payload_len = HashRequest::WIRE_LEN + hashes.len();
++                let total_len = PREAMBLE_LEN + payload_len;
++                check_len!(total_len);
++                write_preamble!(payload_len as u32, MSGID_HASHES);
++                h.request
++                    .serialize_unchecked_len(&mut out[PREAMBLE_LEN..]);
++                out[PREAMBLE_LEN + HashRequest::WIRE_LEN..total_len].copy_from_slice(hashes);
++                Ok(total_len)
++            }
+         }
+     }
+ }
+@@ -403,6 +503,56 @@
+                 let have = buf.read_u32_be().unwrap();
+                 Ok((Message::Have(have), total_len))
+             }
++            MSGID_HASH_REQUEST | MSGID_HASH_REJECT => {
++                // Not check_msg_len!: it needs one token usable as both usize
++                // and u32, which an unsuffixed literal is and a const is not.
++                if msg_len != HashRequest::WIRE_LEN {
++                    return Err(MessageDeserializeError::IncorrectMsgLen {
++                        received: msg_len as u32,
++                        expected: HashRequest::WIRE_LEN as u32,
++                        msg_id: MsgIdDebug(msg_id),
++                    });
++                }
++                let b = buf.consume::<{ HashRequest::WIRE_LEN }>().unwrap();
++                let req = HashRequest::parse(&b);
++                let msg = if msg_id == MSGID_HASH_REQUEST {
++                    Message::HashRequest(req)
++                } else {
++                    Message::HashReject(req)
++                };
++                Ok((msg, total_len))
++            }
++            MSGID_HASHES => {
++                if msg_len < HashRequest::WIRE_LEN {
++                    return Err(MessageDeserializeError::IncorrectMsgLen {
++                        received: msg_len as u32,
++                        expected: HashRequest::WIRE_LEN as u32,
++                        msg_id: MsgIdDebug(msg_id),
++                    });
++                }
++                let hashes_len = msg_len - HashRequest::WIRE_LEN;
++                // A partial hash means the sender is confused or hostile;
++                // refuse rather than round down and verify against garbage.
++                if !hashes_len.is_multiple_of(32) {
++                    return Err(MessageDeserializeError::IncorrectMsgLen {
++                        received: msg_len as u32,
++                        expected: (HashRequest::WIRE_LEN + hashes_len.next_multiple_of(32)) as u32,
++                        msg_id: MsgIdDebug(msg_id),
++                    });
++                }
++                let b = buf.consume::<{ HashRequest::WIRE_LEN }>().unwrap();
++                let request = HashRequest::parse(&b);
++                let hashes = buf
++                    .get_contiguous(hashes_len)
++                    .ok_or(MessageDeserializeError::NeedContiguous)?;
++                Ok((
++                    Message::Hashes(Hashes {
++                        request,
++                        hashes: ByteBuf::from(hashes),
++                    }),
++                    total_len,
++                ))
++            }
+             MSGID_BITFIELD => {
+                 check_msg_len!(min 1);
+                 // In practice, as bitfield is always (almost) the first message, it should be contiguous.
+@@ -510,6 +660,18 @@
+         self.reserved.to_be_bytes()[5] & 0x10 > 0
+     }
+ 
++    /// BEP 52: the peer understands BitTorrent v2 and the hash messages.
++    ///
++    /// Byte 7, mask 0x10 - the same bit libtorrent sets. NanoTorrent addition.
++    pub fn supports_v2(&self) -> bool {
++        self.reserved.to_be_bytes()[7] & 0x10 > 0
++    }
++
++    /// Advertise v2 support on an outgoing handshake. NanoTorrent addition.
++    pub fn set_supports_v2(&mut self) {
++        self.reserved |= 1 << 4;
++    }
++
+     #[must_use]
+     pub fn serialize_unchecked_len(&self, buf: &mut [u8]) -> usize {
+         debug_assert_eq!(PSTR_BT1.len(), 19);
+@@ -546,6 +708,114 @@
+     }
+ }
+ 
++#[cfg(test)]
++mod bep52_tests {
++    use super::*;
++
++    fn req() -> HashRequest {
++        HashRequest {
++            pieces_root: [7u8; 32],
++            base_layer: 1,
++            index: 4,
++            length: 2,
++            proof_layers: 3,
++        }
++    }
++
++    /// The exact byte layout, spelled out rather than derived from the code -
++    /// otherwise a round-trip test would happily agree with a wrong format.
++    /// These numbers come from libtorrent's bt_peer_connection.cpp.
++    #[test]
++    fn hash_request_is_53_bytes_on_the_wire() {
++        let mut out = [0u8; 128];
++        let n = Message::HashRequest(req())
++            .serialize(&mut out, &Default::default)
++            .unwrap();
++        assert_eq!(n, 4 + 1 + 48, "hash request is not 53 bytes");
++        assert_eq!(&out[0..4], &49u32.to_be_bytes(), "wrong length prefix");
++        assert_eq!(out[4], 21, "wrong message id");
++        assert_eq!(&out[5..37], &[7u8; 32], "pieces root misplaced");
++        assert_eq!(&out[37..41], &1u32.to_be_bytes(), "base layer misplaced");
++        assert_eq!(&out[41..45], &4u32.to_be_bytes(), "index misplaced");
++        assert_eq!(&out[45..49], &2u32.to_be_bytes(), "length misplaced");
++        assert_eq!(&out[49..53], &3u32.to_be_bytes(), "proof layers misplaced");
++    }
++
++    #[test]
++    fn hash_messages_round_trip() {
++        let mut out = [0u8; 512];
++
++        for (msg, id) in [
++            (Message::HashRequest(req()), 21u8),
++            (Message::HashReject(req()), 23u8),
++        ] {
++            let n = msg.serialize(&mut out, &Default::default).unwrap();
++            assert_eq!(out[4], id);
++            let (back, consumed) = Message::deserialize(&out[..n], &[]).unwrap();
++            assert_eq!(consumed, n);
++            match back {
++                Message::HashRequest(r) | Message::HashReject(r) => assert_eq!(r, req()),
++                other => panic!("wrong variant: {other:?}"),
++            }
++        }
++
++        // hashes: header plus three 32-byte values.
++        let hashes: Vec<u8> = (0..96u8).collect();
++        let n = Message::Hashes(Hashes {
++            request: req(),
++            hashes: ByteBuf::from(&hashes[..]),
++        })
++        .serialize(&mut out, &Default::default)
++        .unwrap();
++        assert_eq!(n, 4 + 1 + 48 + 96);
++        assert_eq!(out[4], 22);
++        let (back, consumed) = Message::deserialize(&out[..n], &[]).unwrap();
++        assert_eq!(consumed, n);
++        match back {
++            Message::Hashes(h) => {
++                assert_eq!(h.request, req());
++                let got: Vec<[u8; 32]> = h.iter_hashes().collect();
++                assert_eq!(got.len(), 3);
++                assert_eq!(got[0][0], 0);
++                assert_eq!(got[1][0], 32);
++                assert_eq!(got[2][31], 95);
++            }
++            other => panic!("wrong variant: {other:?}"),
++        }
++    }
++
++    /// A `hashes` payload that is not a whole number of hashes must be
++    /// refused, not truncated - the leftover would otherwise be verified
++    /// against a hash nobody sent.
++    #[test]
++    fn a_ragged_hashes_payload_is_refused() {
++        let mut out = [0u8; 512];
++        let hashes = vec![0u8; 40]; // one hash and a bit
++        let n = Message::Hashes(Hashes {
++            request: req(),
++            hashes: ByteBuf::from(&hashes[..]),
++        })
++        .serialize(&mut out, &Default::default)
++        .unwrap();
++        assert!(Message::deserialize(&out[..n], &[]).is_err());
++    }
++
++    #[test]
++    fn the_v2_handshake_bit_is_byte_7_mask_0x10() {
++        let mut h = Handshake::new(Id20::new([1u8; 20]), Id20::new([2u8; 20]));
++        assert!(!h.supports_v2(), "v2 advertised without being asked");
++        assert!(h.supports_extended(), "the extended bit was disturbed");
++        h.set_supports_v2();
++        assert!(h.supports_v2());
++        assert_eq!(
++            h.reserved.to_be_bytes()[7] & 0x10,
++            0x10,
++            "wrong byte or mask"
++        );
++        assert!(h.supports_extended(), "setting v2 clobbered the extended bit");
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use anyhow::Context;

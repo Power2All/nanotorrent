@@ -2246,18 +2246,26 @@ fn show_next_pending(ui: &Rc<Ui>) {
         .iter()
         .map(|(_, t)| {
             Rc::new(VecModel::from(
-                file_tree(t.files.iter().map(|(name, _)| name.as_str()))
-                    .into_iter()
-                    .map(|(index, depth, name)| FileRow {
-                        index: index.map_or(-1, |i| i as i32),
-                        depth: depth as i32,
-                        name: name.into(),
-                        size: index
-                            .map(|i| utils::to_human_file_size(t.files[i].1 as i64).into())
-                            .unwrap_or_default(),
-                        included: true,
-                    })
-                    .collect::<Vec<_>>(),
+                // Padding files are dropped before the tree is built, so a
+                // row's position here is NOT its index in the torrent - that
+                // is why ParsedFile carries the index and this maps through
+                // `shown` rather than using the position.
+                {
+                    let shown: Vec<&crate::ui::torrentfile::ParsedFile> =
+                        t.files.iter().filter(|f| !f.padding).collect();
+                    file_tree(shown.iter().map(|f| f.path.as_str()))
+                        .into_iter()
+                        .map(|(index, depth, name)| FileRow {
+                            index: index.map_or(-1, |i| shown[i].index as i32),
+                            depth: depth as i32,
+                            name: name.into(),
+                            size: index
+                                .map(|i| utils::to_human_file_size(shown[i].size as i64).into())
+                                .unwrap_or_default(),
+                            included: true,
+                        })
+                        .collect::<Vec<_>>()
+                },
             ))
         })
         .collect();
@@ -3107,6 +3115,7 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     d.set_minimize_to_tray(cfg.get_bool("minimize_to_notification_area"));
     d.set_notify_complete(cfg.get_bool(crate::core::toast::ENABLED_KEY));
     d.set_check_updates(cfg.get_bool("update_checks.enabled"));
+    d.set_show_padding_files(cfg.get_bool("ui.show_padding_files"));
     d.set_can_associate(cfg!(windows));
 
     d.set_save_path(
@@ -3138,6 +3147,7 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
 
     d.set_enable_dht(cfg.get_bool("libtorrent.enable_dht"));
     d.set_enable_lsd(cfg.get_bool("libtorrent.enable_lsd"));
+    d.set_enable_utp(cfg.get_bool("libtorrent.enable_utp"));
     d.set_enable_pex(cfg.get_bool("libtorrent.enable_pex"));
     d.set_enable_geoip(cfg.get_bool("geoip.enabled"));
     d.set_enable_ipfilter(cfg.get_bool("ipfilter.enabled"));
@@ -3205,6 +3215,7 @@ fn save_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     cfg.set("minimize_to_notification_area", &d.get_minimize_to_tray());
     cfg.set(crate::core::toast::ENABLED_KEY, &d.get_notify_complete());
     cfg.set("update_checks.enabled", &d.get_check_updates());
+    cfg.set("ui.show_padding_files", &d.get_show_padding_files());
 
     cfg.set("default_save_path", &d.get_save_path().to_string());
     cfg.set("pause_on_low_disk_space", &d.get_pause_on_low_disk());
@@ -3241,9 +3252,8 @@ fn save_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     }
 
     cfg.set("libtorrent.enable_dht", &d.get_enable_dht());
-    // Written back unchanged: the checkbox is disabled because librqbit 8
-    // cannot apply it, but dropping the stored value would lose the preference.
     cfg.set("libtorrent.enable_lsd", &d.get_enable_lsd());
+    cfg.set("libtorrent.enable_utp", &d.get_enable_utp());
     cfg.set("libtorrent.enable_pex", &d.get_enable_pex());
     cfg.set("geoip.enabled", &d.get_enable_geoip());
     cfg.set("ipfilter.enabled", &d.get_enable_ipfilter());

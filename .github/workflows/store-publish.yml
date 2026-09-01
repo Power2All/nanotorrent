@@ -1,0 +1,117 @@
+# Publish a new version to the Microsoft Store when a GitHub release is
+# published.
+#
+# Fits the existing release flow: release.yml drafts a release, you press
+# Publish, and that fires this. (A release created by GITHUB_TOKEN would not
+# trigger anything - it is the human Publish that does.)
+#
+# This does NOT create the Store listing. The API can only update an app that is
+# already published and live, so the first submission has to be made by hand in
+# Partner Center. After that, publishing a release updates it.
+#
+# Microsoft documents Store updates through GitHub Actions as supported for FREE
+# products only; a paid listing has to be updated by hand.
+#
+# Required repository secrets - see docs/MICROSOFT-STORE.md for where each one
+# comes from:
+#
+#   AZURE_AD_TENANT_ID   AZURE_AD_APPLICATION_CLIENT_ID   AZURE_AD_APPLICATION_SECRET
+#   SELLER_ID            STORE_PRODUCT_ID
+#   STORE_IDENTITY_NAME  STORE_PUBLISHER
+
+name: Publish to Microsoft Store
+
+on:
+  release:
+    types: [published]
+  # So a failed publish can be retried without cutting another release.
+  workflow_dispatch:
+
+# Nothing is written back to the repository. The MSIX goes to the Store, not to
+# the release: release.yml deliberately refuses to change a published release's
+# assets, and this should not do it by the back door either.
+permissions:
+  contents: read
+
+# One publish at a time. Two runs uploading packages to the same product is a
+# good way to get a submission stuck in Partner Center.
+concurrency:
+  group: store-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fails with a readable message rather than a confusing one from msstore
+      # halfway through, which is what an unset secret otherwise produces.
+      - name: Check the secrets are set
+        shell: pwsh
+        env:
+          TENANT: ${{ secrets.AZURE_AD_TENANT_ID }}
+          CLIENT: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          SELLER: ${{ secrets.SELLER_ID }}
+          PRODUCT: ${{ secrets.STORE_PRODUCT_ID }}
+          IDENTITY: ${{ secrets.STORE_IDENTITY_NAME }}
+          PUBLISHER: ${{ secrets.STORE_PUBLISHER }}
+        run: |
+          $missing = @()
+          foreach ($n in "TENANT","CLIENT","SECRET","SELLER","PRODUCT","IDENTITY","PUBLISHER") {
+            if (-not (Get-Item "env:$n" -ErrorAction SilentlyContinue).Value) { $missing += $n }
+          }
+          if ($missing) {
+            throw "missing repository secrets: $($missing -join ', ') - see docs/MICROSOFT-STORE.md"
+          }
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # -NoSign is deliberate: the Store signs the package itself, and a
+      # self-signed one is rejected at upload.
+      - name: Build the MSIX
+        shell: pwsh
+        run: |
+          .\installer\build-msix.ps1 `
+            -IdentityName        "${{ secrets.STORE_IDENTITY_NAME }}" `
+            -Publisher           "${{ secrets.STORE_PUBLISHER }}" `
+            -PublisherDisplayName "Power2All" `
+            -NoSign
+
+      - name: Locate the package
+        id: pkg
+        shell: pwsh
+        run: |
+          $msix = Get-ChildItem installer\*.msix | Select-Object -First 1
+          if (-not $msix) { throw "no .msix was produced" }
+          "path=$($msix.FullName)" >> $env:GITHUB_OUTPUT
+          Write-Host "packaged $($msix.Name) ($([math]::Round($msix.Length/1MB,1)) MB)"
+
+      # Kept even on failure: if certification later rejects the build, this is
+      # the exact artifact that was sent.
+      - name: Keep the package as a build artifact
+        if: always() && steps.pkg.outputs.path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix
+          path: installer/*.msix
+          retention-days: 30
+
+      - name: Configure the Microsoft Store CLI
+        uses: microsoft/microsoft-store-apppublisher@v1.1
+
+      - name: Sign in
+        shell: pwsh
+        run: |
+          msstore reconfigure `
+            --tenantId ${{ secrets.AZURE_AD_TENANT_ID }} `
+            --sellerId ${{ secrets.SELLER_ID }} `
+            --clientId ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }} `
+            --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+
+      - name: Publish
+        shell: pwsh
+        run: msstore publish "${{ steps.pkg.outputs.path }}" -id ${{ secrets.STORE_PRODUCT_ID }}

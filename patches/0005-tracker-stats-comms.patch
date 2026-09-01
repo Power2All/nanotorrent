@@ -1,0 +1,159 @@
+--- a/src/tracker_comms.rs
++++ b/src/tracker_comms.rs
+@@ -36,8 +36,29 @@
+     announce_port: u16,
+     reqwest_client: reqwest::Client,
+     key: u32,
++    // NanoTorrent addition: per-tracker announce stats, keyed by tracker URL.
++    tracker_stats: SharedTrackerStats,
+ }
+ 
++/// NanoTorrent addition: last-known announce state for one tracker. The
++/// upstream crate receives these numbers but discards them; we record them so
++/// the UI can show a PicoTorrent-style Trackers tab.
++#[derive(Clone, Debug, Default)]
++pub struct TrackerStat {
++    /// "Working" or an error message. Empty until the first announce settles -
++    /// the UI turns that into its own translated "Updating...", so don't put an
++    /// English placeholder here.
++    pub status: String,
++    pub seeders: Option<u32>,
++    pub leechers: Option<u32>,
++    pub fails: u32,
++    pub next_announce: Option<std::time::SystemTime>,
++}
++
++/// Shared, mutable map of tracker URL -> its latest stats.
++pub type SharedTrackerStats =
++    Arc<std::sync::Mutex<std::collections::HashMap<String, TrackerStat>>>;
++
+ #[derive(Default)]
+ pub enum TrackerCommsStatsState {
+     #[default]
+@@ -149,6 +170,7 @@
+         announce_port: u16,
+         reqwest_client: reqwest::Client,
+         udp_client: UdpTrackerClient,
++        tracker_stats: SharedTrackerStats,
+     ) -> Option<BoxStream<'static, SocketAddr>> {
+         let trackers = trackers
+             .into_iter()
+@@ -181,6 +203,7 @@
+                 announce_port,
+                 reqwest_client,
+                 key: rand::random(),
++                tracker_stats,
+             });
+             let mut futures = FuturesUnordered::new();
+             for tracker in trackers {
+@@ -205,6 +228,13 @@
+         Some(s.boxed())
+     }
+ 
++    /// NanoTorrent addition: mutate the stored stats for one tracker URL.
++    fn set_stat(&self, key: &str, f: impl FnOnce(&mut TrackerStat)) {
++        if let Ok(mut map) = self.tracker_stats.lock() {
++            f(map.entry(key.to_string()).or_default());
++        }
++    }
++
+     fn add_tracker(
+         &self,
+         url: SupportedTracker,
+@@ -249,7 +279,15 @@
+                         .with_min_delay(Duration::from_secs(10))
+                         .with_max_delay(Duration::from_secs(600)),
+                 )
+-                .notify(|err, retry_in| debug!(?retry_in, "error calling tracker: {err:#}"))
++                .notify(|err, retry_in| {
++                    debug!(?retry_in, "error calling tracker: {err:#}");
++                    // NanoTorrent addition: surface the failure in the UI.
++                    self.set_stat(tracker_url.as_str(), |s| {
++                        s.status = format!("{err:#}");
++                        s.fails += 1;
++                        s.next_announce = std::time::SystemTime::now().checked_add(retry_in);
++                    });
++                })
+                 .await
+                 .context("this shouldn't fail")?;
+ 
+@@ -313,9 +351,15 @@
+         for peer in response.iter_peers() {
+             self.tx.send(peer).await?;
+         }
+-        Ok(Duration::from_secs(
+-            response.min_interval.unwrap_or(response.interval),
+-        ))
++        let interval = Duration::from_secs(response.min_interval.unwrap_or(response.interval));
++        // NanoTorrent addition: record what the tracker just told us.
++        self.set_stat(tracker_url.as_str(), |s| {
++            s.status = "Working".to_string();
++            s.seeders = Some(response.complete as u32);
++            s.leechers = Some(response.incomplete as u32);
++            s.next_announce = std::time::SystemTime::now().checked_add(interval);
++        });
++        Ok(interval)
+     }
+ 
+     async fn task_single_tracker_monitor_udp(
+@@ -361,7 +405,7 @@
+             match addrs {
+                 UdpTrackerResolveResult::One(addr) => {
+                     match self
+-                        .tracker_one_request_udp(addr, &client)
++                        .tracker_one_request_udp(&url, addr, &client)
+                         .instrument(trace_span!("udp request", ?addr))
+                         .await
+                     {
+@@ -373,9 +417,9 @@
+                 }
+                 UdpTrackerResolveResult::Two(v4, v6) => {
+                     let (r4, r6) = tokio::join!(
+-                        self.tracker_one_request_udp(v4.into(), &client)
++                        self.tracker_one_request_udp(&url, v4.into(), &client)
+                             .instrument(trace_span!("udp request", addr=?v4)),
+-                        self.tracker_one_request_udp(v6.into(), &client)
++                        self.tracker_one_request_udp(&url, v6.into(), &client)
+                             .instrument(trace_span!("udp request", addr=?v6))
+                     );
+                     sleep_interval = Some(
+@@ -391,6 +435,10 @@
+ 
+     async fn tracker_one_request_udp(
+         &self,
++        // NanoTorrent addition: the announce URL, used only as the stats key.
++        // The UI shows one row per tracker URL, but a single URL can resolve to
++        // both a v4 and a v6 address and is then announced to twice.
++        url: &Url,
+         addr: SocketAddr,
+         client: &UdpTrackerClient,
+     ) -> anyhow::Result<Duration> {
+@@ -422,15 +470,28 @@
+         match client.announce(addr, request).await {
+             Ok(response) => {
+                 trace!(len = response.addrs.len(), "received announce response");
++                let (seeders, leechers) = (response.seeders, response.leechers);
+                 for addr in response.addrs {
+                     self.tx.send(addr).await.context("rx closed")?;
+                 }
+                 let sleep = response.interval.max(5);
+                 let sleep = Duration::from_secs(sleep as u64);
++                // NanoTorrent addition: record what the tracker just told us.
++                self.set_stat(url.as_str(), |s| {
++                    s.status = "Working".to_string();
++                    s.seeders = Some(seeders);
++                    s.leechers = Some(leechers);
++                    s.next_announce = std::time::SystemTime::now().checked_add(sleep);
++                });
+                 Ok(sleep)
+             }
+             Err(e) => {
+                 debug!(?addr, "error reading announce response: {e:#}");
++                // NanoTorrent addition: surface the failure in the Trackers tab.
++                self.set_stat(url.as_str(), |s| {
++                    s.status = format!("{e:#}");
++                    s.fails += 1;
++                });
+                 Err(e)
+             }
+         }

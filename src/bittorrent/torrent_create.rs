@@ -21,7 +21,7 @@ use anyhow::{bail, Context, Result};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 
-const BLOCK: usize = 16 * 1024; // 16 KiB v2 block size
+pub(crate) const BLOCK: usize = 16 * 1024; // 16 KiB v2 block size
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TorrentVersion {
@@ -57,7 +57,7 @@ pub enum Ben {
 impl Ben {
     /// A bencode byte string from UTF-8 text. Bencode has no string type of
     /// its own - everything is bytes - so this is just the common case.
-    fn s(text: &str) -> Ben {
+    pub(crate) fn s(text: &str) -> Ben {
         Ben::Bytes(text.as_bytes().to_vec())
     }
 
@@ -100,7 +100,7 @@ impl Ben {
     }
 
     /// The complete bencoded form as a fresh buffer.
-    fn to_bytes(&self) -> Vec<u8> {
+    pub(crate) fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         self.encode(&mut out);
         out
@@ -117,14 +117,14 @@ fn sha1(data: &[u8]) -> [u8; 20] {
 }
 
 /// SHA-256 of one buffer - v2 block hashes and the v2 info hash (BEP 52).
-fn sha256(data: &[u8]) -> [u8; 32] {
+pub(crate) fn sha256(data: &[u8]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(data);
     h.finalize().into()
 }
 
 /// One interior node of a v2 merkle tree: SHA-256 over two child hashes.
-fn hash_pair(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
+pub(crate) fn hash_pair(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(a);
     h.update(b);
@@ -132,7 +132,7 @@ fn hash_pair(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
 }
 
 /// Merkle root over `leaves` (already padded to a power-of-two count).
-fn merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
+pub(crate) fn merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
     let mut layer = leaves.to_vec();
     while layer.len() > 1 {
         layer = layer.chunks(2).map(|p| hash_pair(&p[0], &p[1])).collect();
@@ -144,7 +144,7 @@ fn merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
 ///
 /// A v2 merkle tree needs a full binary tree, so the leaf count is padded up
 /// to the next power of two before the root is computed.
-fn next_pow2(n: usize) -> usize {
+pub(crate) fn next_pow2(n: usize) -> usize {
     let mut p = 1;
     while p < n {
         p *= 2;
@@ -469,37 +469,51 @@ pub fn build(input: &CreateInput) -> Result<Built> {
     // "Access is denied".
     let single = source_is_file;
     let hybrid = input.version == TorrentVersion::Hybrid;
+    // Which halves this torrent carries. A hybrid carries both; the other two
+    // carry exactly one. Getting this wrong is not a cosmetic problem: an info
+    // dict with `meta version` but no `pieces` IS a v2-only torrent whatever
+    // the dialog said, and no v1 client can read it.
+    let want_v2 = matches!(input.version, TorrentVersion::V2 | TorrentVersion::Hybrid);
+    let want_v1 = matches!(input.version, TorrentVersion::V1 | TorrentVersion::Hybrid);
 
     // --- v2: file tree + piece layers ------------------------------------
     let mut file_tree: Vec<(Vec<u8>, Ben)> = Vec::new();
     let mut piece_layers: Vec<(Vec<u8>, Ben)> = Vec::new();
-    for f in &files {
-        let v2 = hash_file_v2(&f.abs, piece_length)?;
-        let mut leaf_info: Vec<(Vec<u8>, Ben)> =
-            vec![(b"length".to_vec(), Ben::Int(f.length as i64))];
-        if let Some(root) = v2.pieces_root {
-            leaf_info.push((b"pieces root".to_vec(), Ben::Bytes(root.to_vec())));
-            if !v2.piece_layer.is_empty() {
-                piece_layers.push((root.to_vec(), Ben::Bytes(v2.piece_layer)));
+    if want_v2 {
+        for f in &files {
+            let v2 = hash_file_v2(&f.abs, piece_length)?;
+            let mut leaf_info: Vec<(Vec<u8>, Ben)> =
+                vec![(b"length".to_vec(), Ben::Int(f.length as i64))];
+            if let Some(root) = v2.pieces_root {
+                leaf_info.push((b"pieces root".to_vec(), Ben::Bytes(root.to_vec())));
+                if !v2.piece_layer.is_empty() {
+                    piece_layers.push((root.to_vec(), Ben::Bytes(v2.piece_layer)));
+                }
             }
+            let leaf = Ben::Dict(vec![(b"".to_vec(), Ben::Dict(leaf_info))]);
+            tree_insert(&mut file_tree, &f.components, leaf);
         }
-        let leaf = Ben::Dict(vec![(b"".to_vec(), Ben::Dict(leaf_info))]);
-        tree_insert(&mut file_tree, &f.components, leaf);
     }
 
     // --- info dict -------------------------------------------------------
     let mut info: Vec<(Vec<u8>, Ben)> = vec![
         (b"name".to_vec(), Ben::s(&name)),
         (b"piece length".to_vec(), Ben::Int(piece_length as i64)),
-        (b"meta version".to_vec(), Ben::Int(2)),
-        (b"file tree".to_vec(), Ben::Dict(file_tree)),
     ];
+    if want_v2 {
+        info.push((b"meta version".to_vec(), Ben::Int(2)));
+        info.push((b"file tree".to_vec(), Ben::Dict(file_tree)));
+    }
     if input.private {
         info.push((b"private".to_vec(), Ben::Int(1)));
     }
 
-    // --- hybrid: add the v1 fields describing identical data --------------
-    if hybrid {
+    // --- v1 fields (v1-only and hybrid) -----------------------------------
+    // Padding files are a HYBRID requirement, not a v1 one: they exist so the
+    // v1 layout aligns each file to a piece boundary the way v2 already does.
+    // A v1-only torrent has no second layout to agree with, and padding files
+    // in one would just be dead weight older clients have to skip.
+    if want_v1 {
         let mut hasher = V1Hasher::new(piece_length as usize);
         if single {
             stream_file(&files[0].abs, |chunk| hasher.push(chunk))?;
@@ -514,8 +528,8 @@ pub fn build(input: &CreateInput) -> Result<Built> {
                     (b"path".to_vec(), path),
                 ]));
                 // Align every file but the last to a piece boundary with a
-                // BEP 47 padding file.
-                if idx + 1 < files.len() {
+                // BEP 47 padding file. Hybrid only - see above.
+                if hybrid && idx + 1 < files.len() {
                     let pad = hasher.pad_to_piece();
                     if pad > 0 {
                         v1_files.push(Ben::Dict(vec![
@@ -560,6 +574,9 @@ pub fn build(input: &CreateInput) -> Result<Built> {
         Ben::Int(chrono::Utc::now().timestamp()),
     ));
     root.push((b"info".to_vec(), info));
+    // Only ever present alongside a file tree; `want_v2` already gates that,
+    // but the emptiness check also covers a torrent whose files all fit in a
+    // single piece and so have no layer of their own.
     if !piece_layers.is_empty() {
         root.push((b"piece layers".to_vec(), Ben::Dict(piece_layers)));
     }
@@ -573,6 +590,97 @@ pub fn build(input: &CreateInput) -> Result<Built> {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    /// Each version must emit ITS OWN keys and no others.
+    ///
+    /// This exists because "v1" once emitted `meta version` and a `file tree`
+    /// and no `pieces` at all - byte-identical to a v2-only torrent. The
+    /// dialog said v1, the file said v2, no v1 client could read it, and
+    /// NanoTorrent itself then refused to add it. Nothing caught it because
+    /// the only structural tests covered v2 and hybrid.
+    #[test]
+    fn each_version_emits_only_its_own_keys() {
+        let dir = std::env::temp_dir().join(format!("nt-versions-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let payload = dir.join("payload.bin");
+        std::fs::write(&payload, vec![7u8; 40_000]).unwrap();
+
+        let make = |version| {
+            build(&CreateInput {
+                source: &payload,
+                trackers: &[],
+                comment: "",
+                created_by: "test".into(),
+                private: false,
+                piece_length: Some(16384),
+                version,
+            })
+            .unwrap()
+            .bytes
+        };
+        // Look inside the info dict, not the whole file: `length` also appears
+        // in every v2 file-tree leaf, so a whole-buffer search proves nothing.
+        let info_has = |bytes: &[u8], key: &[u8]| {
+            let info = crate::bittorrent::metainfo::bencode_lookup(bytes, b"info").unwrap();
+            let mut probe = Vec::new();
+            probe.extend_from_slice(key.len().to_string().as_bytes());
+            probe.push(b':');
+            probe.extend_from_slice(key);
+            info.windows(probe.len()).any(|w| w == probe)
+        };
+
+        let v1 = make(TorrentVersion::V1);
+        assert!(info_has(&v1, b"pieces"), "v1 has no pieces");
+        assert!(info_has(&v1, b"length"), "v1 single-file has no length");
+        assert!(
+            !info_has(&v1, b"meta version"),
+            "v1 declared meta version - that makes it a v2 torrent"
+        );
+        assert!(!info_has(&v1, b"file tree"), "v1 carries a v2 file tree");
+
+        let v2 = make(TorrentVersion::V2);
+        assert!(info_has(&v2, b"meta version"), "v2 has no meta version");
+        assert!(info_has(&v2, b"file tree"), "v2 has no file tree");
+        assert!(!info_has(&v2, b"pieces"), "v2-only carries v1 piece hashes");
+
+        let hy = make(TorrentVersion::Hybrid);
+        assert!(info_has(&hy, b"meta version"), "hybrid lost its v2 half");
+        assert!(info_has(&hy, b"file tree"), "hybrid lost its file tree");
+        assert!(info_has(&hy, b"pieces"), "hybrid lost its v1 half");
+
+        // And the three must actually differ from one another.
+        assert_ne!(v1, v2, "v1 and v2 produced identical bytes");
+        assert_ne!(v2, hy, "v2 and hybrid produced identical bytes");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Helper for manual testing: build a torrent of any shape from a folder.
+    ///   NT_SRC=<dir> NT_OUT=<file.torrent> NT_VERSION=hybrid     ///     cargo test --bin nanotorrent-gui make_shaped_torrent -- --ignored
+    #[test]
+    #[ignore = "writes a torrent from NT_SRC to NT_OUT"]
+    fn make_shaped_torrent() {
+        let src = std::path::PathBuf::from(std::env::var("NT_SRC").unwrap());
+        let out = std::path::PathBuf::from(std::env::var("NT_OUT").unwrap());
+        let version = match std::env::var("NT_VERSION").unwrap_or_default().as_str() {
+            "v2" => TorrentVersion::V2,
+            "hybrid" => TorrentVersion::Hybrid,
+            _ => TorrentVersion::V1,
+        };
+        let built = build(&CreateInput {
+            source: &src,
+            trackers: &[],
+            comment: "",
+            created_by: "nanotorrent gui test".into(),
+            private: false,
+            piece_length: Some(16384),
+            version,
+        })
+        .unwrap();
+        std::fs::write(&out, &built.bytes).unwrap();
+        println!("wrote {} ({} bytes)", out.display(), built.bytes.len());
+    }
 
     #[test]
     fn bencode_basic() {

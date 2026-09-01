@@ -1,6 +1,5 @@
 //! MSE / PE (Message Stream Encryption) for peer connections, injected through
-//! the librqbit stream seams (see vendor/librqbit/PATCHES.md, patches 0003 and
-//! 0005).
+//! the librqbit stream seams (see vendor/librqbit/PATCHES.md, patch 0002).
 //!
 //! - Outgoing: the `StreamTransform` seam runs the *initiator* handshake
 //!   (`MseTransform`).

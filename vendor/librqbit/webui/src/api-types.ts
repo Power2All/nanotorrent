@@ -19,11 +19,24 @@ export interface TorrentFileAttributes {
   executable: boolean;
 }
 
-// Interface for the Torrent Details API response
+// Interface for the Torrent Details API response (with files, from individual endpoint)
 export interface TorrentDetails {
   name: string | null;
   info_hash: string;
   files: Array<TorrentFile>;
+  total_pieces?: number;
+  output_folder: string;
+}
+
+// Interface for torrent list item (from bulk /torrents?with_stats=true endpoint)
+// This matches TorrentDetailsResponse from the backend, but files are not included in the list
+export interface TorrentListItem {
+  id: number;
+  info_hash: string;
+  name: string | null;
+  output_folder: string;
+  total_pieces: number;
+  stats?: TorrentStats;
 }
 
 export interface AddTorrentResponse {
@@ -34,7 +47,7 @@ export interface AddTorrentResponse {
 }
 
 export interface ListTorrentsResponse {
-  torrents: Array<TorrentId>;
+  torrents: Array<TorrentListItem>;
 }
 
 export interface Speed {
@@ -51,13 +64,68 @@ export interface AggregatePeerStats {
   not_needed: number;
 }
 
-export interface SessionStats {
-  download_speed: Speed;
-  upload_speed: Speed;
+export type ConnectionKind = "tcp" | "utp" | "socks";
+
+export interface PeerCounters {
+  incoming_connections: number;
   fetched_bytes: number;
   uploaded_bytes: number;
+  total_time_connecting_ms: number;
+  connection_attempts: number;
+  connections: number;
+  errors: number;
+  fetched_chunks: number;
+  downloaded_and_checked_pieces: number;
+  total_piece_download_ms: number;
+  times_stolen_from_me: number;
+  times_i_stole: number;
+}
+
+export interface PeerStats {
+  counters: PeerCounters;
+  state: string;
+  conn_kind: ConnectionKind | null;
+  client_name: string | null;
+}
+
+export interface PeerStatsSnapshot {
+  peers: Record<string, PeerStats>;
+}
+
+export interface ConnectionStatSingle {
+  attempts: number;
+  successes: number;
+  errors: number;
+}
+export interface ConnectionStatsPerFamily {
+  v4: ConnectionStatSingle;
+  v6: ConnectionStatSingle;
+}
+export interface ConnectionStats {
+  tcp: ConnectionStatsPerFamily;
+  utp: ConnectionStatsPerFamily;
+  socks: ConnectionStatsPerFamily;
+}
+
+export interface SessionCounters {
+  fetched_bytes: number;
+  uploaded_bytes: number;
+  blocked_incoming: number;
+  blocked_outgoing: number;
+}
+
+export interface SessionStats {
+  counters: SessionCounters;
   peers: AggregatePeerStats;
+  connections: ConnectionStats;
+  download_speed: Speed;
+  upload_speed: Speed;
   uptime_seconds: number;
+}
+
+export interface LimitsConfig {
+  upload_bps?: number | null;
+  download_bps?: number | null;
 }
 
 // Interface for the Torrent Stats API response
@@ -103,6 +171,7 @@ export interface TorrentStats {
   file_progress: number[];
   progress_bytes: number;
   finished: boolean;
+  initializing_paused?: boolean;
   total_bytes: number;
   live: LiveTorrentStats | null;
 }
@@ -183,9 +252,13 @@ export interface JSONLogLine {
 export interface RqbitAPI {
   getPlaylistUrl: (index: number) => string | null;
   getStreamLogsUrl: () => string | null;
-  listTorrents: () => Promise<ListTorrentsResponse>;
+  listTorrents: (opts?: {
+    withStats?: boolean;
+  }) => Promise<ListTorrentsResponse>;
   getTorrentDetails: (index: number) => Promise<TorrentDetails>;
   getTorrentStats: (index: number) => Promise<TorrentStats>;
+  getTorrentHaves: (index: number) => Promise<Uint8Array>;
+  getPeerStats: (index: number) => Promise<PeerStatsSnapshot>;
   getTorrentStreamUrl: (
     index: number,
     file_id: number,
@@ -202,4 +275,6 @@ export interface RqbitAPI {
   forget: (index: number) => Promise<void>;
   delete: (index: number) => Promise<void>;
   stats: () => Promise<SessionStats>;
+  getLimits: () => Promise<LimitsConfig>;
+  setLimits: (limits: LimitsConfig) => Promise<void>;
 }

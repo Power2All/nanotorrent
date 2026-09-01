@@ -2,16 +2,17 @@ use std::{any::TypeId, collections::HashMap, path::PathBuf};
 
 use crate::{
     api::TorrentIdOrHash,
-    bitv::{BitV, MmapBitV},
+    bitv::{BitV, DiskBackedBitV},
     bitv_factory::BitVFactory,
     session::TorrentId,
+    spawn_utils::BlockingSpawner,
     storage::filesystem::FilesystemStorageFactory,
     torrent_state::ManagedTorrentHandle,
     type_aliases::BF,
 };
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use async_trait::async_trait;
-use futures::{stream::BoxStream, StreamExt};
+use futures::{StreamExt, stream::BoxStream};
 use itertools::Itertools;
 use librqbit_core::Id20;
 use serde::{Deserialize, Serialize};
@@ -25,13 +26,19 @@ struct SerializedSessionDatabase {
     torrents: HashMap<usize, SerializedTorrent>,
 }
 
+impl SerializedSessionDatabase {
+    // NanoTorrent: seed for the next_id counter below.
+    fn max_id(db: &Self) -> Option<usize> {
+        db.torrents.keys().copied().max()
+    }
+}
+
 pub struct JsonSessionPersistenceStore {
     output_folder: PathBuf,
     db_filename: PathBuf,
     db_content: tokio::sync::RwLock<SerializedSessionDatabase>,
-    /// Hands out torrent ids. Separate from `db_content` because `next_id`
-    /// must *reserve* an id, not merely report what the next one would be -
-    /// see the method for what went wrong when it only reported.
+    spawner: BlockingSpawner,
+    // NanoTorrent fix: next_id must RESERVE an id, not report one. See below.
     next_id: std::sync::atomic::AtomicUsize,
 }
 
@@ -42,21 +49,15 @@ impl std::fmt::Debug for JsonSessionPersistenceStore {
 }
 
 impl JsonSessionPersistenceStore {
-    pub async fn new(output_folder: PathBuf) -> anyhow::Result<Self> {
+    pub async fn new(output_folder: PathBuf, spawner: BlockingSpawner) -> anyhow::Result<Self> {
         let db_filename = output_folder.join("session.json");
         tokio::fs::create_dir_all(&output_folder)
             .await
             .with_context(|| {
-                format!(
-                    "couldn't create directory {:?} for session storage",
-                    output_folder
-                )
+                format!("couldn't create directory {output_folder:?} for session storage")
             })?;
 
-        // Annotated because `next_id` below reads db.torrents before the
-        // struct literal pins the type - Default::default() alone cannot be
-        // inferred from a field access.
-        let db: SerializedSessionDatabase = match tokio::fs::File::open(&db_filename).await {
+        let db = match tokio::fs::File::open(&db_filename).await {
             Ok(f) => {
                 let mut buf = Vec::new();
                 let mut rdr = tokio::io::BufReader::new(f);
@@ -66,27 +67,20 @@ impl JsonSessionPersistenceStore {
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Default::default(),
             Err(e) => {
-                return Err(e).context(format!("error opening session file {:?}", db_filename))
+                return Err(e).context(format!("error opening session file {db_filename:?}"));
             }
         };
 
-        // One past the highest id already stored, so ids stay unique across
-        // restarts. Monotonic, never reused: deleting torrent 3 does not make
-        // 3 available again, which is what keeps the check in
-        // Session::add_torrent from matching an unrelated torrent.
-        let next = db
-            .torrents
-            .keys()
-            .copied()
-            .max()
-            .map(|max| max + 1)
-            .unwrap_or(0);
+        let next_id = std::sync::atomic::AtomicUsize::new(
+            SerializedSessionDatabase::max_id(&db).map_or(0, |m| m + 1),
+        );
 
         Ok(Self {
             db_filename,
             output_folder,
             db_content: tokio::sync::RwLock::new(db),
-            next_id: std::sync::atomic::AtomicUsize::new(next),
+            spawner,
+            next_id,
         })
     }
 
@@ -114,7 +108,7 @@ impl JsonSessionPersistenceStore {
             .write(true)
             .open(&tmp_filename)
             .await
-            .with_context(|| format!("error opening {:?}", tmp_filename))?;
+            .with_context(|| format!("error opening {tmp_filename:?}"))?;
         trace!(?tmp_filename, "opened temp file");
 
         let mut buf = Vec::new();
@@ -124,17 +118,15 @@ impl JsonSessionPersistenceStore {
         tmp.write_all(&buf)
             .await
             .with_context(|| format!("error writing {tmp_filename:?}"))?;
-        trace!(?tmp_filename, "wrote to temp file");
-
-        // Flush to the platter before the rename, not after. rename() is
-        // atomic for the directory entry only - without this, a crash or power
-        // loss between the two can leave the new name pointing at a file whose
-        // contents never landed, i.e. session.json becomes 0 bytes. That is
-        // fatal on the next start, because `new` treats an unreadable database
-        // as an error while a missing one is simply an empty session.
+        // NanoTorrent fix: the rename below is atomic for the directory entry,
+        // but without this the file's data blocks need not have reached disk.
+        // A crash in between leaves a valid name pointing at zero bytes, and
+        // `new()` treats an unreadable index as fatal - the app then refuses to
+        // start at all with "EOF while parsing a value at line 1 column 0".
         tmp.sync_all()
             .await
             .with_context(|| format!("error flushing {tmp_filename:?}"))?;
+        trace!(?tmp_filename, "wrote to temp file");
 
         tokio::fs::rename(&tmp_filename, &self.db_filename)
             .await
@@ -144,11 +136,11 @@ impl JsonSessionPersistenceStore {
     }
 
     fn torrent_bytes_filename(&self, info_hash: &Id20) -> PathBuf {
-        self.output_folder.join(format!("{:?}.torrent", info_hash))
+        self.output_folder.join(format!("{info_hash:?}.torrent"))
     }
 
     fn bitv_filename(&self, info_hash: &Id20) -> PathBuf {
-        self.output_folder.join(format!("{:?}.bitv", info_hash))
+        self.output_folder.join(format!("{info_hash:?}.bitv"))
     }
 
     async fn update_db(
@@ -219,18 +211,17 @@ impl BitVFactory for JsonSessionPersistenceStore {
     async fn load(&self, id: TorrentIdOrHash) -> anyhow::Result<Option<Box<dyn BitV>>> {
         let h = self.to_hash(id).await?;
         let filename = self.bitv_filename(&h);
-        let f = match std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&filename)
-        {
-            Ok(f) => f,
-            Err(e) => match e.kind() {
-                std::io::ErrorKind::NotFound => return Ok(None),
-                _ => return Err(e).with_context(|| format!("error opening {filename:?}")),
-            },
-        };
-        Ok(Some(MmapBitV::new(f)?.into_dyn()))
+        match DiskBackedBitV::new(filename, self.spawner.clone()).await {
+            Ok(bitv) => Ok(Some(bitv.into_dyn())),
+            Err(e) => {
+                if let Some(e) = e.downcast_ref::<std::io::Error>()
+                    && matches!(e.kind(), std::io::ErrorKind::NotFound)
+                {
+                    return Ok(None);
+                }
+                return Err(e);
+            }
+        }
     }
 
     async fn clear(&self, id: TorrentIdOrHash) -> anyhow::Result<()> {
@@ -262,13 +253,9 @@ impl BitVFactory for JsonSessionPersistenceStore {
         tokio::fs::rename(&tmp_filename, &filename)
             .await
             .with_context(|| format!("error renaming {tmp_filename:?} to {filename:?}"))?;
-        let f = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&filename)
-            .with_context(|| format!("error opening {filename:?}"))?;
         trace!(?filename, "stored initial check bitfield");
-        Ok(MmapBitV::new(f)
+        Ok(DiskBackedBitV::new(filename.clone(), self.spawner.clone())
+            .await
             .with_context(|| format!("error constructing MmapBitV from file {filename:?}"))?
             .into_dyn())
     }
@@ -276,21 +263,14 @@ impl BitVFactory for JsonSessionPersistenceStore {
 
 #[async_trait]
 impl SessionPersistenceStore for JsonSessionPersistenceStore {
-    /// Reserve the next torrent id.
-    ///
-    /// This used to take a read lock and return `max(existing ids) + 1`, which
-    /// reserves nothing: N concurrent `add_torrent` calls all read the same
-    /// state and all receive the *same* id. `Session::add_torrent` then treats
-    /// a colliding id as an existing torrent -
-    ///
-    /// ```ignore
-    /// if t.info_hash() == info_hash || *eid == id { return AlreadyManaged }
-    /// ```
-    ///
-    /// - so adding five different torrents at once added the first and
-    /// reported the other four as already present, naming the first one. The
-    /// non-persistent path never had this bug because it uses an atomic
-    /// fetch_add; this makes the persistent path behave the same way.
+    // NanoTorrent fix: upstream took a READ lock and returned max(ids) + 1,
+    // which reserves nothing - N concurrent add_torrent calls all read the same
+    // state and all get the same id. Session::add_torrent then treats the
+    // colliding id as an existing torrent and answers AlreadyManaged, so adding
+    // five torrents at once added one and silently dropped four. The
+    // non-persistent path never had this: it uses an AtomicUsize fetch_add.
+    // Ids stay monotonic and are never reused, which also stops a deleted id
+    // from colliding with a later add.
     async fn next_id(&self) -> anyhow::Result<TorrentId> {
         Ok(self
             .next_id
