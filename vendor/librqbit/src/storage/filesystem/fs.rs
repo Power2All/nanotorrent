@@ -1,5 +1,6 @@
 use std::{
     fs::OpenOptions,
+    io::IoSlice,
     path::{Path, PathBuf},
 };
 
@@ -7,7 +8,7 @@ use anyhow::Context;
 use tracing::warn;
 
 use crate::{
-    storage::StorageFactoryExt,
+    storage::{StorageFactoryExt, filesystem::opened_file::OurFileExt},
     torrent_state::{ManagedTorrentShared, TorrentMetadata},
 };
 
@@ -38,12 +39,13 @@ impl StorageFactory for FilesystemStorageFactory {
 }
 
 pub struct FilesystemStorage {
-    pub(super) output_folder: PathBuf,
-    pub(super) opened_files: Vec<OpenedFile>,
+    pub(crate) output_folder: PathBuf,
+    pub(crate) opened_files: Vec<OpenedFile>,
 }
 
 impl FilesystemStorage {
-    pub(super) fn take_fs(&self) -> anyhow::Result<Self> {
+    #[allow(dead_code)]
+    pub(crate) fn take_fs(&self) -> anyhow::Result<Self> {
         Ok(Self {
             opened_files: self
                 .opened_files
@@ -57,97 +59,32 @@ impl FilesystemStorage {
 
 impl TorrentStorage for FilesystemStorage {
     fn pread_exact(&self, file_id: usize, offset: u64, buf: &mut [u8]) -> anyhow::Result<()> {
-        let of = self.opened_files.get(file_id).context("no such file")?;
-        #[cfg(target_family = "unix")]
-        {
-            use std::os::unix::fs::FileExt;
-            Ok(of
-                .file
-                .read()
-                .as_ref()
-                .context("file is None")?
-                .read_exact_at(buf, offset)?)
-        }
-        #[cfg(target_family = "windows")]
-        {
-            use std::os::windows::fs::FileExt;
-            let g = of.file.read();
-            let f = g.as_ref().context("file is None")?;
-            // NanoTorrent: seek_read is a single ReadFile - at (or past) EOF it
-            // returns a SHORT COUNT, it does not fail. Discarding that count made
-            // every read of a not-yet-downloaded file "succeed" while leaving the
-            // caller's buffer untouched, so nothing here behaved like the unix
-            // read_exact_at this is supposed to mirror: the initial check hashed
-            // whole torrents that hold no data yet instead of skipping them, and
-            // a short read could serve stale buffer bytes to a peer. Loop to fill
-            // the buffer, and report EOF as an error like read_exact_at does.
-            let mut buf = buf;
-            let mut offset = offset;
-            while !buf.is_empty() {
-                match f.seek_read(buf, offset)? {
-                    0 => {
-                        return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into())
-                    }
-                    n => {
-                        let rest = buf;
-                        buf = &mut rest[n..];
-                        offset += n as u64;
-                    }
-                }
-            }
-            Ok(())
-        }
-        #[cfg(not(any(target_family = "unix", target_family = "windows")))]
-        {
-            use std::io::{Read, Seek, SeekFrom};
-            let mut g = of.file.write();
-            let mut f = g.as_ref().context("file is None")?;
-            f.seek(SeekFrom::Start(offset))?;
-            Ok(f.read_exact(buf)?)
-        }
+        self.opened_files
+            .get(file_id)
+            .context("no such file")?
+            .lock_read()?
+            .pread_exact(offset, buf)
     }
 
     fn pwrite_all(&self, file_id: usize, offset: u64, buf: &[u8]) -> anyhow::Result<()> {
         let of = self.opened_files.get(file_id).context("no such file")?;
-        #[cfg(target_family = "unix")]
-        {
-            use std::os::unix::fs::FileExt;
-            Ok(of
-                .file
-                .read()
-                .as_ref()
-                .context("file is None")?
-                .write_all_at(buf, offset)?)
-        }
-        #[cfg(target_family = "windows")]
-        {
-            use std::os::windows::fs::FileExt;
-            let g = of.file.read();
-            let f = g.as_ref().context("file is None")?;
-            // NanoTorrent: same short-count problem as pread_exact above, plus
-            // this loop re-wrote the WHOLE buf at the SAME offset every pass, so
-            // a partial write made `remaining` underflow. Advance both instead.
-            let mut buf = buf;
-            let mut offset = offset;
-            while !buf.is_empty() {
-                match f.seek_write(buf, offset)? {
-                    0 => return Err(std::io::Error::from(std::io::ErrorKind::WriteZero).into()),
-                    n => {
-                        buf = &buf[n..];
-                        offset += n as u64;
-                    }
-                }
-            }
-            Ok(())
-        }
-        #[cfg(not(any(target_family = "unix", target_family = "windows")))]
-        {
-            use std::io::{Read, Seek, SeekFrom, Write};
-            let mut g = of.file.write();
-            let mut f = g.as_ref().context("file is None")?;
-            f.seek(SeekFrom::Start(offset))?;
-            Ok(f.write_all(buf)?)
-        }
+        #[cfg(windows)]
+        return of.try_mark_sparse()?.pwrite_all(offset, buf);
+        #[cfg(not(windows))]
+        return of.lock_read()?.pwrite_all(offset, buf);
+    }
+
+    fn pwrite_all_vectored(
+        &self,
+        file_id: usize,
+        offset: u64,
+        bufs: [IoSlice<'_>; 2],
+    ) -> anyhow::Result<usize> {
+        let of = self.opened_files.get(file_id).context("no such file")?;
+        #[cfg(windows)]
+        return of.try_mark_sparse()?.pwrite_all_vectored(offset, bufs);
+        #[cfg(not(windows))]
+        return of.lock_read()?.pwrite_all_vectored(offset, bufs);
     }
 
     fn remove_file(&self, _file_id: usize, filename: &Path) -> anyhow::Result<()> {
@@ -155,12 +92,10 @@ impl TorrentStorage for FilesystemStorage {
     }
 
     fn ensure_file_length(&self, file_id: usize, len: u64) -> anyhow::Result<()> {
-        Ok(self.opened_files[file_id]
-            .file
-            .write()
-            .as_ref()
-            .context("file is None")?
-            .set_len(len)?)
+        let f = &self.opened_files.get(file_id).context("no such file")?;
+        #[cfg(windows)]
+        f.try_mark_sparse()?;
+        Ok(f.lock_read()?.set_len(len)?)
     }
 
     fn take(&self) -> anyhow::Result<Box<dyn TorrentStorage>> {
@@ -220,64 +155,15 @@ impl TorrentStorage for FilesystemStorage {
                     .with_context(|| {
                         format!(
                             "error creating a new file (because allow_overwrite = false) {:?}",
-                            &full_path
+                            full_path
                         )
                     })?;
                 OpenOptions::new().read(true).write(true).open(&full_path)?
             };
-            files.push(OpenedFile::new(f));
+            files.push(OpenedFile::new(full_path.clone(), f));
         }
 
         self.opened_files = files;
         Ok(())
-    }
-}
-
-// NanoTorrent: guards the short-read/short-write fix in pread_exact/pwrite_all.
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::storage::TorrentStorage;
-
-    fn storage(name: &str, contents: &[u8]) -> FilesystemStorage {
-        let dir = std::env::temp_dir().join("librqbit-fs-test");
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(name);
-        std::fs::write(&path, contents).unwrap();
-        let f = OpenOptions::new().read(true).write(true).open(&path).unwrap();
-        FilesystemStorage {
-            output_folder: dir,
-            opened_files: vec![OpenedFile::new(f)],
-        }
-    }
-
-    #[test]
-    fn pread_exact_fails_on_empty_file() {
-        // The case that made the initial check hash whole torrents that have
-        // nothing on disk: a file init() just created, read before any download.
-        let s = storage("empty.bin", b"");
-        let mut buf = [0xAAu8; 4096];
-        assert!(s.pread_exact(0, 0, &mut buf).is_err());
-    }
-
-    #[test]
-    fn pread_exact_fails_past_eof_and_leaves_no_stale_bytes() {
-        let s = storage("short.bin", b"0123456789");
-        let mut buf = [0xAAu8; 64];
-        assert!(s.pread_exact(0, 0, &mut buf).is_err());
-
-        // A fully-covered read must still work, and read the real bytes.
-        let mut buf = [0u8; 10];
-        s.pread_exact(0, 0, &mut buf).unwrap();
-        assert_eq!(&buf, b"0123456789");
-    }
-
-    #[test]
-    fn pwrite_all_advances_the_offset() {
-        let s = storage("write.bin", b"..........");
-        s.pwrite_all(0, 4, b"XY").unwrap();
-        let mut buf = [0u8; 10];
-        s.pread_exact(0, 0, &mut buf).unwrap();
-        assert_eq!(&buf, b"....XY....");
     }
 }

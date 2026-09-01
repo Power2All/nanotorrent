@@ -1,0 +1,37 @@
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -217,6 +217,20 @@
+ }
+ 
+ impl TorrentStateLive {
++    /// NanoTorrent visibility patch (additive, no behavior change): the
++    /// number of pieces each connected (live) peer advertises in its
++    /// bitfield - used by the UI for seed counts and availability.
++    pub fn per_peer_have_pieces(&self) -> Vec<(std::net::SocketAddr, u64)> {
++        self.peers
++            .states
++            .iter()
++            .filter_map(|entry| match entry.value().get_state() {
++                PeerState::Live(live) => Some((*entry.key(), live.bitfield.count_ones() as u64)),
++                _ => None,
++            })
++            .collect()
++    }
++
+     pub(crate) fn new(
+         paused: TorrentStatePaused,
+         fatal_errors_tx: tokio::sync::oneshot::Sender<anyhow::Error>,
+--- a/src/torrent_state/mod.rs
++++ b/src/torrent_state/mod.rs
+@@ -261,7 +261,10 @@
+         f(&mut self.locked.write().state)
+     }
+ 
+-    pub(crate) fn with_chunk_tracker<R>(
++    // NanoTorrent visibility patch: was pub(crate). No behavior change -
++    // exposes read access to the chunk tracker (piece haves) for the
++    // piece progress bar.
++    pub fn with_chunk_tracker<R>(
+         &self,
+         f: impl FnOnce(&ChunkTracker) -> R,
+     ) -> anyhow::Result<R> {

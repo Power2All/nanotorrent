@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest for the Microsoft Store.
+
+  The three Identity values below are NOT free choices - Partner Center issues
+  them when the app name is reserved, and a package whose identity does not
+  match the reservation is rejected at upload. build-msix.ps1 substitutes them,
+  so the placeholders here are only what a local test build uses.
+
+  runFullTrust is what makes this a packaged Win32 app rather than a UWP one:
+  the exe inside is the ordinary desktop build, unchanged.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop rescap">
+
+  <Identity
+    Name="{IDENTITY_NAME}"
+    Publisher="{PUBLISHER}"
+    Version="{VERSION}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>NanoTorrent</DisplayName>
+    <PublisherDisplayName>{PUBLISHER_DISPLAY_NAME}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>A tiny, hackable BitTorrent client.</Description>
+  </Properties>
+
+  <Dependencies>
+    <!-- 10.0.17763 (1809) is the floor for the desktop6/uap3 extensions used
+         below. Nothing here needs anything newer. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0"
+                        MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <!-- Every locale build.rs compiles into the binary. The Store reads the
+       supported-language list from here, not from the exe, so a missing
+       entry means a translation the listing never advertises. en-US is
+       first: the first Resource is the package default. -->
+  <Resources>
+    <Resource Language="en-US" />
+    <Resource Language="af-ZA" />
+    <Resource Language="ar-SA" />
+    <Resource Language="bg-BG" />
+    <Resource Language="ca-ES" />
+    <Resource Language="cs-CZ" />
+    <Resource Language="da-DK" />
+    <Resource Language="de-DE" />
+    <Resource Language="el-GR" />
+    <Resource Language="es-ES" />
+    <Resource Language="et-EE" />
+    <Resource Language="fi-FI" />
+    <Resource Language="fr-FR" />
+    <Resource Language="he-IL" />
+    <Resource Language="hi-IN" />
+    <Resource Language="hr-HR" />
+    <Resource Language="hu-HU" />
+    <Resource Language="hy-AM" />
+    <Resource Language="id-ID" />
+    <Resource Language="it-IT" />
+    <Resource Language="ja-JP" />
+    <Resource Language="ka-GE" />
+    <Resource Language="ko-KR" />
+    <Resource Language="lt-LT" />
+    <Resource Language="lv-LV" />
+    <Resource Language="nb-NO" />
+    <Resource Language="nl-NL" />
+    <Resource Language="pl-PL" />
+    <Resource Language="pt-BR" />
+    <Resource Language="pt-PT" />
+    <Resource Language="ro-RO" />
+    <Resource Language="ru-RU" />
+    <Resource Language="si-LK" />
+    <Resource Language="sk-SK" />
+    <Resource Language="sr-Cyrl" />
+    <Resource Language="sv-SE" />
+    <Resource Language="tr-TR" />
+    <Resource Language="uk-UA" />
+    <Resource Language="vi-VN" />
+    <Resource Language="zh-Hans" />
+    <Resource Language="zh-Hant" />
+  </Resources>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+  <Applications>
+    <Application Id="NanoTorrent"
+                 Executable="nanotorrent-gui.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="NanoTorrent"
+        Description="A tiny, hackable BitTorrent client."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!-- File and protocol handling come from the manifest under MSIX. The
+             app's own registry-writing association code cannot work here: HKLM
+             writes are virtualised away in a package. -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="torrent">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.torrent</uap:FileType>
+            </uap:SupportedFileTypes>
+            <uap:DisplayName>BitTorrent file</uap:DisplayName>
+            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="magnet">
+            <uap:DisplayName>Magnet link</uap:DisplayName>
+            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+          </uap:Protocol>
+        </uap:Extension>
+
+        <!-- `nanotorrent` on PATH, for the command line. The alias points at
+             the CONSOLE binary for the same reason the installer does: a
+             windows-subsystem exe is one the shell never waits for. -->
+        <uap3:Extension Category="windows.appExecutionAlias"
+                        Executable="nanotorrent-cli.exe"
+                        EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="nanotorrent.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+</Package>

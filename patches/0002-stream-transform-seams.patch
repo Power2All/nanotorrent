@@ -1,0 +1,244 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -95,12 +95,15 @@
+     AddTorrent, AddTorrentOptions, AddTorrentResponse, DhtSessionConfig, ListOnlyResponse,
+     SUPPORTED_SCHEMES, Session, SessionOptions, SessionPersistenceConfig,
+ };
+-pub use stream_connect::ConnectionOptions;
++pub use librqbit_core::hash_id::Id20;
++pub use stream_connect::{
++    BoxAsyncRead, ConnectionOptions, IncomingStreamTransform, StreamTransform,
++};
+ pub use torrent_state::{
+     ManagedTorrent, ManagedTorrentShared, ManagedTorrentState, TorrentMetadata, TorrentStats,
+     TorrentStatsState,
+ };
+-pub use type_aliases::FileInfos;
++pub use type_aliases::{BoxAsyncWrite, FileInfos};
+ 
+ pub use buffers::*;
+ pub use clone_to_owned::CloneToOwned;
+--- a/src/peer_connection.rs
++++ b/src/peer_connection.rs
+@@ -220,7 +220,7 @@
+         let (ckind, mut read, mut write) = with_timeout(
+             "connecting",
+             connect_timeout,
+-            self.connector.connect(self.addr),
++            self.connector.connect(self.addr, self.info_hash),
+         )
+         .await?;
+ 
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -32,13 +32,15 @@
+         BoxStorageFactory, StorageFactoryExt, TorrentStorage, filesystem::FilesystemStorageFactory,
+     },
+     stream_connect::{
+-        ConnectionKind, ConnectionOptions, SocksProxyConfig, StreamConnector, StreamConnectorArgs,
++        ConnectionKind, ConnectionOptions, IncomingStreamTransform, SocksProxyConfig,
++        StreamConnector, StreamConnectorArgs, StreamTransform,
+     },
+     torrent_state::{
+         ManagedTorrentHandle, ManagedTorrentLocked, ManagedTorrentOptions, ManagedTorrentState,
+         TorrentMetadata, TorrentStateLive, initializing::TorrentStateInitializing,
+     },
+     type_aliases::{BoxAsyncReadVectored, BoxAsyncWrite, PeerStream},
++    vectored_traits::AsyncReadVectoredIntoCompat,
+ };
+ use anyhow::{Context, bail};
+ use arc_swap::ArcSwapOption;
+@@ -117,6 +119,9 @@
+     listen_addr: Option<SocketAddr>,
+     dht: Option<Dht>,
+     pub(crate) connector: Arc<StreamConnector>,
++    // NanoTorrent seam (see IncomingStreamTransform): wraps accepted streams
++    // before the handshake is read. None = upstream behavior.
++    incoming_transform: Option<Arc<dyn IncomingStreamTransform>>,
+     reqwest_client: reqwest::Client,
+     udp_tracker_client: UdpTrackerClient,
+     disable_trackers: bool,
+@@ -479,6 +484,14 @@
+     /// Override the client name and version used in User-Agent headers and
+     /// peer extended handshakes. Defaults to "rqbit X.Y.Z".
+     pub client_name_and_version: Option<String>,
++
++    /// NanoTorrent seam: transform applied to every outgoing peer stream
++    /// (e.g. MSE/PE encryption). See [`StreamTransform`].
++    pub stream_transform: Option<Arc<dyn StreamTransform>>,
++
++    /// NanoTorrent seam: transform applied to every incoming (accepted) peer
++    /// stream before the handshake. See [`IncomingStreamTransform`].
++    pub incoming_transform: Option<Arc<dyn IncomingStreamTransform>>,
+ }
+ 
+ impl Default for SessionOptions {
+@@ -507,6 +520,8 @@
+             disable_local_service_discovery: false,
+             ipv4_only: false,
+             client_name_and_version: None,
++            stream_transform: None,
++            incoming_transform: None,
+         }
+     }
+ }
+@@ -731,6 +746,7 @@
+                     utp_socket: listen_result.as_ref().and_then(|l| l.utp_socket.clone()),
+                     bind_device: bind_device.clone(),
+                     ipv4_only: opts.ipv4_only,
++                    transform: opts.stream_transform,
+                 })
+                 .await
+                 .context("error creating stream connector")?,
+@@ -794,6 +810,7 @@
+                 default_storage_factory: opts.default_storage_factory,
+                 reqwest_client,
+                 connector: stream_connector,
++                incoming_transform: opts.incoming_transform,
+                 root_span: opts.root_span,
+                 stats: Arc::new(SessionStats::new()),
+                 concurrent_initialize_semaphore: Arc::new(tokio::sync::Semaphore::new(
+@@ -905,7 +922,7 @@
+         self: Arc<Self>,
+         addr: SocketAddr,
+         kind: ConnectionKind,
+-        mut reader: BoxAsyncReadVectored,
++        reader: BoxAsyncReadVectored,
+         writer: BoxAsyncWrite,
+     ) -> anyhow::Result<(Arc<TorrentStateLive>, CheckedIncomingConnection)> {
+         let rwtimeout = self
+@@ -929,6 +946,24 @@
+             bail!("Incoming ip {incoming_ip} is not in allowlist");
+         }
+ 
++        // NanoTorrent seam: hand the accepted stream to the incoming transform
++        // (e.g. an MSE responder) before a single byte of handshake is read.
++        // The info-hash is not known yet, so every active torrent's info-hash
++        // is offered for the transform to resolve the peer's SKEY against.
++        let (mut reader, writer) = match self.incoming_transform.as_ref() {
++            None => (reader, writer),
++            Some(transform) => {
++                let info_hashes: Vec<Id20> =
++                    self.db.read().torrents.values().map(|t| t.info_hash()).collect();
++                let (r, w) = transform
++                    .transform(addr, info_hashes, Box::new(reader), writer)
++                    .await
++                    .context("incoming stream transform failed")?;
++                let r: BoxAsyncReadVectored = Box::new(r.into_vectored_compat());
++                (r, w)
++            }
++        };
++
+         let mut read_buf = ReadBuf::new();
+         let h = read_buf
+             .read_handshake(&mut reader, rwtimeout)
+--- a/src/stream_connect.rs
++++ b/src/stream_connect.rs
+@@ -11,6 +11,43 @@
+     type_aliases::{BoxAsyncReadVectored, BoxAsyncWrite},
+     vectored_traits::AsyncReadVectoredIntoCompat,
+ };
++use librqbit_core::hash_id::Id20;
++
++/// NanoTorrent seam: a plain (non-vectored) boxed read half. Transforms deal in
++/// this rather than the crate's `BoxAsyncReadVectored` because a cipher layer
++/// has to see one contiguous byte stream anyway; the connector wraps the result
++/// back into a vectored reader with `AsyncReadVectoredIntoCompat`.
++pub type BoxAsyncRead = Box<dyn tokio::io::AsyncRead + Send + Unpin + 'static>;
++
++/// A pluggable transform applied to every outgoing peer stream right after the
++/// TCP/uTP (or proxy) connection is established, before the BitTorrent
++/// handshake. Lets the embedding application wrap connections (e.g. with
++/// protocol encryption) without modifying the engine. `None` (the default)
++/// leaves engine behavior exactly as upstream.
++pub trait StreamTransform: Send + Sync + std::fmt::Debug {
++    fn transform(
++        &self,
++        addr: SocketAddr,
++        info_hash: Id20,
++        read: BoxAsyncRead,
++        write: BoxAsyncWrite,
++    ) -> futures::future::BoxFuture<'_, anyhow::Result<(BoxAsyncRead, BoxAsyncWrite)>>;
++}
++
++/// The incoming counterpart of [`StreamTransform`], applied to every accepted
++/// peer stream before the BitTorrent handshake is read. Unlike the outgoing
++/// side the info-hash is not known yet, so the info-hashes of all active
++/// torrents are passed in for the transform to resolve against (e.g. an MSE
++/// responder matching the peer's SKEY).
++pub trait IncomingStreamTransform: Send + Sync + std::fmt::Debug {
++    fn transform(
++        &self,
++        addr: SocketAddr,
++        info_hashes: Vec<Id20>,
++        read: BoxAsyncRead,
++        write: BoxAsyncWrite,
++    ) -> futures::future::BoxFuture<'_, anyhow::Result<(BoxAsyncRead, BoxAsyncWrite)>>;
++}
+ 
+ #[derive(Debug, Clone, Copy, Serialize)]
+ pub enum ConnectionKind {
+@@ -65,6 +102,8 @@
+     pub utp_socket: Option<Arc<UtpSocketUdp>>,
+     pub bind_device: Option<BindDevice>,
+     pub ipv4_only: bool,
++    // NanoTorrent seam, see StreamTransform.
++    pub transform: Option<Arc<dyn StreamTransform>>,
+ }
+ 
+ impl SocksProxyConfig {
+@@ -133,6 +172,7 @@
+     utp_socket: Option<Arc<librqbit_utp::UtpSocketUdp>>,
+     stats: ConnectStatsAtomic,
+     ipv4_only: bool,
++    transform: Option<Arc<dyn StreamTransform>>,
+ }
+ 
+ impl StreamConnector {
+@@ -158,6 +198,7 @@
+             bind_device: config.bind_device,
+             stats: Default::default(),
+             ipv4_only: config.ipv4_only,
++            transform: config.transform,
+         })
+     }
+ 
+@@ -207,9 +248,29 @@
+         &self.stats
+     }
+ 
++    /// NanoTorrent seam: connect, then hand the stream to the configured
++    /// [`StreamTransform`] (if any) before anyone writes a handshake to it.
++    /// With no transform this is exactly `connect_raw`.
+     pub async fn connect(
+         &self,
+         addr: SocketAddr,
++        info_hash: Id20,
++    ) -> Result<(ConnectionKind, BoxAsyncReadVectored, BoxAsyncWrite)> {
++        let (kind, read, write) = self.connect_raw(addr).await?;
++        let transform = match self.transform.as_ref() {
++            Some(t) => t,
++            None => return Ok((kind, read, write)),
++        };
++        let (read, write) = transform
++            .transform(addr, info_hash, Box::new(read), write)
++            .await
++            .map_err(Error::Anyhow)?;
++        Ok((kind, Box::new(read.into_vectored_compat()), write))
++    }
++
++    async fn connect_raw(
++        &self,
++        addr: SocketAddr,
+     ) -> Result<(ConnectionKind, BoxAsyncReadVectored, BoxAsyncWrite)> {
+         if addr.port() == 0 {
+             return Err(Error::Anyhow(anyhow::anyhow!(
+--- a/src/type_aliases.rs
++++ b/src/type_aliases.rs
+@@ -17,4 +17,5 @@
+ pub(crate) type FilePriorities = Vec<usize>;
+ 
+ pub(crate) type BoxAsyncReadVectored = Box<dyn AsyncReadVectored + Unpin + Send + 'static>;
+-pub(crate) type BoxAsyncWrite = Box<dyn AsyncWrite + Unpin + Send + 'static>;
++// NanoTorrent seam: public because it appears in the StreamTransform traits.
++pub type BoxAsyncWrite = Box<dyn AsyncWrite + Unpin + Send + 'static>;

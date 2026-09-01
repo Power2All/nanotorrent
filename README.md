@@ -60,6 +60,11 @@ or build one yourself:
 | Any Linux (glibc 2.35+) | `nanotorrent-<ver>-x86_64.AppImage` | `linuxdeploy` — one file, no install |
 | macOS | `nanotorrent-<ver>.dmg` | `hdiutil`, from a hand-assembled `.app` |
 
+There is also an **MSIX** for the Microsoft Store — `installeruild-msix.ps1`
+builds it, and a GitHub release can publish it automatically. See
+[docs/MICROSOFT-STORE.md](docs/MICROSOFT-STORE.md), which also covers what
+changes when the app runs packaged.
+
 The macOS bundle is unsigned and unnotarised, so Gatekeeper asks on first
 launch (right-click ▸ Open). The Linux packages install the binary, a desktop
 entry and an icon; the `.deb` targets glibc 2.35 or newer (Ubuntu 22.04+).
@@ -96,9 +101,12 @@ Country flags for the peers list live in `res/flags` (252 public-domain 32x24
 PNGs from flagpedia.net — see `res/flags/SOURCE.md`) and are embedded the same
 way; refresh them with `tools/update-flags.ps1`.
 
-The engine is vendored: `vendor/librqbit` (and `vendor/librqbit-tracker-comms`)
-are the published crates.io sources plus a small stack of mostly
-visibility-only patches, wired in via `[patch.crates-io]`. See
+The engine is vendored: `vendor/librqbit`, `vendor/librqbit-tracker-comms` and
+`vendor/librqbit-peer-protocol` are the published crates.io sources plus a
+small stack of mostly visibility-only patches, wired in via
+`[patch.crates-io]`. The two sibling crates are vendored because two features
+span crate boundaries — per-tracker announce stats, and the BEP 52 hash
+messages. See
 `vendor/librqbit/PATCHES.md`; `build.rs` verifies the patches are present and
 fails with instructions if a re-vendor dropped one. Re-vendor with
 `tools/update-librqbit.ps1`.
@@ -288,26 +296,27 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 ## Protocol support (BEPs)
 
 What the engine actually does, not what the settings database has a key for.
-Verified against the vendored librqbit 8.1.1 sources rather than assumed.
+Verified against the vendored librqbit 9.0.1 sources rather than assumed.
 
 | BEP | Title | Status | Notes |
 | --- | --- | --- | --- |
 | [3](https://www.bittorrent.org/beps/bep_0003.html) | The BitTorrent protocol | **Full** | |
 | [5](https://www.bittorrent.org/beps/bep_0005.html) | DHT | **Full** | Routing table persisted to `dht.json`. Skipped for private torrents. |
+| [6](https://www.bittorrent.org/beps/bep_0006.html) | Fast extension | **Full** | All five messages, advertised and implemented. `have all` / `have none` replace a whole bitfield; `reject request` puts a piece straight back in the queue instead of waiting out a timeout, and is now sent rather than dropping the connection when we decline a request. |
 | [9](https://www.bittorrent.org/beps/bep_0009.html) | Metadata exchange | **Full** | `ut_metadata` — what makes magnet links work. |
 | [10](https://www.bittorrent.org/beps/bep_0010.html) | Extension protocol | **Full** | Carries the `NanoTorrent <version>` client string. |
 | [11](https://www.bittorrent.org/beps/bep_0011.html) | Peer exchange | **Full** | `ut_pex`, toggleable in Preferences. |
 | [12](https://www.bittorrent.org/beps/bep_0012.html) | Multitracker metadata | **Full** | Tiers are announced to and shown per-tier in the Trackers tab. |
+| [14](https://www.bittorrent.org/beps/bep_0014.html) | Local service discovery | **Full** | Preferences ▸ Connection, on by default. Finds peers on the same network without a tracker or the DHT. |
 | [15](https://www.bittorrent.org/beps/bep_0015.html) | UDP tracker protocol | **Full** | |
+| [19](https://www.bittorrent.org/beps/bep_0019.html) | WebSeed (HTTP/FTP seeding) | **Partial** | `url-list` (GetRight style) is read and each seed becomes a synthetic peer served by HTTP range requests, so pieces are hash-verified like any other. One request per *piece*, not per 16 KiB chunk, and a failed fetch retries rather than killing the seed — both learned from a live test. FTP is not spoken, and BEP 17 `httpseeds` is a different protocol that is not implemented. |
 | [20](https://www.bittorrent.org/beps/bep_0020.html) | Peer ID conventions | **Full** | Azureus-style `-NT-`, or fully random in anonymous mode. |
+| [21](https://www.bittorrent.org/beps/bep_0021.html) | Extension for partial seeds | **Full** | `upload_only` is set when we connect with everything already downloaded, and two upload-only ends disconnect instead of holding a connection with nothing to trade. |
 | [23](https://www.bittorrent.org/beps/bep_0023.html) | Compact peer lists | **Full** | |
 | [27](https://www.bittorrent.org/beps/bep_0027.html) | Private torrents | **Full** | Honoured on add (no DHT), and settable when creating one. |
-| [47](https://www.bittorrent.org/beps/bep_0047.html) | Padding files | **Partial** | Padding files are recognised and skipped; none are generated. |
-| [52](https://www.bittorrent.org/beps/bep_0052.html) | BitTorrent v2 | **Partial** | Hybrid torrents work through their v1 half, and the details panel reads both hashes out of the info dictionary. **v2-only torrents are refused** — no librqbit release implements BEP 52 ([rqbit#546](https://github.com/ikatson/rqbit/issues/546)). Creating v2 and hybrid torrents does work, since that is our own code. |
-| [6](https://www.bittorrent.org/beps/bep_0006.html) | Fast extension | No | |
-| [14](https://www.bittorrent.org/beps/bep_0014.html) | Local service discovery | No | The preference is stored and round-trips, but nothing applies it. |
-| [19](https://www.bittorrent.org/beps/bep_0019.html) | WebSeed (HTTP/FTP seeding) | No | |
-| [29](https://www.bittorrent.org/beps/bep_0029.html) | uTP | No | Not present in librqbit 8.1.1 at all. |
+| [29](https://www.bittorrent.org/beps/bep_0029.html) | uTP | **Full** | Preferences ▸ Connection, **off** by default — it adds a UDP socket on the same port, and upstream still calls it experimental. Worth enabling where TCP is throttled. |
+| [47](https://www.bittorrent.org/beps/bep_0047.html) | Padding files | **Full** | Recognised, skipped, and hidden from the file lists (Preferences ▸ General to show them). Generated for hybrid torrents, which need them so their v1 and v2 layouts agree. |
+| [52](https://www.bittorrent.org/beps/bep_0052.html) | BitTorrent v2 | **Partial** | Reading is complete: **v2-only `.torrent` files and v2-only magnets both download and seed**, verified against their merkle piece hashes — implemented in `src/bittorrent/v2.rs` on top of engine seams, since no librqbit release implements BEP 52 ([rqbit#546](https://github.com/ikatson/rqbit/issues/546)). A v2-only magnet joins under its truncated SHA-256 hash, fetches the info dict over BEP 9, then fetches `piece layers` with the hash messages (21/22/23) and checks each against the file's `pieces root` before any data is requested. **Hybrids announce under both info hashes** and accept incoming connections on either, so they are present in both swarms; their data transfer uses the v1 half, as every client does. Creating v1, v2 and hybrid torrents works. The gaps are on the *seeding* side — see below. |
 
 Not a BEP, but worth listing beside them: **MSE/PE** connection encryption (the
 Vuze/Azureus specification) is implemented in `src/bittorrent/mse.rs` and wired
@@ -316,38 +325,35 @@ require-encryption toggles for each.
 
 ## Known differences / not yet ported
 
-- **uTP peer transport** is not implemented. librqbit 9 (9.0.1, August 2026)
-  integrates [librqbit-utp](https://crates.io/crates/librqbit-utp) (BEP 29) and
-  configures it through `SessionOptions.listen`, so this becomes an engine
-  upgrade rather than a transport to write. We are still on the vendored 8.1.1:
-  9.x's restructured transport layer is exactly where the MSE stream-transform
-  patches (0003 / 0005) sit, and upstream still gates uTP behind an
-  experimental flag (`--experimental-enable-utp-listen`) rather than enabling
-  it by default. UDP trackers and DHT work today; only µTP peer connections are
-  missing.
-- **LSD** is deferred to the same librqbit 9 upgrade as uTP above — 9.x
-  configures it through `SessionOptions.disable_local_service_discovery`; 8.1.1
-  has no equivalent. Its Preferences checkbox is disabled until then, and
-  `libtorrent.enable_lsd` is the one and only setting the dialog stores without
-  applying. Separately, librqbit does not attribute peer counts to a discovery
-  source, so the DHT/LSD/PeX tracker rows are status-only (no seeds/leeches
-  numbers there) — that part is unchanged by the upgrade.
-- **Pure v2 torrents cannot be added**, and this one is not waiting on a
-  version bump: librqbit has no BEP 52 support in any release, 9.x included.
-  It is an open upstream design proposal
-  ([rqbit#546](https://github.com/ikatson/rqbit/issues/546)) — 9.x shipped the
-  SHA-256 groundwork and the BEP 52 error types, but not parsing, merkle
-  verification or the v2 wire protocol.
+- **WebSeed is a synthetic peer, not a parallel download path** (see
+  `vendor/librqbit/PATCHES.md`, patch 0011), so its pieces are hash-checked like
+  any other and a stale or wrong web seed is discarded the way a bad peer is. A
+  server that ignores `Range` and answers `200` with the whole file is refused
+  rather than downloaded. Neither FTP nor BEP 17 `httpseeds` is spoken.
+- librqbit does not attribute peer counts to a discovery source, so the
+  DHT/LSD/PeX rows in the Trackers tab are status-only — no seeds/leeches
+  numbers there. The same tab shows announce stats keyed by a torrent's primary
+  info hash, so for a hybrid those numbers are its v1 swarm's; the second
+  announce happens and finds peers, it just is not counted in that column.
+- **v2 seeding is incomplete.** Reading is done — v2-only `.torrent` files and
+  v2-only magnets both download and seed, and hybrids announce in both swarms
+  (see the BEP table above and the v0.3.0 notes below) — but NanoTorrent does
+  not answer an incoming `hash request`, so it cannot bootstrap someone else's
+  v2 magnet, and it does not set the v2 handshake bit on outgoing connections,
+  since advertising support it cannot honour would be worse than staying quiet.
+  How the rest is built, and what librqbit 9.0.1 does and does not ship for
+  BEP 52, is in `vendor/librqbit/PATCHES.md`, patches 0008 and 0009.
 
-  NanoTorrent *creates* v1, v2 and hybrid torrents — that side is written here
-  (`src/bittorrent/torrent_create.rs`), not delegated to the engine — and
-  *reads* v1 and hybrid. A hybrid works because it carries the v1 keys as well
-  and librqbit simply downloads it as v1, ignoring the v2 half. A v2-only
-  torrent has no `pieces` key, and librqbit-core's metainfo struct requires
-  one, so it cannot be parsed at all — the add is refused up front with a
-  message naming the format, rather than the engine's `missing field 'pieces'`.
-  Hybrids cover the interoperable case meanwhile, which is what the create
-  dialog defaults to.
+  One quirk worth knowing: librqbit reads only a magnet's `xt` key, so a hybrid
+  link that puts its v1 hash in `xt.1` looks v2-only to it. `v2::normalise_magnet`
+  promotes the v1 hash into `xt` first, and also accepts the base32 form.
+
+  The libtorrent v2 test swarm this was verified against has since gone dark:
+  the DHT still hands out peer records for the hash, but none of them accept a
+  connection, on any platform. The ignored test
+  `a_real_v2_magnet_resolves_against_the_live_swarm` therefore fails for want of
+  a seed rather than for want of code; `who_has_this_infohash` tells those two
+  apart before you go looking for a bug.
 - **Desktop toasts are Windows-only.** Linux and macOS get the in-app toast;
   the OS-level notification is not wired up on those platforms yet.
 - Windows will not let an app force-set the **magnet** protocol default when
@@ -368,6 +374,66 @@ require-encryption toggles for each.
   reads, not a missing one.
 
 ## History
+
+**v0.3.0** is the **BitTorrent v2** release. The engine underneath it moved from
+librqbit 8.1.1 to 9.0.1 to get there, and the patch set was re-cut against the
+new sources rather than forward-ported.
+
+**v2-only `.torrent` files and v2-only magnets both download and seed**, and
+hybrids announce in both swarms at once. No librqbit release implements BEP 52
+([rqbit#546](https://github.com/ikatson/rqbit/issues/546)) — 9.0.1 ships an
+`Id32`, an `ISha256` trait and seventeen BEP 52 error variants, none of which
+anything constructs — so `src/bittorrent/v2.rs` implements it here, on seams
+patched into the engine rather than in a fork. A v2 torrent identifies its
+pieces by a merkle tree of SHA-256 over 16 KiB blocks instead of a flat list of
+SHA-1 hashes, so verification re-derives each piece's root and compares it with
+the `pieces root` in the file tree. A magnet is the harder half: `piece layers`
+live in the *torrent file*, not the info dict, so they exist nowhere in what BEP
+9 hands you. They are fetched from the peer with the v2 hash messages (21, 22
+and 23), each answer checked against the file's `pieces root` before a single
+byte of content is requested. Verified against libtorrent's own v2 test swarm —
+all ten piece layers fetched and checked in 83 ms, then 1.43 GiB of a 1.45 GiB
+torrent downloaded and hash-verified.
+
+The patches were consolidated at the same time: **13 numbered features across 16
+files and four vendored crates**, one number per feature, applied in order and
+round-tripping clean. `vendor/librqbit/PATCHES.md` documents each one, what it
+seams open, and which of the old patches librqbit 9 made redundant.
+
+Four more BEPs came with it. **Fast extension** (BEP 6) speaks all five
+messages, so `have all` / `have none` replace a whole bitfield and a declined
+request is answered with `reject request` instead of a dropped connection.
+**WebSeed** (BEP 19) reads `url-list` and turns each seed into a synthetic peer
+fed by HTTP range requests, so its pieces are hash-checked like any other — a
+live test against a 100 MiB file taught it two things a unit test could not, that
+a request must cover a whole piece rather than each 16 KiB chunk (6400 requests
+for one file, otherwise) and that a failed fetch has to retry rather than kill
+the seed, since with one web seed configured "someone else will have it" is
+false. **`upload_only`** (BEP 21) is set when we arrive already complete, and two
+upload-only ends now hang up instead of holding a connection with nothing to
+trade. **Padding files** (BEP 47) are recognised and hidden — they are alignment,
+not content, and nothing is downloaded for one either way. Existing profiles
+will see file lists get shorter; Preferences ▸ General puts them back.
+
+**uTP** (BEP 29) and **local service discovery** (BEP 14) come from librqbit 9
+and are both exposed in Preferences ▸ Connection. LSD is **on** by default, so
+an upgraded profile starts announcing on the local network; uTP is **off**,
+because it adds a UDP socket on the same port and upstream still calls it
+experimental.
+
+One bug found along the way was worth the whole exercise: **the DHT had been
+dead on Windows**, failing 24 ms after start with `ConnectionReset`. Windows
+reports an ICMP port-unreachable by failing the *next* `recv_from` on a
+connectionless UDP socket, which is not a thing Unix does, so code written on
+Unix treats it as fatal and stops — and there is always one dead bootstrap node.
+Switching `SIO_UDP_CONNRESET` off moved the failure to `WSAENETRESET`, which
+needed `SIO_UDP_NETRESET` too. Both are now cleared on every UDP socket the
+engine opens, which fixes the DHT, uTP and LSD together.
+
+Finally, the Linux build stopped being a claim: a full run on Ubuntu 24.04 built
+both binaries warning-free, passed the suite, exercised the XDG profile path,
+the desktop entry and the web interface end to end, and downloaded a 123 MB
+torrent from real peers through the GUI.
 
 **v0.2.5** adds a **toolbar** above the torrent list - add magnet, add torrent,
 remove, start, stop and Preferences as coloured icon buttons, with the
@@ -433,14 +499,15 @@ done showed a full bar over a Downloading status; it now floors, and reads
 was only written every 16 MB and never when pausing, so an unclean exit could
 lose it: the data was still on disk, but the torrent came back a few pieces
 short with a file that played almost to the end. It is now flushed on pause
-(vendored patch 0013).
+(vendored patch 0007).
 
 The details panel labels its info hash by what the torrent actually carries -
 a hybrid shows both v1 and v2 - and the divider between its two columns can be
 dragged. The View menu ticks the panels that are showing. A torrent that
-cannot be added now says so in a red toast instead of only reaching the log,
-and a BitTorrent v2-only torrent is named as such rather than failing with the
-engine's "missing field `pieces`".
+cannot be added now says so in a red toast instead of only reaching the log.
+BitTorrent v2-only torrents are read and downloaded rather than refused, and a
+v2-only *magnet* — which cannot work yet — says why instead of failing with the
+engine's "didn't contain a BTv1 infohash".
 
 Lists gained the sizing behaviour they were missing. Columns can be dragged,
 double-clicked to fit one column, or reset from a right-click menu, in the

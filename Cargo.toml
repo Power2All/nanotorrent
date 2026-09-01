@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.2.5"
+version = "0.3.0"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -53,9 +53,12 @@ actix-web = { version = "4", default-features = false, features = ["macros", "co
 anyhow = "1.0.104"
 # Password hashing for the web API. A slow KDF, not sha2 (already present):
 # people reuse passwords, and the settings DB is a plain file.
-argon2 = "0.5"
+# "std" only to get password-hash's OsRng (rand_core/getrandom). It used to
+# arrive by accident through librqbit 8's rand 0.8; librqbit 9 uses rand 0.10,
+# so the feature has to be asked for rather than inherited.
+argon2 = { version = "0.5", features = ["std"] }
 base64 = "0.22"
-bencode = { version = "3.1", package = "librqbit-bencode", default-features = false }
+bencode = { version = "9.0.1", package = "librqbit-bencode", default-features = false }
 chrono = "0.4.45"
 flate2 = "1.1.9"
 futures = "0.3.33"
@@ -86,7 +89,12 @@ rand = "0.10"
 # UPX-packed installer payload, not the linker's output.)
 #
 # The other default feature, http-api-client, is unused here.
-librqbit = { version = "8.1.1", default-features = false, features = ["rust-tls"] }
+librqbit = { version = "9.0.1", default-features = false, features = ["rust-tls"] }
+# Named directly for the BEP 52 hash messages (engine patch 0010): the v2
+# magnet interceptor builds and reads them. Already in the tree as librqbit's
+# own dependency, and pinned to the same vendored copy by [patch.crates-io],
+# so this costs no extra crate.
+librqbit-peer-protocol = { version = "9.0.1", default-features = false }
 maxminddb = "0.30"
 open = "5.4.1"
 # Generates the self-signed certificate for the web API on first use, so HTTPS
@@ -188,3 +196,5 @@ assets = [
 [patch.crates-io]
 librqbit = { path = "vendor/librqbit" }
 librqbit-tracker-comms = { path = "vendor/librqbit-tracker-comms" }
+librqbit-peer-protocol = { path = "vendor/librqbit-peer-protocol" }
+librqbit-dualstack-sockets = { path = "vendor/librqbit-dualstack-sockets" }

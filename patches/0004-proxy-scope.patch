@@ -1,0 +1,66 @@
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -496,6 +496,16 @@
+     /// anonymised separately by the embedder.)
+     pub anonymize: bool,
+ 
++    /// Scope of the SOCKS proxy in [`ConnectionOptions::proxy_url`], matching
++    /// libtorrent's proxy_peer_connections / proxy_tracker_connections /
++    /// proxy_hostnames. Upstream applies a configured proxy to peers AND to
++    /// the HTTP tracker client unconditionally; these gate each separately, and
++    /// `proxy_hostnames` upgrades the tracker proxy to socks5h (proxy-side
++    /// DNS). All default to false, so an embedder opts in explicitly.
++    pub proxy_peers: bool,
++    pub proxy_trackers: bool,
++    pub proxy_hostnames: bool,
++
+     /// NanoTorrent seam: transform applied to every outgoing peer stream
+     /// (e.g. MSE/PE encryption). See [`StreamTransform`].
+     pub stream_transform: Option<Arc<dyn StreamTransform>>,
+@@ -533,6 +543,9 @@
+             client_name_and_version: None,
+             disable_pex: false,
+             anonymize: false,
++            proxy_peers: false,
++            proxy_trackers: false,
++            proxy_hostnames: false,
+             stream_transform: None,
+             incoming_transform: None,
+         }
+@@ -719,12 +732,13 @@
+                 .context("error initializing session persistence store")?;
+ 
+             let proxy_url = opts.connect.as_ref().and_then(|s| s.proxy_url.as_ref());
++            // NanoTorrent: peer connections use the proxy only when opted in.
+             let proxy_config = match proxy_url {
+-                Some(pu) => Some(
++                Some(pu) if opts.proxy_peers => Some(
+                     SocksProxyConfig::parse(pu)
+                         .with_context(|| format!("error parsing proxy url {pu}"))?,
+                 ),
+-                None => None,
++                _ => None,
+             };
+ 
+             let client_name_and_version = opts
+@@ -732,8 +746,18 @@
+                 .unwrap_or_else(|| crate::client_name_and_version().to_owned());
+ 
+             let reqwest_client = {
+-                let builder = if let Some(proxy_url) = proxy_url {
+-                    let proxy = reqwest::Proxy::all(proxy_url)
++                // NanoTorrent: HTTP tracker announces use the proxy only when
++                // opted in; proxy_hostnames switches to socks5h so the proxy
++                // resolves tracker DNS rather than this machine.
++                let builder = if let Some(proxy_url) =
++                    proxy_url.filter(|_| opts.proxy_trackers)
++                {
++                    let proxy_url = if opts.proxy_hostnames {
++                        proxy_url.replacen("socks5://", "socks5h://", 1)
++                    } else {
++                        proxy_url.clone()
++                    };
++                    let proxy = reqwest::Proxy::all(&proxy_url)
+                         .context("error creating socks5 proxy for HTTP")?;
+                     reqwest::Client::builder().proxy(proxy)
+                 } else {

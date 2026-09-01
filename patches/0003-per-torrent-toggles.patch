@@ -1,0 +1,106 @@
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -156,6 +156,8 @@
+     pub ipv4_only: bool,
+     pub peer_limit: Option<usize>,
+     client_name_and_version: String,
++    disable_pex: bool,
++    anonymize: bool,
+ }
+ 
+ async fn torrent_from_url(
+@@ -485,6 +487,15 @@
+     /// peer extended handshakes. Defaults to "rqbit X.Y.Z".
+     pub client_name_and_version: Option<String>,
+ 
++    /// Turn on to disable PeX (peer exchange): stop sending our peer list to
++    /// other peers and ignore peer lists they send us.
++    pub disable_pex: bool,
++
++    /// Anonymous mode: suppress the client version ("v") in the extended
++    /// handshake so peers can't fingerprint the client by it. (The peer id is
++    /// anonymised separately by the embedder.)
++    pub anonymize: bool,
++
+     /// NanoTorrent seam: transform applied to every outgoing peer stream
+     /// (e.g. MSE/PE encryption). See [`StreamTransform`].
+     pub stream_transform: Option<Arc<dyn StreamTransform>>,
+@@ -520,6 +531,8 @@
+             disable_local_service_discovery: false,
+             ipv4_only: false,
+             client_name_and_version: None,
++            disable_pex: false,
++            anonymize: false,
+             stream_transform: None,
+             incoming_transform: None,
+         }
+@@ -811,6 +824,8 @@
+                 reqwest_client,
+                 connector: stream_connector,
+                 incoming_transform: opts.incoming_transform,
++                disable_pex: opts.disable_pex,
++                anonymize: opts.anonymize,
+                 root_span: opts.root_span,
+                 stats: Arc::new(SessionStats::new()),
+                 concurrent_initialize_semaphore: Arc::new(tokio::sync::Semaphore::new(
+@@ -1390,6 +1405,8 @@
+                     ratelimits: opts.ratelimits,
+                     initial_peers: opts.initial_peers.clone().unwrap_or_default(),
+                     peer_limit: opts.peer_limit.or(self.peer_limit),
++                    disable_pex: self.disable_pex,
++                    anonymize: self.anonymize,
+                     #[cfg(feature = "disable-upload")]
+                     _disable_upload: self._disable_upload,
+                 },
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -1112,7 +1112,9 @@
+                 }
+             }
+             Message::Extended(ExtendedMessage::UtPex(pex)) => {
+-                if self.state.metadata.info.info().private {
++                if self.state.metadata.info.info().private
++                    || self.state.shared.options.disable_pex
++                {
+                     warn!(
+                         id = self.state.shared.id,
+                         info_hash = ?self.state.shared.info_hash,
+@@ -1190,7 +1192,10 @@
+             }
+         }
+ 
+-        if !self.state.metadata.info.info().private && hs.m.ut_pex.is_some() {
++        if !self.state.metadata.info.info().private
++            && !self.state.shared.options.disable_pex
++            && hs.m.ut_pex.is_some()
++        {
+             spawn_with_cancel(
+                 debug_span!(
+                     parent: self.state.shared.span.clone(),
+@@ -1256,6 +1261,13 @@
+             handshake.metadata_size = Some(len);
+         }
+ 
++        // NanoTorrent anonymous mode: don't advertise the client version so
++        // peers can't fingerprint us by it. Runs after the `v` string is set in
++        // peer_connection, so it wins.
++        if self.state.shared.options.anonymize {
++            handshake.v = None;
++        }
++
+         Ok(())
+     }
+ 
+--- a/src/torrent_state/mod.rs
++++ b/src/torrent_state/mod.rs
+@@ -117,6 +117,10 @@
+     pub ratelimits: LimitsConfig,
+     pub initial_peers: Vec<SocketAddr>,
+     pub peer_limit: Option<usize>,
++    // NanoTorrent: gates both PeX directions. false = upstream behavior.
++    pub disable_pex: bool,
++    // NanoTorrent: drop the client version from the extended handshake.
++    pub anonymize: bool,
+     #[cfg(feature = "disable-upload")]
+     pub _disable_upload: bool,
+ }

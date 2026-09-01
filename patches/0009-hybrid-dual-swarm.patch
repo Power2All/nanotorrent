@@ -1,0 +1,95 @@
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -317,6 +317,12 @@
+     #[serde(skip)]
+     pub override_info_bytes: Option<Bytes>,
+ 
++    /// NanoTorrent seam: a hybrid torrent's second info hash. It is announced
++    /// alongside the primary one and accepted on incoming handshakes, so the
++    /// torrent is present in both of its swarms rather than only the v1 one.
++    #[serde(skip)]
++    pub secondary_info_hash: Option<Id20>,
++
+     /// NanoTorrent seam: takes over metadata verification, the BEP 52 hash
+     /// exchange and the info dict the engine parses, for a v2 magnet.
+     #[serde(skip)]
+@@ -1053,7 +1059,11 @@
+             .read()
+             .torrents
+             .iter()
+-            .find(|(_, t)| t.info_hash() == h.info_hash)
++            // NanoTorrent: a hybrid answers to either of its hashes, so a peer
++            // that found us in the v2 swarm is not turned away.
++            .find(|(_, t)| {
++                t.info_hash() == h.info_hash || t.secondary_info_hash() == Some(h.info_hash)
++            })
+             .map(|(id, t)| (*id, t.clone()))
+             .with_context(|| format!("didn't find a matching torrent {:?}", h.info_hash))?;
+ 
+@@ -1488,6 +1498,7 @@
+                 id,
+                 span,
+                 info_hash,
++                secondary_info_hash: opts.secondary_info_hash,
+                 trackers: trackers.into_iter().collect(),
+                 spawner: self.spawner.clone(),
+                 peer_id: self.peer_id,
+@@ -1697,14 +1708,30 @@
+         announce: bool,
+     ) -> Option<PeerStream> {
+         let is_private = t.with_metadata(|m| m.info.info().private).unwrap_or(false);
+-        self.make_peer_rx(
++        let trackers: Vec<url::Url> = t.shared().trackers.iter().cloned().collect();
++        let primary = self.make_peer_rx(
+             t.info_hash(),
+-            t.shared().trackers.iter().cloned().collect(),
++            trackers.clone(),
+             announce,
+             t.shared().options.force_tracker_interval,
+             t.shared().options.initial_peers.clone(),
+             is_private,
+-        )
++        );
++
++        // NanoTorrent: a hybrid lives in two swarms. Look in both and merge.
++        // The initial peers go to the primary lookup only - handing the same
++        // list to both would just duplicate every one of them.
++        let secondary = t.secondary_info_hash().and_then(|ih| {
++            self.make_peer_rx(
++                ih,
++                trackers,
++                announce,
++                t.shared().options.force_tracker_interval,
++                Vec::new(),
++                is_private,
++            )
++        });
++        merge_two_optional_streams(primary, secondary)
+     }
+ 
+     // Get a peer stream from both DHT and trackers.
+--- a/src/torrent_state/mod.rs
++++ b/src/torrent_state/mod.rs
+@@ -187,6 +187,10 @@
+ pub struct ManagedTorrentShared {
+     pub id: TorrentId,
+     pub info_hash: Id20,
++    // NanoTorrent: a hybrid torrent's OTHER info hash. Announced alongside the
++    // primary one and accepted on incoming handshakes. None for v1 and v2-only
++    // torrents, which have one identity each.
++    pub secondary_info_hash: Option<Id20>,
+     pub(crate) spawner: BlockingSpawner,
+     pub trackers: HashSet<url::Url>,
+     pub peer_id: Id20,
+@@ -255,6 +259,11 @@
+         self.shared.info_hash
+     }
+ 
++    /// NanoTorrent: the hybrid's other info hash, if it has one.
++    pub fn secondary_info_hash(&self) -> Option<Id20> {
++        self.shared.secondary_info_hash
++    }
++
+     pub fn only_files(&self) -> Option<Vec<usize>> {
+         self.locked.read().only_files.clone()
+     }

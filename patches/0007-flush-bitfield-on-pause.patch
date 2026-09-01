@@ -1,0 +1,19 @@
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -786,6 +786,16 @@
+         // It should be impossible to make a fatal error after pausing.
+         g.fatal_errors_tx.take();
+ 
++        // NanoTorrent fix: flush the have-bitfield while the tracker is still
++        // owned by the live state. The .bitv mmap is only written back every
++        // FLUSH_BITV_EVERY_BYTES (16 MB) and once on completion, and pause is
++        // also the shutdown path - so up to 16 MB of verified pieces could
++        // exist only as dirty pages. The piece DATA is on disk either way; what
++        // is lost is the record of having hash-checked it, which brings the
++        // torrent back a few pieces short of complete. Not in Drop: a failed
++        // msync should be logged, not swallowed.
++        (**g).try_flush_bitv(&self.shared, false);
++
+         let piece_tracker = g
+             .pieces
+             .take()

@@ -892,10 +892,11 @@ $("add").addEventListener("close", async () => {
     const items = magnets.length
       ? magnets.map(magnet => ({ ...common, magnet }))
       : inspected.map(t => {
-          // Positions in the metainfo order the inspect endpoint returned,
-          // which is what only_files indexes by. Omitted when everything is
-          // ticked: null means "all", which is not the same as listing them.
-          const keep = t.included.flatMap((on, i) => (on ? [i] : []));
+          // Each file's own index, NOT its position in this list: padding
+          // files are filtered out of the inspect response, so the two are no
+          // longer the same. Omitted when everything is ticked - null means
+          // "all", which is not the same as listing them.
+          const keep = t.included.flatMap((on, i) => (on ? [t.files[i].index] : []));
           const item = { ...common, torrent_file: t.b64 };
           if (keep.length !== t.files.length) item.only_files = keep;
           return item;

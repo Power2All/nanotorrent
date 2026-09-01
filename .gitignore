@@ -5,5 +5,16 @@
 /spike/*/target/
 __pycache__/
 
+# Vendored crates are sources and ARE committed - the [patch.crates-io] paths
+# in Cargo.toml point at them, so a clone without them cannot build. Their
+# build output is not: running cargo inside one (cargo test in
+# vendor/librqbit-peer-protocol, say) leaves a target/ beside the source that
+# the anchored /target/ above does not cover.
+/vendor/*/target/
+
 # Flatpak bundles and other built artefacts, produced on demand.
 /dist/
+
+# Built packages - the installer .exe is ignored by installer/.gitignore; the MSIX is
+# a build output too and is attached to a release rather than committed.
+installer/*.msix

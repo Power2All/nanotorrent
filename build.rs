@@ -166,78 +166,129 @@ fn verify_librqbit_patches() {
         (
             "vendor/librqbit/src/torrent_state/mod.rs",
             "pub fn with_chunk_tracker",
-            "patches/0001-expose-chunk-tracker.patch",
+            "patches/0001-engine-visibility.patch (chunk tracker)",
         ),
         (
             "vendor/librqbit/src/torrent_state/live/mod.rs",
             "pub fn per_peer_have_pieces",
-            "patches/0002-per-peer-have-pieces.patch",
+            "patches/0001-engine-visibility.patch (per-peer have-pieces)",
         ),
         (
             "vendor/librqbit/src/stream_connect.rs",
             "pub trait StreamTransform",
-            "patches/0003-stream-transform-seam.patch",
-        ),
-        (
-            "vendor/librqbit/src/torrent_state/mod.rs",
-            "pub disable_pex",
-            "patches/0004-pex-toggle.patch",
+            "patches/0002-stream-transform-seams.patch (outgoing half)",
         ),
         (
             "vendor/librqbit/src/stream_connect.rs",
             "pub trait IncomingStreamTransform",
-            "patches/0005-incoming-stream-transform-seam.patch",
+            "patches/0002-stream-transform-seams.patch (incoming half)",
         ),
         (
-            "vendor/librqbit/src/session.rs",
-            "pub proxy_trackers",
-            "patches/0006-proxy-scope.patch",
+            "vendor/librqbit/src/torrent_state/mod.rs",
+            "pub disable_pex",
+            "patches/0003-per-torrent-toggles.patch (PeX)",
         ),
         (
             "vendor/librqbit/src/torrent_state/mod.rs",
             "pub anonymize",
-            "patches/0007-anonymous-mode.patch",
+            "patches/0003-per-torrent-toggles.patch (anonymous mode)",
+        ),
+        (
+            "vendor/librqbit/src/session.rs",
+            "pub proxy_trackers",
+            "patches/0004-proxy-scope.patch",
         ),
         (
             "vendor/librqbit/src/session.rs",
             "tracker_stats_snapshot",
-            "patches/0008-tracker-stats.patch (librqbit side)",
+            "patches/0005-tracker-stats.patch (announce stats)",
         ),
         (
             "vendor/librqbit/src/session.rs",
             "tracker_tiers_snapshot",
-            "patches/0008-tracker-stats.patch (tracker tiers, librqbit side)",
-        ),
-        (
-            "vendor/librqbit/src/storage/filesystem/fs.rs",
-            "while !buf.is_empty()",
-            "patches/0010-windows-pread-pwrite-exact.patch",
-        ),
-        (
-            "vendor/librqbit/src/lib.rs",
-            "pub static CLIENT_NAME",
-            "patches/0011-client-name.patch",
-        ),
-        (
-            "vendor/librqbit/src/session_persistence/json.rs",
-            "tmp.sync_all()",
-            "patches/0012-session-persistence.patch (fsync before rename)",
-        ),
-        (
-            "vendor/librqbit/src/session_persistence/json.rs",
-            "next_id: std::sync::atomic::AtomicUsize",
-            "patches/0012-session-persistence.patch (next_id must reserve, not              report - without it a batch add collapses into one torrent)",
-        ),
-        (
-            "vendor/librqbit/src/torrent_state/live/mod.rs",
-            "g.try_flush_bitv();",
-            "patches/0013-flush-bitfield-on-pause.patch (without it an unclean              exit loses up to 16 MB of verified pieces)",
+            "patches/0005-tracker-stats.patch (announce tiers)",
         ),
         (
             "vendor/librqbit-tracker-comms/src/tracker_comms.rs",
             "pub struct TrackerStat",
-            "patches/0008-tracker-stats.patch (tracker-comms side; this crate is \
-             separately vendored - see PATCHES.md)",
+            "patches/0005-tracker-stats-comms.patch (the OTHER crate - see              PATCHES.md)",
+        ),
+        (
+            "vendor/librqbit/src/session_persistence/json.rs",
+            "tmp.sync_all()",
+            "patches/0006-session-persistence.patch (fsync before rename)",
+        ),
+        (
+            "vendor/librqbit/src/session_persistence/json.rs",
+            "next_id: std::sync::atomic::AtomicUsize",
+            "patches/0006-session-persistence.patch (next_id must reserve, not              report - without it a batch add collapses into one torrent)",
+        ),
+        (
+            "vendor/librqbit/src/torrent_state/live/mod.rs",
+            "(**g).try_flush_bitv",
+            "patches/0007-flush-bitfield-on-pause.patch (without it an unclean              exit loses up to 16 MB of verified pieces)",
+        ),
+        (
+            "vendor/librqbit/src/piece_verify.rs",
+            "pub trait PieceVerifier",
+            "patches/0008-bittorrent-v2.patch (the trait; this patch              ADDS a file, so a dropped patch leaves it missing entirely)",
+        ),
+        (
+            "vendor/librqbit/src/file_ops.rs",
+            "fn piece_hasher",
+            "patches/0008-bittorrent-v2.patch (the call sites -              without them BitTorrent v2 pieces are checked with SHA-1 and              every one of them fails)",
+        ),
+        (
+            "vendor/librqbit/src/torrent_state/mod.rs",
+            "pub secondary_info_hash",
+            "patches/0009-hybrid-dual-swarm.patch (without it a hybrid \n             only ever joins its v1 swarm)",
+        ),
+        (
+            "vendor/librqbit/src/piece_verify.rs",
+            "pub trait MetadataInterceptor",
+            "patches/0008-bittorrent-v2.patch (without it a v2 magnet \n             has its info dict rejected as a bad SHA-1 and never even \n             reaches the piece layers)",
+        ),
+        (
+            "vendor/librqbit-peer-protocol/src/lib.rs",
+            "pub struct HashRequest",
+            "patches/0008-bittorrent-v2-peerproto.patch (a THIRD vendored \n             crate - see PATCHES.md)",
+        ),
+        (
+            "vendor/librqbit-peer-protocol/src/lib.rs",
+            "pub fn supports_v2",
+            "patches/0008-bittorrent-v2-peerproto.patch (the v2 \
+             handshake bit)",
+        ),
+        (
+            "vendor/librqbit-peer-protocol/src/lib.rs",
+            "pub fn supports_fast",
+            "patches/0010-fast-extension-peerproto.patch (BEP 6 messages)",
+        ),
+        (
+            "vendor/librqbit/src/torrent_state/live/mod.rs",
+            "fn on_have_all_or_none",
+            "patches/0010-fast-extension.patch (without it we \
+             advertise the fast extension and then ignore its messages)",
+        ),
+        (
+            "vendor/librqbit/src/torrent_state/live/mod.rs",
+            "handshake.upload_only = Some(1)",
+            "patches/0012-upload-only.patch (BEP 21)",
+        ),
+        (
+            "vendor/librqbit-dualstack-sockets/src/socket.rs",
+            "SIO_UDP_CONNRESET",
+            "patches/0013-windows-udp-connreset-sockets.patch (a FIFTH vendored \n             crate; without it the DHT dies on Windows within a second of \n             starting and magnets never resolve)",
+        ),
+        (
+            "vendor/librqbit/src/session.rs",
+            "pub async fn add_synthetic_peer",
+            "patches/0011-synthetic-peer.patch (WebSeed hangs off this)",
+        ),
+        (
+            "vendor/librqbit/src/session.rs",
+            "pub override_info_hash",
+            "patches/0008-bittorrent-v2.patch (without it a v2-only              torrent announces the hash of its synthetic model, which no peer              or tracker has ever heard of)",
         ),
     ];
 

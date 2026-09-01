@@ -1,0 +1,83 @@
+--- a/src/session_persistence/json.rs
++++ b/src/session_persistence/json.rs
+@@ -26,11 +26,20 @@
+     torrents: HashMap<usize, SerializedTorrent>,
+ }
+ 
++impl SerializedSessionDatabase {
++    // NanoTorrent: seed for the next_id counter below.
++    fn max_id(db: &Self) -> Option<usize> {
++        db.torrents.keys().copied().max()
++    }
++}
++
+ pub struct JsonSessionPersistenceStore {
+     output_folder: PathBuf,
+     db_filename: PathBuf,
+     db_content: tokio::sync::RwLock<SerializedSessionDatabase>,
+     spawner: BlockingSpawner,
++    // NanoTorrent fix: next_id must RESERVE an id, not report one. See below.
++    next_id: std::sync::atomic::AtomicUsize,
+ }
+ 
+ impl std::fmt::Debug for JsonSessionPersistenceStore {
+@@ -62,11 +71,16 @@
+             }
+         };
+ 
++        let next_id = std::sync::atomic::AtomicUsize::new(
++            SerializedSessionDatabase::max_id(&db).map_or(0, |m| m + 1),
++        );
++
+         Ok(Self {
+             db_filename,
+             output_folder,
+             db_content: tokio::sync::RwLock::new(db),
+             spawner,
++            next_id,
+         })
+     }
+ 
+@@ -104,6 +118,14 @@
+         tmp.write_all(&buf)
+             .await
+             .with_context(|| format!("error writing {tmp_filename:?}"))?;
++        // NanoTorrent fix: the rename below is atomic for the directory entry,
++        // but without this the file's data blocks need not have reached disk.
++        // A crash in between leaves a valid name pointing at zero bytes, and
++        // `new()` treats an unreadable index as fatal - the app then refuses to
++        // start at all with "EOF while parsing a value at line 1 column 0".
++        tmp.sync_all()
++            .await
++            .with_context(|| format!("error flushing {tmp_filename:?}"))?;
+         trace!(?tmp_filename, "wrote to temp file");
+ 
+         tokio::fs::rename(&tmp_filename, &self.db_filename)
+@@ -241,17 +263,18 @@
+ 
+ #[async_trait]
+ impl SessionPersistenceStore for JsonSessionPersistenceStore {
++    // NanoTorrent fix: upstream took a READ lock and returned max(ids) + 1,
++    // which reserves nothing - N concurrent add_torrent calls all read the same
++    // state and all get the same id. Session::add_torrent then treats the
++    // colliding id as an existing torrent and answers AlreadyManaged, so adding
++    // five torrents at once added one and silently dropped four. The
++    // non-persistent path never had this: it uses an AtomicUsize fetch_add.
++    // Ids stay monotonic and are never reused, which also stops a deleted id
++    // from colliding with a later add.
+     async fn next_id(&self) -> anyhow::Result<TorrentId> {
+         Ok(self
+-            .db_content
+-            .read()
+-            .await
+-            .torrents
+-            .keys()
+-            .copied()
+-            .max()
+-            .map(|max| max + 1)
+-            .unwrap_or(0))
++            .next_id
++            .fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+     }
+ 
+     async fn delete(&self, id: TorrentId) -> anyhow::Result<()> {

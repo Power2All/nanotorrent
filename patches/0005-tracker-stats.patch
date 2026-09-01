@@ -1,0 +1,131 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -103,6 +103,7 @@
+     ManagedTorrent, ManagedTorrentShared, ManagedTorrentState, TorrentMetadata, TorrentStats,
+     TorrentStatsState,
+ };
++pub use tracker_comms::TrackerStat;
+ pub use type_aliases::{BoxAsyncWrite, FileInfos};
+ 
+ pub use buffers::*;
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -158,6 +158,15 @@
+     client_name_and_version: String,
+     disable_pex: bool,
+     anonymize: bool,
++    // NanoTorrent addition: per-torrent, per-tracker announce stats (seeds /
++    // leeches / next announce / fails), written by TrackerComms, read by the UI.
++    tracker_stats:
++        std::sync::Mutex<std::collections::HashMap<Id20, tracker_comms::SharedTrackerStats>>,
++    // NanoTorrent addition: announce tiers (one Vec per tier), captured at add
++    // time from the .torrent's announce-list, which librqbit otherwise flattens
++    // into an unordered list. Empty for magnets. Read by the UI to group the
++    // Trackers tab into "Tier #N".
++    tracker_tiers: std::sync::Mutex<std::collections::HashMap<Id20, Vec<Vec<url::Url>>>>,
+ }
+ 
+ async fn torrent_from_url(
+@@ -850,6 +859,8 @@
+                 incoming_transform: opts.incoming_transform,
+                 disable_pex: opts.disable_pex,
+                 anonymize: opts.anonymize,
++                tracker_stats: Default::default(),
++                tracker_tiers: Default::default(),
+                 root_span: opts.root_span,
+                 stats: Arc::new(SessionStats::new()),
+                 concurrent_initialize_semaphore: Arc::new(tokio::sync::Semaphore::new(
+@@ -1224,6 +1235,26 @@
+                         trackers.extend(custom_trackers);
+                     }
+ 
++                    // NanoTorrent addition: preserve the announce tiers - their
++                    // order is lost once flattened into `trackers`.
++                    let tiers: Vec<Vec<url::Url>> = torrent
++                        .meta
++                        .announce_list
++                        .iter()
++                        .map(|tier| {
++                            tier.iter()
++                                .filter_map(|t| std::str::from_utf8(t.as_ref()).ok())
++                                .filter_map(|t| url::Url::parse(t).ok())
++                                .collect::<Vec<_>>()
++                        })
++                        .filter(|t: &Vec<url::Url>| !t.is_empty())
++                        .collect();
++                    if !tiers.is_empty()
++                        && let Ok(mut m) = self.tracker_tiers.lock()
++                    {
++                        m.insert(torrent.meta.info_hash, tiers);
++                    }
++
+                     InternalAddResult {
+                         info_hash: torrent.meta.info_hash,
+                         metadata: Some(TorrentMetadata::new(
+@@ -1584,6 +1615,40 @@
+         Ok(())
+     }
+ 
++    /// NanoTorrent addition: snapshot of per-tracker announce stats for a
++    /// torrent, as (tracker_url, stats). Empty until the first announce.
++    pub fn tracker_stats_snapshot(
++        &self,
++        info_hash: Id20,
++    ) -> Vec<(String, tracker_comms::TrackerStat)> {
++        let Ok(map) = self.tracker_stats.lock() else {
++            return Vec::new();
++        };
++        let Some(shared) = map.get(&info_hash) else {
++            return Vec::new();
++        };
++        let Ok(stats) = shared.lock() else {
++            return Vec::new();
++        };
++        stats.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
++    }
++
++    /// NanoTorrent addition: announce tiers for a torrent, as tiers of URL
++    /// strings. Empty if unknown (e.g. magnets).
++    pub fn tracker_tiers_snapshot(&self, info_hash: Id20) -> Vec<Vec<String>> {
++        let Ok(map) = self.tracker_tiers.lock() else {
++            return Vec::new();
++        };
++        map.get(&info_hash)
++            .map(|tiers| {
++                tiers
++                    .iter()
++                    .map(|tier| tier.iter().map(|u| u.to_string()).collect())
++                    .collect()
++            })
++            .unwrap_or_default()
++    }
++
+     pub fn make_peer_rx_managed_torrent(
+         self: &Arc<Self>,
+         t: &Arc<ManagedTorrent>,
+@@ -1644,6 +1709,17 @@
+             info_hash,
+             session: self.clone(),
+         };
++        // NanoTorrent addition: get the STABLE per-tracker stats map for this
++        // torrent (reused across pause/resume, never replaced) so the UI reads
++        // the same map the live TrackerComms writes to. Replacing it on each
++        // call would orphan the running announcer's map and leave the UI stuck
++        // on "Updating" - which is what happened on startup resume, where a
++        // torrent is re-announced more than once.
++        let tracker_stats: tracker_comms::SharedTrackerStats = self
++            .tracker_stats
++            .lock()
++            .map(|mut m| m.entry(info_hash).or_default().clone())
++            .unwrap_or_default();
+         let tracker_rx = TrackerComms::start(
+             info_hash,
+             self.peer_id,
+@@ -1653,6 +1729,7 @@
+             self.announce_port().unwrap_or(4240),
+             self.reqwest_client.clone(),
+             self.udp_tracker_client.clone(),
++            tracker_stats,
+         );
+ 
+         let initial_peers_rx = if initial_peers.is_empty() {

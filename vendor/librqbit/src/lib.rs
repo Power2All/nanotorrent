@@ -24,10 +24,6 @@
 //!
 
 #![warn(clippy::cast_possible_truncation)]
-// NanoTorrent: crates.io deps get `--cap-lints allow`, but a `[patch.crates-io]`
-// path dep is treated as local, so upstream's style lints surface in our builds.
-// Restores the quiet-dependency behavior; drop when upstream clears the lint.
-#![allow(mismatched_lifetime_syntaxes)]
 
 macro_rules! aframe {
     ($e:expr) => {{
@@ -42,14 +38,17 @@ macro_rules! aframe {
     }};
 }
 
+#[macro_use]
+mod stat_gen;
+
 pub mod api;
 mod api_error;
 mod bitv;
 mod bitv_factory;
-mod blocklist;
 mod chunk_tracker;
 mod create_torrent_file;
 mod dht_utils;
+mod error;
 pub mod file_info;
 mod file_ops;
 #[cfg(feature = "http-api")]
@@ -58,15 +57,20 @@ pub mod http_api;
 pub mod http_api_client;
 #[cfg(any(feature = "http-api", feature = "http-api-client"))]
 pub mod http_api_types;
+mod ip_ranges;
 pub mod limits;
+mod listen;
 mod merge_streams;
 mod peer_connection;
 mod peer_info_reader;
+mod piece_tracker;
+mod piece_verify;
 mod read_buf;
 mod session;
 mod session_persistence;
 pub mod session_stats;
-mod spawn_utils;
+pub mod spawn_utils;
+
 pub mod storage;
 mod stream_connect;
 mod torrent_state;
@@ -75,33 +79,37 @@ pub mod tracing_subscriber_config_utils;
 mod type_aliases;
 #[cfg(all(feature = "http-api", feature = "upnp-serve-adapter"))]
 pub mod upnp_server_adapter;
+mod vectored_traits;
 #[cfg(feature = "watch")]
 pub mod watch;
 
+pub use error::{Error, Result};
+
 pub use api::Api;
-pub use api_error::ApiError;
-pub use create_torrent_file::{create_torrent, CreateTorrentOptions};
+pub use api_error::{ApiError, WithStatus, WithStatusError};
+pub use create_torrent_file::{CreateTorrentOptions, CreateTorrentResult, create_torrent};
 pub use dht;
+pub use librqbit_core::spawn_utils::spawn as librqbit_spawn;
+pub use listen::{ListenerMode, ListenerOptions};
 pub use peer_connection::PeerConnectionOptions;
 pub use session::{
-    AddTorrent, AddTorrentOptions, AddTorrentResponse, ListOnlyResponse, Session, SessionOptions,
-    SessionPersistenceConfig, SUPPORTED_SCHEMES,
+    AddTorrent, AddTorrentOptions, AddTorrentResponse, DhtSessionConfig, ListOnlyResponse,
+    SUPPORTED_SCHEMES, Session, SessionOptions, SessionPersistenceConfig,
 };
-pub use spawn_utils::spawn as librqbit_spawn;
-// NanoTorrent addition: per-tracker announce stats type for the Trackers tab.
-pub use tracker_comms::TrackerStat;
+pub use librqbit_core::hash_id::Id20;
+pub use piece_verify::{MetadataInterceptor, PieceHasher, PieceVerifier};
 pub use stream_connect::{
-    BoxAsyncRead, BoxAsyncWrite, IncomingStreamTransform, StreamTransform,
+    BoxAsyncRead, ConnectionOptions, IncomingStreamTransform, StreamTransform,
 };
 pub use torrent_state::{
     ManagedTorrent, ManagedTorrentShared, ManagedTorrentState, TorrentMetadata, TorrentStats,
     TorrentStatsState,
 };
-pub use type_aliases::FileInfos;
+pub use tracker_comms::TrackerStat;
+pub use type_aliases::{BoxAsyncWrite, FileInfos};
 
 pub use buffers::*;
 pub use clone_to_owned::CloneToOwned;
-pub use librqbit_core::hash_id::Id20;
 pub use librqbit_core::magnet::*;
 pub use librqbit_core::peer_id::*;
 pub use librqbit_core::torrent_metainfo::*;
@@ -117,15 +125,6 @@ pub const fn version() -> &'static str {
 pub const fn client_name_and_version() -> &'static str {
     concat!("rqbit ", env!("CARGO_PKG_VERSION"))
 }
-
-/// The BEP 10 extended-handshake `v` string, if the embedding application has
-/// set one.
-///
-/// librqbit is a library: peers should be told the name of the program they
-/// are actually talking to, not the crate it links. Set once at startup;
-/// unset falls back to [`client_name_and_version`], so upstream behaviour is
-/// unchanged for anyone who never touches it.
-pub static CLIENT_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 pub fn try_increase_nofile_limit() -> anyhow::Result<u64> {
     Ok(rlimit::increase_nofile_limit(1024 * 1024)?)

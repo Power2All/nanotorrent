@@ -1,0 +1,163 @@
+# What ci.yml cannot answer.
+#
+# ci.yml already builds and unit-tests macOS on every dispatch, so anything a
+# compiler or a unit test can catch is caught. This workflow exists for the
+# three things it cannot reach: the real network, the web interface, and the
+# question of whether a window opens at all.
+#
+# Manual only, like ci.yml. It talks to the live DHT and downloads a file from
+# nanotorrent.org, which is not something to do on every push.
+
+name: macOS live test
+
+on:
+  workflow_dispatch:
+    inputs:
+      v2_magnet:
+        description: "Also run the BitTorrent v2 magnet test (needs a live swarm)"
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # The web interface refuses a password under 8 characters.
+  NT_WEB_PASS: ci-test-password
+  NT_WEB_PORT: "18080"
+
+jobs:
+  live:
+    name: macos (live network + GUI probe)
+    runs-on: macos-latest
+    # A hung DHT lookup should not burn an hour of runner time.
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-live
+
+      - name: Build
+        run: cargo build --locked --release
+
+      # ---------------------------------------------------------------- paths
+
+      # environment.rs has exactly one macOS-specific branch, and this is it.
+      # HOME is redirected so the check both isolates the run and proves the
+      # branch, rather than trusting that ~/Library is where it went.
+      - name: Profile lands in ~/Library/Application Support
+        run: |
+          export HOME="$RUNNER_TEMP/nt-home"
+          mkdir -p "$HOME"
+          ./target/release/nanotorrent-gui --get utp > /dev/null
+          DB="$HOME/Library/Application Support/NanoTorrent/NanoTorrent.sqlite"
+          if [ -f "$DB" ]; then
+            echo "OK  $DB"
+          else
+            echo "MISSING: $DB"; find "$HOME" -name '*.sqlite' -print; exit 1
+          fi
+
+      - name: CLI settings round-trip
+        run: |
+          export HOME="$RUNNER_TEMP/nt-home"
+          G=./target/release/nanotorrent-gui
+          for kv in "utp true" "utp false" "show-padding-files true" "show-padding-files false"; do
+            $G --set $kv > /dev/null
+            got=$($G --get ${kv%% *})
+            want=${kv##* }
+            [ "$got" = "$want" ] || { echo "set $kv -> got '$got', wanted '$want'"; exit 1; }
+            echo "OK  $kv"
+          done
+          # A rejected value must be rejected loudly, not silently ignored.
+          if $G --set utp banana > /dev/null 2>&1; then
+            echo "FAIL: --set utp banana was accepted"; exit 1
+          fi
+          echo "OK  bad value rejected"
+
+      # -------------------------------------------------------------- network
+
+      # Named individually rather than `-- --ignored`: that would also pull in
+      # migrate_external_database, which unwraps NANOTORRENT_TEST_DB and panics
+      # when it is unset.
+      - name: DHT is alive
+        timeout-minutes: 5
+        run: cargo test --locked --release the_dht_is_alive -- --ignored --nocapture
+
+      - name: WebSeed downloads from a real server
+        timeout-minutes: 10
+        run: cargo test --locked --release webseed_downloads_from_a_real_server -- --ignored --nocapture
+
+      # Off by default: this depends on someone else's swarm still being seeded,
+      # so a red run here would mean nothing about this code.
+      - name: BitTorrent v2 magnet against the live swarm
+        if: inputs.v2_magnet
+        timeout-minutes: 10
+        run: cargo test --locked --release a_real_v2_magnet_resolves_against_the_live_swarm -- --ignored --nocapture
+
+      # ------------------------------------------------- app launch + web UI
+
+      # One launch, two questions: does a GUI process survive on a runner, and
+      # does the web interface it serves actually answer. The web interface is
+      # reached over HTTPS with a self-signed certificate, hence curl -k.
+      - name: Launch the app, probe the web interface
+        id: launch
+        continue-on-error: true
+        run: |
+          export HOME="$RUNNER_TEMP/nt-home"
+          G=./target/release/nanotorrent-gui
+          $G --webui on
+          printf '%s' "$NT_WEB_PASS" | $G --set-web-password
+          $G --webui-set port "$NT_WEB_PORT"
+          $G --webui-status
+
+          $G > "$RUNNER_TEMP/gui.log" 2>&1 &
+          echo "GUI_PID=$!" >> "$GITHUB_ENV"
+
+          for _ in $(seq 1 60); do
+            nc -z 127.0.0.1 "$NT_WEB_PORT" && break
+            sleep 1
+          done
+          nc -z 127.0.0.1 "$NT_WEB_PORT" || { echo "never listened"; cat "$RUNNER_TEMP/gui.log"; exit 1; }
+
+          B="https://127.0.0.1:$NT_WEB_PORT"
+          code() { curl -sk --max-time 15 -o /dev/null -w '%{http_code}' "$@"; }
+          [ "$(code $B/)" = "401" ] || { echo "unauthenticated request was not refused"; exit 1; }
+          echo "OK  401 without credentials"
+          [ "$(code -u "nanotorrent:$NT_WEB_PASS" $B/)" = "200" ] || { echo "correct credentials refused"; exit 1; }
+          echo "OK  200 with credentials"
+          curl -sk -u "nanotorrent:$NT_WEB_PASS" "$B/api/torrents" | head -c 200; echo
+          echo "OK  api answered"
+
+      # The actual experiment. A runner has a WindowServer session, so a window
+      # may genuinely open - but screencapture needs Screen Recording consent,
+      # which the runner user may not have granted. Both outcomes are a result;
+      # neither should fail the job, so look at the artifact to find out.
+      - name: Does a window exist, and can it be captured
+        continue-on-error: true
+        run: |
+          echo "--- displays ---"
+          system_profiler SPDisplaysDataType 2>/dev/null | head -20
+          echo "--- process alive? ---"
+          pgrep -l nanotorrent-gui || echo "no nanotorrent-gui process"
+          echo "--- windows, per the window server ---"
+          osascript -e 'tell application "System Events" to get name of every process whose visible is true' 2>&1 | head -5
+          echo "--- screencapture ---"
+          screencapture -x "$RUNNER_TEMP/screen.png" 2>&1 || echo "screencapture failed"
+          if [ -f "$RUNNER_TEMP/screen.png" ]; then
+            echo "captured $(stat -f%z "$RUNNER_TEMP/screen.png") bytes"
+          fi
+
+      - name: Stop the app
+        if: always()
+        run: kill "$GUI_PID" 2>/dev/null || true
+
+      - name: Collect evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-live-evidence
+          path: |
+            ${{ runner.temp }}/screen.png
+            ${{ runner.temp }}/gui.log
+          if-no-files-found: warn

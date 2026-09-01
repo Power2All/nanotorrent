@@ -1,0 +1,77 @@
+--- a/src/socket.rs
++++ b/src/socket.rs
+@@ -330,10 +330,74 @@
+     }
+ }
+ 
++/// NanoTorrent addition: turn off Windows' habit of reporting an ICMP port
++/// unreachable as a fatal error on the *next* read of a UDP socket.
++///
++/// Without this, one unreachable peer or dead DHT bootstrap node makes
++/// `recv_from` return WSAECONNRESET and every caller written against Unix
++/// semantics treats that as the end of the socket.
++#[cfg(windows)]
++fn disable_udp_conn_reset(socket: &socket2::Socket) {
++    use std::os::windows::io::AsRawSocket;
++
++    // ICMP port unreachable -> WSAECONNRESET (10054) on the next read.
++    const SIO_UDP_CONNRESET: u32 = 0x9800_000C;
++    // ICMP TTL expired / net unreachable -> WSAENETRESET (10052). A separate
++    // ioctl, and a separate failure: switching the first one off simply moved
++    // the error code, which is how this one was found.
++    const SIO_UDP_NETRESET: u32 = 0x9800_000F;
++
++    #[link(name = "ws2_32")]
++    unsafe extern "system" {
++        fn WSAIoctl(
++            s: usize,
++            dwIoControlCode: u32,
++            lpvInBuffer: *const core::ffi::c_void,
++            cbInBuffer: u32,
++            lpvOutBuffer: *mut core::ffi::c_void,
++            cbOutBuffer: u32,
++            lpcbBytesReturned: *mut u32,
++            lpOverlapped: *mut core::ffi::c_void,
++            lpCompletionRoutine: *mut core::ffi::c_void,
++        ) -> i32;
++    }
++
++    let enable: u32 = 0; // FALSE - stop reporting these as socket errors
++    for (code, name) in [
++        (SIO_UDP_CONNRESET, "SIO_UDP_CONNRESET"),
++        // Windows 8 and later. An older system fails it harmlessly.
++        (SIO_UDP_NETRESET, "SIO_UDP_NETRESET"),
++    ] {
++        let mut returned: u32 = 0;
++        let rc = unsafe {
++            WSAIoctl(
++                socket.as_raw_socket() as usize,
++                code,
++                (&raw const enable).cast(),
++                std::mem::size_of::<u32>() as u32,
++                std::ptr::null_mut(),
++                0,
++                &raw mut returned,
++                std::ptr::null_mut(),
++                std::ptr::null_mut(),
++            )
++        };
++        if rc != 0 {
++            debug!("{name} failed; UDP reads may die on an ICMP message");
++        }
++    }
++}
++
++#[cfg(not(windows))]
++fn disable_udp_conn_reset(_socket: &socket2::Socket) {}
++
+ impl MaybeDualstackSocket<tokio::net::UdpSocket> {
+     pub fn bind_udp(addr: SocketAddr, opts: BindOpts) -> crate::Result<Self> {
+         let sock = MaybeDualstackSocket::bind(addr, opts, true)?;
+ 
++        // NanoTorrent: before the socket is handed to tokio and used.
++        disable_udp_conn_reset(&sock.socket);
++
+         debug!(addr=?sock.bind_addr(), requested_addr=?addr, dualstack = sock.is_dualstack(), "listening on UDP");
+ 
+         Ok(Self {

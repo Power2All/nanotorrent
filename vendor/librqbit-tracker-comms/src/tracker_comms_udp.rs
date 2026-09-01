@@ -1,17 +1,18 @@
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     ffi::CStr,
-    net::{Ipv4Addr, SocketAddrV4},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use librqbit_core::{hash_id::Id20, spawn_utils::spawn_with_cancel};
+use librqbit_dualstack_sockets::{BindDevice, UdpSocket};
 use parking_lot::RwLock;
-use rand::Rng;
+use rand::RngExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error_span, trace, warn};
+use tracing::{debug, debug_span, trace, warn};
 
 const ACTION_CONNECT: u32 = 0;
 const ACTION_ANNOUNCE: u32 = 1;
@@ -106,7 +107,7 @@ pub struct AnnounceResponse {
     pub leechers: u32,
     #[allow(dead_code)]
     pub seeders: u32,
-    pub addrs: Vec<SocketAddrV4>,
+    pub addrs: Vec<SocketAddr>,
 }
 
 #[derive(Debug)]
@@ -150,17 +151,18 @@ macro_rules! parse_impl {
 
 parse_impl!(u32, 4);
 parse_impl!(u64, 8);
+parse_impl!(u128, 16);
 parse_impl!(u16, 2);
 parse_impl!(i32, 4);
 parse_impl!(i64, 8);
 parse_impl!(i16, 2);
 
 impl Response {
-    pub fn parse(buf: &[u8]) -> anyhow::Result<(TransactionId, Self)> {
+    pub fn parse(buf: &[u8], is_ipv6: bool) -> anyhow::Result<(TransactionId, Self)> {
         let (action, buf) = u32::parse_num(buf).context("can't parse action")?;
         let (tid, buf) = u32::parse_num(buf).context("can't parse transaction id")?;
 
-        let response = match Self::parse_response(action, buf) {
+        let response = match Self::parse_response(action, is_ipv6, buf) {
             Ok(r) => r,
             Err(e) => {
                 debug!("error parsing: {e:#}");
@@ -171,7 +173,7 @@ impl Response {
         Ok((tid, response))
     }
 
-    fn parse_response(action: u32, mut buf: &[u8]) -> anyhow::Result<Self> {
+    fn parse_response(action: u32, is_ipv6: bool, mut buf: &[u8]) -> anyhow::Result<Self> {
         let response = match action {
             ACTION_CONNECT => {
                 let (connection_id, b) =
@@ -185,13 +187,18 @@ impl Response {
                 let (seeders, mut b) = u32::parse_num(b).context("can't parse seeders")?;
                 let mut addrs = Vec::new();
                 while !b.is_empty() {
-                    let (ip, b2) = u32::parse_num(b)?;
-                    let ip = Ipv4Addr::from(ip);
+                    let (addr, b2) = if is_ipv6 {
+                        let (ip, b2) = u128::parse_num(b)?;
+                        (IpAddr::V6(Ipv6Addr::from(ip)), b2)
+                    } else {
+                        let (ip, b2) = u32::parse_num(b)?;
+                        (IpAddr::V4(Ipv4Addr::from(ip)), b2)
+                    };
                     b = b2;
 
                     let (port, b2) = u16::parse_num(b)?;
                     b = b2;
-                    addrs.push(SocketAddrV4::new(ip, port));
+                    addrs.push(SocketAddr::new(addr, port));
                 }
                 buf = b;
                 Response::Announce(AnnounceResponse {
@@ -224,8 +231,6 @@ impl Response {
     }
 }
 
-pub type TrackerAddr = (String, u16);
-
 struct ConnectionIdMeta {
     id: ConnectionId,
     created: Instant,
@@ -233,12 +238,12 @@ struct ConnectionIdMeta {
 
 #[derive(Default)]
 struct ClientLocked {
-    connections: HashMap<TrackerAddr, ConnectionIdMeta>,
+    connections: HashMap<SocketAddr, ConnectionIdMeta>,
     transactions: HashMap<TransactionId, tokio::sync::oneshot::Sender<Response>>,
 }
 
 struct ClientShared {
-    sock: tokio::net::UdpSocket,
+    sock: UdpSocket,
     locked: RwLock<ClientLocked>,
 }
 
@@ -260,10 +265,20 @@ impl Drop for TransactionIdGuard<'_> {
 }
 
 impl UdpTrackerClient {
-    pub async fn new(cancel_token: CancellationToken) -> anyhow::Result<Self> {
-        let sock = tokio::net::UdpSocket::bind("0.0.0.0:0")
-            .await
-            .context("error binding UDP for tracker")?;
+    pub async fn new(
+        cancel_token: CancellationToken,
+        bind_device: Option<&BindDevice>,
+    ) -> anyhow::Result<Self> {
+        let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0);
+        let sock = UdpSocket::bind_udp(
+            addr,
+            librqbit_dualstack_sockets::BindOpts {
+                device: bind_device,
+                ..Default::default()
+            },
+        )
+        .with_context(|| format!("error creating UDP socket at {addr}"))?;
+
         let client = Self {
             state: Arc::new(ClientShared {
                 sock,
@@ -271,7 +286,7 @@ impl UdpTrackerClient {
             }),
         };
 
-        spawn_with_cancel(error_span!("udp_tracker"), cancel_token, {
+        spawn_with_cancel(debug_span!("udp_tracker"), "udp_tracker", cancel_token, {
             let client = client.clone();
             async move { client.run().await }
         });
@@ -290,7 +305,7 @@ impl UdpTrackerClient {
                 }
             };
 
-            let (tid, response) = match Response::parse(&buf[..len]) {
+            let (tid, response) = match Response::parse(&buf[..len], addr.is_ipv6()) {
                 Ok(r) => r,
                 Err(e) => {
                     debug!(?addr, "error parsing UDP response: {e:#}");
@@ -315,18 +330,18 @@ impl UdpTrackerClient {
         }
     }
 
-    async fn get_connection_id(&self, addr: &TrackerAddr) -> anyhow::Result<ConnectionId> {
-        if let Some(m) = self.state.locked.read().connections.get(addr) {
-            if m.created.elapsed() < Duration::from_secs(60) {
-                return Ok(m.id);
-            }
+    async fn get_connection_id(&self, addr: SocketAddr) -> anyhow::Result<ConnectionId> {
+        if let Some(m) = self.state.locked.read().connections.get(&addr)
+            && m.created.elapsed() < Duration::from_secs(60)
+        {
+            return Ok(m.id);
         }
 
         let response = self.request(addr, Request::Connect).await?;
         match response {
             Response::Connect(connection_id) => {
                 self.state.locked.write().connections.insert(
-                    addr.clone(),
+                    addr,
                     ConnectionIdMeta {
                         id: connection_id,
                         created: Instant::now(),
@@ -338,13 +353,17 @@ impl UdpTrackerClient {
         }
     }
 
-    async fn request(&self, addr: &TrackerAddr, request: Request) -> anyhow::Result<Response> {
+    async fn request(&self, addr: SocketAddr, request: Request) -> anyhow::Result<Response> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let tid_g = self.reserve_transaction_id(tx)?;
 
         let mut write_buf = [0u8; 1024];
         let len = request.serialize(tid_g.tid, &mut write_buf)?;
-        self.state.sock.send_to(&write_buf[..len], addr).await?;
+        self.state
+            .sock
+            .send_to(&write_buf[..len], addr)
+            .await
+            .with_context(|| format!("error sending to {addr:?}"))?;
 
         let response = tokio::time::timeout(Duration::from_secs(10), rx)
             .await
@@ -385,7 +404,7 @@ impl UdpTrackerClient {
 
     pub async fn announce(
         &self,
-        tracker: &TrackerAddr,
+        tracker: SocketAddr,
         fields: AnnounceFields,
     ) -> anyhow::Result<AnnounceResponse> {
         let connection_id = self.get_connection_id(tracker).await?;
@@ -405,13 +424,13 @@ mod tests {
     use librqbit_core::{hash_id::Id20, peer_id::generate_peer_id};
 
     use crate::tracker_comms_udp::{
-        new_transaction_id, AnnounceFields, Request, Response, EVENT_NONE,
+        AnnounceFields, EVENT_NONE, Request, Response, new_transaction_id,
     };
 
     #[test]
     fn test_parse_announce() {
         let b = include_bytes!("../resources/test/udp-tracker-announce-response.bin");
-        let (tid, response) = Response::parse(b).unwrap();
+        let (tid, response) = Response::parse(b, false).unwrap();
         dbg!(tid, response);
     }
 
@@ -431,7 +450,7 @@ mod tests {
 
         let size = sock.recv(&mut read_buf).await.unwrap();
 
-        let (rtid, response) = Response::parse(&read_buf[..size]).unwrap();
+        let (rtid, response) = Response::parse(&read_buf[..size], false).unwrap();
         assert_eq!(tid, rtid);
         let connection_id = match response {
             Response::Connect(connection_id) => {
@@ -472,7 +491,7 @@ mod tests {
         }
 
         dbg!(&read_buf[..size]);
-        let (rtid, response) = Response::parse(&read_buf[..size]).unwrap();
+        let (rtid, response) = Response::parse(&read_buf[..size], false).unwrap();
         assert_eq!(tid, rtid);
         match response {
             Response::Announce(r) => {

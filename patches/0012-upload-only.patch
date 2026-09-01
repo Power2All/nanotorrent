@@ -1,0 +1,32 @@
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -1214,6 +1214,15 @@
+             }
+         }
+ 
++        // NanoTorrent, BEP 21: neither of us wants anything from the other.
++        // A graceful disconnect rather than an error - there is nothing wrong
++        // here, the connection just has no purpose.
++        if hs.upload_only == Some(1) && self.state.is_finished() {
++            trace!("both ends are upload-only, disconnecting");
++            let _ = self.tx.send(WriterRequest::Disconnect(Ok(())));
++            return Ok(());
++        }
++
+         if !self.state.metadata.info.info().private
+             && !self.state.shared.options.disable_pex
+             && hs.m.ut_pex.is_some()
+@@ -1290,6 +1299,13 @@
+             handshake.v = None;
+         }
+ 
++        // NanoTorrent, BEP 21: we have everything we asked for, so this peer
++        // should not expect us to download. Two seeds learn it of each other
++        // here rather than after exchanging bitfields.
++        if self.state.is_finished() {
++            handshake.upload_only = Some(1);
++        }
++
+         Ok(())
+     }
+ 

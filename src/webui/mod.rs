@@ -585,6 +585,10 @@ struct InspectRequest {
 
 #[derive(Serialize)]
 struct InspectedFile {
+    /// The file's index in the TORRENT, which is what `only_files` means -
+    /// not its position in this list. Padding files are filtered out, so the
+    /// two stopped being the same thing.
+    index: usize,
     path: String,
     size: u64,
 }
@@ -594,8 +598,8 @@ struct InspectedFile {
 struct Inspected {
     name: String,
     total_size: i64,
-    /// In metainfo order, which is the order `only_files` indexes by - so the
-    /// caller can hand positions from this list straight back to the add.
+    /// In metainfo order, minus padding files. Hand back each file's `index`
+    /// in `only_files`, NOT its position here.
     files: Vec<InspectedFile>,
 }
 
@@ -642,7 +646,15 @@ async fn h_inspect(body: web::Json<InspectBody>) -> actix_web::Result<impl Respo
                     files: t
                         .files
                         .into_iter()
-                        .map(|(path, size)| InspectedFile { path, size })
+                        // Padding is an alignment artifact, not a file. Hidden
+                        // here always: unlike the desktop list this is a
+                        // picker, and there is nothing to pick.
+                        .filter(|f| !f.padding)
+                        .map(|f| InspectedFile {
+                            index: f.index,
+                            path: f.path,
+                            size: f.size,
+                        })
                         .collect(),
                 })
             })
@@ -1309,7 +1321,15 @@ mod tests {
         let parsed = crate::ui::torrentfile::parse(&decoded).unwrap();
         assert_eq!(parsed.name, "Some.File.mkv");
         assert_eq!(parsed.total_size, 4096);
-        assert_eq!(parsed.files, vec![(String::from("Some.File.mkv"), 4096)]);
+        assert_eq!(
+            parsed.files,
+            vec![crate::ui::torrentfile::ParsedFile {
+                index: 0,
+                path: String::from("Some.File.mkv"),
+                size: 4096,
+                padding: false,
+            }]
+        );
 
         // Garbage must be rejected, not silently shown as an empty torrent.
         let junk = InspectRequest {

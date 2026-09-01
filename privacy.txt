@@ -1,0 +1,162 @@
+NanoTorrent - Privacy Policy
+Last updated: 30 August 2026
+Applies to: NanoTorrent 0.2.5 and later
+
+
+SUMMARY
+
+NanoTorrent does not collect your personal data. There is no account, no
+sign-in, no telemetry, no analytics, no advertising and no crash reporting.
+The developer operates no server that receives data from the application, and
+therefore holds no data about you.
+
+Everything the application stores stays on your own device.
+
+Two optional features contact third-party servers, and BitTorrent itself is a
+public protocol. Those three things are explained in full below, because they
+are the only ways in which using NanoTorrent is visible to anyone else.
+
+
+1. DATA STORED ON YOUR DEVICE
+
+NanoTorrent keeps its settings, torrent list, labels, filters, session state
+and logs in a local database and configuration file:
+
+  Windows (installer)  %LOCALAPPDATA%\NanoTorrent
+  Windows (Store/MSIX) redirected into the app package's private storage
+  Linux                ~/.local/share/nanotorrent
+
+Downloaded content is written wherever you choose to save it.
+
+This data never leaves your device unless you copy it there yourself. It is
+not encrypted at rest; it relies on your operating system's user account
+protection. Uninstalling the application does not automatically erase it -
+delete the folder above if you want it gone.
+
+
+2. BITTORRENT IS A PUBLIC PROTOCOL
+
+This is the most important thing to understand, and it is a property of
+BitTorrent rather than a choice made by NanoTorrent.
+
+When you download or seed a torrent, your IP address and listening port are
+disclosed to:
+
+  - the trackers announced in that torrent
+  - other peers taking part in the same torrent
+  - nodes of the distributed hash table (DHT), if enabled
+  - peers found through local peer discovery and peer exchange, if enabled
+
+Anyone taking part in the same torrent can therefore see that an address is
+participating in it. Any BitTorrent client behaves this way. NanoTorrent
+sends no additional information of its own beyond what the protocol requires
+and the client name and version, which identify the software, not you.
+
+If you do not want your address disclosed this way, you can:
+
+  - configure a proxy under Preferences > Connection > Proxy
+  - turn off DHT, local peer discovery and peer exchange under
+    Preferences > Connection
+  - use a VPN
+
+NanoTorrent has no control over, and no responsibility for, what trackers,
+peers or DHT nodes do with an address once the protocol has disclosed it.
+
+
+3. AUTOMATIC UPDATE CHECK (enabled by default, can be turned off)
+
+At startup, and when you ask for it from the Help menu, NanoTorrent requests:
+
+  https://api.github.com/repos/Power2All/nanotorrent/releases/latest
+
+to compare the newest published release against the version you are running.
+
+The request contains no identifier of any kind. As with any HTTPS request,
+GitHub receives your IP address and the request headers, which include the
+user agent string "NanoTorrent/<version>". GitHub's handling of that data is
+governed by the GitHub Privacy Statement, not by this policy. No response
+data is sent anywhere, and the result is only displayed to you.
+
+To disable it: Preferences > General > "Check for updates on startup", or
+run the application with the setting update-checks-enabled set to false.
+
+
+4. GEOIP COUNTRY DATABASE (enabled by default, can be turned off)
+
+To show a country flag beside each peer, NanoTorrent downloads a free country
+database, at most once a week, from:
+
+  https://download.db-ip.com/free/dbip-country-lite-<YYYY-MM>.mmdb.gz
+
+and caches it locally as geoip.mmdb in the folder listed in section 1.
+
+The request sends no information about you or about your torrents. As with
+any HTTPS request, db-ip.com receives your IP address and request headers.
+
+Peer addresses are looked up against the cached local database. No peer
+address, and no information about what you are downloading, is ever sent to
+db-ip.com or to anyone else.
+
+To disable it: Preferences > General, or set geoip-enabled to false. The
+database URL is configurable if you would rather use another source, or
+supply the file yourself.
+
+
+5. WEB INTERFACE (disabled by default)
+
+NanoTorrent includes an optional web interface for controlling the running
+application from a browser. It is turned off until you enable it.
+
+When enabled it listens on 127.0.0.1 by default, reachable only from the
+computer it runs on. Its password is stored as a hash, not in plain text.
+
+If you change the bind address to make it reachable from your network or the
+internet, you are choosing to expose control of the application. Do that only
+over a connection you trust and with a strong password. The web interface
+serves your own data to you and sends it nowhere else.
+
+
+6. WHAT IS NOT DONE
+
+For the avoidance of doubt, NanoTorrent does not:
+
+  - create an account, or ask for your name, e-mail address or any other
+    personal detail
+  - collect usage statistics, feature usage, timings or diagnostics
+  - send crash reports
+  - contain advertising, tracking pixels or third-party SDKs
+  - read files outside the folders you point it at
+  - report what you download to the developer or to anybody else
+  - sell, rent or share personal data, because none is collected
+
+
+7. CHILDREN
+
+NanoTorrent is a general-purpose file transfer utility. It is not directed at
+children, and it collects no data from anyone, children included.
+
+
+8. YOUR RIGHTS
+
+Because no personal data is collected or held by the developer, there is
+nothing to request access to, correct, export or erase. The data described in
+section 1 is on your device and entirely under your control: you can inspect,
+move or delete it at any time.
+
+
+9. CHANGES TO THIS POLICY
+
+If a future version of NanoTorrent changes what it sends or stores, this
+policy will be updated before that version is released, and the date at the
+top will change. The current version is always published at:
+
+  https://www.nanotorrent.org/privacy.txt
+
+
+10. CONTACT
+
+Questions about this policy can be sent to:
+
+  <CONTACT EMAIL - fill this in before publishing>
+
+Source code: https://github.com/Power2All/nanotorrent

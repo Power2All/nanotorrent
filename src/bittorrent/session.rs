@@ -253,21 +253,6 @@ fn azureus_peer_id(version: &str) -> librqbit::Id20 {
 }
 
 fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptions {
-    // How peers see this client, in the two places the protocol asks:
-    //
-    //   * the peer id below, Azureus-style `-NT<version>-`
-    //   * the BEP 10 extended handshake's `v` string, set here
-    //
-    // Both derive from CARGO_PKG_VERSION, so they cannot disagree. Without the
-    // second, peers see librqbit's own name and NanoTorrent shows up as rqbit
-    // in their client column - see patch 0011.
-    //
-    // set() rather than get_or_init(): the session can be rebuilt when
-    // Preferences change, and only the first call takes. The value never
-    // varies, so a later failure is nothing to report. Anonymous mode does not
-    // need special handling here - librqbit drops `v` entirely in that mode.
-    let _ = librqbit::CLIENT_NAME.set(crate::buildinfo::client_id());
-
     // Peer ID: Azureus-style `-NT-` prefix, or a fully random id (no client
     // fingerprint) in anonymous mode.
     let anonymous = cfg.get_bool("libtorrent.anonymous_mode");
@@ -337,21 +322,50 @@ fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptio
 
     SessionOptions {
         blocklist_url,
-        disable_dht: !cfg.get_bool("libtorrent.enable_dht"),
-        disable_dht_persistence: false,
-        dht_config: Some(librqbit::dht::PersistentDhtConfig {
-            config_filename: Some(env.get_application_data_path().join("dht.json")),
-            ..Default::default()
-        }),
+        // librqbit 9 folds the three DHT switches into one Option - None is
+        // "no DHT at all", and persistence is a field inside it.
+        dht: cfg
+            .get_bool("libtorrent.enable_dht")
+            .then(|| librqbit::DhtSessionConfig {
+                persistence: Some(librqbit::dht::DhtPersistenceConfig {
+                    config_filename: Some(env.get_application_data_path().join("dht.json")),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
         fastresume: true,
         persistence: Some(SessionPersistenceConfig::Json {
             folder: Some(env.get_session_state_path()),
         }),
         peer_id: Some(peer_id),
-        listen_port_range: Some(listen_port..listen_port + 1),
-        enable_upnp_port_forwarding: true,
-        socks_proxy_url,
-        // Proxy scope (engine patch 0006), matching PicoTorrent's opt-in
+        // How peers see this client in the BEP 10 extended handshake's `v`
+        // string. librqbit 9 takes it as an option (it needed a patch in 8);
+        // without it peers show NanoTorrent as "rqbit" while its peer id says
+        // `-NT-`, and the two identities disagree. Both derive from
+        // CARGO_PKG_VERSION so they cannot drift apart. Anonymous mode needs
+        // nothing extra here - patch 0003 drops `v` entirely in that mode.
+        client_name_and_version: Some(crate::buildinfo::client_id()),
+        // uTP (BEP 29) alongside TCP when asked for. Off by default: it is
+        // a second socket, on UDP, and upstream still calls it experimental.
+        listen: Some(librqbit::ListenerOptions {
+            mode: if cfg.get_bool("libtorrent.enable_utp") {
+                librqbit::ListenerMode::TcpAndUtp
+            } else {
+                librqbit::ListenerMode::TcpOnly
+            },
+            listen_addr: (std::net::Ipv6Addr::UNSPECIFIED, listen_port).into(),
+            enable_upnp_port_forwarding: true,
+            ..Default::default()
+        }),
+        // Local service discovery (BEP 14). The preference has existed since
+        // the PicoTorrent settings were imported and defaults to ON; it was
+        // stored but never applied, because librqbit 8 could not do it.
+        disable_local_service_discovery: !cfg.get_bool("libtorrent.enable_lsd"),
+        connect: Some(librqbit::ConnectionOptions {
+            proxy_url: socks_proxy_url,
+            ..Default::default()
+        }),
+        // Proxy scope (engine patch 0004), matching PicoTorrent's opt-in
         // proxy_peers / proxy_trackers / proxy_hostnames. Only meaningful when
         // a proxy is configured above; harmless otherwise.
         proxy_peers: cfg.get_bool("libtorrent.proxy_peers"),
@@ -361,20 +375,20 @@ fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptio
             download_bps,
             upload_bps,
         },
-        // PeX toggle (engine patch 0004). The prefs checkbox stores
+        // PeX toggle (engine patch 0003). The prefs checkbox stores
         // libtorrent.enable_pex; disable_pex is its inverse.
         disable_pex: !cfg.get_bool("libtorrent.enable_pex"),
-        // Anonymous mode (engine patch 0007): random peer id above + suppress
+        // Anonymous mode (engine patch 0003): random peer id above + suppress
         // the client version in the extended handshake.
         anonymize: anonymous,
-        // Require MSE/PE encryption on outgoing connections (engine patch 0003
+        // Require MSE/PE encryption on outgoing connections (engine patch 0002
         // seam + bittorrent::mse).
         stream_transform: if cfg.get_bool("libtorrent.require_outgoing_encryption") {
             Some(Arc::new(crate::bittorrent::mse::MseTransform))
         } else {
             None
         },
-        // Accept incoming MSE/PE peers (engine patch 0005 accept-path seam).
+        // Accept incoming MSE/PE peers (engine patch 0002 accept-path seam).
         // Always installed: plaintext peers pass through untouched, so this
         // only ever *adds* the ability to talk to encrypted-only peers. When
         // libtorrent.require_incoming_encryption is set, plaintext is refused.
@@ -390,7 +404,7 @@ fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptio
 /// librqbit treats a *missing* index as an empty session but an *unreadable*
 /// one as fatal, so a single truncated write takes the whole app down with
 /// "error deserializing session database: EOF while parsing a value" and no
-/// way back in. Patch 0012 stops it happening again (the write was not fsynced
+/// way back in. Patch 0006 stops it happening again (the write was not fsynced
 /// before its rename); this is what lets an already-broken profile start.
 ///
 /// Renamed, never deleted: it is the only record of where each torrent was
@@ -589,8 +603,13 @@ async fn build_torrent(params: CreateTorrentParams) -> Result<CreateTorrentOutco
                 &params.source,
                 librqbit::CreateTorrentOptions {
                     name: None,
+                    // Set below along with the comment and the private flag, so
+                    // that v1 and v2 (which builds its own metainfo) agree on
+                    // exactly one place where trackers are attached.
+                    trackers: Vec::new(),
                     piece_length: params.piece_length,
                 },
+                &librqbit::spawn_utils::BlockingSpawner::new(1),
             )
             .await?;
 
@@ -607,7 +626,7 @@ async fn build_torrent(params: CreateTorrentParams) -> Result<CreateTorrentOutco
                 meta.comment = Some(params.comment.as_bytes().into());
             }
             meta.created_by = Some(crate::buildinfo::user_agent().into_bytes().into());
-            meta.info.private = params.private;
+            meta.info.data.private = params.private;
 
             let mut bytes = Vec::new();
             bencode::bencode_serialize_to_writer(&meta, &mut bytes)?;
@@ -1192,7 +1211,7 @@ impl Session {
     /// with_chunk_tracker visibility patch (see vendor/librqbit/PATCHES.md).
     pub fn piece_map(&self, hash: &str) -> Option<(Vec<u8>, usize)> {
         let handle = self.find(hash)?;
-        let total = handle.metadata.load_full()?.lengths.total_pieces() as usize;
+        let total = handle.metadata.load_full()?.lengths().total_pieces() as usize;
         if total == 0 {
             return None;
         }
@@ -1235,8 +1254,11 @@ impl Session {
     }
 
     /// The TCP port peers are accepted on, once one has been bound.
+    ///
+    /// This is the port announced to trackers, which is the number worth
+    /// showing: with UPnP it is the one that has to be reachable.
     pub fn listen_port(&self) -> Option<u16> {
-        self.rq().tcp_listen_port()
+        self.rq().announce_port()
     }
 
     /// Record an error from background work, where there is no caller to
@@ -1251,17 +1273,87 @@ impl Session {
     /// metadata before returning, which can take a long time (or forever for
     /// dead magnets), so this must never block the UI thread.
     pub fn add_torrent(&self, source: AddTorrentSource, params: AddParams) {
-        let add = match &source {
-            AddTorrentSource::TorrentFileBytes(bytes) => AddTorrent::from_bytes(bytes.clone()),
-            AddTorrentSource::MagnetUri(uri) => AddTorrent::from_url(uri.clone()),
-        };
-
-        let opts = AddTorrentOptions {
+        let mut opts = AddTorrentOptions {
             paused: !params.start_torrent,
             output_folder: params.save_path.clone(),
             only_files: params.only_files.clone(),
             overwrite: true,
             ..Default::default()
+        };
+
+        let add = match &source {
+            AddTorrentSource::TorrentFileBytes(bytes) => {
+                // A v2-ONLY torrent has nothing the engine can drive: no
+                // `pieces`, and piece hashes that are merkle roots rather than
+                // SHA-1. It is handed over in a v1-shaped form instead, with
+                // its real identity and its real metadata restored through the
+                // engine seams. A hybrid needs none of this - its v1 half is
+                // what every client uses and what we have always used.
+                use crate::bittorrent::v2::V2Prep;
+                match crate::bittorrent::v2::prepare(bytes) {
+                    Err(err) => {
+                        let msg = format!("Failed to add torrent: {err}");
+                        tracing::error!("{msg}");
+                        report_error(&self.events, msg);
+                        return;
+                    }
+                    Ok(V2Prep::V2Only(prepared)) => {
+                        tracing::info!(
+                            "adding a v2-only torrent ({} files, {} pieces) as {}",
+                            prepared.files,
+                            prepared.pieces,
+                            prepared.wire_hash.as_string()
+                        );
+                        opts.override_info_hash = Some(prepared.wire_hash);
+                        opts.override_info_bytes = Some(prepared.info_bytes.into());
+                        opts.piece_verifier = Some(prepared.verifier);
+                        AddTorrent::from_bytes(prepared.synthetic)
+                    }
+                    Ok(V2Prep::Hybrid { secondary }) => {
+                        // Driven as v1, but announced under both hashes so the
+                        // v2 half of the swarm can find us too.
+                        tracing::info!(
+                            "adding a hybrid torrent, also announcing as {}",
+                            secondary.as_string()
+                        );
+                        opts.secondary_info_hash = Some(secondary);
+                        AddTorrent::from_bytes(bytes.clone())
+                    }
+                    Ok(V2Prep::V1Only) => AddTorrent::from_bytes(bytes.clone()),
+                }
+            }
+            AddTorrentSource::MagnetUri(uri) => {
+                // Promotes a hybrid magnet's v1 hash into `xt` where the
+                // engine will find it, and turns a v2-only link into a
+                // message rather than "didn't contain a BTv1 infohash".
+                let hashes = crate::bittorrent::v2::magnet_hashes(uri);
+                if hashes.v1.is_some()
+                    && let Some(v2) = hashes.v2
+                {
+                    // A hybrid magnet names both; announce under both.
+                    let mut truncated = [0u8; 20];
+                    truncated.copy_from_slice(&v2[..20]);
+                    opts.secondary_info_hash = Some(librqbit::Id20::new(truncated));
+                } else if hashes.is_v2_only() {
+                    // v2-only. The info dict arrives over BEP 9, but the piece
+                    // hashes do not - they come from the peer over the BEP 52
+                    // hash exchange. One object does all of it and then becomes
+                    // the torrent's piece verifier, so the layers it collected
+                    // are exactly what pieces are checked against.
+                    tracing::info!("resolving a v2-only magnet");
+                    let magnet = std::sync::Arc::new(crate::bittorrent::v2::V2Magnet::new());
+                    opts.metadata_interceptor = Some(magnet.clone());
+                    opts.piece_verifier = Some(magnet);
+                }
+                match crate::bittorrent::v2::normalise_magnet(uri) {
+                    Ok(fixed) => AddTorrent::from_url(fixed),
+                    Err(err) => {
+                        tracing::error!("{err}");
+                        report_error(&self.events, err);
+                        return;
+                    }
+                }
+            }
         };
 
         let inner = self.rq();
@@ -1273,6 +1365,17 @@ impl Session {
             match inner.add_torrent(add, Some(opts)).await {
                 Ok(AddTorrentResponse::Added(_, handle)) => {
                     Self::on_torrent_added(&db, &meta, &handle, &source, &params);
+                    // BEP 19. Only a real .torrent can carry `url-list`, and
+                    // only after the torrent exists can a peer be attached to
+                    // it - which is why this is here and not at build time.
+                    if let AddTorrentSource::TorrentFileBytes(bytes) = &source {
+                        crate::bittorrent::webseed::spawn_all(
+                            inner.clone(),
+                            &tokio::runtime::Handle::current(),
+                            &handle,
+                            bytes,
+                        );
+                    }
                 }
                 // Already present. Still recorded - on_torrent_added only
                 // inserts what is missing, and a re-added magnet refreshes its
@@ -1303,12 +1406,29 @@ impl Session {
     /// (bytes, or the original uri on failure) is pushed to `slot` for the UI
     /// to pick up on its next tick.
     pub fn resolve_magnet(&self, uri: String, slot: Arc<Mutex<Vec<MagnetOutcome>>>) {
+        // Same normalisation as the add path, so the dialog and the add agree
+        // on which magnets are usable rather than failing at different points.
+        let uri = match crate::bittorrent::v2::normalise_magnet(&uri) {
+            Ok(fixed) => fixed,
+            Err(err) => {
+                tracing::warn!("{err}");
+                report_error(&self.events, err);
+                slot.lock().unwrap().push(MagnetOutcome::Failed(uri));
+                return;
+            }
+        };
         let inner = self.rq();
         self.rt.spawn(async move {
-            let opts = AddTorrentOptions {
+            let mut opts = AddTorrentOptions {
                 list_only: true,
                 ..Default::default()
             };
+            // The preview needs the same treatment as the add, or a v2-only
+            // magnet would resolve in the Add dialog and then fail on commit.
+            if crate::bittorrent::v2::magnet_hashes(&uri).is_v2_only() {
+                let magnet = std::sync::Arc::new(crate::bittorrent::v2::V2Magnet::new());
+                opts.metadata_interceptor = Some(magnet);
+            }
             let outcome = match tokio::time::timeout(
                 std::time::Duration::from_secs(90),
                 inner.add_torrent(AddTorrent::from_url(uri.clone()), Some(opts)),
@@ -1606,7 +1726,7 @@ fn on_torrent_added(
                 let paused = matches!(stats.state, TorrentStatsState::Paused);
 
                 let state = match stats.state {
-                    TorrentStatsState::Initializing => State::CheckingFiles,
+                    TorrentStatsState::Initializing { .. } => State::CheckingFiles,
                     TorrentStatsState::Error => State::Error,
                     TorrentStatsState::Paused => {
                         if stats.finished {
@@ -1684,7 +1804,7 @@ fn on_torrent_added(
                 let total_pieces = handle
                     .metadata
                     .load_full()
-                    .map(|m| m.lengths.total_pieces() as u64)
+                    .map(|m| m.lengths().total_pieces() as u64)
                     .unwrap_or(0);
                 let (seeds_current, availability) = match (handle.live(), total_pieces) {
                     (Some(live), total) if total > 0 => {
@@ -1977,10 +2097,19 @@ fn on_torrent_added(
             return Vec::new();
         };
 
+        // BEP 47 padding files are alignment, not content: a run of zeros so
+        // the next real file starts on a piece boundary. Hybrid torrents carry
+        // them by construction and the v2-only path inserts them, so they turn
+        // up in perfectly ordinary torrents. Hidden unless someone has asked
+        // to see them - nothing is ever downloaded for one either way.
+        let show_padding = crate::core::configuration::Configuration::new(self.db.clone())
+            .get_bool("ui.show_padding_files");
+
         metadata
             .file_infos
             .iter()
             .enumerate()
+            .filter(|(_, fi)| show_padding || !fi.attrs.padding)
             .map(|(idx, fi)| {
                 let progress_bytes = stats.file_progress.get(idx).copied().unwrap_or(0);
                 FileEntry {
@@ -2251,14 +2380,13 @@ mod tests {
             // Persistence ON. This is the whole point of the test: the
             // non-persistent path hands out ids with an atomic fetch_add and
             // never had the bug, so `persistence: None` passed happily while
-            // real batch adds collapsed into one. See patch 0013.
+            // real batch adds collapsed into one. See patch 0006.
             let opts = librqbit::SessionOptions {
-                disable_dht: true,
-                disable_dht_persistence: true,
+                dht: None,
                 persistence: Some(librqbit::SessionPersistenceConfig::Json {
                     folder: Some(dir.join("state")),
                 }),
-                enable_upnp_port_forwarding: false,
+                listen: None,
                 ..Default::default()
             };
             let session = librqbit::Session::new_with_opts(dir.clone(), opts)
@@ -2510,8 +2638,14 @@ mod tests {
 
     /// End-to-end: build each of the three shapes with our own writer, then
     /// feed them to the reader the Add dialog uses.
+    ///
+    /// This used to assert that v2-only was *refused* with a readable message.
+    /// It is now supported, so the assertion is the opposite one - and the
+    /// dialog reading it matters as much as the session accepting it, because
+    /// a dialog that refuses what the session would take is the same bug seen
+    /// from the other side.
     #[test]
-    fn v2_only_is_refused_with_a_readable_message() {
+    fn every_torrent_shape_reaches_the_add_dialog() {
         let dir = std::env::temp_dir().join("nanotorrent-v2-msg-test");
         std::fs::create_dir_all(&dir).unwrap();
         let payload = dir.join("payload.bin");
@@ -2539,17 +2673,51 @@ mod tests {
             bytes
         };
 
-        // v1 and hybrid parse; a hybrid is downloadable as v1, which is the
-        // reason it is not lumped in with v2-only.
-        assert!(crate::ui::torrentfile::parse(&build(V::V1)).is_ok());
-        assert!(crate::ui::torrentfile::parse(&build(V::Hybrid)).is_ok());
+        // All three read, and all three agree on what is in the torrent -
+        // the same file, the same size - whichever half the reader used.
+        for (label, version) in [("v1", V::V1), ("hybrid", V::Hybrid), ("v2", V::V2)] {
+            let parsed = crate::ui::torrentfile::parse(&build(version))
+                .unwrap_or_else(|e| panic!("{label} did not reach the dialog: {e}"));
+            assert_eq!(parsed.name, "payload.bin", "{label} name");
+            assert_eq!(parsed.total_size, 300 * 1024, "{label} size");
+            assert_eq!(parsed.files.len(), 1, "{label} file count");
+        }
 
-        // v2-only is refused - and the message names the format rather than
-        // leaking serde's "missing field `pieces`".
-        let err = crate::ui::torrentfile::parse(&build(V::V2)).unwrap_err();
-        assert!(err.contains("v2-only"), "unhelpful message: {err}");
-        assert!(err.contains("Hybrid"), "message does not say what works: {err}");
-        assert!(!err.contains("pieces"), "serde error leaked through: {err}");
+        // And each shape is prepared the right way round.
+        use crate::bittorrent::v2::V2Prep;
+
+        let v2_bytes = build(V::V2);
+        match crate::bittorrent::v2::prepare(&v2_bytes).unwrap() {
+            V2Prep::V2Only(p) => {
+                assert_eq!(p.files, 1);
+                assert_eq!(p.pieces, 2, "300 KiB over 256 KiB pieces");
+            }
+            _ => panic!("v2-only was not recognised"),
+        }
+
+        // A hybrid keeps its v1 half - but must also carry the second hash, or
+        // it only ever joins half of its swarm.
+        match crate::bittorrent::v2::prepare(&build(V::Hybrid)).unwrap() {
+            V2Prep::Hybrid { secondary } => {
+                let meta = crate::bittorrent::v2::parse(&build(V::Hybrid))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    secondary.0,
+                    meta.truncated_info_hash(),
+                    "the secondary hash is not the truncated v2 one"
+                );
+            }
+            _ => panic!("a hybrid was not recognised as one"),
+        }
+
+        assert!(
+            matches!(
+                crate::bittorrent::v2::prepare(&build(V::V1)).unwrap(),
+                V2Prep::V1Only
+            ),
+            "a v1 torrent was treated as something else"
+        );
     }
 
     /// End-to-end check of the create-torrent pipeline: build a torrent for
@@ -2592,18 +2760,18 @@ mod tests {
         let written = std::fs::read(&output).unwrap();
         assert_eq!(written, bytes);
 
-        let parsed = librqbit::torrent_from_bytes::<librqbit::ByteBufOwned>(&written).unwrap();
+        let parsed = librqbit::torrent_from_bytes(&written).unwrap();
         assert_eq!(
             parsed.announce.as_ref().map(|a| a.as_ref()),
             Some(&b"http://tracker.example.com/announce"[..])
         );
         assert_eq!(parsed.announce_list.len(), 2);
-        assert!(parsed.info.private);
+        assert!(parsed.info.data.private);
         assert_eq!(
             parsed.comment.as_ref().map(|c| c.as_ref()),
             Some(&b"test comment"[..])
         );
-        assert_eq!(parsed.info.piece_length, 256 * 1024);
+        assert_eq!(parsed.info.data.piece_length, 256 * 1024);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2623,14 +2791,20 @@ mod tests {
             .build()
             .unwrap();
 
+        // Inside the async block, not outside it: BlockingSpawner::new reads
+        // the current runtime handle and panics if there isn't one.
         let torrent = rt
-            .block_on(librqbit::create_torrent(
-                &payload,
-                librqbit::CreateTorrentOptions {
-                    name: Some("nanotorrent-test"),
-                    ..Default::default()
-                },
-            ))
+            .block_on(async {
+                librqbit::create_torrent(
+                    &payload,
+                    librqbit::CreateTorrentOptions {
+                        name: Some("nanotorrent-test"),
+                        ..Default::default()
+                    },
+                    &librqbit::spawn_utils::BlockingSpawner::new(1),
+                )
+                .await
+            })
             .unwrap();
 
         std::fs::write(
