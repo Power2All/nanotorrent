@@ -159,6 +159,12 @@ winresource = "0.1.31"
 # fills. Windows uses GetDiskFreeSpaceExW from winapi below instead.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+# Desktop notifications on Linux (D-Bus) and macOS. Windows has its own path
+# through tauri-winrt-notification below, which is why this is not a plain
+# dependency. Default features only: that is `z`, the pure-Rust zbus client,
+# so no libdbus to link and no `image` crate pulled in for an icon we set by
+# name.
+notify-rust = "4"
 
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.8"

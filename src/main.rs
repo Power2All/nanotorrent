@@ -327,8 +327,16 @@ fn run() -> anyhow::Result<()> {
         buildinfo::build_stamp()
     );
 
-    // Register our AppUserModelID so Windows shows/attributes toast
-    // notifications (download complete) to NanoTorrent.
+    // ...and which install this is, for the same reason. A Microsoft Store
+    // copy and an installer copy can sit on the same machine at once, and only
+    // one of them is the one someone is looking at. It also decides where the
+    // update prompt points - see updatechecker::download_url.
+    if let Some(pfn) = core::environment::package_family_name() {
+        tracing::info!("packaged install (Microsoft Store): {pfn}");
+    }
+
+    // Claim the identity notifications are attributed to: an AppUserModelID on
+    // Windows, the bundle identifier on macOS. Nothing to do on Linux.
     core::toast::register();
 
     let db = Arc::new(Database::open(&env)?);

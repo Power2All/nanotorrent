@@ -72,6 +72,31 @@ VIAddVersionKey "LegalCopyright" "${PUBLISHER}"
 
 !insertmacro MUI_LANGUAGE "English"
 
+; The Microsoft Store package family name. Partner Center issues it alongside
+; the identity substituted into installer/msix/AppxManifest.xml, and it is
+; stable for the life of the listing - the version is not part of it.
+!define STORE_PFN "Power2All.NanoTorrent_jsrm4ke13n4c4"
+
+; Warn before installing beside a Microsoft Store copy.
+;
+; The two are separate installs. This installer cannot upgrade an MSIX package;
+; it can only put a second ${APP} on the machine, with its own settings folder
+; and its own Start menu entry, and no way to tell afterwards which one a
+; shortcut launches. ${APP} itself now sends a Store build to the Store rather
+; than to the GitHub release page (see updatechecker::download_url), so this
+; catches whoever arrives here from the website by hand.
+;
+; $LOCALAPPDATA\Packages\<family name> is created when a package is deployed
+; for a user, so its presence is the test. It reads the profile of whoever was
+; elevated, which is not necessarily the person with the Store install - hence
+; a question rather than a refusal.
+Function .onInit
+  IfFileExists "$LOCALAPPDATA\Packages\${STORE_PFN}\*.*" 0 no_store_copy
+    MessageBox MB_YESNO|MB_ICONEXCLAMATION "${APP} is already installed from the Microsoft Store.$\n$\nThis installer cannot update that copy - it installs a second ${APP} alongside it, with separate settings.$\n$\nUpdate from the Microsoft Store instead.$\n$\nInstall anyway?" IDYES no_store_copy
+    Abort
+  no_store_copy:
+FunctionEnd
+
 Section "!${APP} (required)" SecCore
   SectionIn RO
   SetOutPath "$INSTDIR"

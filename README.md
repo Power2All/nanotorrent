@@ -21,7 +21,7 @@ Site: <https://www.nanotorrent.org>
 | Resume data           | libtorrent resume blobs in DB   | librqbit session persistence (JSON + `.bitv` mmap)   |
 | Translations          | `lang/*.json` embedded in a DB  | Same `lang/*.json` compiled into the executable      |
 | Single instance / IPC | Win32 mutex + `WM_COPYDATA`     | Loopback TCP on port 37549                           |
-| Notifications         | tray balloons                   | Windows 11 WinRT toasts, plus in-app toasts everywhere |
+| Notifications         | tray balloons                   | Native desktop notifications on all three platforms, plus in-app toasts |
 | Remote access         | —                               | Optional authenticated HTTPS web interface           |
 | Logging               | boost::log to file              | `tracing` to file                                    |
 
@@ -60,7 +60,7 @@ or build one yourself:
 | Any Linux (glibc 2.35+) | `nanotorrent-<ver>-x86_64.AppImage` | `linuxdeploy` — one file, no install |
 | macOS | `nanotorrent-<ver>.dmg` | `hdiutil`, from a hand-assembled `.app` |
 
-There is also an **MSIX** for the Microsoft Store — `installeruild-msix.ps1`
+There is also an **MSIX** for the Microsoft Store — `installer/build-msix.ps1`
 builds it, and a GitHub release can publish it automatically. See
 [docs/MICROSOFT-STORE.md](docs/MICROSOFT-STORE.md), which also covers what
 changes when the app runs packaged.
@@ -212,8 +212,10 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   pressing OK restarts it in place, and keeps the dialog open with the reason
   if it refuses to start — or from the command line, along with everything
   else (see below).
-- **Notifications** — real Windows 11 toasts on download-complete under a
-  registered AppUserModelID, switchable off in Preferences; a notification-area
+- **Notifications** — real desktop notifications on download-complete,
+  switchable off in Preferences: Windows 11 toasts under a registered
+  AppUserModelID, the D-Bus notification daemon on Linux, and Notification
+  Center on macOS. Also a notification-area
   (tray) icon with close-to-tray prompt, shown for both the window's close
   button and File ▸ Exit. Hovering the tray icon reports the current transfer
   rates and how many torrents are actively seeding and downloading. In-app
@@ -316,7 +318,10 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   client, so anyone who can write to the plugin folder can delete downloaded
   data: see [docs/PLUGINS.md](docs/PLUGINS.md).
 - **Single-instance** — a second launch forwards its command line (torrent
-  files / magnet links) to the running instance and exits.
+  files / magnet links) to the running instance and exits, raising the existing
+  window whether or not it had anything to forward. Launching with no arguments
+  used to be a no-op, which from the outside is indistinguishable from the
+  program failing to open.
 - **Translations** — all 41 languages, **complete**: every string the UI can
   show is translated in every locale, compiled into the executable and picked
   from a scrollable list in Preferences, each shown by its native name
@@ -331,13 +336,22 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   startup* is cleared, and on demand from **Help ▸ Check for update** — which
   runs whatever that preference says, since asking is explicit, and is the only
   path that also reports "no update available" or a failure to reach GitHub.
-  The startup check stays silent unless there is something to say. Endpoint and
+  The startup check stays silent unless there is something to say. Where
+  **Download** goes depends on which install is running: a Microsoft Store copy
+  is sent to its own Store page, because the installer cannot upgrade a
+  packaged app - it would only put a second NanoTorrent beside it. Endpoint and
   toggles live in `update_checks.*` (`--set check-updates`, `--set update-url`),
   so it can be pointed at a fork.
 - **Crash log** — a panic hook writes a backtrace to the logs folder (the
   original used Crashpad; there is no upload). A failure during startup, before
-  the window exists, is shown in a message box rather than lost to the GUI
-  subsystem's absent stderr.
+  the window exists, is reported rather than lost to the GUI subsystem's absent
+  stderr. It always goes to stderr; on Windows, where a GUI-subsystem build has
+  no stderr to go to, it also raises a message box - unless it was started
+  through `nanotorrent` from a terminal, since the shim sets a variable saying
+  a console is attached and a modal dialog is the wrong answer to a command
+  someone typed (in a script it blocks until somebody clicks it). That includes
+  a second copy failing to hand its arguments to the first, which used to exit
+  silently and look exactly like not starting.
 
 ## Protocol support (BEPs)
 
@@ -404,8 +418,15 @@ require-encryption toggles for each.
   asks for permission on first launch, because LSD sends multicast and LSD is on
   by default. The bundle carries an `NSLocalNetworkUsageDescription` so the
   dialog says why. Declining disables LSD and nothing else.
-- **Desktop toasts are Windows-only.** Linux and macOS get the in-app toast;
-  the OS-level notification is not wired up on those platforms yet.
+- **Desktop notifications need the platform to provide one.** Windows and
+  macOS always can; on Linux they go to the D-Bus notification daemon, so a
+  session without one (a headless box, a bare WM) logs a warning and shows
+  nothing. The notification's icon is looked up by the same name the `.desktop`
+  entry uses, which means an install that never ran
+  `packaging/linux/install-desktop-entry.sh` gets the generic glyph - the same
+  cause as the Wayland window icon below. On macOS the notification is
+  attributed to the `.app` bundle, so a binary run straight out of
+  `target/release` may show under a different name.
 - Windows will not let an app force-set the **magnet** protocol default when
   another client registered it system-wide (anti-hijacking); the associations
   button registers NanoTorrent and opens Settings ▸ Default apps so you can
@@ -454,6 +475,37 @@ An example plugin is written to the folder on first run, switched off.
 Plugins are distributed as source: Rhai has no serialised-AST or bytecode
 format, which suits a design whose permission header is only trustworthy
 because it is read from the same text that will run.
+
+0.3.1 also finishes the **notifications** story. A finished download raised a
+real toast on Windows and nothing at all on Linux or macOS, which made the
+Preferences switch a lie on two platforms out of three; both now get a native
+notification through the same one-line entry point. Linux needs a D-Bus
+notification daemon, and macOS needs to be told which bundle to attribute the
+notification to or it would show as Terminal's.
+
+And the **update prompt now knows which install it is talking to**. A
+Microsoft Store copy used to be pointed at the GitHub release page, where
+running the installer does not upgrade the packaged app - it cannot see it -
+but installs a second NanoTorrent beside it, with its own settings and its own
+Start menu entry. Windows tells a packaged process its own package family name,
+so a Store build is sent to its own Store page instead. The NSIS installer asks
+before installing over a Store copy, for anyone who arrives from the website by
+hand.
+
+Three smaller things, all of them cases of the program knowing something and
+not saying it. **A failure to start is now reported** - always on stderr, and
+on Windows in a message box too unless it was launched from a terminal, where
+stderr is already being read and a modal box would just block a script. That
+includes a second copy that cannot hand its arguments to the first, which used
+to exit without a word. **A second launch raises the running window** even with
+nothing to forward, where before it silently did nothing and looked like a
+failure to open. And the Trackers tab **stopped calling LSD "Not supported"**:
+that string was hardcoded back when the engine underneath genuinely had no
+local service discovery, and librqbit 9 has it - the row now reports whatever
+Preferences ▸ Connection says, the way the PeX row beside it already did.
+
+The web interface also had its buttons, dropdowns and text fields put on one
+shared height, which they had drifted off in ones and twos.
 
 **v0.3.0** is the **BitTorrent v2** release. The engine underneath it moved from
 librqbit 8.1.1 to 9.0.1 to get there, and the patch set was re-cut against the

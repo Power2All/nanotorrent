@@ -1,5 +1,11 @@
-//! Real Windows toast notifications (the Win10/11 bottom-right popup + Action
-//! Center entry).
+//! Real desktop notifications: the Win10/11 bottom-right popup and Action
+//! Center entry on Windows, the D-Bus notification daemon on Linux, and
+//! Notification Center on macOS.
+//!
+//! The three platforms share nothing but the entry points below. Windows is
+//! hand-rolled because of the AUMID dance described next; Linux and macOS both
+//! go through `notify-rust`, which asks for nothing at startup beyond telling
+//! macOS whose notification this is.
 //!
 //! An *unpackaged* desktop app only gets toasts if Windows can find its
 //! AppUserModelID on a Start Menu shortcut - the registry key alone never
@@ -80,7 +86,22 @@ pub fn register() {
     }
 }
 
-#[cfg(not(windows))]
+/// macOS attributes a notification to a bundle identifier and falls back to
+/// Terminal's when it is never told one, which would put "Terminal" above every
+/// finished download. Claim our own, once.
+///
+/// Failure is expected and harmless for a binary run outside the .app bundle
+/// (`cargo run`), so it is logged rather than treated as a problem.
+#[cfg(target_os = "macos")]
+pub fn register() {
+    if let Err(e) = notify_rust::set_application(IDENTITY) {
+        tracing::warn!("toast: could not claim the notification identity: {e}");
+    }
+}
+
+/// Nothing to register: the D-Bus daemon takes the application name and icon
+/// with each notification rather than up front.
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn register() {}
 
 /// Create `%APPDATA%\..\Start Menu\Programs\NanoTorrent.lnk` with the AUMID
@@ -190,6 +211,15 @@ fn ensure_shortcut() -> anyhow::Result<()> {
 /// Configuration key gating the notification below.
 pub const ENABLED_KEY: &str = "notifications.download_complete";
 
+/// One string doing two jobs on the two platforms that need it: the icon name
+/// Linux looks up in the icon theme (matching `Icon=` in the `.desktop` entry
+/// installed by `packaging/linux/install-desktop-entry.sh`) and the bundle
+/// identifier macOS attributes notifications to (matching `CFBundleIdentifier`
+/// in the .app built by the release workflow). Windows uses `AUMID` above
+/// instead. Changing this means changing all three.
+#[cfg(unix)]
+const IDENTITY: &str = "org.nanotorrent.NanoTorrent";
+
 /// Show a "download complete" toast for the given torrent.
 ///
 /// The caller checks [`ENABLED_KEY`] first; this stays unconditional so the
@@ -206,5 +236,29 @@ pub fn download_complete(title: &str, name: &str) {
     }
 }
 
-#[cfg(not(windows))]
-pub fn download_complete(_title: &str, _name: &str) {}
+/// Linux and macOS, both through `notify-rust`.
+///
+/// `icon` and `appname` are no-ops on macOS (it uses the bundle claimed in
+/// [`register`]); on Linux the icon is a name the daemon looks up in the icon
+/// theme, and it is deliberately the same string the `.desktop` entry's `Icon=`
+/// key carries, so an install that has one shows the real icon and one that
+/// does not falls back to the generic glyph rather than showing something wrong.
+///
+/// The returned handle is dropped straight away. That is not neglect: on Linux
+/// it holds nothing, and on macOS dropping an unused handle is what actually
+/// posts the notification.
+#[cfg(unix)]
+pub fn download_complete(title: &str, name: &str) {
+    if let Err(e) = notify_rust::Notification::new()
+        .appname("NanoTorrent")
+        .icon(IDENTITY)
+        .summary(title)
+        .body(name)
+        .show()
+    {
+        // A headless box with no session bus lands here for every completed
+        // torrent. That is worth saying once per download and no louder: the
+        // download itself succeeded.
+        tracing::warn!("failed to show desktop notification: {e}");
+    }
+}
