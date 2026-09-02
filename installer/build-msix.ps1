@@ -35,6 +35,21 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Said BEFORE the build, not after it. The placeholder identity produces a
+# package Partner Center rejects on upload ("Invalid package identity name"),
+# and finding that out costs a full cargo release build plus makeappx if the
+# warning waits until the end.
+if ($IdentityName -eq "NanoTorrent.Test" -or $Publisher -eq "CN=NanoTorrent Test") {
+    Write-Warning "Building with the PLACEHOLDER Store identity - Partner Center will reject this package."
+    Write-Warning "  Identity : $IdentityName"
+    Write-Warning "  Publisher: $Publisher"
+    Write-Warning "For a real submission, pass the values from Partner Center (Product > Product identity):"
+    Write-Warning "  .\installer\build-msix.ps1 -IdentityName <Publisher.AppName> -Publisher `"CN=<guid>`" -PublisherDisplayName `"Power2All`" -NoSign"
+    Write-Warning "or set STORE_IDENTITY_NAME and STORE_PUBLISHER in the environment. Continuing - this build is only good for local testing."
+    Write-Host ""
+}
+
 $root = Split-Path -Parent $PSScriptRoot
 $stage = Join-Path $env:TEMP "nanotorrent-msix"
 $assets = Join-Path $stage "Assets"

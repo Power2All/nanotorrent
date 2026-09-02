@@ -2174,7 +2174,7 @@ fn on_torrent_added(
         let mut rows = Vec::new();
 
         // Peer-discovery sources. librqbit can't attribute per-torrent peer
-        // counts to a source and has no LSD, so these are status-only.
+        // counts to a source, so these are status-only - no seeds/leeches.
         let dht_status = if paused {
             tr.i18n("tracker_paused")
         } else {
@@ -2187,7 +2187,16 @@ fn on_torrent_added(
             }
         };
         rows.push(TrackerRow::source("DHT", dht_status));
-        rows.push(TrackerRow::source("LSD", tr.i18n("tracker_not_supported")));
+        let lsd_on = crate::core::configuration::Configuration::new(self.db.clone())
+            .get_bool("libtorrent.enable_lsd");
+        let lsd_status = if paused {
+            tr.i18n("tracker_paused")
+        } else if lsd_on {
+            tr.i18n("tracker_enabled")
+        } else {
+            tr.i18n("tracker_disabled")
+        };
+        rows.push(TrackerRow::source("LSD", lsd_status));
         let pex_on = crate::core::configuration::Configuration::new(self.db.clone())
             .get_bool("libtorrent.enable_pex");
         let pex_status = if paused {

@@ -32,6 +32,10 @@ pub fn usage(tr: &Translator) -> String {
             "\n",
             "{}\n",
             "\n",
+            "  nanotorrent --plugins on|off      {}\n",
+            "\n",
+            "{}\n",
+            "\n",
             "  bind_address    {}\n",
             "  port            {}\n",
             "  username        {}\n",
@@ -52,6 +56,8 @@ pub fn usage(tr: &Translator) -> String {
         tr.i18n("cli_web_flag_password"),
         tr.i18n("cli_web_flag_status"),
         tr.i18n("cli_web_flag_set"),
+        tr.i18n("cli_plugins_header"),
+        tr.i18n("cli_plugins_flag_onoff"),
         tr.i18n("cli_web_settings_header"),
         tr.i18n("cli_web_bind_address"),
         tr.i18n("cli_web_port"),
@@ -72,7 +78,7 @@ pub fn handle(args: &[String]) -> Result<bool> {
     };
     if !matches!(
         flag,
-        "--webui" | "--set-web-password" | "--webui-status" | "--webui-set"
+        "--webui" | "--set-web-password" | "--webui-status" | "--webui-set" | "--plugins"
     ) {
         return Ok(false);
     }
@@ -105,6 +111,29 @@ pub fn handle(args: &[String]) -> Result<bool> {
                     "Web interface {}. Restart NanoTorrent for it to take effect.",
                     if on { "enabled" } else { "disabled" }
                 );
+            }
+        }
+
+        "--plugins" => {
+            let on = match args.get(1).map(String::as_str) {
+                Some("on") | Some("true") | Some("1") => true,
+                Some("off") | Some("false") | Some("0") => false,
+                _ => anyhow::bail!("{}", usage(&tr)),
+            };
+            cfg.set(crate::plugins::ENABLED_KEY, &on);
+
+            if on {
+                // Enabling with an empty folder is silent otherwise, which
+                // looks identical to the host failing to start.
+                let dir = crate::plugins::plugin_dir(&env);
+                println!(
+                    "Plugin host enabled. Put .rhai files in:\n  {}\n\n\
+                     Plugins run with the same reach over the session as the web API.\n\
+                     Restart NanoTorrent for it to take effect.",
+                    dir.display()
+                );
+            } else {
+                println!("Plugin host disabled. Restart NanoTorrent for it to take effect.");
             }
         }
 
@@ -265,6 +294,7 @@ mod tests {
                                 | "--set-web-password"
                                 | "--webui-status"
                                 | "--webui-set"
+                                | "--plugins"
                         ),
                         "the usage text mentions {flag} but handle() does not match it"
                     );

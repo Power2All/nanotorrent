@@ -22,6 +22,20 @@ export struct NamedRule {
     rule: string,
 }
 
+export struct PluginRow {
+    name: string,
+    /// The user's switch. Stays true for a plugin that failed to load - the
+    /// error is a fact about the script, not a setting to be silently undone.
+    enabled: bool,
+    /// Why it will not run. Empty when it compiled.
+    error: string,
+    /// What the script asks for, already rendered as a human sentence.
+    /// Empty when it asks for nothing.
+    permissions: string,
+    /// It wants access the user has not approved, so it is being held.
+    needs-approval: bool,
+}
+
 component Labelled inherits HorizontalLayout {
     in property <string> label;
     in property <length> label-width: 190px;
@@ -73,7 +87,8 @@ export component PreferencesDialog inherits Window {
         max(tb2.preferred-height,
         max(tb3.preferred-height,
         max(tb4.preferred-height,
-        max(tb5.preferred-height, tb6.preferred-height)))));
+        max(tb5.preferred-height,
+        max(tb6.preferred-height, tb7.preferred-height))))));
     // Tab bar, footer row, and the 12px padding top and bottom plus 10px
     // between the tabs and the footer.
     property <length> chrome: 40px + foot.preferred-height + 34px;
@@ -152,6 +167,12 @@ export component PreferencesDialog inherits Window {
     // False while the expression does not parse - the same signal the console
     // gives, and Save stays disabled until it does.
     in property <bool> filter-valid: true;
+    in property <[PluginRow]> plugins;
+    in-out property <bool> plugins-enabled;
+    callback toggle-plugin(int, bool);
+    callback approve-plugin(int);
+    callback open-plugin-folder();
+
     callback pick-label(int);
     callback pick-filter(int);
     callback save-label();
@@ -635,6 +656,113 @@ export component PreferencesDialog inherits Window {
                             }
                         }
                         Rectangle { vertical-stretch: 1; }
+                    }
+                }
+            }
+
+            Tab {
+                title: L.s(L.revision, "plugins");
+                ScrollView {
+                    vertical-scrollbar-policy: as-needed;
+                    tb7 := VerticalLayout {
+                        padding: 12px;
+                        spacing: 10px;
+
+                        // The master switch first: the per-plugin boxes below
+                        // decide which plugins run, this decides whether any
+                        // do at all. Off by default - a plugin is arbitrary code.
+                        CheckBox {
+                            text: L.s(L.revision, "plugins_enabled");
+                            checked <=> root.plugins-enabled;
+                        }
+                        Text {
+                            text: L.s(L.revision, "plugins_security_note");
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: Palette.foreground.transparentize(0.35);
+                        }
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            min-height: 140px;
+                            border-color: Palette.border;
+                            border-width: 1px;
+                            border-radius: 4px;
+
+                            // Empty state: a blank box with no explanation
+                            // reads as a bug rather than as "you have not
+                            // written one yet".
+                            if root.plugins.length == 0: Text {
+                                text: L.s(L.revision, "plugins_none");
+                                x: 8px;
+                                width: parent.width - 16px;
+                                wrap: word-wrap;
+                                vertical-alignment: center;
+                                font-size: 12px;
+                                color: Palette.foreground.transparentize(0.35);
+                            }
+
+                            ListView {
+                                for p[i] in root.plugins: Rectangle {
+                                    height: row.preferred-height;
+                                    row := VerticalLayout {
+                                        padding: 6px;
+                                        spacing: 2px;
+                                        HorizontalLayout {
+                                            spacing: 6px;
+                                            CheckBox {
+                                                text: p.name;
+                                                checked: p.enabled;
+                                                enabled: root.plugins-enabled;
+                                                toggled => { root.toggle-plugin(i, self.checked); }
+                                            }
+                                            Rectangle { horizontal-stretch: 1; }
+                                        }
+                                        // Under the still-ticked box, so the
+                                        // state reads as "on, but broken"
+                                        // rather than the switch having moved.
+                                        if p.error != "": Text {
+                                            text: "\u{26a0} " + p.error;
+                                            wrap: word-wrap;
+                                            font-size: 11px;
+                                            color: #d13438;
+                                        }
+                                        // What it can reach, in words. Shown
+                                        // whether or not it is approved, so it
+                                        // stays checkable after the fact.
+                                        if p.permissions != "": Text {
+                                            text: L.s(L.revision, "plugins_access") + ": " + p.permissions;
+                                            wrap: word-wrap;
+                                            font-size: 11px;
+                                            color: Palette.foreground.transparentize(0.3);
+                                        }
+                                        if p.needs-approval: HorizontalLayout {
+                                            spacing: 8px;
+                                            alignment: start;
+                                            Text {
+                                                text: "\u{26a1} " + L.s(L.revision, "plugins_needs_approval");
+                                                vertical-alignment: center;
+                                                font-size: 11px;
+                                                color: #b06000;
+                                            }
+                                            Button {
+                                                text: L.s(L.revision, "plugins_approve");
+                                                clicked => { root.approve-plugin(i); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Button {
+                                text: L.s(L.revision, "plugins_open_folder");
+                                clicked => { root.open-plugin-folder(); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
                     }
                 }
             }

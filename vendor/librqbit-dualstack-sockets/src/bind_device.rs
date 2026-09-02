@@ -24,7 +24,10 @@ impl BindDevice {
     }
 
     #[cfg(windows)]
-    pub fn new_from_name(name: &str) -> crate::Result<Self> {
+    // NanoTorrent: `_name`, not `name`. Bind-to-device is not supported on
+    // Windows, so the stub ignores its argument and upstream's own build emits
+    // an unused-variable warning for it on every Windows compile.
+    pub fn new_from_name(_name: &str) -> crate::Result<Self> {
         Err(Error::BindDeviceNotSupported)
     }
 

@@ -31,6 +31,7 @@ mod buildinfo;
 mod cli;
 mod core;
 mod ipc;
+mod plugins;
 mod ui;
 #[cfg(feature = "ui-slint")]
 mod ui_slint;
@@ -363,6 +364,18 @@ fn run() -> anyhow::Result<()> {
             None
         }
     };
+
+    // Plugins last: they subscribe to session events and may call straight
+    // back into it, so everything they can reach has to exist first. Off
+    // unless plugins.enabled, and never fatal - see plugins::spawn.
+    //
+    // The example is written before the host starts, but it is switched off,
+    // so this start will not load it either way.
+    plugins::seed_example(&env, &cfg);
+    // A grant is keyed by name, so a deleted plugin's approval must not be
+    // waiting for the next file that happens to use the same one.
+    plugins::prune_grants(&env, &cfg);
+    plugins::spawn(session.clone(), cfg.clone(), env.clone());
 
     let ctx = AppContext {
         env,

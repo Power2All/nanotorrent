@@ -37,6 +37,7 @@ apply to `vendor/librqbit-tracker-comms`; everything else applies to
 | 0011 | synthetic peer | 1 | opt-in seam |
 | 0012 | upload-only (BEP 21) | 1 | **behaviour** |
 | 0013 | Windows UDP resets (`-sockets`) | 1 | **bug fix** |
+| 0014 | quiet an upstream warning (`-sockets`) | 1 | cosmetic |
 
 ## 0001 - engine visibility
 
@@ -460,6 +461,20 @@ the DHT, uTP and LSD together.
 
 Measured afterwards: the routing table reaches ~1200 nodes and drives requests
 to completion, where before it never grew past what was loaded from cache.
+
+## 0014 - quiet an upstream warning (`0014-quiet-upstream-warning-sockets.patch`)
+
+Applies to **`vendor/librqbit-dualstack-sockets`**. One character.
+
+`BindDevice::new_from_name` has a `#[cfg(windows)]` arm that returns
+`BindDeviceNotSupported` without looking at its argument, so every Windows
+build of the crate emits `unused variable: name`. Renamed to `_name`.
+
+Purely cosmetic, and upstream's rather than ours - but a warning nobody can act
+on is a warning everybody learns to scroll past, and the build is otherwise
+clean. Carried as a patch rather than an edit so `tools/update-librqbit.ps1`
+does not drop it on the next version bump.
+
 
 ## What is still missing for v2
 
