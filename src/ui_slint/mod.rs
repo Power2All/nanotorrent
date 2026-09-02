@@ -390,6 +390,13 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
                 // A second instance forwards its argv here rather than
                 // opening a second window - see ipc::init.
                 if let Some(forwarded) = ui.ipc.as_ref().and_then(|s| s.try_recv()) {
+                    // Raise first, and even with nothing forwarded. Launching
+                    // the app a second time IS a request to see it, and doing
+                    // nothing is indistinguishable from failing to start -
+                    // especially when the window is minimised to the tray.
+                    if let Some(window) = w.upgrade() {
+                        restore(&window);
+                    }
                     handle_params(&ui, &forwarded);
                 }
                 poll_create_torrent(&ui);
@@ -2959,6 +2966,109 @@ fn clamp_to_screen(window: &impl slint::ComponentHandle, set: impl FnOnce(f32)) 
 
 /// Open the Preferences dialog, building it on first use and re-showing the
 /// same window - with every tab reloaded - after that.
+
+/// Rebuild the Plugins list from disk.
+///
+/// Separate from `wire_plugins` because a callback may call this, and
+/// registering a handler from inside that same handler is a panic in Slint
+/// ("Callback Handler set while called") - which is exactly what Approve did
+/// until it was split.
+fn refresh_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
+    let dir = crate::plugins::plugin_dir(&ui.env);
+    let tr = ui.tr.borrow();
+    let rows: Vec<PluginRow> = crate::plugins::scan(&dir, &ui.cfg)
+        .into_iter()
+        .map(|p| {
+            // Descriptions, not tags: "remove" is not a decision anyone can
+            // make, "Remove torrents and delete their files" is.
+            let mut what: Vec<String> = p
+                .requested
+                .iter()
+                .map(|perm| tr.i18n(perm.describe_key()))
+                .collect();
+            // A typo in the header is shown rather than hidden: it means the
+            // script expects access it will not get.
+            what.extend(p.unknown.iter().map(|u| format!("? {u}")));
+            PluginRow {
+                needs_approval: !p.granted && !p.requested.is_empty(),
+                permissions: SharedString::from(what.join(", ")),
+                name: SharedString::from(p.name),
+                enabled: p.enabled,
+                error: SharedString::from(p.error.unwrap_or_default()),
+            }
+        })
+        .collect();
+    drop(tr);
+    d.set_plugins(ModelRc::from(Rc::new(VecModel::from(rows))));
+    d.set_plugins_enabled(ui.cfg.get_bool(crate::plugins::ENABLED_KEY));
+}
+
+/// Fill the Plugins tab and wire its callbacks.
+///
+/// Like the rest of this dialog, the on/off toggles are not written as they
+/// are clicked - `save_plugins` writes them on Ok. Approve is the exception:
+/// consent is a decision in its own right, not a preference, so it is stored
+/// immediately and Cancel does not take it back.
+fn wire_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
+    refresh_plugins(d, ui);
+    let dir = crate::plugins::plugin_dir(&ui.env);
+
+    {
+        let weak = d.as_weak();
+        d.on_toggle_plugin(move |index, on| {
+            let Some(dd) = weak.upgrade() else { return };
+            let m = dd.get_plugins();
+            let Some(mut row) = m.row_data(index as usize) else { return };
+            row.enabled = on;
+            m.set_row_data(index as usize, row);
+        });
+    }
+
+    {
+        let (weak, u, dir2) = (d.as_weak(), ui.clone(), dir.clone());
+        d.on_approve_plugin(move |index| {
+            let Some(dd) = weak.upgrade() else { return };
+            let Some(row) = dd.get_plugins().row_data(index as usize) else { return };
+            // Approve exactly what the script asks for TODAY, re-read from
+            // disk rather than trusting the row: the file may have changed
+            // since the dialog was opened.
+            let name = row.name.to_string();
+            let requested = crate::plugins::scan(&dir2, &u.cfg)
+                .into_iter()
+                .find(|p| p.name == name)
+                .map(|p| p.requested)
+                .unwrap_or_default();
+            crate::plugins::grant(&u.cfg, &name, &requested);
+            // Model only - re-wiring here would re-register this very callback.
+            refresh_plugins(&dd, &u);
+        });
+    }
+
+    {
+        let dir = dir.clone();
+        d.on_open_plugin_folder(move || {
+            // Created on demand: the folder does not exist until someone wants
+            // it, and "open" on a missing path just fails silently.
+            if let Err(err) = std::fs::create_dir_all(&dir) {
+                tracing::error!("cannot create {}: {err}", dir.display());
+                return;
+            }
+            if let Err(err) = open::that_detached(&dir) {
+                tracing::error!("cannot open {}: {err}", dir.display());
+            }
+        });
+    }
+}
+
+/// Write the Plugins tab back. Called from `save_preferences`.
+fn save_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
+    ui.cfg
+        .set(crate::plugins::ENABLED_KEY, &d.get_plugins_enabled());
+    for row in d.get_plugins().iter() {
+        crate::plugins::set_enabled(&ui.cfg, row.name.as_str(), row.enabled);
+    }
+}
+
 fn open_preferences(ui: &Rc<Ui>) {
     if let Some(existing) = ui.prefs_dialog.borrow().as_ref() {
         // Reload rather than just re-showing: the dialog is kept alive between
@@ -2968,6 +3078,7 @@ fn open_preferences(ui: &Rc<Ui>) {
         load_preferences(existing, ui);
         wire_rules(existing, ui);
         wire_web(existing, ui);
+        wire_plugins(existing, ui);
         let _ = existing.show();
         return;
     }
@@ -2983,6 +3094,7 @@ fn open_preferences(ui: &Rc<Ui>) {
     load_preferences(&dialog, ui);
     wire_rules(&dialog, ui);
     wire_web(&dialog, ui);
+    wire_plugins(&dialog, ui);
 
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
@@ -3194,6 +3306,7 @@ fn save_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     let cfg = &ui.cfg;
 
     save_web(d, ui);
+    save_plugins(d, ui);
 
     if let Some(lang) = ui.tr.borrow()
         .languages()

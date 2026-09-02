@@ -40,7 +40,12 @@ impl Server {
 /// process dies.
 ///
 /// Loopback only, so nothing off this machine can reach it.
-pub fn init(args: &[String]) -> Instance {
+///
+/// Returns `Err` when the port is taken by something that will not accept the
+/// hand-off. That case used to exit silently with a success code - no window,
+/// no message, nothing in a log, because this runs before logging exists. The
+/// caller turns an `Err` into a console line and a message box.
+pub fn init(args: &[String]) -> anyhow::Result<Instance> {
     match TcpListener::bind(IPC_ADDR) {
         Ok(listener) => {
             let (tx, rx) = channel();
@@ -49,17 +54,35 @@ pub fn init(args: &[String]) -> Instance {
                 .spawn(move || accept_loop(listener, tx))
                 .expect("failed to spawn IPC thread");
 
-            Instance::Primary(Server { rx })
+            Ok(Instance::Primary(Server { rx }))
         }
-        Err(_) => {
-            // Assume another instance holds the port; forward our args.
-            if let Ok(mut stream) = TcpStream::connect(IPC_ADDR) {
-                let payload = serde_json::to_vec(args).unwrap_or_default();
-                let _ = stream.write_all(&payload);
-                let _ = stream.shutdown(std::net::Shutdown::Write);
-            }
+        Err(bind_err) => {
+            // Something holds the port. Normally that is another NanoTorrent
+            // and the hand-off is the whole point - but if it will not take
+            // our arguments it is not one, and exiting quietly would leave the
+            // user with an application that simply does not start.
+            let mut stream = TcpStream::connect(IPC_ADDR).map_err(|connect_err| {
+                anyhow::anyhow!(
+                    "Another program is using {IPC_ADDR}, which NanoTorrent uses to spot a second copy of itself.
 
-            Instance::Secondary
+could not listen: {bind_err}
+could not connect: {connect_err}"
+                )
+            })?;
+
+            let payload = serde_json::to_vec(args).unwrap_or_default();
+            stream.write_all(&payload).map_err(|err| {
+                anyhow::anyhow!(
+                    "Another program is using {IPC_ADDR} and refused NanoTorrent's hand-off.
+
+NanoTorrent uses that port to spot a second copy of itself.
+
+{err}"
+                )
+            })?;
+            let _ = stream.shutdown(std::net::Shutdown::Write);
+
+            Ok(Instance::Secondary)
         }
     }
 }

@@ -65,6 +65,25 @@ fn is_newer(remote: &str, local: &str) -> bool {
     false
 }
 
+/// Where "Download" should send whoever is running *this* build.
+///
+/// A Microsoft Store copy must not be pointed at the GitHub release page. The
+/// NSIS installer does not upgrade an MSIX install - it cannot see it - so
+/// running it leaves two NanoTorrents on the machine, each with its own
+/// settings folder, and the one on the Start menu is then a coin toss. Windows
+/// tells a packaged process its own package family name, so send that one to
+/// its own Store page and leave every other install pointed at the release it
+/// came from.
+///
+/// Nothing is suppressed either way: a Store user still learns that a new
+/// version exists, they are just sent somewhere that upgrades what they have.
+fn download_url(release_url: String, package_family: Option<String>) -> String {
+    match package_family {
+        Some(pfn) => format!("ms-windows-store://pdp/?PFN={pfn}"),
+        None => release_url,
+    }
+}
+
 /// Spawns the update check on the session's tokio runtime; the result is
 /// delivered through the shared slot which the UI polls.
 pub fn check(handle: &tokio::runtime::Handle, cfg: &Configuration, slot: Slot, manual: bool) {
@@ -140,11 +159,13 @@ pub fn check(handle: &tokio::runtime::Handle, cfg: &Configuration, slot: Slot, m
             .unwrap_or_default()
             .trim_start_matches('v')
             .to_string();
-        let dl_url = json
-            .get("html_url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("https://www.nanotorrent.org")
-            .to_string();
+        let dl_url = download_url(
+            json.get("html_url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("https://www.nanotorrent.org")
+                .to_string(),
+            crate::core::environment::package_family_name(),
+        );
 
         if !version.is_empty()
             && version != ignored
@@ -183,7 +204,7 @@ fn report(slot: &Slot, update: Option<UpdateInfo>, error: Option<String>, manual
 
 #[cfg(test)]
 mod tests {
-    use super::is_newer;
+    use super::{download_url, is_newer};
 
     #[test]
     fn compares_releases() {
@@ -200,5 +221,22 @@ mod tests {
 
         // Trailing junk on a component must not read as a bump.
         assert!(!is_newer("0.1.1-rc1", "0.1.1"));
+    }
+
+    /// The whole point of `download_url`: an MSIX install sent to the GitHub
+    /// release page ends up with a second NanoTorrent beside it rather than an
+    /// upgraded one.
+    #[test]
+    fn a_store_install_is_sent_to_the_store() {
+        let release = String::from("https://github.com/Power2All/nanotorrent/releases/tag/v0.3.1");
+
+        assert_eq!(download_url(release.clone(), None), release);
+        assert_eq!(
+            download_url(
+                release,
+                Some(String::from("Power2All.NanoTorrent_jsrm4ke13n4c4"))
+            ),
+            "ms-windows-store://pdp/?PFN=Power2All.NanoTorrent_jsrm4ke13n4c4"
+        );
     }
 }

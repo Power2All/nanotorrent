@@ -1,0 +1,115 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 18d30e2..b6dab5c 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -71,6 +71,12 @@ open = "5.4.1"
+ # Generates the self-signed certificate for the web API on first use, so HTTPS
+ # works out of the box without asking anyone to run openssl.
+ rcgen = "0.13"
++# The plugin scripting engine. Pure Rust, so it adds no C build to the three
++# platform matrix, and its limits (max_operations, call depth, string/array
++# size) are constructor arguments rather than a hand-rolled debug hook - which
++# is the whole argument for it over embedding Lua. no_std off, no_module off:
++# plugins import each other from the plugin folder.
++rhai = "1"
+ # Native file/folder pickers for the Slint UI - Slint has none of its own.
+ # xdg-portal rather than the default GTK3 backend: a torrent client should not
+ # drag GTK into a Linux build to show one Open dialog, and the portal is what
+diff --git a/src/core/database.rs b/src/core/database.rs
+index c5ab5d7..1edad0b 100644
+--- a/src/core/database.rs
++++ b/src/core/database.rs
+@@ -55,6 +55,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
+     migration!("20260815000000_github_release_update_check"),
+     migration!("20260821000000_web_api_settings"),
+     migration!("20260822000000_notification_settings"),
++    migration!("20260825000000_plugin_settings"),
+ ];
+ 
+ pub struct Database {
+diff --git a/src/main.rs b/src/main.rs
+index 1629f62..a2f8cfe 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -30,6 +30,7 @@ mod bittorrent;
+ mod buildinfo;
+ mod core;
+ mod ipc;
++mod plugins;
+ mod ui;
+ #[cfg(feature = "ui-slint")]
+ mod ui_slint;
+@@ -261,6 +262,11 @@ fn run() -> anyhow::Result<()> {
+         }
+     };
+ 
++    // Plugins last: they subscribe to session events and may call straight
++    // back into it, so everything they can reach has to exist first. Off
++    // unless plugins.enabled, and never fatal - see plugins::spawn.
++    plugins::spawn(session.clone(), cfg.clone(), env.clone());
++
+     let ctx = AppContext {
+         env,
+         db,
+diff --git a/src/webui/cli.rs b/src/webui/cli.rs
+index 8166d79..27d0780 100644
+--- a/src/webui/cli.rs
++++ b/src/webui/cli.rs
+@@ -26,6 +26,10 @@ NanoTorrent web interface setup:
+   nanotorrent --webui-status        show the current settings
+   nanotorrent --webui-set KEY VALUE change one setting
+ 
++Plugins:
++
++  nanotorrent --plugins on|off      enable or disable the Rhai plugin host
++
+ Settings for --webui-set:
+ 
+   bind_address    127.0.0.1 (default) or 0.0.0.0 to reach it from the LAN
+@@ -51,7 +55,7 @@ pub fn handle(args: &[String]) -> Result<bool> {
+     };
+     if !matches!(
+         flag,
+-        "--webui" | "--set-web-password" | "--webui-status" | "--webui-set"
++        "--webui" | "--set-web-password" | "--webui-status" | "--webui-set" | "--plugins"
+     ) {
+         return Ok(false);
+     }
+@@ -86,6 +90,29 @@ pub fn handle(args: &[String]) -> Result<bool> {
+             }
+         }
+ 
++        "--plugins" => {
++            let on = match args.get(1).map(String::as_str) {
++                Some("on") | Some("true") | Some("1") => true,
++                Some("off") | Some("false") | Some("0") => false,
++                _ => anyhow::bail!("{USAGE}"),
++            };
++            cfg.set(crate::plugins::ENABLED_KEY, &on);
++
++            if on {
++                // Enabling with an empty folder is silent otherwise, which
++                // looks identical to the host failing to start.
++                let dir = crate::plugins::plugin_dir(&env);
++                println!(
++                    "Plugin host enabled. Put .rhai files in:\n  {}\n\n\
++                     Plugins run with the same reach over the session as the web API.\n\
++                     Restart NanoTorrent for it to take effect.",
++                    dir.display()
++                );
++            } else {
++                println!("Plugin host disabled. Restart NanoTorrent for it to take effect.");
++            }
++        }
++
+         "--set-web-password" => {
+             let password = read_password()?;
+             anyhow::ensure!(!password.is_empty(), "refusing to set an empty password");
+@@ -231,6 +258,7 @@ mod tests {
+                                 | "--set-web-password"
+                                 | "--webui-status"
+                                 | "--webui-set"
++                                | "--plugins"
+                         ),
+                         "USAGE mentions {flag} but handle() does not match it"
+                     );

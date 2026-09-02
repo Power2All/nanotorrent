@@ -21,7 +21,7 @@ Site: <https://www.nanotorrent.org>
 | Resume data           | libtorrent resume blobs in DB   | librqbit session persistence (JSON + `.bitv` mmap)   |
 | Translations          | `lang/*.json` embedded in a DB  | Same `lang/*.json` compiled into the executable      |
 | Single instance / IPC | Win32 mutex + `WM_COPYDATA`     | Loopback TCP on port 37549                           |
-| Notifications         | tray balloons                   | Windows 11 WinRT toasts, plus in-app toasts everywhere |
+| Notifications         | tray balloons                   | Native desktop notifications on all three platforms, plus in-app toasts |
 | Remote access         | —                               | Optional authenticated HTTPS web interface           |
 | Logging               | boost::log to file              | `tracing` to file                                    |
 
@@ -60,7 +60,7 @@ or build one yourself:
 | Any Linux (glibc 2.35+) | `nanotorrent-<ver>-x86_64.AppImage` | `linuxdeploy` — one file, no install |
 | macOS | `nanotorrent-<ver>.dmg` | `hdiutil`, from a hand-assembled `.app` |
 
-There is also an **MSIX** for the Microsoft Store — `installeruild-msix.ps1`
+There is also an **MSIX** for the Microsoft Store — `installer/build-msix.ps1`
 builds it, and a GitHub release can publish it automatically. See
 [docs/MICROSOFT-STORE.md](docs/MICROSOFT-STORE.md), which also covers what
 changes when the app runs packaged.
@@ -212,8 +212,10 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   pressing OK restarts it in place, and keeps the dialog open with the reason
   if it refuses to start — or from the command line, along with everything
   else (see below).
-- **Notifications** — real Windows 11 toasts on download-complete under a
-  registered AppUserModelID, switchable off in Preferences; a notification-area
+- **Notifications** — real desktop notifications on download-complete,
+  switchable off in Preferences: Windows 11 toasts under a registered
+  AppUserModelID, the D-Bus notification daemon on Linux, and Notification
+  Center on macOS. Also a notification-area
   (tray) icon with close-to-tray prompt, shown for both the window's close
   button and File ▸ Exit. Hovering the tray icon reports the current transfer
   rates and how many torrents are actively seeding and downloading. In-app
@@ -243,7 +245,8 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   clamped silently, and the names are the CLI's own: nothing there exposes the
   `libtorrent.` prefix half the stored keys still carry from PicoTorrent. The
   web-specific `--webui`, `--set-web-password`, `--webui-status` and
-  `--webui-set` remain, sharing one validation path with `--set`. **Help ▸
+  `--webui-set` remain, sharing one validation path with `--set`, as does
+  `--plugins on|off`. **Help ▸
   Command line** shows the same text in a window for when there is no terminal
   at hand.
 
@@ -269,8 +272,56 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   `nanotorrent-gui.exe`, so an ordinary launch never opens a console. On Linux
   and macOS none of this applies — the GUI binary is simply installed as
   `nanotorrent`.
+- **Plugins** — optional Rhai scripts in `<app data>/plugins/*.rhai`, loaded on
+  their own thread, that react to session events (`on_session_start`,
+  `on_torrent_added`, `on_torrent_completed`, `on_torrent_removed`, `on_error`,
+  `on_session_stop`) and drive the session back through the same verbs the web
+  API exposes. Rhai rather than Lua because it is pure Rust and takes its
+  sandbox limits as constructor arguments — an operation ceiling, call depth,
+  string and collection sizes — where Lua would mean a C build and a
+  hand-rolled sandbox. The engine and the compiled scripts never leave that
+  thread, so a plugin that blocks or spins cannot stall the session, the UI or
+  a web request.
+
+  **Off by default**, and each script declares up front what it may reach:
+
+  ```
+  //! permissions: read, control, notify
+  ```
+
+  Seven permissions — `read`, `control`, `add`, `labels`, `storage`, `remove`,
+  `notify` — deliberately coarse, because *"remove torrents and delete their
+  files"* is a decision someone can actually make and a list of sixteen
+  function names is not. The header is read from the source text **without
+  running the script**, since the whole point is knowing what it wants before
+  any of it executes; only the leading comment block counts, so a
+  `permissions:` line further down or inside a string cannot quietly widen the
+  request.
+
+  Enforcement is by construction, not by checking: each plugin gets **its own
+  engine**, holding only the functions it was granted. Reaching past the grant
+  fails with "function not found", so there is no way to probe for what sits
+  behind a permission the script does not hold. Consent is stored as the *set*
+  asked for rather than a yes/no flag, so a script later edited to want more
+  no longer matches what was approved and waits again. A script that asks for
+  nothing needs no approval at all — it can only `log`, and prompting for that
+  would train people to click through the prompts that matter.
+
+  Preferences ▸ Plugins lists what is installed, what each one wants in plain
+  language, and turns them on and off individually. A plugin that fails to
+  compile stays **enabled** and shows the reason — that it is broken is a fact
+  about the script, not a setting to be undone on your behalf. Also
+  `--plugins on|off` from the command line. A worked example is written into the
+  plugins folder on first run — **switched off**, unapproved, and not recreated
+  if you delete it — so there is something to read before there is something
+  running. Scripts get the same reach over the session as an authenticated web
+  client, so anyone who can write to the plugin folder can delete downloaded
+  data: see [docs/PLUGINS.md](docs/PLUGINS.md).
 - **Single-instance** — a second launch forwards its command line (torrent
-  files / magnet links) to the running instance and exits.
+  files / magnet links) to the running instance and exits, raising the existing
+  window whether or not it had anything to forward. Launching with no arguments
+  used to be a no-op, which from the outside is indistinguishable from the
+  program failing to open.
 - **Translations** — all 41 languages, **complete**: every string the UI can
   show is translated in every locale, compiled into the executable and picked
   from a scrollable list in Preferences, each shown by its native name
@@ -285,13 +336,22 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   startup* is cleared, and on demand from **Help ▸ Check for update** — which
   runs whatever that preference says, since asking is explicit, and is the only
   path that also reports "no update available" or a failure to reach GitHub.
-  The startup check stays silent unless there is something to say. Endpoint and
+  The startup check stays silent unless there is something to say. Where
+  **Download** goes depends on which install is running: a Microsoft Store copy
+  is sent to its own Store page, because the installer cannot upgrade a
+  packaged app - it would only put a second NanoTorrent beside it. Endpoint and
   toggles live in `update_checks.*` (`--set check-updates`, `--set update-url`),
   so it can be pointed at a fork.
 - **Crash log** — a panic hook writes a backtrace to the logs folder (the
   original used Crashpad; there is no upload). A failure during startup, before
-  the window exists, is shown in a message box rather than lost to the GUI
-  subsystem's absent stderr.
+  the window exists, is reported rather than lost to the GUI subsystem's absent
+  stderr. It always goes to stderr; on Windows, where a GUI-subsystem build has
+  no stderr to go to, it also raises a message box - unless it was started
+  through `nanotorrent` from a terminal, since the shim sets a variable saying
+  a console is attached and a modal dialog is the wrong answer to a command
+  someone typed (in a script it blocks until somebody clicks it). That includes
+  a second copy failing to hand its arguments to the first, which used to exit
+  silently and look exactly like not starting.
 
 ## Protocol support (BEPs)
 
@@ -358,8 +418,15 @@ require-encryption toggles for each.
   asks for permission on first launch, because LSD sends multicast and LSD is on
   by default. The bundle carries an `NSLocalNetworkUsageDescription` so the
   dialog says why. Declining disables LSD and nothing else.
-- **Desktop toasts are Windows-only.** Linux and macOS get the in-app toast;
-  the OS-level notification is not wired up on those platforms yet.
+- **Desktop notifications need the platform to provide one.** Windows and
+  macOS always can; on Linux they go to the D-Bus notification daemon, so a
+  session without one (a headless box, a bare WM) logs a warning and shows
+  nothing. The notification's icon is looked up by the same name the `.desktop`
+  entry uses, which means an install that never ran
+  `packaging/linux/install-desktop-entry.sh` gets the generic glyph - the same
+  cause as the Wayland window icon below. On macOS the notification is
+  attributed to the `.app` bundle, so a binary run straight out of
+  `target/release` may show under a different name.
 - Windows will not let an app force-set the **magnet** protocol default when
   another client registered it system-wide (anti-hijacking); the associations
   button registers NanoTorrent and opens Settings ▸ Default apps so you can
@@ -378,6 +445,67 @@ require-encryption toggles for each.
   reads, not a missing one.
 
 ## History
+
+**v0.3.1** adds the **plugin host**: optional [Rhai](https://rhai.rs) scripts
+that react to torrent lifecycle events and drive the session back. It was
+written before 0.2.1 and parked untracked ever since; what took it this long
+was not the host but deciding what a script should be allowed to do.
+
+The answer is a **permission model**. Every plugin declares what it may reach
+on one line — `//! permissions: read, control, notify` — which NanoTorrent
+reads from the source text *without running the script*, because the point is
+knowing what it wants before any of it executes. Seven permissions, coarse on
+purpose: "remove torrents and delete their files" is a decision someone can
+make, and a list of sixteen function names is not. Enforcement is by
+construction rather than by checking — each plugin gets its own engine holding
+only what it was granted, so reaching past the grant fails with "function not
+found" and there is no way to probe for what sits behind a permission you do
+not hold. Consent is stored as the *set* asked for, so a script edited to want
+more is held until the new set is approved; an updated plugin cannot quietly
+widen its own reach. A script asking for nothing needs no approval at all, since
+it can only write to the log, and prompting for that would train people to click
+through the prompts that matter.
+
+**Preferences ▸ Plugins** lists what is installed, what each one wants in plain
+language, and switches them on and off individually. A plugin that fails to
+compile stays *ticked* and shows the error with its line and column - that it is
+broken is a fact about the script, not a setting to undo on someone's behalf.
+An example plugin is written to the folder on first run, switched off.
+
+Plugins are distributed as source: Rhai has no serialised-AST or bytecode
+format, which suits a design whose permission header is only trustworthy
+because it is read from the same text that will run.
+
+0.3.1 also finishes the **notifications** story. A finished download raised a
+real toast on Windows and nothing at all on Linux or macOS, which made the
+Preferences switch a lie on two platforms out of three; both now get a native
+notification through the same one-line entry point. Linux needs a D-Bus
+notification daemon, and macOS needs to be told which bundle to attribute the
+notification to or it would show as Terminal's.
+
+And the **update prompt now knows which install it is talking to**. A
+Microsoft Store copy used to be pointed at the GitHub release page, where
+running the installer does not upgrade the packaged app - it cannot see it -
+but installs a second NanoTorrent beside it, with its own settings and its own
+Start menu entry. Windows tells a packaged process its own package family name,
+so a Store build is sent to its own Store page instead. The NSIS installer asks
+before installing over a Store copy, for anyone who arrives from the website by
+hand.
+
+Three smaller things, all of them cases of the program knowing something and
+not saying it. **A failure to start is now reported** - always on stderr, and
+on Windows in a message box too unless it was launched from a terminal, where
+stderr is already being read and a modal box would just block a script. That
+includes a second copy that cannot hand its arguments to the first, which used
+to exit without a word. **A second launch raises the running window** even with
+nothing to forward, where before it silently did nothing and looked like a
+failure to open. And the Trackers tab **stopped calling LSD "Not supported"**:
+that string was hardcoded back when the engine underneath genuinely had no
+local service discovery, and librqbit 9 has it - the row now reports whatever
+Preferences ▸ Connection says, the way the PeX row beside it already did.
+
+The web interface also had its buttons, dropdowns and text fields put on one
+shared height, which they had drifted off in ones and twos.
 
 **v0.3.0** is the **BitTorrent v2** release. The engine underneath it moved from
 librqbit 8.1.1 to 9.0.1 to get there, and the patch set was re-cut against the

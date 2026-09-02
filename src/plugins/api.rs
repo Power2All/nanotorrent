@@ -15,9 +15,16 @@ use std::sync::Arc;
 use rhai::{Array, Dynamic, Engine, Map};
 
 use crate::bittorrent::session::Session;
+use super::Permission;
+use std::collections::BTreeSet;
 
-/// Bind the host API into an engine.
-pub fn register(engine: &mut Engine, session: Arc<Session>) {
+/// Bind the host API into an engine, limited to what this plugin was granted.
+///
+/// A function whose permission is missing is NOT registered, rather than
+/// registered and refusing at call time. A script that reaches past its grant
+/// therefore fails with "function not found" - loudly, at the call site, with
+/// no way to probe for what exists behind a permission it does not hold.
+pub fn register(engine: &mut Engine, session: Arc<Session>, perms: &BTreeSet<Permission>) {
     // ---- logging -------------------------------------------------------
     // Goes to the same file as everything else, tagged with the plugin's
     // output so a misbehaving script is findable after the fact.
@@ -26,114 +33,130 @@ pub fn register(engine: &mut Engine, session: Arc<Session>) {
     });
 
     // ---- reading the session -------------------------------------------
+    if perms.contains(&Permission::Read) {
     let s = session.clone();
-    engine.register_fn("torrents", move || -> Array {
-        s.torrents(&std::collections::HashMap::new())
-            .into_iter()
-            .map(|t| Dynamic::from_map(torrent_map(&t)))
-            .collect()
-    });
+        engine.register_fn("torrents", move || -> Array {
+            s.torrents(&std::collections::HashMap::new())
+                .into_iter()
+                .map(|t| Dynamic::from_map(torrent_map(&t)))
+                .collect()
+        });
 
+        let s = session.clone();
+        engine.register_fn("torrent", move |hash: &str| -> Dynamic {
+            // A map or unit, rather than a Result: a plugin asking about a torrent
+            // that just vanished is ordinary, not an error worth aborting on.
+            match s
+                .torrents(&std::collections::HashMap::new())
+                .into_iter()
+                .find(|t| t.info_hash == hash)
+            {
+                Some(t) => Dynamic::from_map(torrent_map(&t)),
+                None => Dynamic::UNIT,
+            }
+        });
+
+        let s = session.clone();
+        engine.register_fn("exists", move |hash: &str| -> bool { s.exists(hash) });
+
+        let s = session.clone();
+        engine.register_fn("session_rates", move || -> Map {
+            let (down, up) = s.session_rates();
+            let mut map = Map::new();
+            map.insert("download".into(), Dynamic::from(down));
+            map.insert("upload".into(), Dynamic::from(up));
+            map
+        });
+    }
+
+        // ---- driving the session -------------------------------------------
+    if perms.contains(&Permission::Control) {
     let s = session.clone();
-    engine.register_fn("torrent", move |hash: &str| -> Dynamic {
-        // A map or unit, rather than a Result: a plugin asking about a torrent
-        // that just vanished is ordinary, not an error worth aborting on.
-        match s
-            .torrents(&std::collections::HashMap::new())
-            .into_iter()
-            .find(|t| t.info_hash == hash)
-        {
-            Some(t) => Dynamic::from_map(torrent_map(&t)),
-            None => Dynamic::UNIT,
-        }
-    });
+        engine.register_fn("pause", move |hash: &str| s.pause(hash));
 
-    let s = session.clone();
-    engine.register_fn("exists", move |hash: &str| -> bool { s.exists(hash) });
+        let s = session.clone();
+        engine.register_fn("resume", move |hash: &str| s.resume(hash));
 
-    let s = session.clone();
-    engine.register_fn("session_rates", move || -> Map {
-        let (down, up) = s.session_rates();
-        let mut map = Map::new();
-        map.insert("download".into(), Dynamic::from(down));
-        map.insert("upload".into(), Dynamic::from(up));
-        map
-    });
+        let s = session.clone();
+        engine.register_fn("recheck", move |hash: &str| s.recheck(hash));
+    }
 
-    // ---- driving the session -------------------------------------------
-    let s = session.clone();
-    engine.register_fn("pause", move |hash: &str| s.pause(hash));
-
-    let s = session.clone();
-    engine.register_fn("resume", move |hash: &str| s.resume(hash));
-
-    let s = session.clone();
-    engine.register_fn("recheck", move |hash: &str| s.recheck(hash));
-
-    // Two arities rather than a default argument: Rhai has no optional
+        // Two arities rather than a default argument: Rhai has no optional
     // parameters, and `remove(hash)` deleting files by accident is the kind of
     // mistake a plugin author only makes once.
+    if perms.contains(&Permission::Remove) {
     let s = session.clone();
-    engine.register_fn("remove", move |hash: &str| s.remove(hash, false));
+        engine.register_fn("remove", move |hash: &str| s.remove(hash, false));
 
+        let s = session.clone();
+        engine.register_fn("remove", move |hash: &str, delete_files: bool| {
+            s.remove(hash, delete_files)
+        });
+    }
+
+        if perms.contains(&Permission::Storage) {
     let s = session.clone();
-    engine.register_fn("remove", move |hash: &str, delete_files: bool| {
-        s.remove(hash, delete_files)
-    });
+        engine.register_fn("move_storage", move |hash: &str, folder: &str| {
+            s.move_storage(hash, folder)
+        });
+    }
 
+        if perms.contains(&Permission::Labels) {
     let s = session.clone();
-    engine.register_fn("move_storage", move |hash: &str, folder: &str| {
-        s.move_storage(hash, folder)
-    });
+        engine.register_fn("set_label", move |hash: &str, label_id: i64| {
+            // Rhai integers are i64; the label table is i32. Out-of-range means a
+            // label that cannot exist, so clear it rather than truncating into
+            // some unrelated label's id.
+            s.set_label(hash, i32::try_from(label_id).ok())
+        });
 
+        let s = session.clone();
+        engine.register_fn("clear_label", move |hash: &str| s.set_label(hash, None));
+    }
+
+        if perms.contains(&Permission::Add) {
     let s = session.clone();
-    engine.register_fn("set_label", move |hash: &str, label_id: i64| {
-        // Rhai integers are i64; the label table is i32. Out-of-range means a
-        // label that cannot exist, so clear it rather than truncating into
-        // some unrelated label's id.
-        s.set_label(hash, i32::try_from(label_id).ok())
-    });
+        engine.register_fn("add_magnet", move |uri: &str| {
+            s.add_torrent(
+                crate::bittorrent::session::AddTorrentSource::MagnetUri(uri.to_string()),
+                crate::bittorrent::session::AddParams {
+                    save_path: None,
+                    start_torrent: true,
+                    only_files: None,
+                    label_id: None,
+                },
+            )
+        });
 
-    let s = session.clone();
-    engine.register_fn("clear_label", move |hash: &str| s.set_label(hash, None));
+        let s = session.clone();
+        engine.register_fn("add_magnet", move |uri: &str, save_path: &str| {
+            s.add_torrent(
+                crate::bittorrent::session::AddTorrentSource::MagnetUri(uri.to_string()),
+                crate::bittorrent::session::AddParams {
+                    save_path: Some(save_path.to_string()),
+                    start_torrent: true,
+                    only_files: None,
+                    label_id: None,
+                },
+            )
+        });
+    }
 
-    let s = session.clone();
-    engine.register_fn("add_magnet", move |uri: &str| {
-        s.add_torrent(
-            crate::bittorrent::session::AddTorrentSource::MagnetUri(uri.to_string()),
-            crate::bittorrent::session::AddParams {
-                save_path: None,
-                start_torrent: true,
-                only_files: None,
-                label_id: None,
-            },
-        )
-    });
-
-    let s = session.clone();
-    engine.register_fn("add_magnet", move |uri: &str, save_path: &str| {
-        s.add_torrent(
-            crate::bittorrent::session::AddTorrentSource::MagnetUri(uri.to_string()),
-            crate::bittorrent::session::AddParams {
-                save_path: Some(save_path.to_string()),
-                start_torrent: true,
-                only_files: None,
-                label_id: None,
-            },
-        )
-    });
-
-    // ---- telling the user something ------------------------------------
+        // ---- telling the user something ------------------------------------
     // A desktop notification, the same channel a finished download uses. No-op
     // where the platform has none.
+    if perms.contains(&Permission::Notify) {
     engine.register_fn("notify", |title: &str, body: &str| {
-        crate::core::toast::download_complete(title, body);
-    });
+            crate::core::toast::download_complete(title, body);
+        });
 
-    // ponytail: no `run()` / `read_file()` / `write_file()`, so post-download
-    // processing has to go through a plugin calling out to something else.
-    // Adding them means a per-plugin permission prompt and a record of what was
-    // granted - do that before exposing them, not after.
+        // ponytail: no `run()` / `read_file()` / `write_file()`, so post-download
+        // processing has to go through a plugin calling out to something else.
+        // Adding them means a per-plugin permission prompt and a record of what was
+        // granted - do that before exposing them, not after.
+    }
+
+    
 }
 
 /// A torrent as a plugin sees it.

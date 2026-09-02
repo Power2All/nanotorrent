@@ -39,7 +39,15 @@ fn main() -> ExitCode {
     // whole session would be worse than the problem this solves.
     let is_flag_run = args.iter().any(|a| a.starts_with('-'));
 
-    let mut child = match Command::new(&exe).args(&args).spawn() {
+    // Tell the child a console is attached. Reached this way, a startup
+    // failure should print, not put up a modal box nobody asked for - and this
+    // is a fact the shim knows for certain, where the GUI process can only
+    // guess (GetConsoleWindow lies under MinTTY; see fatal_error).
+    let mut child = match Command::new(&exe)
+        .args(&args)
+        .env("NANOTORRENT_CONSOLE", "1")
+        .spawn()
+    {
         Ok(child) => child,
         Err(err) => {
             eprintln!("cannot run {}: {err}", exe.display());

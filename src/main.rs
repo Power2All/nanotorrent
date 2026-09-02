@@ -31,6 +31,7 @@ mod buildinfo;
 mod cli;
 mod core;
 mod ipc;
+mod plugins;
 mod ui;
 #[cfg(feature = "ui-slint")]
 mod ui_slint;
@@ -168,6 +169,14 @@ fn fatal_error(msg: &str) {
     // Free, and the right channel whenever anyone is attached to it.
     eprintln!("NanoTorrent could not start: {msg}");
 
+    // Launched through nanotorrent-cli, which attaches a console and sets this
+    // before spawning us. The eprintln above has somewhere to go, so a modal
+    // box would be pure obstruction - and worse than that in a script, where
+    // it blocks until somebody clicks it.
+    if std::env::var_os("NANOTORRENT_CONSOLE").is_some() {
+        return;
+    }
+
     // The cfg here MUST stay identical to the `windows_subsystem` attribute at
     // the top of this file: that build, and only that build, has nowhere for
     // the eprintln above to go, which is the entire reason a dialog exists.
@@ -258,7 +267,7 @@ fn run() -> anyhow::Result<()> {
     }
 
     // Port of the IPC single-instance handling in main.cpp.
-    let server = match ipc::init(&args) {
+    let server = match ipc::init(&args)? {
         ipc::Instance::Primary(server) => Some(server),
         ipc::Instance::Secondary => {
             // Options were forwarded to the running instance.
@@ -318,8 +327,16 @@ fn run() -> anyhow::Result<()> {
         buildinfo::build_stamp()
     );
 
-    // Register our AppUserModelID so Windows shows/attributes toast
-    // notifications (download complete) to NanoTorrent.
+    // ...and which install this is, for the same reason. A Microsoft Store
+    // copy and an installer copy can sit on the same machine at once, and only
+    // one of them is the one someone is looking at. It also decides where the
+    // update prompt points - see updatechecker::download_url.
+    if let Some(pfn) = core::environment::package_family_name() {
+        tracing::info!("packaged install (Microsoft Store): {pfn}");
+    }
+
+    // Claim the identity notifications are attributed to: an AppUserModelID on
+    // Windows, the bundle identifier on macOS. Nothing to do on Linux.
     core::toast::register();
 
     let db = Arc::new(Database::open(&env)?);
@@ -363,6 +380,18 @@ fn run() -> anyhow::Result<()> {
             None
         }
     };
+
+    // Plugins last: they subscribe to session events and may call straight
+    // back into it, so everything they can reach has to exist first. Off
+    // unless plugins.enabled, and never fatal - see plugins::spawn.
+    //
+    // The example is written before the host starts, but it is switched off,
+    // so this start will not load it either way.
+    plugins::seed_example(&env, &cfg);
+    // A grant is keyed by name, so a deleted plugin's approval must not be
+    // waiting for the next file that happens to use the same one.
+    plugins::prune_grants(&env, &cfg);
+    plugins::spawn(session.clone(), cfg.clone(), env.clone());
 
     let ctx = AppContext {
         env,

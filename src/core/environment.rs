@@ -167,6 +167,53 @@ impl Environment {
     }
 }
 
+/// The MSIX package family name this process is running under, or `None` for
+/// an ordinary installer or portable build.
+///
+/// This is how a Microsoft Store copy tells itself apart from an NSIS one, and
+/// it matters because the two are separate installs that can sit on the same
+/// machine at once - see `updatechecker::download_url`, which is the only
+/// caller that has needed it so far.
+///
+/// `GetCurrentPackageFamilyName` answers `APPMODEL_ERROR_NO_PACKAGE` when
+/// there is no package identity, which is the documented test. Declared by
+/// hand rather than by turning on another winapi feature, matching how
+/// `core::toast` reaches into shell32.
+#[cfg(windows)]
+pub fn package_family_name() -> Option<String> {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentPackageFamilyName(length: *mut u32, name: *mut u16) -> i32;
+    }
+
+    const ERROR_INSUFFICIENT_BUFFER: i32 = 122;
+
+    // Two calls, the usual Win32 shape: the first asks how long the name is.
+    // A packaged process answers "buffer too small"; anything else (in
+    // practice APPMODEL_ERROR_NO_PACKAGE) means there is nothing to ask for.
+    let mut len: u32 = 0;
+    if unsafe { GetCurrentPackageFamilyName(&mut len, std::ptr::null_mut()) }
+        != ERROR_INSUFFICIENT_BUFFER
+    {
+        return None;
+    }
+
+    let mut buf = vec![0u16; len as usize];
+    if unsafe { GetCurrentPackageFamilyName(&mut len, buf.as_mut_ptr()) } != 0 {
+        return None;
+    }
+
+    // `len` comes back as a character count that includes the trailing NUL.
+    let chars = (len as usize).saturating_sub(1).min(buf.len());
+    (chars > 0).then(|| String::from_utf16_lossy(&buf[..chars]))
+}
+
+/// No MSIX anywhere but Windows, so nothing to ask.
+#[cfg(not(windows))]
+pub fn package_family_name() -> Option<String> {
+    None
+}
+
 /// Recursively copy a directory, skipping anything that cannot be read.
 ///
 /// Used only by the one-time PicoTorrent data takeover. Best-effort by design:
@@ -192,6 +239,16 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `cargo test` never runs inside an MSIX container, so the answer here is
+    /// known. It is worth pinning because the failure mode of the two-call
+    /// buffer dance is not a crash: it is `Some(garbage)`, which would send
+    /// every installer user to the Microsoft Store instead of the release
+    /// they actually came from.
+    #[test]
+    fn a_plain_build_reports_no_package() {
+        assert_eq!(package_family_name(), None);
+    }
 
     /// Guards the per-platform branching in `user_data_dir`. Only the host's
     /// arm is compiled, so CI on each OS is what covers the other two - the

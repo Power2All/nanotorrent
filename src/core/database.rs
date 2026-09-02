@@ -55,9 +55,12 @@ const MIGRATIONS: &[(&str, &str)] = &[
     migration!("20260815000000_github_release_update_check"),
     migration!("20260821000000_web_api_settings"),
     migration!("20260822000000_notification_settings"),
+    migration!("20260825000000_plugin_settings"),
     migration!("20260828000000_webui_advanced_settings"),
     migration!("20260901000000_show_padding_files"),
     migration!("20260901000001_enable_utp"),
+    migration!("20260902000000_plugin_disabled_list"),
+    migration!("20260902000001_plugin_grants"),
 ];
 
 pub struct Database {

@@ -80,8 +80,8 @@ Trusted People**, then `Add-AppxPackage`.
 ## What changes when the app is packaged
 
 The MSIX runs the ordinary desktop build unchanged (`runFullTrust`), but the
-container changes three things. None of them crash — every affected path is
-best-effort and writes to HKCU — but two behave differently:
+container changes things. None of them crash — every affected path is
+best-effort and writes to HKCU — but they behave differently:
 
 1. **Settings move.** `%LOCALAPPDATA%\NanoTorrent` is redirected into the
    package's own store, so a Store install does not see the data of an installer
@@ -93,10 +93,20 @@ best-effort and writes to HKCU — but two behave differently:
 3. **Toasts may not appear.** `core::toast` registers an AppUserModelID and a
    Start Menu shortcut by hand; a packaged app gets its identity from the
    manifest instead, and the hand-made one does not match.
+4. **The update prompt points at the Store**, not at the GitHub release page.
+   This one is deliberate: the NSIS installer cannot upgrade an MSIX package,
+   only install a second NanoTorrent beside it, so a packaged build is sent to
+   `ms-windows-store://pdp/?PFN=<its own family name>` instead. See
+   `updatechecker::download_url`. The installer asks before installing over a
+   Store copy, which covers the same mistake made by hand.
 
-Fixing 2 and 3 properly means detecting a packaged process
-(`GetCurrentPackageFullName` returns `APPMODEL_ERROR_NO_PACKAGE` when
-unpackaged) and skipping both paths. That is not done yet.
+Detecting a packaged process is `core::environment::package_family_name`:
+`GetCurrentPackageFamilyName` answers `APPMODEL_ERROR_NO_PACKAGE` when there is
+no package identity, and the family name itself is what item 4 needs. Fixing 2
+and 3 is now a branch on that rather than new machinery - skip the associations
+writes and skip the hand-made shortcut when it returns `Some`. Neither is done,
+and neither can be checked from an unpackaged dev build, which is the reason to
+do them together with a real Store install in front of you.
 
 ## Automating the update from a GitHub release
 

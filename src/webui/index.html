@@ -28,6 +28,12 @@
   --bg: #ffffff; --fg: #1a1a1a; --muted: #6a6a6a; --line: #e0e0e0;
   --panel: #f6f6f6; --accent: #0a66c2; --bar: #0a66c2; --bar-bg: #e4e4e4;
   --danger: #b3261e; --ok: #1a7f37;
+  /* One height for every single-line control. They each used to carry their
+     own vertical padding (.3 / .35 / .45rem) and no height at all, so a
+     button, a dropdown and a text box on the same row were three different
+     heights - the browser's intrinsic sizing differs per element type.
+     Horizontal padding still varies by control; only the height is shared. */
+  --control-h: 2.2rem;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -47,6 +53,13 @@
 select {
   font: inherit; padding: .3rem .4rem; border: 1px solid var(--line);
   border-radius: 6px; background: var(--bg); color: var(--fg);
+}
+button,
+select,
+input[type=text],
+input[type=number],
+input[type=file] {
+  height: var(--control-h);
 }
 * { box-sizing: border-box; }
 body {
@@ -162,7 +175,7 @@ dialog::backdrop { background: #0008; }
 .dlg-body { padding: 1rem; display: grid; gap: .8rem; }
 .dlg-foot { padding: .8rem 1rem; border-top: 1px solid var(--line); display: flex; gap: .5rem; justify-content: flex-end; }
 label { display: grid; gap: .3rem; font-size: .85rem; color: var(--muted); }
-input[type=text], input[type=file], textarea {
+input[type=text], input[type=number], input[type=file], textarea {
   font: inherit; padding: .45rem .55rem; border: 1px solid var(--line);
   border-radius: 6px; background: var(--panel); color: var(--fg); width: 100%;
 }
@@ -211,8 +224,10 @@ textarea { resize: vertical; min-height: 2.4rem; }
 }
 /* The file input's inner button is a native control and keeps the browser's
    own light styling on a dark page unless it is styled by name. */
+input[type=file] { padding-top: 0; padding-bottom: 0; }
 input[type=file]::file-selector-button {
-  font: inherit; margin-right: .6rem; padding: .3rem .6rem; cursor: pointer;
+  font: inherit; margin-right: .6rem; padding: 0 .6rem; cursor: pointer;
+  height: calc(var(--control-h) - .7rem);
   border: 1px solid var(--line); border-radius: 5px;
   background: var(--bg); color: var(--fg);
 }
