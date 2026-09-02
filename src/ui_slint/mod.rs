@@ -390,6 +390,13 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
                 // A second instance forwards its argv here rather than
                 // opening a second window - see ipc::init.
                 if let Some(forwarded) = ui.ipc.as_ref().and_then(|s| s.try_recv()) {
+                    // Raise first, and even with nothing forwarded. Launching
+                    // the app a second time IS a request to see it, and doing
+                    // nothing is indistinguishable from failing to start -
+                    // especially when the window is minimised to the tray.
+                    if let Some(window) = w.upgrade() {
+                        restore(&window);
+                    }
                     handle_params(&ui, &forwarded);
                 }
                 poll_create_torrent(&ui);

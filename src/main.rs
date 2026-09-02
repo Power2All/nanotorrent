@@ -169,6 +169,14 @@ fn fatal_error(msg: &str) {
     // Free, and the right channel whenever anyone is attached to it.
     eprintln!("NanoTorrent could not start: {msg}");
 
+    // Launched through nanotorrent-cli, which attaches a console and sets this
+    // before spawning us. The eprintln above has somewhere to go, so a modal
+    // box would be pure obstruction - and worse than that in a script, where
+    // it blocks until somebody clicks it.
+    if std::env::var_os("NANOTORRENT_CONSOLE").is_some() {
+        return;
+    }
+
     // The cfg here MUST stay identical to the `windows_subsystem` attribute at
     // the top of this file: that build, and only that build, has nowhere for
     // the eprintln above to go, which is the entire reason a dialog exists.
@@ -259,7 +267,7 @@ fn run() -> anyhow::Result<()> {
     }
 
     // Port of the IPC single-instance handling in main.cpp.
-    let server = match ipc::init(&args) {
+    let server = match ipc::init(&args)? {
         ipc::Instance::Primary(server) => Some(server),
         ipc::Instance::Secondary => {
             // Options were forwarded to the running instance.
