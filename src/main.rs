@@ -387,7 +387,7 @@ fn run() -> anyhow::Result<()> {
     //
     // The example is written before the host starts, but it is switched off,
     // so this start will not load it either way.
-    plugins::seed_example(&env, &cfg);
+    plugins::seed_examples(&plugins::plugin_dir(&env), &cfg);
     // A grant is keyed by name, so a deleted plugin's approval must not be
     // waiting for the next file that happens to use the same one.
     plugins::prune_grants(&env, &cfg);

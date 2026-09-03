@@ -14,6 +14,7 @@
 // blocks or spins cannot stall the session, the UI or a web request.
 
 mod api;
+pub mod ui;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -37,6 +38,11 @@ pub const DISABLED_KEY: &str = "plugins.disabled";
 /// Ceiling on a single handler call, in Rhai operations. A script that loops
 /// forever dies here instead of pinning a core.
 const MAX_OPERATIONS: u64 = 500_000;
+
+/// How often `on_tick` fires. One fixed interval rather than a per-plugin one:
+/// a plugin that wants an hour counts sixty ticks, which is a line of Rhai,
+/// where a configurable interval is a header field, a parser and a scheduler.
+const TICK: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// One loaded script.
 struct Plugin {
@@ -69,29 +75,57 @@ pub fn spawn(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environmen
     if !cfg.get_bool(ENABLED_KEY) {
         return;
     }
+    start(session, cfg, env);
+}
 
-    let dir = plugin_dir(&env);
-    let scripts = match discover(&dir) {
-        Ok(scripts) if scripts.is_empty() => {
-            tracing::info!("plugins enabled, none found in {}", dir.display());
-            return;
-        }
-        Ok(scripts) => scripts,
-        Err(err) => {
-            tracing::error!("could not read plugin folder {}: {err}", dir.display());
-            return;
-        }
+/// The running host's control channel, so a settings change can reach it.
+///
+/// A global rather than something threaded through the UI: Preferences already
+/// knows the session, the configuration and the environment, and making it
+/// carry a plugin-host handle as well would put the host into the signature of
+/// everything that opens a dialog.
+fn control() -> &'static std::sync::Mutex<Option<std::sync::mpsc::Sender<Wake>>> {
+    static CONTROL: std::sync::OnceLock<
+        std::sync::Mutex<Option<std::sync::mpsc::Sender<Wake>>>,
+    > = std::sync::OnceLock::new();
+    CONTROL.get_or_init(Default::default)
+}
+
+/// Apply a change to the plugin settings without restarting NanoTorrent.
+///
+/// Reloading is deliberately "as if it had just started": the old set is
+/// stopped, its surfaces are dropped, and the new set is compiled and started
+/// fresh. A plugin therefore loses whatever it was keeping in its scope, which
+/// is the same thing a restart would have done and is far easier to reason
+/// about than trying to keep some plugins alive across the change.
+pub fn reload(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environment>) {
+    // The lock is released before `start`, which wants it too.
+    let running = {
+        let Ok(slot) = control().lock() else { return };
+        slot.clone()
     };
 
-    // Individually switched-off plugins never reach the engine at all - not
-    // compiled, not run - so a disabled plugin cannot cost anything or fail.
-    let off = disabled(cfg.as_ref());
-    let scripts: Vec<PathBuf> = scripts
-        .into_iter()
-        .filter(|p| !off.contains(&stem(p)))
-        .collect();
-    if scripts.is_empty() {
-        tracing::info!("plugins enabled, but every plugin found is switched off");
+    match (cfg.get_bool(ENABLED_KEY), running) {
+        (true, Some(tx)) => {
+            let _ = tx.send(Wake::Reload);
+        }
+        (true, None) => start(session, cfg, env),
+        (false, Some(tx)) => {
+            let _ = tx.send(Wake::Stop);
+        }
+        (false, None) => {}
+    }
+}
+
+/// Start the host thread, unless one is already running.
+///
+/// Unlike before, this does NOT give up when there is nothing to load. The
+/// host stays alive for as long as plugins are switched on, so that approving
+/// or ticking a plugin later has somewhere to be delivered - otherwise the
+/// first plugin someone approves would need a restart after all.
+fn start(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environment>) {
+    let Ok(mut slot) = control().lock() else { return };
+    if slot.is_some() {
         return;
     }
 
@@ -99,12 +133,60 @@ pub fn spawn(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environmen
     // raised between spawn and the first recv would otherwise be lost.
     let rx = session.subscribe();
 
-    let spawned = std::thread::Builder::new()
-        .name("plugins".into())
-        .spawn(move || run(session, cfg, scripts, rx));
+    // Session events, window clicks and settings changes arrive from three
+    // places and the standard library cannot wait on three channels. One relay
+    // folds the session into a single queue, which is also what makes the tick
+    // deadline work: everything the loop can wake for comes from one place.
+    let (wake_tx, wake_rx) = std::sync::mpsc::channel::<Wake>();
+    {
+        let tx = wake_tx.clone();
+        ui::set_event_sink(move |event| {
+            let _ = tx.send(Wake::Ui(event));
+        });
+    }
 
-    if let Err(err) = spawned {
-        tracing::error!("could not start the plugin host: {err}");
+    let relay_tx = wake_tx.clone();
+    let relay = std::thread::Builder::new()
+        .name("plugin-events".into())
+        .spawn(move || {
+            while let Ok(event) = rx.recv() {
+                if relay_tx.send(Wake::Session(event)).is_err() {
+                    return;
+                }
+            }
+            // The session dropped its sender. Said explicitly because the UI
+            // and the control channel hold clones of `wake_tx`, so the channel
+            // never closes on its own and the loop would wait forever.
+            let _ = relay_tx.send(Wake::Shutdown);
+        });
+    if let Err(err) = relay {
+        tracing::error!("could not start the plugin event relay: {err}");
+        return;
+    }
+
+    let dir = plugin_dir(&env);
+    match std::thread::Builder::new()
+        .name("plugins".into())
+        .spawn(move || run(session, cfg, dir, wake_rx))
+    {
+        Ok(_) => *slot = Some(wake_tx),
+        Err(err) => tracing::error!("could not start the plugin host: {err}"),
+    }
+}
+
+/// The `.rhai` files that should be loaded right now: present on disk, and not
+/// individually switched off.
+///
+/// Switched-off plugins never reach an engine at all - not compiled, not run -
+/// so a disabled plugin cannot cost anything or fail.
+fn enabled_scripts(dir: &Path, cfg: &Configuration) -> Vec<PathBuf> {
+    let off = disabled(cfg);
+    match discover(dir) {
+        Ok(scripts) => scripts.into_iter().filter(|p| !off.contains(&stem(p))).collect(),
+        Err(err) => {
+            tracing::error!("could not read plugin folder {}: {err}", dir.display());
+            Vec::new()
+        }
     }
 }
 
@@ -136,10 +218,27 @@ pub enum Permission {
     Remove,
     /// notify
     Notify,
+    /// http_get, add_torrent_url
+    ///
+    /// The one that changes what the others mean: a plugin holding `read` and
+    /// `network` together can send everything it can see to anyone. Nothing
+    /// here can detect that combination being misused, which is why the
+    /// approval prompt shows the whole set at once rather than one line at a
+    /// time.
+    Network,
+    /// data_get, data_set, data_remove, data_keys
+    Data,
+    /// ui_window, ui_rows, ui_buttons, ui_input, ui_status, ui_show
+    ///
+    /// A window of its own, listed under View. Not a way to draw over the
+    /// client: the shape is fixed - a list, a text field and some buttons -
+    /// so a plugin cannot put up something that looks like NanoTorrent asking
+    /// for a password.
+    Ui,
 }
 
 impl Permission {
-    pub const ALL: [Permission; 7] = [
+    pub const ALL: [Permission; 10] = [
         Permission::Read,
         Permission::Control,
         Permission::Add,
@@ -147,6 +246,9 @@ impl Permission {
         Permission::Storage,
         Permission::Remove,
         Permission::Notify,
+        Permission::Network,
+        Permission::Data,
+        Permission::Ui,
     ];
 
     /// The word used in a script's header and in the stored grant.
@@ -159,6 +261,9 @@ impl Permission {
             Permission::Storage => "storage",
             Permission::Remove => "remove",
             Permission::Notify => "notify",
+            Permission::Network => "network",
+            Permission::Data => "data",
+            Permission::Ui => "ui",
         }
     }
 
@@ -178,6 +283,9 @@ impl Permission {
             Permission::Storage => "perm_storage",
             Permission::Remove => "perm_remove",
             Permission::Notify => "perm_notify",
+            Permission::Network => "perm_network",
+            Permission::Data => "perm_data",
+            Permission::Ui => "perm_ui",
         }
     }
 }
@@ -303,23 +411,81 @@ pub fn prune_grants(env: &Environment, cfg: &Configuration) {
 /// and is left alone. Switched off explicitly rather than relying on the
 /// master switch, so it shows unticked in Preferences and stays that way if
 /// plugins are later turned on.
-pub fn seed_example(env: &Environment, cfg: &Configuration) {
-    let dir = plugin_dir(env);
-    if dir.exists() {
+pub fn seed_examples(dir: &Path, cfg: &Configuration) {
+    let mut offered = seeded(cfg);
+
+    // A folder that already exists was seeded by an older version, which only
+    // ever wrote `example`. Recording that here is what stops this putting
+    // back a file someone deliberately deleted before upgrading.
+    if offered.is_empty() && dir.exists() {
+        offered.insert(String::from("example"));
+    }
+
+    let pending: Vec<(&str, &str)> = EXAMPLES
+        .iter()
+        .filter(|(name, _)| !offered.contains(*name))
+        .copied()
+        .collect();
+    if pending.is_empty() {
         return;
     }
-    if let Err(err) = std::fs::create_dir_all(&dir) {
+
+    if let Err(err) = std::fs::create_dir_all(dir) {
         tracing::warn!("could not create {}: {err}", dir.display());
         return;
     }
-    let path = dir.join("example.rhai");
-    match std::fs::write(&path, include_str!("../../docs/plugins/example.rhai")) {
-        Ok(()) => {
-            set_enabled(cfg, "example", false);
-            tracing::info!("wrote the example plugin to {} (switched off)", path.display());
+
+    for (name, source) in pending {
+        let path = dir.join(format!("{name}.rhai"));
+        // Recorded as offered either way: a file already there is someone
+        // else's, possibly edited, and must not be overwritten.
+        offered.insert(name.to_owned());
+        if path.exists() {
+            continue;
         }
-        Err(err) => tracing::warn!("could not write {}: {err}", path.display()),
+        match std::fs::write(&path, source) {
+            Ok(()) => {
+                set_enabled(cfg, name, false);
+                tracing::info!("wrote the {name} plugin to {} (switched off)", path.display());
+            }
+            Err(err) => tracing::warn!("could not write {}: {err}", path.display()),
+        }
     }
+
+    cfg.set_persistent(
+        SEEDED_KEY,
+        &offered.into_iter().collect::<Vec<_>>().join("\n"),
+    );
+}
+
+/// The examples this build ships, embedded so they travel with the binary
+/// rather than needing the installer to place files.
+///
+/// One that only watches, and one that does something with every subsystem the
+/// host has - the second is the answer to "what can a plugin actually do?",
+/// which the first does not really show.
+const EXAMPLES: &[(&str, &str)] = &[
+    ("example", include_str!("../../docs/plugins/example.rhai")),
+    ("rss", include_str!("../../docs/plugins/rss.rhai")),
+];
+
+/// Which examples have already been offered, so a new one added in a later
+/// version reaches people who already have a plugins folder - and so deleting
+/// one keeps it deleted.
+///
+/// `persistent_object`, not a setting: `Configuration::set` is an UPDATE
+/// against a row a migration created, and this needs to work on a profile
+/// upgrading from a version that had no such row.
+const SEEDED_KEY: &str = "plugins.seeded";
+
+fn seeded(cfg: &Configuration) -> BTreeSet<String> {
+    cfg.get_persistent(SEEDED_KEY)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Permission tags, comma-joined, for a log line.
@@ -353,8 +519,10 @@ pub fn disabled(cfg: &Configuration) -> BTreeSet<String> {
         .collect()
 }
 
-/// Switch one plugin on or off. Takes effect at the next start, like the
-/// master switch - the host compiles once and holds the ASTs for the session.
+/// Switch one plugin on or off.
+///
+/// Writes the setting only. Whoever changed it calls `reload` to make it so -
+/// the CLI does not, because it runs before the host starts.
 pub fn set_enabled(cfg: &Configuration, name: &str, on: bool) {
     let mut off = disabled(cfg);
     if on {
@@ -441,46 +609,109 @@ fn discover(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
 fn run(
     session: Arc<Session>,
     cfg: Arc<Configuration>,
-    scripts: Vec<PathBuf>,
-    rx: std::sync::mpsc::Receiver<SessionEvent>,
+    dir: PathBuf,
+    wake_rx: std::sync::mpsc::Receiver<Wake>,
 ) {
-    let mut plugins = load(|perms| build_engine(session.clone(), perms), &cfg, &scripts);
+    let engines = |name: &str, perms: &BTreeSet<Permission>| {
+        build_engine(session.clone(), cfg.clone(), name, perms)
+    };
 
-    if plugins.is_empty() {
-        tracing::warn!("no plugin loaded successfully - the host is idle");
-        return;
-    }
+    let mut plugins = load(&engines, &cfg, &enabled_scripts(&dir, &cfg));
     tracing::info!("plugin host running with {} plugin(s)", plugins.len());
 
     call_all(&mut plugins, "on_session_start", ());
 
-    // Ends when the session drops the sender, i.e. at shutdown.
-    while let Ok(event) = rx.recv() {
-        dispatch(&mut plugins, event);
+    // A deadline rather than `recv_timeout`'s idle period: a busy session
+    // delivers an event every few seconds, and a plain timeout would mean the
+    // tick never fires on exactly the machines that have most to poll for.
+    let mut next_tick = std::time::Instant::now() + TICK;
+    loop {
+        let now = std::time::Instant::now();
+        if now >= next_tick {
+            next_tick = now + TICK;
+            call_all(&mut plugins, "on_tick", ());
+        }
+        match wake_rx.recv_timeout(next_tick.saturating_duration_since(std::time::Instant::now())) {
+            Ok(Wake::Session(event)) => dispatch(&mut plugins, event),
+            Ok(Wake::Ui(event)) => deliver_ui(&mut plugins, event),
+            // The settings changed. Stop what is running, forget what it drew,
+            // and load whatever the configuration now says - the same sequence
+            // a restart would have performed, without the restart.
+            Ok(Wake::Reload) => {
+                call_all(&mut plugins, "on_session_stop", ());
+                ui::clear_surfaces();
+                plugins = load(&engines, &cfg, &enabled_scripts(&dir, &cfg));
+                tracing::info!("plugins reloaded: {} running", plugins.len());
+                call_all(&mut plugins, "on_session_start", ());
+                // A reload is not a tick. Without this, one landing just
+                // before the deadline fires `on_tick` at a plugin that has
+                // been alive for a millisecond.
+                next_tick = std::time::Instant::now() + TICK;
+            }
+            Ok(Wake::Stop | Wake::Shutdown) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
     }
-
     // Best effort only: the process does not join this thread, so a shutdown
     // fast enough can cut the handler off. Documented as such rather than
     // plumbed into main's exit path - a plugin should not be saving anything it
     // cannot lose here.
     call_all(&mut plugins, "on_session_stop", ());
+
+    // After the last handler, not before: a menu for a plugin nobody is
+    // listening to is a dead click, and clearing first would let a plugin put
+    // one back from `on_session_stop`.
+    ui::clear();
+
+    // Let a later "switch plugins back on" start a fresh host, rather than
+    // sending to a thread that has gone.
+    if let Ok(mut slot) = control().lock() {
+        *slot = None;
+    }
     tracing::info!("plugin host stopped");
 }
 
 /// A Rhai engine with the limits a plugin runs under, plus the host API.
-fn build_engine(session: Arc<Session>, perms: &BTreeSet<Permission>) -> Engine {
+fn build_engine(
+    session: Arc<Session>,
+    cfg: Arc<Configuration>,
+    name: &str,
+    perms: &BTreeSet<Permission>,
+) -> Engine {
     let mut engine = Engine::new();
+    apply_limits(&mut engine);
+    api::register(&mut engine, session, cfg, name, perms);
+    engine
+}
 
-    // Bound the damage a bad script can do. These are why this is Rhai: with
-    // Lua every one of them would be a hand-written debug hook.
+/// Bound the damage a bad script can do. These are why this is Rhai: with Lua
+/// every one of them would be a hand-written debug hook.
+///
+/// Every limit is set explicitly, including the two that only restate Rhai's
+/// release defaults. Rhai halves several of them under `debug_assertions`
+/// (function expression depth 32 becomes 16, call stack 64 becomes 8), so
+/// leaving them alone means a plugin that compiles for a release build failing
+/// to parse in a debug one - which is a difference nobody would think to look
+/// for and which no test in a debug build could ever catch.
+fn apply_limits(engine: &mut Engine) {
     engine.set_max_operations(MAX_OPERATIONS);
     engine.set_max_call_levels(64);
-    engine.set_max_string_size(64 * 1024);
-    engine.set_max_array_size(10_000);
-    engine.set_max_map_size(10_000);
+    engine.set_max_expr_depths(64, 32);
 
-    api::register(&mut engine, session, perms);
-    engine
+    // Twice what one HTTP response may be, NOT an independent number. A
+    // plugin holds a fetched body in a string and then builds something out of
+    // it, so the ceiling has to leave room for both. It was 64 KB against a
+    // 4 MB fetch limit, which meant any feed larger than 64 KB died with
+    // "Length of string too large" - a limit the plugin author cannot see,
+    // cannot raise, and did nothing to deserve.
+    engine.set_max_string_size(2 * api::HTTP_LIMIT);
+
+    // Items in one feed, elements in one JSON array. Deliberately not tied to
+    // the byte limits: this bounds how much a script can build, and a feed
+    // with ten thousand entries is pathological rather than large.
+    engine.set_max_array_size(50_000);
+    engine.set_max_map_size(50_000);
 }
 
 /// Compile each script and run its top level once, so it can set up state.
@@ -488,7 +719,7 @@ fn build_engine(session: Arc<Session>, perms: &BTreeSet<Permission>) -> Engine {
 /// A script that fails to compile is dropped with a log line rather than
 /// taking the host down with it.
 fn load(
-    make_engine: impl Fn(&BTreeSet<Permission>) -> Engine,
+    make_engine: impl Fn(&str, &BTreeSet<Permission>) -> Engine,
     cfg: &Configuration,
     scripts: &[PathBuf],
 ) -> Vec<Plugin> {
@@ -529,7 +760,18 @@ fn load(
             }
         }
 
-        let engine = make_engine(&wants);
+        // Said once, at load, rather than on every silently-ignored call: a
+        // plugin written for the desktop is not broken on a headless server,
+        // it just has nowhere to draw.
+        //
+        // A compile-time check, not "has a window appeared yet": the host
+        // starts before the UI does, so asking at this moment would report no
+        // UI on every desktop build too.
+        if wants.contains(&Permission::Ui) && !cfg!(feature = "ui-slint") {
+            tracing::info!("plugin {name} asks for a window, but this build has no UI");
+        }
+
+        let engine = make_engine(&name, &wants);
         let ast = match engine.compile_file(path.clone()) {
             Ok(ast) => ast,
             Err(err) => {
@@ -551,6 +793,50 @@ fn load(
     }
 
     loaded
+}
+
+/// Everything the host loop can wake up for.
+enum Wake {
+    Session(SessionEvent),
+    Ui(ui::UiEvent),
+    /// The plugin settings changed: load whatever they now say.
+    Reload,
+    /// Plugins were switched off. Distinct from `Shutdown` only in what it
+    /// says in the log - both end the host.
+    Stop,
+    /// The session is gone. Sent by the relay rather than inferred from a
+    /// closed channel - see the comment where it is sent.
+    Shutdown,
+}
+
+/// Hand a window click to the plugin that drew the window, and only that one.
+///
+/// Addressed by name rather than broadcast: two plugins with a `on_ui_row`
+/// handler must not both see a click on one of them.
+fn deliver_ui(plugins: &mut [Plugin], event: ui::UiEvent) {
+    let (name, func, args) = match event {
+        ui::UiEvent::Row { plugin, id } => (plugin, "on_ui_row", vec![id]),
+        ui::UiEvent::Group { plugin, id } => (plugin, "on_ui_group", vec![id]),
+        ui::UiEvent::Button { plugin, id, input } => (plugin, "on_ui_button", vec![id, input]),
+        ui::UiEvent::Menu { plugin, id } => (plugin, "on_ui_menu", vec![id]),
+        ui::UiEvent::Configure { plugin } => (plugin, "on_ui_configure", Vec::new()),
+        ui::UiEvent::Opened { plugin } => (plugin, "on_ui_open", Vec::new()),
+    };
+
+    let Some(plugin) = plugins.iter_mut().find(|p| p.name == name) else {
+        return;
+    };
+    if !plugin.handles(func, args.len()) {
+        return;
+    }
+    let result =
+        plugin
+            .engine
+            .call_fn::<rhai::Dynamic>(&mut plugin.scope, &plugin.ast, func, args);
+    if let Err(err) = result {
+        tracing::error!("plugin {}: {func} failed: {err}", plugin.name);
+        ui::report_failure(&plugin.name, func, &err.to_string());
+    }
 }
 
 /// Map an event onto the handler name and arguments a script would define.
@@ -597,6 +883,9 @@ fn call_all<A: rhai::FuncArgs + Clone>(plugins: &mut [Plugin], func: &str, args:
         );
         if let Err(err) = result {
             tracing::error!("plugin {}: {func} failed: {err}", plugin.name);
+            // A plugin whose `on_tick` dies every minute would otherwise sit
+            // there looking busy - the window is where someone is looking.
+            ui::report_failure(&plugin.name, func, &err.to_string());
         }
     }
 }
@@ -666,7 +955,7 @@ mod tests {
         assert_eq!(scripts.len(), 3, "every .rhai file is discovered");
 
         let log2 = seen.clone();
-        let mut plugins = load(|_| recording_engine_shared(log2.clone()), &test_cfg(), &scripts);
+        let mut plugins = load(|_, _| recording_engine_shared(log2.clone()), &test_cfg(), &scripts);
         assert_eq!(plugins.len(), 3, "every script compiles and loads");
 
         dispatch(
@@ -700,7 +989,7 @@ mod tests {
 
         let seen = recorder();
         let log2 = seen.clone();
-        let mut plugins = load(|_| recording_engine_shared(log2.clone()), &test_cfg(), &discover(&dir).unwrap());
+        let mut plugins = load(|_, _| recording_engine_shared(log2.clone()), &test_cfg(), &discover(&dir).unwrap());
         assert_eq!(plugins.len(), 1, "only the valid script loads");
 
         dispatch(&mut plugins, SessionEvent::Error("disk full".into()));
@@ -720,7 +1009,7 @@ mod tests {
 
         let seen = recorder();
         let log2 = seen.clone();
-        let mut plugins = load(|_| recording_engine_shared(log2.clone()), &test_cfg(), &discover(&dir).unwrap());
+        let mut plugins = load(|_, _| recording_engine_shared(log2.clone()), &test_cfg(), &discover(&dir).unwrap());
 
         dispatch(
             &mut plugins,
@@ -855,7 +1144,7 @@ fn on_session_start() { }"),
         let cfg = test_cfg();
         let scripts = discover(&dir).unwrap();
         let load_now = |cfg: &Configuration| {
-            load(|_| Engine::new(), cfg, &scripts)
+            load(|_, _| Engine::new(), cfg, &scripts)
                 .into_iter()
                 .map(|p| p.name)
                 .collect::<Vec<_>>()
@@ -945,6 +1234,109 @@ fn f() {}")]);
         assert!(
             !left.contains_key("gone"),
             "a deleted plugin's approval must not wait for the next file of that name"
+        );
+    }
+
+    /// What a reload will pick up: whatever is on disk right now, minus the
+    /// plugins that are switched off.
+    ///
+    /// This is the whole difference between "applies immediately" and "needs a
+    /// restart" - the host re-asks this question instead of keeping the list
+    /// it was handed at startup.
+    #[test]
+    fn a_reload_sees_the_settings_as_they_are_now() {
+        let dir = folder(
+            "reload",
+            &[
+                ("alpha.rhai", "fn on_session_start() { }"),
+                ("beta.rhai", "fn on_session_start() { }"),
+                ("notes.txt", "not a plugin"),
+            ],
+        );
+        let cfg = test_cfg();
+
+        let names = |cfg: &Configuration| -> Vec<String> {
+            enabled_scripts(&dir, cfg).iter().map(|p| stem(p)).collect()
+        };
+
+        // Everything present, nothing switched off. The .txt is not a plugin.
+        assert_eq!(names(&cfg), vec!["alpha", "beta"]);
+
+        // Switching one off takes it out of the next load, with no restart in
+        // between - the setting is re-read, not remembered.
+        set_enabled(&cfg, "beta", false);
+        assert_eq!(names(&cfg), vec!["alpha"]);
+
+        set_enabled(&cfg, "beta", true);
+        assert_eq!(names(&cfg), vec!["alpha", "beta"]);
+
+        // A plugin deleted while running is simply gone from the next load,
+        // rather than an error that stops the others loading.
+        std::fs::remove_file(dir.join("alpha.rhai")).unwrap();
+        assert_eq!(names(&cfg), vec!["beta"]);
+    }
+
+    /// A missing folder is not an error here either: someone can switch
+    /// plugins on before they have written one.
+    #[test]
+    fn a_reload_with_no_plugin_folder_finds_nothing() {
+        let dir = std::env::temp_dir().join("nanotorrent-plugins-reload-absent");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(enabled_scripts(&dir, &test_cfg()).is_empty());
+    }
+
+    /// A fresh profile gets both examples, switched off.
+    #[test]
+    fn a_new_profile_is_given_every_example() {
+        let dir = std::env::temp_dir().join("nanotorrent-plugins-seed-new");
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg = test_cfg();
+
+        seed_examples(&dir, &cfg);
+
+        for name in ["example", "rss"] {
+            assert!(dir.join(format!("{name}.rhai")).exists(), "{name} should be written");
+            assert!(disabled(&cfg).contains(name), "{name} should be switched off");
+        }
+    }
+
+    /// The case this exists for: upgrading from a version that only shipped
+    /// `example`. The folder is already there, so the old "only if the folder
+    /// is missing" rule would have withheld the new plugin forever.
+    #[test]
+    fn an_existing_profile_is_given_only_what_is_new() {
+        let dir = std::env::temp_dir().join("nanotorrent-plugins-seed-upgrade");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // As an older version left it, and edited since.
+        std::fs::write(dir.join("example.rhai"), "// mine now").unwrap();
+        let cfg = test_cfg();
+
+        seed_examples(&dir, &cfg);
+
+        assert!(dir.join("rss.rhai").exists(), "the new example should arrive");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("example.rhai")).unwrap(),
+            "// mine now",
+            "an existing file is someone else's and must not be overwritten"
+        );
+    }
+
+    /// Deleting an example keeps it deleted, which is the property the old
+    /// folder-exists check was really protecting.
+    #[test]
+    fn a_deleted_example_is_not_written_back() {
+        let dir = std::env::temp_dir().join("nanotorrent-plugins-seed-deleted");
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg = test_cfg();
+
+        seed_examples(&dir, &cfg);
+        std::fs::remove_file(dir.join("rss.rhai")).unwrap();
+
+        seed_examples(&dir, &cfg);
+        assert!(
+            !dir.join("rss.rhai").exists(),
+            "an example the user removed must stay removed"
         );
     }
 }

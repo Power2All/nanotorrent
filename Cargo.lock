@@ -4457,7 +4457,7 @@ dependencies = [
 
 [[package]]
 name = "nanotorrent"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4476,6 +4476,7 @@ dependencies = [
  "num-bigint 0.5.1",
  "open",
  "png",
+ "quick-xml",
  "rand 0.10.2",
  "raw-window-handle",
  "rcgen",

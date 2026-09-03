@@ -21,7 +21,9 @@ import { AboutDialog } from "about.slint";
 import { CreateTorrentDialog } from "create.slint";
 import { ClosePromptDialog } from "closeprompt.slint";
 import { RemoveDialog } from "remove.slint";
+import { PluginWindow, PluginRowItem, PluginButton } from "plugin.slint";
 export { PreferencesDialog, AboutDialog, CliHelpDialog, UpdateDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
+export { PluginWindow, PluginRowItem, PluginButton }
 
 import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette } from "std-widgets.slint";
 
@@ -968,6 +970,23 @@ export component MainWindow inherits Window {
     callback pick-filter(int);
     callback pick-label(int);
 
+    /// Plugins that have declared a menu of their own. Each becomes a
+    /// dropdown in the bar, titled by the plugin.
+    ///
+    /// Only the OPEN menu's items are held, rather than every plugin's at
+    /// once: Slint structs do not nest arrays, and one plugin's dropdown is
+    /// open at a time anyway. Pressing a title asks Rust to fill them.
+    in property <[string]> plugin-menu-titles;
+    in property <[PluginButton]> plugin-menu-items;
+    /// Which plugin title is open, as an index into `plugin-menu-titles`, and
+    /// where it sits in the bar. The bar titles are a for-loop, so their x is
+    /// not reachable from the dropdown declared outside it - the title records
+    /// its own position on the way past.
+    in-out property <int> open-plugin: -1;
+    in-out property <length> plugin-menu-x;
+    callback open-plugin-menu(int);
+    callback activate-plugin-menu(string);
+
     // The PQL console. `console-valid` drives the border colour, so a
     // half-typed expression looks unfinished rather than broken.
     in-out property <bool> show-console;
@@ -1032,6 +1051,34 @@ export component MainWindow inherits Window {
                     active: root.open-menu == 3;
                     pressed => { root.open-menu = root.open-menu == 3 ? 0 : 3; }
                     hovered => { if (root.open-menu != 0) { root.open-menu = 3; } }
+                }
+                // One per plugin that asked for a menu, after the built-in
+                // three so the bar people know does not move when a plugin is
+                // switched on. `self.x` is the window x here: this layout
+                // starts at the left edge of the bar, which starts at the left
+                // edge of the window - the same assumption the dropdowns above
+                // already make with `file-title.x`.
+                for title[i] in root.plugin-menu-titles: BarTitle {
+                    label: title;
+                    active: root.open-menu == 4 && root.open-plugin == i;
+                    pressed => {
+                        if (root.open-menu == 4 && root.open-plugin == i) {
+                            root.open-menu = 0;
+                        } else {
+                            root.open-plugin = i;
+                            root.plugin-menu-x = self.x;
+                            root.open-plugin-menu(i);
+                            root.open-menu = 4;
+                        }
+                    }
+                    hovered => {
+                        if (root.open-menu != 0) {
+                            root.open-plugin = i;
+                            root.plugin-menu-x = self.x;
+                            root.open-plugin-menu(i);
+                            root.open-menu = 4;
+                        }
+                    }
                 }
             }
         }
@@ -1998,6 +2045,26 @@ export component MainWindow inherits Window {
                 }
                 MenuSep { }
                 MenuRow { label: L.s(L.revision, "preferences"); activated => { root.action("preferences"); root.open-menu = 0; } }
+        }
+    }
+
+    // A plugin's own dropdown. One declaration serves every plugin: only one
+    // is open at a time, and `plugin-menu-x` says which title it hangs under.
+    if root.open-menu == 4: Rectangle {
+        x: root.plugin-menu-x;
+        y: menu-bar.height;
+        width: 240px;
+        height: plugin-menu-layout.min-height;
+        background: Palette.alternate-background;
+        border-color: Palette.border;
+        border-width: 1px;
+        border-radius: 6px;
+        plugin-menu-layout := VerticalLayout {
+            padding: 4px;
+            for entry in root.plugin-menu-items: MenuRow {
+                label: entry.label;
+                activated => { root.activate-plugin-menu(entry.id); root.open-menu = 0; }
+            }
         }
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -119,6 +119,9 @@ rustls = "0.23"
 rustls-pemfile = "2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# XML for plugins: parse_xml, so a feed reader plugin does not have to write a
+# parser in Rhai. Already in the tree via other crates, so this costs nothing.
+quick-xml = "0.41"
 # The UI toolkit. Optional so --no-default-features gives a headless daemon.
 # Decoding res/flags/*.png into Slint images for the peers list. Already in the
 # tree via Slint's own image support, so naming it costs no new crate.

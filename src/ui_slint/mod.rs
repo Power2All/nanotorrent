@@ -62,6 +62,7 @@ const APP_ID: &str = "org.nanotorrent.NanoTorrent";
 
 mod flags;
 mod modal;
+mod pluginwindow;
 
 /// Everything the callbacks need, kept in one `Rc` so each closure clones a
 /// single handle rather than five.
@@ -257,6 +258,10 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     if let Err(err) = slint::set_xdg_app_id(APP_ID) {
         tracing::warn!("could not set the xdg app id ({APP_ID}): {err}");
     }
+
+    // Before the plugin host starts, so a plugin that draws its window from a
+    // top-level statement finds somewhere to draw it.
+    pluginwindow::install(&window);
 
     window.set_window_title(
         format!(
@@ -2992,6 +2997,10 @@ fn refresh_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
             PluginRow {
                 needs_approval: !p.granted && !p.requested.is_empty(),
                 permissions: SharedString::from(what.join(", ")),
+                // Asked of the running host, not of the file: a plugin only
+                // says it needs configuring once it has loaded and said so, so
+                // this is false for one that is ticked but awaiting approval.
+                configurable: pluginwindow::configurable(&p.name),
                 name: SharedString::from(p.name),
                 enabled: p.enabled,
                 error: SharedString::from(p.error.unwrap_or_default()),
@@ -3039,8 +3048,26 @@ fn wire_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
                 .map(|p| p.requested)
                 .unwrap_or_default();
             crate::plugins::grant(&u.cfg, &name, &requested);
+            // Approval is stored immediately rather than on Ok, so the host is
+            // told immediately too - otherwise approving a plugin would look
+            // like nothing had happened until the next start.
+            crate::plugins::reload(u.session.clone(), u.cfg.clone(), u.env.clone());
             // Model only - re-wiring here would re-register this very callback.
             refresh_plugins(&dd, &u);
+        });
+    }
+
+    {
+        let weak = d.as_weak();
+        d.on_configure_plugin(move |index| {
+            let Some(dd) = weak.upgrade() else { return };
+            let Some(row) = dd.get_plugins().row_data(index as usize) else {
+                return;
+            };
+            // Asks the plugin rather than opening its window: what
+            // "configure" means is the plugin's decision, and one without a
+            // window might do something else entirely.
+            pluginwindow::configure(&row.name.to_string());
         });
     }
 
@@ -3067,6 +3094,11 @@ fn save_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
     for row in d.get_plugins().iter() {
         crate::plugins::set_enabled(&ui.cfg, row.name.as_str(), row.enabled);
     }
+    // Applied now, not at the next start: the host stops what is running,
+    // drops what it drew and loads whatever these settings now say. Everything
+    // else in this dialog takes effect on Ok, and plugins should not be the
+    // one tab where a toggle appears to do nothing.
+    crate::plugins::reload(ui.session.clone(), ui.cfg.clone(), ui.env.clone());
 }
 
 fn open_preferences(ui: &Rc<Ui>) {
@@ -4084,6 +4116,13 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
                 refresh(&window, &u, &m);
             }
         });
+    }
+
+    {
+        // The titles are filled by the plugin host through
+        // `pluginwindow::install`; these two answer the bar as it is used.
+        window.on_open_plugin_menu(pluginwindow::fill_menu);
+        window.on_activate_plugin_menu(|id| pluginwindow::activate_menu(&id));
     }
 
     {
