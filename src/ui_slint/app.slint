@@ -752,6 +752,17 @@ component SpeedChart inherits Rectangle {
         viewbox-height: 100;
         commands: root.series;
         fill: root.tint.transparentize(0.35);
+        // Stretch the viewbox to the element in both directions. Path defaults
+        // to `contain`, which preserves the aspect ratio - and this viewbox is
+        // 60 wide by 100 tall against a box that is far wider than it is high,
+        // so `contain` scaled everything by the height and drew a chart about
+        // 16 pixels wide, centred, that did not change when the widget was
+        // resized. A sparkline has no aspect ratio to preserve: the axes are
+        // time and bytes, and neither cares what the other is doing.
+        //
+        // Qualified as `ImageFit.fill` because a bare `fill` would be Path's
+        // own brush property of that name.
+        fit: ImageFit.fill;
     }
 
     // On its face, not only in the tooltip: two charts side by side at
