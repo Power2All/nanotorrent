@@ -1,0 +1,185 @@
+// The one window shape a plugin can put on screen.
+//
+// A title, a list, an optional text field and a row of buttons. That is the
+// whole vocabulary, and it is fixed on purpose: a plugin says what goes in the
+// list, the client decides how it looks. Nothing here lets a script draw
+// something that could pass for part of NanoTorrent asking for a password, and
+// nothing here needs to change when a plugin does.
+//
+// Unlike the dialogs beside it this window is resizable and non-modal - it is
+// somewhere to work, not something to answer.
+
+import { ScrollView, Button, LineEdit, ListView, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
+
+export struct PluginRowItem {
+    id: string,
+    title: string,
+    subtitle: string,
+    selected: bool,
+}
+
+export struct PluginButton {
+    id: string,
+    label: string,
+}
+
+// One list, used for both panes so they cannot drift apart in look or
+// behaviour. Single click, not double: these rows are things to do, not files
+// to select from.
+component PluginList inherits Rectangle {
+    in property <[PluginRowItem]> rows;
+    in property <string> empty-text;
+    callback activated(string);
+
+    background: Palette.alternate-background;
+    border-color: Palette.border;
+    border-width: 1px;
+    border-radius: 4px;
+
+    if root.rows.length == 0: Text {
+        text: root.empty-text;
+        color: #888;
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if root.rows.length > 0: ListView {
+        for r in root.rows: Rectangle {
+            height: r.subtitle == "" ? 30px : 46px;
+            // Selection is a stronger tint than hover, so the current row
+            // stays obvious while the pointer is somewhere else.
+            background: r.selected ? Palette.accent-background.transparentize(0.7)
+                : touch.has-hover ? Palette.background.transparentize(0.4)
+                : transparent;
+
+            touch := TouchArea {
+                clicked => { root.activated(r.id); }
+            }
+
+            VerticalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                padding-top: 5px;
+                padding-bottom: 5px;
+                spacing: 2px;
+
+                Text {
+                    text: r.title;
+                    color: Palette.foreground;
+                    font-size: 13px;
+                    font-weight: r.selected ? 700 : 400;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+                if r.subtitle != "": Text {
+                    text: r.subtitle;
+                    color: #888;
+                    font-size: 11px;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+export component PluginWindow inherits Window {
+    icon: @image-url("../../res/app.png");
+    // The plugin's own words, not an i18n key: it is the plugin's window.
+    // `title` is a Window property already, hence the different name here.
+    in property <string> window-title;
+    title: root.window-title;
+
+    preferred-width: 620px;
+    preferred-height: 440px;
+    min-width: 360px;
+    min-height: 240px;
+    background: Palette.background;
+
+    in property <[PluginRowItem]> rows;
+    /// An optional list above the main one: what the main list is showing the
+    /// contents of. Empty draws the single-list window, unchanged.
+    in property <[PluginRowItem]> groups;
+    in property <[PluginButton]> buttons;
+    /// Empty means the plugin wants no text field, and none is drawn.
+    in property <string> placeholder;
+    in property <string> status;
+    in-out property <string> input-text;
+
+    callback row-activated(string);
+    callback group-activated(string);
+    /// The button's id, and whatever is in the text field - a plugin adding a
+    /// feed needs both, and asking for the text separately would race the click.
+    callback button-pressed(string, string);
+    callback closed();
+
+    FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.closed();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+
+        // --- what the plugin offers to do ---------------------------------
+        if root.placeholder != "" || root.buttons.length > 0: HorizontalLayout {
+            spacing: 8px;
+            height: 32px;
+
+            if root.placeholder != "": LineEdit {
+                horizontal-stretch: 1;
+                placeholder-text: root.placeholder;
+                text <=> root.input-text;
+                // Enter presses the first button, which is the one a plugin
+                // puts its "add" action in. Without this, typing a URL and
+                // hitting Enter looks broken.
+                accepted => {
+                    if (root.buttons.length > 0) {
+                        root.button-pressed(root.buttons[0].id, root.input-text);
+                    }
+                }
+            }
+            // Pushes the buttons right when there is no field to stretch.
+            if root.placeholder == "": Rectangle { horizontal-stretch: 1; }
+
+            for b in root.buttons: Button {
+                text: b.label;
+                clicked => { root.button-pressed(b.id, root.input-text); }
+            }
+        }
+
+        // --- the lists ----------------------------------------------------
+        // The upper one only exists if the plugin filled it. Fixed height
+        // rather than a share of the window: it is a chooser, and the items it
+        // chooses between are what the window is actually for.
+        if root.groups.length > 0: PluginList {
+            height: 108px;
+            rows: root.groups;
+            empty-text: "";
+            activated(id) => { root.group-activated(id); }
+        }
+
+        PluginList {
+            vertical-stretch: 1;
+            rows: root.rows;
+            empty-text: L.s(L.revision, "plugin_no_rows");
+            activated(id) => { root.row-activated(id); }
+        }
+
+        // --- what the plugin has to say -----------------------------------
+        if root.status != "": Text {
+            text: root.status;
+            color: #888;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+    }
+}

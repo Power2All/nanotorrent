@@ -22,6 +22,57 @@ export struct NamedRule {
     rule: string,
 }
 
+// A cog, for the Configure button on a plugin's row.
+//
+// Local rather than the toolbar's IconButton: that one lives in app.slint,
+// which imports this file, so it cannot be imported back. It is also sized for
+// a toolbar, and this has to sit inside a list row. The path is the same shape
+// the toolbar's gear uses - a straight-line polygon, so it does not depend on
+// SVG arc support.
+component ConfigButton inherits Rectangle {
+    in property <string> tip;
+    callback activated();
+
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    background: touch.has-hover ? Palette.alternate-background : transparent;
+
+    touch := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => { root.activated(); }
+    }
+
+    Path {
+        x: 4px;
+        y: 4px;
+        width: 16px;
+        height: 16px;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: Palette.foreground;
+        commands: "M 22.67 9.34 L 22.67 14.66 L 20.18 14.66 L 19.66 15.90 L 21.43 17.67 L 17.67 21.43 L 15.90 19.66 L 14.66 20.18 L 14.66 22.67 L 9.34 22.67 L 9.34 20.18 L 8.10 19.66 L 6.33 21.43 L 2.57 17.67 L 4.34 15.90 L 3.82 14.66 L 1.33 14.66 L 1.33 9.34 L 3.82 9.34 L 4.34 8.10 L 2.57 6.33 L 6.33 2.57 L 8.10 4.34 L 9.34 3.82 L 9.34 1.33 L 14.66 1.33 L 14.66 3.82 L 15.90 4.34 L 17.67 2.57 L 21.43 6.33 L 19.66 8.10 L 20.18 9.34 Z";
+    }
+
+    // An icon-only button says nothing about itself until you hover it.
+    Tooltip {
+        Rectangle {
+            background: Palette.alternate-background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 4px;
+            HorizontalLayout {
+                padding: 6px;
+                Text {
+                    text: root.tip;
+                    font-size: 12px;
+                    color: Palette.foreground;
+                }
+            }
+        }
+    }
+}
+
 export struct PluginRow {
     name: string,
     /// The user's switch. Stays true for a plugin that failed to load - the
@@ -34,6 +85,10 @@ export struct PluginRow {
     permissions: string,
     /// It wants access the user has not approved, so it is being held.
     needs-approval: bool,
+    /// It is loaded and says it needs setting up before it will do anything
+    /// useful. Runtime state, not a setting: a plugin that is ticked but has
+    /// not run yet has nothing to configure.
+    configurable: bool,
 }
 
 component Labelled inherits HorizontalLayout {
@@ -171,6 +226,7 @@ export component PreferencesDialog inherits Window {
     in-out property <bool> plugins-enabled;
     callback toggle-plugin(int, bool);
     callback approve-plugin(int);
+    callback configure-plugin(int);
     callback open-plugin-folder();
 
     callback pick-label(int);
@@ -717,6 +773,15 @@ export component PreferencesDialog inherits Window {
                                                 toggled => { root.toggle-plugin(i, self.checked); }
                                             }
                                             Rectangle { horizontal-stretch: 1; }
+                                            // Only for a plugin that is
+                                            // running and has said it needs
+                                            // setting up. What it opens is the
+                                            // plugin's business - this asks,
+                                            // it does not decide.
+                                            if p.configurable: ConfigButton {
+                                                tip: L.s(L.revision, "plugins_configure");
+                                                activated => { root.configure-plugin(i); }
+                                            }
                                         }
                                         // Under the still-ticked box, so the
                                         // state reads as "on, but broken"

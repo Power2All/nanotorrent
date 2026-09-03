@@ -152,7 +152,13 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   remove, start and stop, and Preferences, each in its own colour. The three
   that act on a selection grey themselves out without one. The glyphs are drawn
   from Slint primitives rather than shipped as images, so one set works on both
-  palettes and there is no light/dark pair of PNGs to keep in step.
+  palettes and there is no light/dark pair of PNGs to keep in step. To their
+  right sit two **live speed charts**, one for download and one for upload,
+  each holding the last minute. Each scales to its own busiest moment rather
+  than to a shared one, so a trickle of upload beside a saturated download is
+  still a shape and not a flat line; each carries its own peak in its tooltip,
+  because that is what makes a full-height line mean something. Drag either to
+  resize it, double-click to put it back, and both widths are remembered.
 - **Details tabs** — Overview (with a piece-availability bar), Files (per-file
   include toggles), Peers (with GeoIP country **and its flag**), and
   **Trackers** grouped into announce tiers with per-tracker
@@ -275,7 +281,8 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **Plugins** — optional Rhai scripts in `<app data>/plugins/*.rhai`, loaded on
   their own thread, that react to session events (`on_session_start`,
   `on_torrent_added`, `on_torrent_completed`, `on_torrent_removed`, `on_error`,
-  `on_session_stop`) and drive the session back through the same verbs the web
+  `on_session_stop`), to a once-a-minute `on_tick`, and to clicks in a window
+  of their own, and drive the session back through the same verbs the web
   API exposes. Rhai rather than Lua because it is pure Rust and takes its
   sandbox limits as constructor arguments — an operation ceiling, call depth,
   string and collection sizes — where Lua would mean a C build and a
@@ -289,10 +296,13 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   //! permissions: read, control, notify
   ```
 
-  Seven permissions — `read`, `control`, `add`, `labels`, `storage`, `remove`,
-  `notify` — deliberately coarse, because *"remove torrents and delete their
-  files"* is a decision someone can actually make and a list of sixteen
-  function names is not. The header is read from the source text **without
+  Ten permissions — `read`, `control`, `add`, `labels`, `storage`, `remove`,
+  `notify`, `network`, `data`, `ui` — deliberately coarse, because *"remove
+  torrents and delete their files"* is a decision someone can actually make and
+  a list of sixteen function names is not. `network` is the one that changes
+  what the others mean: held together with `read` it turns "see your torrents"
+  into "tell anyone about your torrents", which is why approval is asked for
+  the whole set at once rather than a line at a time. The header is read from the source text **without
   running the script**, since the whole point is knowing what it wants before
   any of it executes; only the leading comment block counts, so a
   `permissions:` line further down or inside a string cannot quietly widen the
@@ -308,13 +318,19 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   would train people to click through the prompts that matter.
 
   Preferences ▸ Plugins lists what is installed, what each one wants in plain
-  language, and turns them on and off individually. A plugin that fails to
+  language, and turns them on and off individually, applied on Ok without a
+  restart like the rest of the dialog. A plugin that fails to
   compile stays **enabled** and shows the reason — that it is broken is a fact
   about the script, not a setting to be undone on your behalf. Also
-  `--plugins on|off` from the command line. A worked example is written into the
-  plugins folder on first run — **switched off**, unapproved, and not recreated
-  if you delete it — so there is something to read before there is something
-  running. Scripts get the same reach over the session as an authenticated web
+  `--plugins on|off` from the command line. Two worked examples are placed in
+  the plugins folder — **switched off**, unapproved, and not recreated if you
+  delete them — so there is something to read before there is something
+  running: one that only watches, and an **RSS reader** that uses every
+  subsystem there is, keeping your feeds in one list and the selected feed's
+  torrents in another, under an RSS menu it adds to the menu bar. Each example
+  is offered once by name rather than only into a folder that does not exist
+  yet, so an upgrade brings a newly added one to a profile that already has the
+  folder. Scripts get the same reach over the session as an authenticated web
   client, so anyone who can write to the plugin folder can delete downloaded
   data: see [docs/PLUGINS.md](docs/PLUGINS.md).
 - **Single-instance** — a second launch forwards its command line (torrent
@@ -445,6 +461,104 @@ require-encryption toggles for each.
   reads, not a missing one.
 
 ## History
+
+**v0.3.2** gives plugins something to work with. 0.3.1 shipped a host that could
+watch torrents and drive them, which is enough for a script that tidies up after
+a download and not enough for anything that has to look outside the client. A
+feed reader was the case that showed where the edges were: it needs the network,
+somewhere to keep a list, and a window — and the host had none of the three.
+
+So there are three more permissions. **`network`** is one function, `http_get`,
+capped at 4 MB and thirty seconds and limited to http and https, so the
+permission to contact servers cannot quietly become permission to read the disk;
+with `add` it also gets `add_torrent_url`, because a feed listing `.torrent`
+files rather than magnet links is the ordinary case. **`data`** is a 64 KB
+key/value store of its own, namespaced per plugin, so a plugin can remember
+something across restarts. **`ui`** is the visible surface, and it is three
+things a plugin opts into one at a time.
+
+A **window**: a title, an optional text field, a row of buttons, and one or two
+lists — a main list, and above it an optional second one for when the main list
+shows the contents of something you pick, like a feed. Which row is current is
+the plugin's to say rather than the window's, so the two can never end up
+disagreeing. A **menu of its own** in the menu bar, next to File, View and Help,
+titled by the plugin and filled by it. And a **cog on its row in Preferences**,
+for a plugin that will not do anything useful until it is set up — which is
+what that means, not a second way to open a window, so it stays worth noticing.
+
+One dropdown per plugin, capped at twenty items, and the first half of that is
+structural rather than checked: a plugin holds a single menu, so declaring one
+twice replaces it instead of adding a second. There is no arrangement of calls
+that puts two of a plugin's titles in the bar. The window's shape is fixed for
+the same reason — a plugin says what goes in it and NanoTorrent decides how it
+looks, so no script can draw something that passes for the client asking for a
+password. Widening that later is easy; narrowing it once plugins depend on it
+is not.
+
+`network` is also the permission that changes what the others mean. Held with
+`read`, it turns "see your torrents" into "tell anyone about your torrents",
+and nothing in the host can tell a feed request from an upload of your torrent
+list. That is why approval is asked for the whole declared set at once rather
+than a line at a time — the combination is the decision, not the parts.
+
+Plugin settings now apply on Ok, like every other tab. The host stops what it
+was running, drops what it drew, and loads whatever the settings say; a script
+edited on disk is picked up the same way. It is a clean restart of the plugin
+rather than a patch applied to a running one, so a reloaded plugin loses its
+top-level scope — which is what a restart would have done to it anyway, and is
+far easier to reason about than keeping some plugins alive across the change.
+
+Two smaller additions round it out: an `on_tick` handler, once a minute on a
+wall-clock deadline so a busy session cannot starve it, and `parse_json` /
+`parse_xml`, which need no permission because they are arithmetic on a string
+the script already holds. Without the latter, writing a feed reader would have
+meant writing an XML parser in Rhai.
+
+The proof is a second shipped example: **`rss.rhai`**, a working feed reader
+built from exactly those pieces — feeds in the upper list, the selected feed's
+items below, click one to download it. Examples are now seeded per example
+rather than only into a folder that does not exist yet, so upgrading to 0.3.2
+delivers it to profiles that already have a plugins folder, while an example
+you delete stays deleted. It is covered by a test that runs the shipped script
+against a real HTTP server on a loopback port, through the real parser and the
+real store, so what is tested is the plugin people actually get rather than a
+sketch of it.
+
+Three things this shook out. Rhai halves several of its own limits under
+`debug_assertions`, so a plugin could compile in a release build and fail to
+parse in a debug one; every limit is now set explicitly rather than inherited.
+`Configuration::set` is an UPDATE against a row a migration created, which
+silently drops a key that has none — plugin names cannot be known at migration
+time, so the plugin store uses `persistent_object` instead. And the string
+ceiling was 64 KB while `http_get` was allowed to fetch 4 MB, which meant every
+feed over 64 KB was fetched successfully and then refused by the engine. Those
+two are one number now, because they were never independent: the body comes
+back *as* a string, and a limit the plugin author cannot see, cannot raise and
+did nothing to earn is not a limit, it is a bug.
+
+That last one is also why a handler that fails now says so in the plugin's own
+window rather than only in the log. A window stuck on "Checking…" with a
+healthy log file somewhere else is indistinguishable from a hang, and the
+status line is where somebody is already looking.
+
+Away from plugins, the toolbar gained **two live speed charts**, one per
+direction, each showing the last minute. They ride the refresh tick the list
+already runs on, so sixty samples is a minute exactly and they cost no timer of
+their own.
+
+Two decisions worth recording. They are *not* drawn to a common scale: each
+fills its own height at its own peak, because on a client that is mostly
+downloading a shared scale flattens upload into a line along the bottom and
+shows nothing at all. The price is that the two cannot be compared with each
+other by height, so each states its own peak in its tooltip and wears its own
+label. And however few samples exist they are spread across the whole width
+rather than each taking a fixed slice, so the charts are not mostly empty
+during the first minute - which is exactly when someone has just opened the app
+and is looking at them. The cost there is that a sample slides leftward until
+the buffer fills, so the time axis only settles after a minute.
+
+Each is resizable on its own and remembers its width, with a double-click to
+put it back.
 
 **v0.3.1** adds the **plugin host**: optional [Rhai](https://rhai.rs) scripts
 that react to torrent lifecycle events and drive the session back. It was

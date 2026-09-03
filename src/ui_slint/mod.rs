@@ -62,6 +62,7 @@ const APP_ID: &str = "org.nanotorrent.NanoTorrent";
 
 mod flags;
 mod modal;
+mod pluginwindow;
 
 /// Everything the callbacks need, kept in one `Rc` so each closure clones a
 /// single handle rather than five.
@@ -87,6 +88,10 @@ struct Ui {
     /// The rows behind what is on screen, so a callback can map an index to a
     /// torrent without asking the session again.
     rows: RefCell<Vec<TorrentStatus>>,
+    /// One minute of `(down, up)` samples for the toolbar chart, oldest
+    /// first. Filled by the same one-second tick that refreshes the list,
+    /// so the chart costs no timer of its own.
+    rates: RefCell<std::collections::VecDeque<(i64, i64)>>,
     /// Arguments forwarded by a second instance, polled on the refresh tick.
     ipc: Option<crate::ipc::Server>,
     /// Torrent lifecycle events, drained on the refresh tick. Replaces
@@ -258,6 +263,10 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         tracing::warn!("could not set the xdg app id ({APP_ID}): {err}");
     }
 
+    // Before the plugin host starts, so a plugin that draws its window from a
+    // top-level statement finds somewhere to draw it.
+    pluginwindow::install(&window);
+
     window.set_window_title(
         format!(
             "NanoTorrent {} (build {})",
@@ -278,6 +287,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         console_filter: RefCell::new(None),
         active_label: RefCell::new(None),
         rows: RefCell::new(Vec::new()),
+        rates: RefCell::new(std::collections::VecDeque::with_capacity(SPARK_SAMPLES)),
         ipc: ctx.ipc,
         // Subscribed before the first refresh tick, so a torrent that finishes
         // during startup still raises its notification.
@@ -1253,6 +1263,50 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
         utils::to_human_speed(up)
     );
     window.set_session_rates(rates.as_str().into());
+
+    // The toolbar chart, from the same reading rather than a second one: two
+    // calls a second apart would put the label and the chart slightly out of
+    // step, which is visible when a torrent starts.
+    {
+        let mut history = ui.rates.borrow_mut();
+        if history.len() == SPARK_SAMPLES {
+            history.pop_front();
+        }
+        history.push_back((down, up));
+
+        let downs: Vec<i64> = history.iter().map(|(d, _)| *d).collect();
+        let ups: Vec<i64> = history.iter().map(|(_, u)| *u).collect();
+
+        // A peak each, not one shared between them. The charts are separate
+        // widgets now, so each fills its own height at its own busiest moment.
+        // Sharing a scale would flatten upload - usually a fraction of download
+        // on a torrent client - into a line along the bottom saying nothing.
+        // The cost is that the two cannot be compared by height, which is what
+        // the peak in each tooltip is for.
+        let series: [(&[i64], &str, i64); 2] =
+            [(&downs, "DL", down), (&ups, "UL", up)];
+        for (values, label, now) in series {
+            let peak = values.iter().copied().max().unwrap_or(0);
+            let path: slint::SharedString = spark_path(values, peak).as_str().into();
+            // Without the peak a full-height line means nothing: it is always
+            // full height at the peak, whether that is 2 MB/s or 2 kB/s.
+            let tip: slint::SharedString = format!(
+                "{label}: {}\npeak {} over the last minute",
+                utils::to_human_speed(now),
+                utils::to_human_speed(peak)
+            )
+            .as_str()
+            .into();
+
+            if label == "DL" {
+                window.set_chart_down(path);
+                window.set_chart_down_tip(tip);
+            } else {
+                window.set_chart_up(path);
+                window.set_chart_up_tip(tip);
+            }
+        }
+    }
 
     // The tray tooltip: what is running, and how fast. Reuses the counts and
     // rates computed above rather than recomputing on the same tick.
@@ -2992,6 +3046,10 @@ fn refresh_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
             PluginRow {
                 needs_approval: !p.granted && !p.requested.is_empty(),
                 permissions: SharedString::from(what.join(", ")),
+                // Asked of the running host, not of the file: a plugin only
+                // says it needs configuring once it has loaded and said so, so
+                // this is false for one that is ticked but awaiting approval.
+                configurable: pluginwindow::configurable(&p.name),
                 name: SharedString::from(p.name),
                 enabled: p.enabled,
                 error: SharedString::from(p.error.unwrap_or_default()),
@@ -3039,8 +3097,26 @@ fn wire_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
                 .map(|p| p.requested)
                 .unwrap_or_default();
             crate::plugins::grant(&u.cfg, &name, &requested);
+            // Approval is stored immediately rather than on Ok, so the host is
+            // told immediately too - otherwise approving a plugin would look
+            // like nothing had happened until the next start.
+            crate::plugins::reload(u.session.clone(), u.cfg.clone(), u.env.clone());
             // Model only - re-wiring here would re-register this very callback.
             refresh_plugins(&dd, &u);
+        });
+    }
+
+    {
+        let weak = d.as_weak();
+        d.on_configure_plugin(move |index| {
+            let Some(dd) = weak.upgrade() else { return };
+            let Some(row) = dd.get_plugins().row_data(index as usize) else {
+                return;
+            };
+            // Asks the plugin rather than opening its window: what
+            // "configure" means is the plugin's decision, and one without a
+            // window might do something else entirely.
+            pluginwindow::configure(&row.name.to_string());
         });
     }
 
@@ -3067,6 +3143,11 @@ fn save_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
     for row in d.get_plugins().iter() {
         crate::plugins::set_enabled(&ui.cfg, row.name.as_str(), row.enabled);
     }
+    // Applied now, not at the next start: the host stops what is running,
+    // drops what it drew and loads whatever these settings now say. Everything
+    // else in this dialog takes effect on Ok, and plugins should not be the
+    // one tab where a toggle appears to do nothing.
+    crate::plugins::reload(ui.session.clone(), ui.cfg.clone(), ui.env.clone());
 }
 
 fn open_preferences(ui: &Rc<Ui>) {
@@ -3950,6 +4031,54 @@ fn menu_model(
     ModelRc::new(VecModel::from(titles))
 }
 
+/// How many one-second samples the toolbar chart keeps: one minute of history.
+///
+/// Also the chart's viewbox width, so one sample is one unit across and the
+/// path builder never has to know the widget's pixel size.
+const SPARK_SAMPLES: usize = 60;
+
+/// The chart's viewbox, in its own units. Paths are built in these and Slint
+/// scales them to whatever pixel size the toolbar gives the widget, so the
+/// same path fills a 48px chart and a 320px one.
+const SPARK_HEIGHT: i64 = 100;
+const SPARK_WIDTH: f64 = 60.0;
+
+/// A filled area path for one series, oldest sample at the left.
+///
+/// Empty until there are two points: a one-point area is a vertical line,
+/// which reads as a spike that did not happen.
+///
+/// The samples are spread across the FULL width however many there are, rather
+/// than each taking a fixed slice and leaving the rest blank. The trade-off is
+/// that during the first minute a sample slides leftward as newer ones arrive,
+/// so the time axis is only settled once the buffer is full - which is the
+/// better bargain for a chart this size, because the alternative is a widget
+/// that is mostly empty space exactly when someone has just opened the app and
+/// is looking at it.
+///
+/// `peak` is the value that reaches the top. Each chart passes its own, so
+/// each fills its own height; see the comment at the call site.
+fn spark_path(values: &[i64], peak: i64) -> String {
+    if values.len() < 2 {
+        return String::new();
+    }
+
+    let peak = peak.max(1);
+    let last = (values.len() - 1) as f64;
+    let x_of = |i: usize| (i as f64) * SPARK_WIDTH / last;
+
+    let mut path = String::with_capacity(values.len() * 14 + 24);
+    path.push_str(&format!("M 0 {SPARK_HEIGHT}"));
+    for (i, value) in values.iter().enumerate() {
+        let scaled = (value.max(&0) * SPARK_HEIGHT) / peak;
+        let y = SPARK_HEIGHT - scaled.clamp(0, SPARK_HEIGHT);
+        path.push_str(&format!(" L {:.2} {y}", x_of(i)));
+    }
+    // Back down to the baseline and closed, so the area under the line fills.
+    path.push_str(&format!(" L {SPARK_WIDTH:.2} {SPARK_HEIGHT} Z"));
+    path
+}
+
 /// Populate the Filters and Labels menus from the database and wire the PQL
 /// console.
 ///
@@ -3967,6 +4096,35 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
         0,
         &none,
     ));
+
+    // The toolbar charts' widths, restored the way the dialog splitters are.
+    //
+    // Range-checked rather than trusted: a stored width wider than the window
+    // would push the toolbar buttons off the edge, and one of a few pixels
+    // would leave nothing to grab to put it back. The bounds are the same ones
+    // the drag itself clamps to.
+    for (key, apply) in [
+        ("ui.chart_down_width", MainWindow::set_chart_down_width as fn(&MainWindow, f32)),
+        ("ui.chart_up_width", MainWindow::set_chart_up_width as fn(&MainWindow, f32)),
+    ] {
+        if let Some(w) = ui
+            .cfg
+            .get_persistent(key)
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite() && (48.0..=320.0).contains(v))
+        {
+            apply(window, w);
+        }
+    }
+    {
+        // One handler for both charts; the key says which. Fired when a drag
+        // ends and on a double-click reset, never on a mouse move - this is a
+        // database write and `moved` runs per mouse event.
+        let u = ui.clone();
+        window.on_chart_width_done(move |key, w| {
+            u.cfg.set_persistent(key.as_str(), &w.to_string());
+        });
+    }
 
     // The three View toggles are restored here and written back through one
     // callback, so a restart comes up the way it was left.
@@ -4084,6 +4242,13 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
                 refresh(&window, &u, &m);
             }
         });
+    }
+
+    {
+        // The titles are filled by the plugin host through
+        // `pluginwindow::install`; these two answer the bar as it is used.
+        window.on_open_plugin_menu(pluginwindow::fill_menu);
+        window.on_activate_plugin_menu(|id| pluginwindow::activate_menu(&id));
     }
 
     {
@@ -4386,5 +4551,122 @@ mod web_settings_tests {
         // stored hash can never be matched back to the typed password.
         let again = crate::webui::Credentials::hash_password("hunter2").expect("hashes");
         assert_ne!(hash, again, "hashes are not salted");
+    }
+}
+
+#[cfg(test)]
+mod chart_tests {
+    use super::*;
+
+    /// The data vertices of a path, so the assertions below read as
+    /// coordinates rather than as string matching.
+    ///
+    /// The last `L` is dropped: it is the closing return to the baseline that
+    /// makes the area fill, not a sample.
+    fn points(path: &str) -> Vec<(f64, i64)> {
+        let mut all: Vec<(f64, i64)> = path
+            .split(" L ")
+            .skip(1)
+            .filter_map(|part| {
+                let part = part.trim_end_matches(" Z");
+                let (x, y) = part.split_once(' ')?;
+                Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+            })
+            .collect();
+        all.pop();
+        all
+    }
+
+    /// One sample is not a shape. Drawing it would put a vertical line at the
+    /// right edge, which reads as a spike that never happened.
+    #[test]
+    fn a_chart_needs_two_points_before_it_draws_anything() {
+        assert_eq!(spark_path(&[], 100), "");
+        assert_eq!(spark_path(&[42], 100), "");
+        assert!(!spark_path(&[1, 2], 100).is_empty());
+    }
+
+    /// However many samples there are, they span the whole width - so the
+    /// chart is never a mostly-empty box with a smear in one corner.
+    #[test]
+    fn any_number_of_samples_fills_the_width() {
+        for count in [2_usize, 3, 17, SPARK_SAMPLES] {
+            let xs: Vec<f64> = points(&spark_path(&vec![0; count], 100))
+                .iter()
+                .map(|(x, _)| *x)
+                .collect();
+
+            assert_eq!(xs.len(), count, "every sample is a vertex");
+            assert_eq!(xs.first(), Some(&0.0), "{count} samples should start at the left");
+            assert!(
+                (xs.last().unwrap() - SPARK_WIDTH).abs() < 0.01,
+                "{count} samples should reach the right edge, got {:?}",
+                xs.last()
+            );
+            // Evenly spread, and in order.
+            assert!(
+                xs.windows(2).all(|w| w[1] > w[0]),
+                "samples should march left to right"
+            );
+        }
+    }
+
+    /// Zero sits on the baseline and the peak reaches the top - the viewbox is
+    /// inverted, because SVG y grows downward and throughput does not.
+    #[test]
+    fn the_scale_runs_from_the_baseline_to_the_peak() {
+        let ys: Vec<i64> = points(&spark_path(&[0, 50, 100], 100))
+            .iter()
+            .map(|(_, y)| *y)
+            .collect();
+        assert_eq!(ys, vec![SPARK_HEIGHT, SPARK_HEIGHT / 2, 0]);
+    }
+
+    /// The scale is whatever peak it is handed, not the series' own maximum.
+    ///
+    /// Both charts rely on this in opposite directions: each passes its own
+    /// peak so it fills its own height, and the same values passed a larger
+    /// peak must draw shorter. Computing the maximum inside would make the
+    /// second of those impossible and quietly ignore the argument.
+    #[test]
+    fn the_series_is_drawn_against_the_peak_it_is_given() {
+        let values = [0, 10];
+
+        // Its own peak: the busiest sample reaches the top.
+        let own = points(&spark_path(&values, 10)).last().unwrap().1;
+        assert_eq!(own, 0, "against its own peak the series fills the height");
+
+        // A peak a hundred times larger: the same values barely leave the
+        // baseline. This is what a shared scale would have done to upload.
+        let shared = points(&spark_path(&values, 1000)).last().unwrap().1;
+        assert!(
+            shared > SPARK_HEIGHT - 10,
+            "against a far larger peak it should stay low, got y={shared}"
+        );
+    }
+
+    /// An idle session is all zeroes, and dividing by that peak must not
+    /// panic - which is the state the chart spends most of its life in.
+    #[test]
+    fn an_idle_session_draws_a_flat_line_rather_than_dividing_by_zero() {
+        let ys: Vec<i64> = points(&spark_path(&[0, 0, 0, 0], 0))
+            .iter()
+            .map(|(_, y)| *y)
+            .collect();
+        assert_eq!(ys, vec![SPARK_HEIGHT; 4]);
+    }
+
+    /// Rates are i64 and come from outside; a negative one must not be drawn
+    /// above the top of the box.
+    #[test]
+    fn values_outside_the_scale_are_clamped_into_the_box() {
+        for (values, peak) in [(vec![0_i64, -5], 100_i64), (vec![0, 500], 100)] {
+            for (_, y) in points(&spark_path(&values, peak)) {
+                assert!(
+                    (0..=SPARK_HEIGHT).contains(&y),
+                    "y={y} escaped the viewbox for {values:?}"
+                );
+            }
+        }
     }
 }
