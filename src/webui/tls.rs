@@ -75,7 +75,10 @@ fn generate(cert_path: &PathBuf, key_path: &PathBuf) -> Result<()> {
     std::fs::write(cert_path, key.cert.pem()).with_context(|| {
         format!("cannot write certificate to {}", cert_path.display())
     })?;
-    std::fs::write(key_path, key.key_pair.serialize_pem())
+    // `signing_key`, not `key_pair`: rcgen 0.14 renamed the field. Same PEM,
+    // same PKCS#8 encoding, so certificates written by earlier versions still
+    // load - this only changes how the pair is spelled on the way out.
+    std::fs::write(key_path, key.signing_key.serialize_pem())
         .with_context(|| format!("cannot write private key to {}", key_path.display()))?;
     restrict_permissions(key_path);
 

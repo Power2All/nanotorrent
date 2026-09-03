@@ -152,7 +152,13 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   remove, start and stop, and Preferences, each in its own colour. The three
   that act on a selection grey themselves out without one. The glyphs are drawn
   from Slint primitives rather than shipped as images, so one set works on both
-  palettes and there is no light/dark pair of PNGs to keep in step.
+  palettes and there is no light/dark pair of PNGs to keep in step. To their
+  right sit two **live speed charts**, one for download and one for upload,
+  each holding the last minute. Each scales to its own busiest moment rather
+  than to a shared one, so a trickle of upload beside a saturated download is
+  still a shape and not a flat line; each carries its own peak in its tooltip,
+  because that is what makes a full-height line mean something. Drag either to
+  resize it, double-click to put it back, and both widths are remembered.
 - **Details tabs** — Overview (with a piece-availability bar), Files (per-file
   include toggles), Peers (with GeoIP country **and its flag**), and
   **Trackers** grouped into announce tiers with per-tracker
@@ -534,6 +540,25 @@ That last one is also why a handler that fails now says so in the plugin's own
 window rather than only in the log. A window stuck on "Checking…" with a
 healthy log file somewhere else is indistinguishable from a hang, and the
 status line is where somebody is already looking.
+
+Away from plugins, the toolbar gained **two live speed charts**, one per
+direction, each showing the last minute. They ride the refresh tick the list
+already runs on, so sixty samples is a minute exactly and they cost no timer of
+their own.
+
+Two decisions worth recording. They are *not* drawn to a common scale: each
+fills its own height at its own peak, because on a client that is mostly
+downloading a shared scale flattens upload into a line along the bottom and
+shows nothing at all. The price is that the two cannot be compared with each
+other by height, so each states its own peak in its tooltip and wears its own
+label. And however few samples exist they are spread across the whole width
+rather than each taking a fixed slice, so the charts are not mostly empty
+during the first minute - which is exactly when someone has just opened the app
+and is looking at them. The cost there is that a sample slides leftward until
+the buffer fills, so the time axis only settles after a minute.
+
+Each is resizable on its own and remembers its width, with a double-click to
+put it back.
 
 **v0.3.1** adds the **plugin host**: optional [Rhai](https://rhai.rs) scripts
 that react to torrent lifecycle events and drive the session back. It was

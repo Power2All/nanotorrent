@@ -1,16 +1,25 @@
-# Publish a new version to the Microsoft Store when a GitHub release is
-# published.
+# Publish a new version to the Microsoft Store.
 #
-# Fits the existing release flow: release.yml drafts a release, you press
-# Publish, and that fires this. (A release created by GITHUB_TOKEN would not
-# trigger anything - it is the human Publish that does.)
+# MANUAL ONLY, and deliberately so. Submissions are made from a developer
+# machine with `installer\store-submit.ps1`; this exists as a fallback and as
+# the worked example of the same sequence in CI.
+#
+# It used to run on `release: [published]`, which meant pressing Publish on a
+# GitHub release submitted to the Store by itself. That is off now: with the
+# local script as the real route, an automatic run would be a second submission
+# racing the first at the same product, which is how one gets stuck in Partner
+# Center needing a hand to clear it.
 #
 # This does NOT create the Store listing. The API can only update an app that is
 # already published and live, so the first submission has to be made by hand in
-# Partner Center. After that, publishing a release updates it.
+# Partner Center. Everything after that is an update, by whichever route.
 #
 # Microsoft documents Store updates through GitHub Actions as supported for FREE
 # products only; a paid listing has to be updated by hand.
+#
+# The package AND the per-language "What's new" text go up together:
+# MS_Store_Release_Info/*.txt is the source for the listings, so a release does
+# not need 41 fields pasted into Partner Center by hand.
 #
 # Required repository secrets - see docs/MICROSOFT-STORE.md for where each one
 # comes from:
@@ -21,10 +30,9 @@
 
 name: Publish to Microsoft Store
 
+# No `release:` trigger: starting this has to be a deliberate act, not a
+# side effect of publishing a release. See the note above.
 on:
-  release:
-    types: [published]
-  # So a failed publish can be retried without cutting another release.
   workflow_dispatch:
 
 # Nothing is written back to the repository. The MSIX goes to the Store, not to
@@ -112,6 +120,64 @@ jobs:
             --clientId ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }} `
             --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
 
-      - name: Publish
+      # --noCommit leaves the submission in draft so the listings can be
+      # written before it is sent for certification.
+      #
+      # The order matters and is not the obvious one: with an app that is
+      # already published, `msstore publish` DELETES the pending draft and
+      # makes a new one from the last published submission. Writing the
+      # release notes first would throw them away here. Package first,
+      # metadata second, commit last.
+      - name: Upload the package, leaving the submission in draft
         shell: pwsh
-        run: msstore publish "${{ steps.pkg.outputs.path }}" -id ${{ secrets.STORE_PRODUCT_ID }}
+        run: |
+          msstore publish "${{ steps.pkg.outputs.path }}" `
+            -id ${{ secrets.STORE_PRODUCT_ID }} `
+            --noCommit
+
+      # `msstore publish` only ever uploads the package - it does not touch
+      # listing metadata, which is why release notes used to have to be pasted
+      # into Partner Center by hand for all 41 languages.
+      - name: Read the draft submission
+        shell: pwsh
+        run: |
+          msstore submission get ${{ secrets.STORE_PRODUCT_ID }} |
+            Out-File -Encoding utf8 submission.json
+          if (-not (Test-Path submission.json) -or (Get-Item submission.json).Length -eq 0) {
+            throw "msstore submission get returned nothing"
+          }
+
+      # Fails the run rather than publishing stale notes: the listing files are
+      # edited by hand, and shipping a version whose "What's new" still
+      # describes the previous one is worse than not shipping.
+      - name: Fold in this version's What's new, for every language
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          Write-Host "listings must describe version $version"
+          .\installer\store-whatsnew.ps1 `
+            -SubmissionPath submission.json `
+            -OutPath submission.updated.json `
+            -Version $version
+
+      - name: Send the listings back
+        shell: pwsh
+        run: |
+          $json = Get-Content -Raw -Encoding utf8 submission.updated.json
+          msstore submission update ${{ secrets.STORE_PRODUCT_ID }} $json
+
+      - name: Commit the submission and wait for it
+        shell: pwsh
+        run: |
+          msstore submission publish ${{ secrets.STORE_PRODUCT_ID }}
+          msstore submission poll ${{ secrets.STORE_PRODUCT_ID }}
+
+      # The exact JSON that was sent. Certification failures are reported days
+      # later, by which time the only question is what went up.
+      - name: Keep the submission JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: submission
+          path: submission*.json
+          retention-days: 30

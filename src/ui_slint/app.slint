@@ -701,6 +701,132 @@ component Field inherits HorizontalLayout {
     }
 }
 
+// One minute of one throughput series, drawn beside the toolbar buttons.
+//
+// A filled area rather than a line: at 24 pixels tall a 1px stroke disappears
+// against the background, where a fill still reads as "busy" at a glance,
+// which is all a sparkline is for.
+//
+// Two of these sit in the toolbar, one per direction, and they are NOT drawn to
+// a common scale - each fills its own height at its own peak. That is the point
+// of splitting them: on a client that is mostly downloading, a shared scale
+// would flatten upload to a line along the bottom and show nothing at all. The
+// cost is that the two heights cannot be compared with each other, so each
+// carries its own peak in its tooltip and its own label on its face.
+//
+// The path comes from Rust already scaled into this viewbox, so the widget
+// never has to know the sample count or the peak.
+component SpeedChart inherits Rectangle {
+    in property <string> series;
+    in property <brush> tint;
+    in property <string> label;
+    in property <string> tip;
+    in property <length> chart-width;
+
+    /// Live, on every move - the caller writes it straight back so the drag
+    /// is visible while it happens.
+    callback resized(length);
+    /// Once, when the drag ends. Persisting is a database write and `moved`
+    /// runs per mouse event, the same split ColResize makes.
+    callback done(length);
+    /// Double-clicked anywhere but the grip: this chart back to the default
+    /// width. Only this one - the other keeps whatever it was given.
+    callback reset();
+
+    private property <length> start-w;
+    private property <length> start-x;
+
+    width: root.chart-width;
+    height: 26px;
+    border-radius: 4px;
+    background: Palette.alternate-background;
+    border-color: Palette.border;
+    border-width: 1px;
+
+    Path {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: parent.height - 2px;
+        viewbox-width: 60;
+        viewbox-height: 100;
+        commands: root.series;
+        fill: root.tint.transparentize(0.35);
+    }
+
+    // On its face, not only in the tooltip: two charts side by side at
+    // different scales are a trap unless each says which is which.
+    Text {
+        x: 5px;
+        y: 2px;
+        text: root.label;
+        font-size: 9px;
+        color: Palette.foreground.transparentize(0.35);
+    }
+
+    // Everything except the grip. Declared first so the grip, which overlaps
+    // nothing, is not shadowed by it.
+    TouchArea {
+        width: parent.width - 8px;
+        height: parent.height;
+        double-clicked => { root.reset(); }
+    }
+
+    // Entirely inside the chart rather than straddling its edge, for the
+    // reason ColResize gives: Slint does not deliver pointer events to the
+    // part of a child that falls outside its parent, so a straddling handle is
+    // only half grabbable.
+    grip := TouchArea {
+        x: parent.width - 8px;
+        width: 8px;
+        height: parent.height;
+        mouse-cursor: ew-resize;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.start-w = root.chart-width;
+                root.start-x = self.absolute-position.x + self.mouse-x;
+            }
+            if (e.kind == PointerEventKind.up) {
+                root.done(root.chart-width);
+            }
+        }
+        moved => {
+            // 48px floor: narrower than that and a minute of samples is fewer
+            // pixels than it has samples. 320px ceiling so one chart cannot
+            // push the toolbar buttons off a narrow window.
+            root.resized(min(320px, max(48px,
+                root.start-w + ((self.absolute-position.x + self.mouse-x) - root.start-x))));
+        }
+    }
+
+    // Always drawn, faint until hovered - an invisible resize edge is one
+    // nobody finds. Same reasoning as the column handles.
+    Rectangle {
+        x: parent.width - 2px;
+        width: 1px;
+        height: parent.height;
+        background: grip.has-hover ? Palette.accent-background : Palette.border;
+    }
+
+    // No axis on a chart this size, so the numbers live here.
+    Tooltip {
+        Rectangle {
+            background: Palette.alternate-background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 4px;
+            HorizontalLayout {
+                padding: 6px;
+                Text {
+                    text: root.tip;
+                    font-size: 12px;
+                    color: Palette.foreground;
+                }
+            }
+        }
+    }
+}
+
 export component MainWindow inherits Window {
     // Fires while the window is being dragged, not only when it settles -
     // columns that lag behind the frame look broken, and the handler is a few
@@ -997,6 +1123,27 @@ export component MainWindow inherits Window {
     /// serves all three rather than one apiece.
     callback view-toggled(string, bool);
 
+    /// The toolbar's two throughput charts: one filled path each, already
+    /// scaled into a 60x100 viewbox by the Rust side, plus the numbers behind
+    /// each tooltip. Each is scaled to its OWN peak - see SpeedChart.
+    in property <string> chart-down;
+    in property <string> chart-up;
+    in property <string> chart-down-tip;
+    in property <string> chart-up-tip;
+
+    /// A width each, so a busy download chart can be widened without
+    /// stretching an upload chart that has little to show. Both restored from
+    /// the settings at startup.
+    out property <length> chart-default-width: 96px;
+    in-out property <length> chart-down-width: root.chart-default-width;
+    in-out property <length> chart-up-width: root.chart-default-width;
+    /// The settings key and the new width. One callback for both charts, the
+    /// way `view-toggled` serves all three View toggles - the alternative is
+    /// two callbacks that differ only in a string.
+    ///
+    /// Fired when a drag ends and on a reset, never on a move.
+    callback chart-width-done(string, length);
+
     /// "system", "light" or "dark" - the same theme_id the Win32 menu writes.
     /// Setting Palette.color-scheme is what makes the menu popups follow the
     /// app: they are separate windows and do not inherit it otherwise.
@@ -1194,6 +1341,50 @@ export component MainWindow inherits Window {
                     tip: L.s(L.revision, "preferences");
                     activated => { root.action("preferences"); }
                     GearIcon { ink: parent.ink; }
+                }
+
+                Rectangle {
+                    width: 9px;
+                    Rectangle {
+                        x: 4px; y: 7px; width: 1px; height: 16px;
+                        background: Palette.border;
+                    }
+                }
+
+                // Vertically centred: the toolbar row is 30px of button and
+                // the charts are 26px, so without this they sit against the top.
+                VerticalLayout {
+                    alignment: center;
+                    SpeedChart {
+                        series: root.chart-down;
+                        tint: #2ea043;
+                        label: "DL";
+                        tip: root.chart-down-tip;
+                        chart-width: root.chart-down-width;
+                        resized(w) => { root.chart-down-width = w; }
+                        done(w) => { root.chart-width-done("ui.chart_down_width", w); }
+                        reset() => {
+                            root.chart-down-width = root.chart-default-width;
+                            root.chart-width-done("ui.chart_down_width", root.chart-default-width);
+                        }
+                    }
+                }
+                Rectangle { width: 4px; }
+                VerticalLayout {
+                    alignment: center;
+                    SpeedChart {
+                        series: root.chart-up;
+                        tint: #2f80ed;
+                        label: "UL";
+                        tip: root.chart-up-tip;
+                        chart-width: root.chart-up-width;
+                        resized(w) => { root.chart-up-width = w; }
+                        done(w) => { root.chart-width-done("ui.chart_up_width", w); }
+                        reset() => {
+                            root.chart-up-width = root.chart-default-width;
+                            root.chart-width-done("ui.chart_up_width", root.chart-default-width);
+                        }
+                    }
                 }
             }
         }

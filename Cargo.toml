@@ -53,11 +53,13 @@ actix-web = { version = "4", default-features = false, features = ["macros", "co
 anyhow = "1.0.104"
 # Password hashing for the web API. A slow KDF, not sha2 (already present):
 # people reuse passwords, and the settings DB is a plain file.
-# "std" only to get password-hash's OsRng (rand_core/getrandom). It used to
-# arrive by accident through librqbit 8's rand 0.8; librqbit 9 uses rand 0.10,
-# so the feature has to be asked for rather than inherited.
-argon2 = { version = "0.5", features = ["std"] }
-base64 = "0.22"
+# Default features: they include `getrandom`, which is what supplies
+# password-hash's OsRng for salt generation. 0.5 needed `std` asked for
+# explicitly to get the same thing; 0.6 dropped that feature and folded
+# getrandom into the defaults, so naming features here would only risk
+# switching one off.
+argon2 = "0.6"
+base64 = "0.23"
 bencode = { version = "9.0.1", package = "librqbit-bencode", default-features = false }
 chrono = "0.4.45"
 flate2 = "1.1.9"
@@ -99,7 +101,7 @@ maxminddb = "0.30"
 open = "5.4.1"
 # Generates the self-signed certificate for the web API on first use, so HTTPS
 # works out of the box without asking anyone to run openssl.
-rcgen = "0.13"
+rcgen = "0.14"
 # The plugin scripting engine. Pure Rust, so it adds no C build to the three
 # platform matrix, and its limits (max_operations, call depth, string/array
 # size) are constructor arguments rather than a hand-rolled debug hook - which
@@ -107,10 +109,15 @@ rcgen = "0.13"
 # plugins import each other from the plugin folder.
 rhai = "1"
 # Native file/folder pickers for the Slint UI - Slint has none of its own.
-# xdg-portal rather than the default GTK3 backend: a torrent client should not
-# drag GTK into a Linux build to show one Open dialog, and the portal is what
-# Wayland desktops expect anyway.
-rfd = { version = "0.15", optional = true, default-features = false, features = ["xdg-portal", "tokio"] }
+# xdg-portal rather than the gtk3 backend: a torrent client should not drag GTK
+# into a Linux build to show one Open dialog, and the portal is what Wayland
+# desktops expect anyway. It is upstream's default too, but named explicitly so
+# a change of theirs cannot quietly pull GTK back in.
+#
+# No async-runtime feature: 0.15 needed one (`tokio`, routing ashpd's calls),
+# where 0.17's xdg-portal drives its own executor through pollster. That is why
+# the `tokio` feature no longer exists rather than having been dropped here.
+rfd = { version = "0.17", optional = true, default-features = false, features = ["xdg-portal"] }
 reqwest = { version = "0.13.4", features = ["json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
 # Default features deliberately: that selects aws-lc-rs, which the tree already
@@ -120,7 +127,12 @@ rustls-pemfile = "2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 # XML for plugins: parse_xml, so a feed reader plugin does not have to write a
-# parser in Rhai. Already in the tree via other crates, so this costs nothing.
+# parser in Rhai. Already in the tree via librqbit-upnp, so this costs nothing.
+#
+# HELD at 0.41 deliberately. librqbit-upnp 9.0.1 asks for "0.41", and a 0.x
+# minor bump is breaking in semver, so moving to 0.42 does not upgrade the
+# shared copy - it compiles a second one alongside it. Bump this when the
+# vendored librqbit moves, not before.
 quick-xml = "0.41"
 # The UI toolkit. Optional so --no-default-features gives a headless daemon.
 # Decoding res/flags/*.png into Slint images for the peers list. Already in the
