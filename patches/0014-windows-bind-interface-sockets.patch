@@ -1,20 +1,19 @@
 --- a/src/bind_device.rs
 +++ b/src/bind_device.rs
-@@ -2,7 +2,12 @@
+@@ -2,7 +2,11 @@
  pub(crate) mod tests;
  
  use crate::Error;
 -use std::{ffi::CString, num::NonZeroU32, str::FromStr};
-+use std::{
-+    ffi::CString,
-+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-+    num::NonZeroU32,
-+    str::FromStr,
-+};
++use std::{ffi::CString, net::IpAddr, num::NonZeroU32, str::FromStr};
++// NanoTorrent: only the Windows arm keeps addresses, so importing these
++// unconditionally is an unused-import warning on every other platform.
++#[cfg(windows)]
++use std::net::{Ipv4Addr, Ipv6Addr};
  
  #[derive(Debug, Clone)]
  pub struct BindDevice {
-@@ -10,6 +15,12 @@ pub struct BindDevice {
+@@ -10,6 +14,12 @@ pub struct BindDevice {
      index: NonZeroU32,
      #[allow(unused)]
      name: CString,
@@ -27,7 +26,7 @@
  }
  
  impl BindDevice {
-@@ -23,9 +34,87 @@ impl BindDevice {
+@@ -23,9 +33,87 @@ impl BindDevice {
          Ok(Self { index, name })
      }
  
@@ -116,7 +115,7 @@
      }
  
      pub fn index(&self) -> NonZeroU32 {
-@@ -55,9 +144,13 @@ impl BindDevice {
+@@ -55,9 +143,13 @@ impl BindDevice {
              .map_err(Error::BindDeviceSetDeviceError)
      }
  
