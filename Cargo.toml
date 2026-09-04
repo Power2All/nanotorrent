@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -49,6 +49,23 @@ ui-slint = ["dep:slint", "dep:slint-build", "dep:rfd", "dep:raw-window-handle", 
 # JSON and one small HTML page, so gzip covers it, and zstd-sys is a C build
 # for nothing. Basic auth needs no cookies. Re-add ws if live stats ever want
 # a socket rather than SSE.
+#
+# http2 is listed explicitly, but it is not optional in practice: actix-web's
+# `rustls-0_23` feature enables it, so TLS forces it in. That matters because
+# actix-http 3.13.5 - the newest published, with no 4.x line in existence -
+# still pins h2 0.3, which carries RUSTSEC-2026-0258: h2 accepts and queues
+# empty DATA frames without limit, so a stream that is not actively drained
+# grows memory unboundedly, or panics when the length overflows. RustSec grades
+# it LOW.
+#
+# h2 itself is fixed - in 0.4.16, current 0.4.19. What is not fixed is the 0.3
+# line: 0.3.27 is the last of its 28 releases and never got the backport. So
+# the blocker is actix's dependency, not h2, and the upgrade has to come from
+# actix-http. Nor can the offer be suppressed from here:
+# actix-http PREPENDS ["h2", "http/1.1"] to whatever `alpn_protocols` we set,
+# and rustls picks by server preference, so h2 wins for any modern browser.
+# Reachable only when the web interface is switched on (off by default) with
+# TLS. Removing it needs either a newer actix or a vendored actix-http.
 actix-web = { version = "4", default-features = false, features = ["macros", "compress-gzip", "http2", "unicode", "compat", "rustls-0_23"] }
 anyhow = "1.0.104"
 # Password hashing for the web API. A slow KDF, not sha2 (already present):
@@ -97,6 +114,10 @@ librqbit = { version = "9.0.1", default-features = false, features = ["rust-tls"
 # own dependency, and pinned to the same vendored copy by [patch.crates-io],
 # so this costs no extra crate.
 librqbit-peer-protocol = { version = "9.0.1", default-features = false }
+# Enumerating network interfaces, for strict mode: it has to know whether the
+# VPN interface someone bound to is actually present. Already in the tree via
+# librqbit-dualstack-sockets, so naming it costs no new crate.
+network-interface = "2"
 maxminddb = "0.30"
 open = "5.4.1"
 # Generates the self-signed certificate for the web API on first use, so HTTPS
@@ -118,7 +139,11 @@ rhai = "1"
 # where 0.17's xdg-portal drives its own executor through pollster. That is why
 # the `tokio` feature no longer exists rather than having been dropped here.
 rfd = { version = "0.17", optional = true, default-features = false, features = ["xdg-portal"] }
-reqwest = { version = "0.13.4", features = ["json"] }
+# "socks" so the one HTTP client factory in core::http can honour the SOCKS
+# proxy setting. tokio-socks is already in the tree - librqbit uses it for
+# peer and tracker connections - so this adds no crate, only the seam that
+# lets our own requests take the same route.
+reqwest = { version = "0.13.4", features = ["json", "socks"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
 # Default features deliberately: that selects aws-lc-rs, which the tree already
 # resolves rustls to. Picking `ring` here would compile a second crypto library.

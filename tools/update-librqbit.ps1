@@ -1,5 +1,5 @@
-# Re-vendors librqbit AND librqbit-tracker-comms from crates.io and re-applies
-# the NanoTorrent patches (see ../patches and vendor/librqbit/PATCHES.md).
+# Re-vendors the librqbit family from crates.io and re-applies the NanoTorrent
+# patches (see ../patches and vendor/librqbit/PATCHES.md).
 #
 # Usage:
 #   .\tools\update-librqbit.ps1              # latest stable version
@@ -8,10 +8,13 @@
 # The vendored copies are the PUBLISHED crate sources (not the git workspace),
 # so all their dependencies keep resolving from crates.io.
 #
-# Three crates are vendored, because two features span crate boundaries:
-# patch 0005 (per-tracker announce stats) needs librqbit-tracker-comms, and
-# patch 0010 (BEP 52 hash messages) needs librqbit-peer-protocol. They all
-# share librqbit's version number, so one -Version covers all three.
+# Four crates are vendored, because several features reach past librqbit:
+# patch 0005 (per-tracker announce stats) needs librqbit-tracker-comms, patches
+# 0008 and 0010 (BEP 52 hash messages, fast extension) need
+# librqbit-peer-protocol, and patches 0013 and 0014 (the Windows UDP reset fix
+# and bind-to-interface) need librqbit-dualstack-sockets. The first three share
+# librqbit's version number, so one -Version covers them; the sockets crate is
+# versioned separately and is handled below.
 
 param([string]$Version)
 

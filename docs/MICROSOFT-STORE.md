@@ -62,7 +62,7 @@ place rather than on every command line - the same names CI uses:
 ```powershell
 $env:STORE_IDENTITY_NAME = "12345Publisher.NanoTorrent"
 $env:STORE_PUBLISHER     = "CN=ABCD1234-...."
-installeruild-msix.ps1 -NoSign
+installer\build-msix.ps1 -NoSign
 ```
 
 The build prints which identity it used, and says so plainly when it was the
@@ -108,18 +108,31 @@ writes and skip the hand-made shortcut when it returns `Some`. Neither is done,
 and neither can be checked from an unpackaged dev build, which is the reason to
 do them together with a real Store install in front of you.
 
-## Automating the update from a GitHub release
+## The same thing from CI, if you ever want it
 
-`.github/workflows/store-publish.yml` builds the MSIX and publishes it whenever
-a release is published, using the
+`.github/workflows/store-publish.yml` does what `store-submit.ps1` does, using
+the
 [Microsoft Store Developer CLI](https://learn.microsoft.com/windows/apps/publish/msstore-dev-cli/github-actions)
 (`microsoft/microsoft-store-apppublisher@v1.1`).
 
-It slots into the existing flow rather than replacing it: `release.yml` drafts a
-release, you press **Publish**, and that fires this workflow. The distinction
-matters - a release created by a workflow using `GITHUB_TOKEN` does *not*
-trigger other workflows, so an automated publish would have gone unnoticed. It
-is the human pressing Publish that starts this.
+**It is manual-only and does not run on a published release.** It used to, and
+that was turned off: submissions are made from a developer machine, and a
+workflow firing on Publish would put a second submission on the same product
+behind the first. Running it is now a deliberate act - Actions ▸ Publish to
+Microsoft Store ▸ Run workflow.
+
+If you ever switch back to the CI route, restore the trigger with:
+
+```yaml
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+```
+
+and stop using the local script, rather than running both. Worth knowing if you
+do: a release created by a workflow using `GITHUB_TOKEN` does *not* trigger
+other workflows, so it is the human pressing **Publish** that would start it.
 
 The package is kept as a **build artifact** (30 days), not attached to the
 release: `release.yml` deliberately refuses to alter a published release's
@@ -149,6 +162,104 @@ Required repository secrets:
 Seller ID and Publisher ID sit next to each other and are not the same: the
 Seller ID is the short numeric one, the Publisher ID is the `CN=`-style GUID.
 `msstore reconfigure --sellerId` wants the numeric one.
+
+### From your own machine
+
+> **This is the route.** The GitHub workflow no longer runs on a published
+> release - it is manual-only, kept as a fallback. Submitting from two places
+> at once would put two submissions on the same product, so pick one, and the
+> one that is picked is this.
+
+The same thing without GitHub. One-time setup:
+
+```
+winget install Microsoft.DotNet.DesktopRuntime.9
+winget install "Microsoft Store Developer CLI"
+msstore                      # first run walks through signing in
+```
+
+Sign in with the **Microsoft Entra ID** account associated with the Partner
+Center account. The CLI rejects a personal Microsoft account, which is the
+first thing that catches people out.
+
+Then one command - though it needs three values, not one:
+
+```powershell
+$env:STORE_IDENTITY_NAME = '12345Publisher.NanoTorrent'   # Product identity > Name
+$env:STORE_PUBLISHER     = 'CN=<guid>'                    # Product identity > Publisher
+.\installer\store-submit.ps1 -ProductId 9NBLGGH4XXXX      # Product identity > Store ID
+```
+
+All three sit on the same Partner Center page. The Store ID identifies the
+product to the API; the other two go *inside* the package, and Partner Center
+rejects a package whose identity does not match the reservation. Set them once
+in your profile and the command really is just the Store ID after that; they
+can also be passed as `-IdentityName` and `-Publisher`.
+
+The script refuses to build without them rather than warning and carrying on,
+because the failure would otherwise arrive at upload, after a full release
+build. `-Msix <path>` does not ask for them - that package already has an
+identity, whatever it is.
+
+It builds the MSIX, uploads it as a draft, rewrites "What's new" for every
+language, and asks before committing - a commit goes to certification and is
+public once it passes, so it is not a thing to do by accident. Answer no and
+the draft is left in Partner Center to review by hand; `-Yes` skips the
+question for an unattended run.
+
+Useful variations:
+
+| | |
+| --- | --- |
+| `-DryRun` | Print every step, run none of them |
+| `-Msix <path>` | Submit a package you already built |
+| `-Yes` | Do not ask before committing |
+
+The Store ID can live in `STORE_PRODUCT_ID` instead of being retyped, and
+`build-msix.ps1` already reads `STORE_IDENTITY_NAME` and `STORE_PUBLISHER` from
+the environment the same way.
+
+Nothing about this needs the GitHub secrets: the CLI keeps its own credentials
+on the machine after the first sign-in. The workflow and this script run the
+same sequence and share `store-whatsnew.ps1`, so a listing that submits from
+one submits from the other.
+
+### The listings go up with the package
+
+`msstore publish` uploads the package and nothing else - it does not touch
+listing metadata. That is why the "What's new" text for all 41 languages used
+to be pasted into Partner Center by hand after every release.
+
+`msstore submission update` does take listings, but only as the *whole*
+submission JSON. So the workflow reads the draft, rewrites one field per
+language from `MS_Store_Release_Info/*.txt`, and sends it back:
+
+```
+msstore publish <msix> -id <product> --noCommit   # package only, stays a draft
+msstore submission get <product>                  # the whole submission, as JSON
+installer\store-whatsnew.ps1 ...                  # rewrite releaseNotes per language
+msstore submission update <product> <json>        # send it back
+msstore submission publish <product>              # commit for certification
+```
+
+**The order is not the obvious one.** For an app that is already published,
+`msstore publish` *deletes* the pending draft and creates a fresh one from the
+last published submission. Writing the release notes first would silently throw
+them away. Package first, metadata second, commit last.
+
+`installer\store-whatsnew.ps1` can be run on its own, against a saved
+`msstore submission get` dump, with no credentials and no release:
+
+```powershell
+msstore submission get <product> | Out-File -Encoding utf8 sub.json
+.\installer\store-whatsnew.ps1 -SubmissionPath sub.json -OutPath sub.new.json -Version 0.3.2
+```
+
+It refuses to write anything if a listing's "What's new" does not mention the
+version being shipped, which is the mistake the hand-editing invites - the
+listing files carry the version in their text and are easy to forget. It also
+warns about languages live in the Store with no file here, and files with no
+matching Store language, leaving both untouched rather than guessing.
 
 The Entra application also has to be added under **Partner Center ▸ Account
 settings ▸ User management ▸ Microsoft Entra applications** with the **Manager**

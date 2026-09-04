@@ -85,6 +85,29 @@ impl<S> MaybeDualstackSocket<S> {
 
 impl MaybeDualstackSocket<Socket> {
     fn bind(addr: SocketAddr, opts: BindOpts, is_udp: bool) -> crate::Result<Self> {
+        // NanoTorrent: decide the family before the socket exists.
+        //
+        // Windows applies a bind device by binding one of its addresses, and a
+        // socket carries one. Several callers ask for [::] unconditionally -
+        // the UDP tracker client and the DHT among them - so without this a
+        // v4-only tunnel fails every one of them with BindDeviceNotSupported.
+        // Downgrading an *unspecified* v6 request to v4 is what those callers
+        // meant by it: "any address", which for a bound device is the one
+        // address it has. A specific address is never rewritten.
+        let addr = match opts.device {
+            Some(bd)
+                if addr.is_ipv6()
+                    && addr.ip().is_unspecified()
+                    && bd.bind_ip(true).is_none() =>
+            {
+                match bd.bind_ip(false) {
+                    Some(v4) => SocketAddr::new(v4, addr.port()),
+                    None => addr,
+                }
+            }
+            _ => addr,
+        };
+
         let socket = Socket::new(
             if addr.is_ipv6() {
                 Domain::IPV6
@@ -160,6 +183,21 @@ impl MaybeDualstackSocket<Socket> {
 
         if let Some(bd) = opts.device {
             bd.bind_sref(&socket, addr_kind.is_v6())?;
+        }
+
+        // NanoTorrent: on Windows, listen on the device's own address instead
+        // of the requested wildcard - that is what confines the listener to
+        // the interface. Only the address is replaced; the port and family are
+        // the caller's, and the family check after the bind still holds.
+        let mut addr = addr;
+        if let Some(bd) = opts.device {
+            match bd.bind_ip(addr_kind.is_v6()) {
+                Some(ip) => addr = SocketAddr::new(ip, addr.port()),
+                #[cfg(windows)]
+                None => return Err(Error::BindDeviceNotSupported),
+                #[cfg(not(windows))]
+                None => {}
+            }
         }
 
         socket.bind(&addr.into()).map_err(|e| {

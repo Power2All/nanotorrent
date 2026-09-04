@@ -2,6 +2,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NanoTorrent</title>
+<link rel="icon" href="/favicon.ico" type="image/png">
 <!--
   The web remote. One file, no build step, embedded in the binary with
   include_str! - same approach as lang/*.json and res/flags/*.png.
@@ -57,8 +58,7 @@ select {
 button,
 select,
 input[type=text],
-input[type=number],
-input[type=file] {
+input[type=number] {
   height: var(--control-h);
 }
 * { box-sizing: border-box; }
@@ -102,19 +102,21 @@ body {
 #drawer-body h3:first-child { margin-top: .25rem; }
 .pref { display: grid; gap: .25rem; margin-bottom: .8rem; }
 .pref label { font-size: .85rem; }
-.pref .desc { color: var(--muted); font-size: .78rem; }
 .pref .row { display: flex; gap: .4rem; align-items: center; }
 .pref .row input[type=text], .pref .row select { flex: 1; min-width: 0; }
 .pref .row input[type=number] { width: 8rem; }
 .pref .unit { color: var(--muted); font-size: .8rem; }
-.pref code { font-size: .75rem; color: var(--muted); }
 .hamburger { line-height: 1; padding: .3rem .55rem; }
 header {
   display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: center;
   padding: .7rem 1rem; border-bottom: 1px solid var(--line); background: var(--panel);
   position: sticky; top: 0; z-index: 5;
 }
-h1 { font-size: 1.05rem; margin: 0 auto 0 0; font-weight: 600; }
+h1 {
+  font-size: 1.05rem; margin: 0 auto 0 0; font-weight: 600;
+  display: flex; align-items: center; gap: .5rem;
+}
+h1 img { display: block; }
 .stat { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .stat b { color: var(--fg); font-weight: 600; }
 button {
@@ -151,7 +153,10 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 td.name { max-width: 30rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty { padding: 3rem 1rem; text-align: center; color: var(--muted); }
 
-.bar { position: relative; width: 8rem; height: 1.1rem; background: var(--bar-bg); border-radius: 4px; overflow: hidden; }
+.bar {
+  position: relative; width: 100%; min-width: 3rem; height: 1.1rem;
+  background: var(--bar-bg); border-radius: 4px; overflow: hidden;
+}
 .bar > i { position: absolute; inset: 0 auto 0 0; background: var(--bar); display: block; }
 /* The label sits over both the grey track and the coloured fill, so neither a
    light nor a dark colour is readable everywhere. A halo in the page
@@ -164,12 +169,26 @@ td.name { max-width: 30rem; overflow: hidden; text-overflow: ellipsis; white-spa
 .state { font-size: .8rem; color: var(--muted); }
 .state.err { color: var(--danger); }
 .state.up { color: var(--ok); }
-.actions { display: flex; gap: .3rem; }
+.actions { display: flex; gap: .3rem; flex-wrap: nowrap; }
+/* Compact enough for three of them side by side without the column having to
+   be as wide as the name. */
+.actions button { padding: .35rem .5rem; white-space: nowrap; }
+td.act { overflow: visible; }
 
 dialog {
   border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
   color: var(--fg); padding: 0; max-width: min(38rem, 94vw); width: 100%;
 }
+/* The panels that hold a list earn more width than the rest.
+
+   `#add` has two panes side by side and torrent names to fit in them. `#plug`
+   is a plugin's own window - feed titles and article headlines, which are the
+   same shape of text and were being cut off at 38rem. `#plugs` lists plugin
+   names with their permissions beside them.
+
+   The rest stay narrow: a confirmation as wide as the screen reads as a page,
+   not a question. */
+#add, #plug, #plugs { max-width: min(76rem, 96vw); }
 dialog::backdrop { background: #0008; }
 .dlg-head { padding: .8rem 1rem; border-bottom: 1px solid var(--line); font-weight: 600; }
 .dlg-body { padding: 1rem; display: grid; gap: .8rem; }
@@ -189,7 +208,7 @@ textarea { resize: vertical; min-height: 2.4rem; }
 /* Torrent inspection: queue on the left, that torrent's files on the right.
    Fixed height so adding twenty torrents cannot grow the dialog off-screen -
    both panes scroll instead. */
-.inspect { display: grid; grid-template-columns: 190px 1fr; gap: .5rem; height: 210px; }
+.inspect { display: grid; grid-template-columns: 240px 1fr; gap: .5rem; height: 240px; }
 .inspect-queue, .inspect-files {
   border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
   display: flex; flex-direction: column; min-width: 0;
@@ -223,8 +242,19 @@ textarea { resize: vertical; min-height: 2.4rem; }
   .inspect { grid-template-columns: 1fr; height: 300px; }
 }
 /* The file input's inner button is a native control and keeps the browser's
-   own light styling on a dark page unless it is styled by name. */
-input[type=file] { padding-top: 0; padding-bottom: 0; }
+   own light styling on a dark page unless it is styled by name.
+
+   Laid out as a flex box so the button and the chosen-file text sit on the
+   vertical centre line. Zeroing the padding alone was not enough: the contents
+   are inline, so they aligned on the text baseline and rode high in a box that
+   is taller than they are. */
+input[type=file] {
+  display: flex; align-items: center;
+  /* Height comes from the contents plus this padding, NOT from --control-h.
+     A fixed height here has to be divided evenly around a button whose height
+     the browser decides, and it never quite came out level. */
+  height: auto; padding: .3rem .55rem; cursor: pointer;
+}
 input[type=file]::file-selector-button {
   font: inherit; margin-right: .6rem; padding: 0 .6rem; cursor: pointer;
   height: calc(var(--control-h) - .7rem);
@@ -247,10 +277,139 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
 #toasts { position: fixed; right: 1rem; bottom: 1rem; display: grid; gap: .5rem; z-index: 10; max-width: min(28rem, 92vw); }
 .toast { padding: .6rem .8rem; border-radius: 8px; border: 1px solid var(--danger); background: var(--panel); color: var(--danger); font-size: .85rem; }
 .toast.info { border-color: var(--accent); color: var(--accent); }
+
+/* Plugin surface. Deliberately plain: a plugin supplies text, never styling,
+   so nothing here can be driven from a .rhai file. */
+.plug-list {
+  border: 1px solid var(--line); border-radius: 6px;
+  max-height: 22rem; overflow-y: auto; margin-bottom: .5rem;
+}
+.plug-row { padding: .35rem .5rem; cursor: pointer; border-bottom: 1px solid var(--line); }
+.plug-row:last-child { border-bottom: 0; }
+.plug-row:hover { background: var(--panel); }
+.plug-row.sel { background: var(--accent); color: #fff; }
+.plug-row .sub { display: block; font-size: .75rem; color: var(--muted); }
+.plug-row.sel .sub { color: #e8e8e8; }
+.plug-status { color: var(--muted); font-size: .8rem; margin: .25rem 0 .5rem; min-height: 1.1em; }
+.plug-buttons { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+/* Toolbar, matching the desktop's set and order. Icons are currentColor so
+   they follow the theme without a second palette. */
+.tool {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--control-h); padding: 0;
+}
+.tool svg { width: 18px; height: 18px; fill: currentColor; }
+.tool:disabled { opacity: .35; }
+.tool-sep { width: 1px; height: 1.2rem; background: var(--line); margin: 0 .15rem; }
+
+/* Throughput charts, to the desktop's geometry: 96px by default, dragged
+   between 48 and 320, one grip each.
+
+   `height` is the control height and `box-sizing: border-box`, so the border
+   sits INSIDE it - without that the 1px border added 2px to the tallest thing
+   in the header and pushed the whole bar taller than a button.
+
+   The polyline is stretched rather than fitted (`preserveAspectRatio="none"`),
+   which is the same lesson app.slint records: an aspect-preserving fit draws a
+   sliver a few pixels wide however much room it is given. */
+.chart {
+  position: relative; display: inline-flex; align-items: center; gap: .3rem;
+  height: var(--control-h);
+}
+.chart svg {
+  display: block; box-sizing: border-box;
+  width: 96px; height: var(--control-h);
+  border: 1px solid var(--line); border-radius: 4px; background: var(--panel);
+}
+.chart polyline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+#ch-ul-p { stroke: var(--ok); }
+.chart b {
+  font-size: .72rem; font-weight: 500; color: var(--muted);
+  min-width: 4.2rem; white-space: nowrap;
+}
+/* Its own grip, like the desktop's: the last 8px of the box. */
+.chart .cgrip {
+  position: absolute; top: 0; left: 0; height: 100%; width: 8px;
+  cursor: ew-resize; user-select: none;
+}
+
+/* Fixed layout so a column keeps the width it was given instead of being
+   re-negotiated every refresh as torrent names come and go. */
+table { table-layout: fixed; }
+th { position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td { overflow: hidden; text-overflow: ellipsis; }
+/* The drag handle: its own element rather than a cursor on the th edge, so the
+   hit area is wide enough to grab without being wide enough to mis-click. */
+.grip {
+  position: absolute; top: 0; right: 0; width: 7px; height: 100%;
+  cursor: col-resize; user-select: none;
+}
+.grip:hover { background: var(--accent); opacity: .5; }
+body.resizing { cursor: col-resize; user-select: none; }
+tr.sel td { background: var(--panel); }
+tbody tr { cursor: default; }
+
+/* Plugin index rows. */
+.pl-row {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .5rem 0; border-bottom: 1px solid var(--line);
+}
+.pl-row:last-child { border-bottom: 0; }
+.pl-main { flex: 1; min-width: 0; }
+.pl-name { font-weight: 600; }
+.pl-note { font-size: .75rem; color: var(--muted); }
+.pl-note.err { color: var(--danger); }
+.pl-note.warn { color: #b06000; }
+
+/* Boolean settings as a toggle button rather than a bare checkbox: a lone
+   checkbox in a column of text boxes is a small hit target and reads as an
+   afterthought. The real <input> is still there, just visually hidden, so
+   keyboard focus, space to toggle and screen readers all keep working. */
+.toggle {
+  display: inline-flex; align-items: center; gap: .5rem;
+  /* A floor, not a fixed height: these labels are whole sentences and wrap to
+     two lines on a narrow drawer, which a fixed height simply cut off. */
+  min-height: var(--control-h); padding: .4rem .8rem;
+  /* The drawer is narrow; let the button take the width it is given so the
+     text wraps inside it rather than pushing past the edge. */
+  width: 100%; text-align: left;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--fg);
+  cursor: pointer; user-select: none; font-size: .9rem;
+}
+.toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.toggle .tick {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.1rem; height: 1.1rem; flex: none;
+  border: 1px solid var(--line); border-radius: 4px;
+  background: var(--bg); font-size: .8rem; line-height: 1;
+  color: transparent;
+}
+/* Lit when on: the tick appears and the whole button takes the accent, so the
+   state reads from across the panel rather than from one small glyph. */
+.toggle.on { border-color: var(--accent); color: var(--accent); }
+.toggle.on .tick { background: var(--accent); border-color: var(--accent); color: #fff; }
+.toggle:hover { border-color: var(--accent); }
+/* Focus has to stay visible now that the input itself is hidden. */
+.toggle input:focus-visible + .tick { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Drop target. The whole page accepts a drag, so there is no small area to
+   find - the overlay only appears once something is actually being dragged. */
+#drop {
+  position: fixed; inset: 0; z-index: 50;
+  display: none; align-items: center; justify-content: center;
+  background: #000a; color: #fff; font-size: 1.2rem; text-align: center;
+  pointer-events: none;
+}
+#drop.on { display: flex; }
+#drop span {
+  border: 2px dashed #fff8; border-radius: 12px; padding: 2rem 3rem; background: #0006;
+}
 </style>
 
 <header>
-  <h1>NanoTorrent <span class="stat" id="version"></span></h1>
+  <h1><img src="/favicon.ico" alt="" width="20" height="20">NanoTorrent <span class="stat" id="version"></span></h1>
   <span class="stat">&darr; <b id="dl">0 B/s</b></span>
   <span class="stat">&uarr; <b id="ul">0 B/s</b></span>
   <span class="stat">DHT <b id="dht">-</b></span>
@@ -260,11 +419,38 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
     <option value="light">{{light_theme}}</option>
     <option value="dark">{{theme_dark}}</option>
   </select>
+  <button class="tool" id="tb-magnet" title="{{add_magnet_link_s}}" aria-label="{{add_magnet_link_s}}">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3h4v3H4zM12 3h4v3h-4zM4 7h4v3a2 2 0 0 0 4 0V7h4v3a6 6 0 0 1-12 0z"/></svg>
+  </button>
+  <button class="tool" id="tb-add" title="{{add_torrent_s}}" aria-label="{{add_torrent_s}}">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 4h2v5h5v2h-5v5H9v-5H4V9h5z"/></svg>
+  </button>
+  <span class="tool-sep"></span>
+  <button class="tool" id="tb-remove" title="{{remove}}" aria-label="{{remove}}" disabled>
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 2h6v2h4v2H3V4h4zM4 7h12l-1 11H5z"/></svg>
+  </button>
+  <button class="tool" id="tb-resume" title="{{resume}}" aria-label="{{resume}}" disabled>
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3l12 7-12 7z"/></svg>
+  </button>
+  <button class="tool" id="tb-pause" title="{{pause}}" aria-label="{{pause}}" disabled>
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3h4v14H5zM11 3h4v14h-4z"/></svg>
+  </button>
+  <span class="stat" id="sel-count" title="{{status}}"></span>
+  <span class="tool-sep"></span>
+  <!-- One minute of each direction, the same pair the desktop toolbar draws.
+       Not to a shared scale: upload is usually a fraction of download, and one
+       scale would flatten it into a line along the bottom. -->
+  <span class="chart" title="&darr;"><svg id="ch-dl" viewBox="0 0 60 100" preserveAspectRatio="none"><polyline id="ch-dl-p"/></svg><b id="ch-dl-t">-</b></span>
+  <span class="chart" title="&uarr;"><svg id="ch-ul" viewBox="0 0 60 100" preserveAspectRatio="none"><polyline id="ch-ul-p"/></svg><b id="ch-ul-t">-</b></span>
   <button class="primary" id="btn-add">{{add_torrent_s}}</button>
+  <button class="tool" id="btn-plugins" title="{{plugins}}" aria-label="{{plugins}}" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.7 2.7 0 0 1 0 5.4H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.7 2.7 0 0 1 5.4 0V22H17a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
+  </button>
   <button class="hamburger" id="btn-prefs" title="{{preferences}}" aria-label="{{preferences}}"
           aria-controls="drawer" aria-expanded="false">&#9776;</button>
 </header>
 
+<div id="drop" aria-hidden="true"><span>{{add_torrent_s}}</span></div>
 <div id="scrim"></div>
 <aside id="drawer" aria-hidden="true" aria-label="{{preferences}}">
   <header>
@@ -281,7 +467,8 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
 <main>
   <div class="tablewrap">
     <table>
-      <thead><tr>
+      <colgroup id="cols"></colgroup>
+      <thead><tr id="head">
         <th>{{name}}</th><th>{{size}}</th><th>{{progress}}</th><th>{{status}}</th>
         <th class="num">&darr;</th><th class="num">&uarr;</th>
         <th class="num">{{peers}}</th><th class="num">{{ratio}}</th><th>{{actions}}</th>
@@ -291,6 +478,42 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
   </div>
   <div class="empty" id="empty" hidden>{{no_torrents_yet}}</div>
 </main>
+
+<!-- A plugin's surface, drawn from /api/plugins/{name}. The shape is fixed -
+     an optional upper list, a main list, a text field and some buttons - the
+     same shape the desktop window draws, because it is the same state. A
+     plugin cannot put arbitrary markup here; every string goes in as
+     textContent. -->
+<!-- Every plugin in the folder, on or off. The button answers "what do I
+     have and is it running", so a disabled plugin has to appear here - it has
+     no window by definition, and listing only windows would make it look like
+     it did not exist. -->
+<dialog id="plugs">
+  <form method="dialog">
+    <div class="dlg-head">{{plugins}}</div>
+    <div class="dlg-body"><div id="plugs-list"></div></div>
+    <div class="dlg-foot">
+      <button value="cancel">{{close}}</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="plug">
+  <form method="dialog">
+    <div class="dlg-head" id="plug-title">{{plugins}}</div>
+    <div class="dlg-body">
+      <select id="plug-pick" hidden></select>
+      <div class="plug-list" id="plug-groups" hidden></div>
+      <div class="plug-list" id="plug-rows"></div>
+      <div class="plug-status" id="plug-status"></div>
+      <input type="text" id="plug-input" hidden>
+      <div class="plug-buttons" id="plug-buttons"></div>
+    </div>
+    <div class="dlg-foot">
+      <button value="cancel">{{close}}</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="add">
   <form method="dialog">
@@ -395,7 +618,13 @@ async function api(method, path, body) {
     let detail = await res.text().catch(() => "");
     throw new Error(detail.trim() || (res.status + " " + res.statusText));
   }
-  return res.status === 204 ? null : res.json();
+  // Any empty body, not just 204. A 202 with nothing in it - which is what
+  // "accepted, the plugin runs on its own thread" looks like - used to reach
+  // res.json() and throw "Unexpected end of JSON input", killing the caller
+  // mid-flow. That is how the plugin panel came up blank.
+  if (res.status === 204 || res.headers.get("content-length") === "0") return null;
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 // --- torrent list -----------------------------------------------------------
@@ -426,6 +655,12 @@ function renderRows(list) {
 
   for (const t of list) {
     const row = body.insertRow();
+    row.dataset.hash = t.info_hash;
+    row.addEventListener("click", (ev) => {
+      // Not when the click was meant for one of the row's own buttons.
+      if (ev.target.closest("button")) return;
+      clickRow(t.info_hash, ev);
+    });
     const name = cell(row, t.name, "name");
     name.title = t.name + "\n" + t.save_path;
 
@@ -459,7 +694,9 @@ function renderRows(list) {
     cell(row, t.peers + " (" + t.peers_total + ")", "num");
     cell(row, t.ratio.toFixed(2), "num");
 
-    const actions = cell(row);
+    // `act` opts out of the ellipsis clipping every other cell wants: three
+    // buttons are not text and must not be cut in half.
+    const actions = cell(row, undefined, "act");
     const box = document.createElement("div");
     box.className = "actions";
     box.append(
@@ -516,6 +753,22 @@ function prefControl(s) {
     input = document.createElement("input");
     input.type = "checkbox";
     input.checked = s.value === "true";
+
+    // The description moves onto the button itself, so it is not printed
+    // twice, and the button carries the whole hit area.
+    label.remove();
+    const toggle = document.createElement("label");
+    toggle.className = "toggle" + (input.checked ? " on" : "");
+    const tick = document.createElement("span");
+    tick.className = "tick";
+    tick.textContent = "\u2713";
+    const text = document.createElement("span");
+    text.textContent = s.description;
+    toggle.append(input, tick, text);
+    input.addEventListener("change", () => {
+      toggle.classList.toggle("on", input.checked);
+    });
+    row.append(toggle);
   } else if (s.kind === "choice") {
     input = document.createElement("select");
     // A setting that has never been written reads back as "(unset)", which
@@ -548,7 +801,7 @@ function prefControl(s) {
     input.value = s.value === "(unset)" ? "" : s.value;
   }
   input.id = id;
-  row.append(input);
+  if (s.kind !== "bool") row.append(input);
 
   if (s.unit) {
     const u = document.createElement("span");
@@ -570,14 +823,10 @@ function prefControl(s) {
     row.append(browse);
   }
   wrap.append(row);
-
-  const desc = document.createElement("div");
-  desc.className = "desc";
-  desc.innerHTML = "";
-  const code = document.createElement("code");
-  code.textContent = s.name;
-  desc.append(code);
-  wrap.append(desc);
+  // The CLI name, on hover rather than on screen: `nanotorrent --set <name>`
+  // is worth being able to find, and worth nothing as a line of grey monospace
+  // under every one of forty settings.
+  wrap.title = s.name;
 
   // Edits are collected, not sent: Save writes them, applies them and reloads.
   // Per-control saving meant a half-changed configuration was live the whole
@@ -687,7 +936,13 @@ async function refresh() {
     $("ul").textContent = speed(info.upload_rate);
     $("dht").textContent = info.dht_nodes === null ? "-" : info.dht_nodes;
     $("count").textContent = info.torrents;
+    pushRates(info.download_rate, info.upload_rate);
+    LAST_TORRENTS = list;
     renderRows(list);
+    // Torrents may have been removed underneath the selection.
+    const alive = new Set(list.map((t) => t.info_hash));
+    for (const h of [...selectedHashes]) if (!alive.has(h)) selectedHashes.delete(h);
+    paintSelection();
     // The session error queue drains on read, so anything here is new.
     for (const e of errs.errors) toast(e);
     failures = 0;
@@ -969,4 +1224,495 @@ function applyTheme(value) {
 const REFRESH = Number(new URLSearchParams(location.search).get("refresh") ?? 2);
 refresh();
 if (REFRESH > 0) setInterval(refresh, REFRESH * 1000);
+
+// --- plugins ---------------------------------------------------------------
+//
+// The same surface the desktop window shows, from the same state: the plugin
+// host holds it, the window and this both render it and post events back. A
+// .rhai plugin needs no changes and no extra permission to appear here.
+let plugCurrent = null;
+let plugTimer = 0;
+
+function plugRow(r, kind) {
+  const el = document.createElement("div");
+  el.className = "plug-row" + (r.selected ? " sel" : "");
+  const t = document.createElement("span");
+  t.textContent = r.title;                        // never innerHTML - see header
+  el.append(t);
+  if (r.subtitle) {
+    const s = document.createElement("span");
+    s.className = "sub";
+    s.textContent = r.subtitle;
+    el.append(s);
+  }
+  el.onclick = () => plugSend({ kind, id: r.id });
+  return el;
+}
+
+async function plugSend(body) {
+  if (!plugCurrent) return;
+  if (body.kind === "button") body.input = $("plug-input").value;
+  await api("POST", `/api/plugins/${encodeURIComponent(plugCurrent)}/event`, body);
+  // The plugin runs on the host's thread and answers by updating its surface,
+  // so poll briefly rather than expecting the POST to carry a result.
+  setTimeout(plugDraw, 150);
+  setTimeout(plugDraw, 600);
+}
+
+async function plugDraw() {
+  if (!plugCurrent) return;
+  let s;
+  try {
+    s = await api("GET", `/api/plugins/${encodeURIComponent(plugCurrent)}`);
+  } catch (e) {
+    return;
+  }
+  $("plug-title").textContent = s.title || s.name;
+  $("plug-status").textContent = s.status;
+
+  const groups = $("plug-groups");
+  groups.textContent = "";
+  groups.hidden = s.groups.length === 0;
+  for (const g of s.groups) groups.append(plugRow(g, "group"));
+
+  const rows = $("plug-rows");
+  rows.textContent = "";
+  for (const r of s.rows) rows.append(plugRow(r, "row"));
+
+  const input = $("plug-input");
+  input.hidden = !s.placeholder;
+  input.placeholder = s.placeholder || "";
+
+  const buttons = $("plug-buttons");
+  buttons.textContent = "";
+  for (const [id, label] of s.buttons) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.onclick = () => plugSend({ kind: "button", id });
+    buttons.append(b);
+  }
+}
+
+async function plugOpen(name) {
+  plugCurrent = name;
+  $("plug-input").value = "";
+  $("plug").showModal();
+  // Its chance to fill the surface before it is looked at, exactly as opening
+  // the desktop window does.
+  await plugSend({ kind: "opened" });
+  await plugDraw();
+  clearInterval(plugTimer);
+  plugTimer = setInterval(plugDraw, 2000);
+}
+
+$("plug").addEventListener("close", () => {
+  clearInterval(plugTimer);
+  plugTimer = 0;
+  plugCurrent = null;
+});
+
+// The button only exists if something is behind it: plugins are off by
+// default, and most people have none.
+async function plugScan() {
+  let list = [];
+  try {
+    list = await api("GET", "/api/plugins");
+  } catch (e) {
+    return;
+  }
+  $("btn-plugins").hidden = false;
+  // The surface dialog's own picker only lists what can actually be opened.
+  const openable = list.filter((p) => p.has_window);
+  const pick = $("plug-pick");
+  pick.hidden = openable.length < 2;
+  pick.textContent = "";
+  for (const p of openable) {
+    const o = document.createElement("option");
+    o.value = p.name;
+    o.textContent = p.title || p.name;
+    pick.append(o);
+  }
+  pick.onchange = () => plugOpen(pick.value);
+}
+$("btn-plugins").onclick = () => { $("plugs").showModal(); drawPlugList(); };
+plugScan();
+
+// --- toolbar, selection and charts ------------------------------------------
+//
+// The desktop's toolbar acts on the selected torrent, so this needs a
+// selection to act on - the table had none, only per-row buttons.
+// A set, not one hash: the toolbar acts on everything selected, the way the
+// desktop list does. Plain click selects one, ctrl/cmd-click adds or removes
+// one, shift-click takes the range from the last row clicked.
+const selectedHashes = new Set();
+let anchorHash = null;
+
+function paintSelection() {
+  for (const tr of document.querySelectorAll("#rows tr")) {
+    tr.classList.toggle("sel", selectedHashes.has(tr.dataset.hash));
+  }
+  syncToolbar();
+}
+
+function chosen() {
+  return (LAST_TORRENTS || []).filter((t) => selectedHashes.has(t.info_hash));
+}
+
+function clickRow(hash, ev) {
+  const order = (LAST_TORRENTS || []).map((t) => t.info_hash);
+
+  if (ev.shiftKey && anchorHash && order.includes(anchorHash)) {
+    const a = order.indexOf(anchorHash);
+    const b = order.indexOf(hash);
+    selectedHashes.clear();
+    for (let i = Math.min(a, b); i <= Math.max(a, b); i++) selectedHashes.add(order[i]);
+  } else if (ev.ctrlKey || ev.metaKey) {
+    if (selectedHashes.has(hash)) selectedHashes.delete(hash);
+    else selectedHashes.add(hash);
+    anchorHash = hash;
+  } else {
+    selectedHashes.clear();
+    selectedHashes.add(hash);
+    anchorHash = hash;
+  }
+  paintSelection();
+}
+
+function syncToolbar() {
+  const picked = chosen();
+  const n = picked.length;
+  $("tb-remove").disabled = n === 0;
+  // Enabled when it would do something to at least one of them: with a mixed
+  // selection both buttons are live, and each acts only on the rows it applies
+  // to rather than toggling everything.
+  $("tb-resume").disabled = !picked.some((t) => t.paused);
+  $("tb-pause").disabled = !picked.some((t) => !t.paused);
+  $("sel-count").textContent = n > 1 ? n + "" : "";
+}
+
+// Kept so the toolbar can ask about the selected torrent without another
+// round trip - refresh() already has the list.
+let LAST_TORRENTS = [];
+
+$("tb-magnet").onclick = () => { $("add").showModal(); $("add-magnet").focus(); };
+$("tb-add").onclick = () => { $("add").showModal(); $("add-file").focus(); };
+// Each acts on the rows it applies to, so a mixed selection does the sensible
+// thing rather than toggling every row to the opposite of what it was.
+$("tb-resume").onclick = () =>
+  act(() => Promise.all(chosen().filter((t) => t.paused)
+    .map((t) => api("POST", `/api/torrents/${t.info_hash}/resume`))));
+$("tb-pause").onclick = () =>
+  act(() => Promise.all(chosen().filter((t) => !t.paused)
+    .map((t) => api("POST", `/api/torrents/${t.info_hash}/pause`))));
+$("tb-remove").onclick = () => {
+  const picked = chosen();
+  if (!picked.length) return;
+  // Same two prompts the row's own Remove button asks, rather than a third
+  // wording for the same act.
+  const what = picked.length === 1 ? `"${picked[0].name}"` : picked.length + " torrents";
+  if (!confirm(`Remove ${what} from NanoTorrent?`)) return;
+  const withData = confirm("Also DELETE the downloaded files from disk?\n\nOK = delete files, Cancel = keep them.");
+  act(() => Promise.all(picked.map((t) =>
+    api("DELETE", `/api/torrents/${t.info_hash}?delete_files=${withData}`))));
+};
+
+// --- charts -----------------------------------------------------------------
+// One minute at the refresh interval, the same window the desktop keeps.
+const SPARK = 60;
+const hist = { dl: [], ul: [] };
+
+function spark(id, series) {
+  const peak = Math.max(1, ...series);
+  // Each series scales to its own peak. 100 is the viewBox height; y is
+  // inverted because SVG counts down from the top.
+  const step = 60 / Math.max(1, SPARK - 1);
+  // Inset top and bottom: at zero the line used to sit on the viewBox edge
+  // with half its stroke clipped, so an idle chart looked like a broken one.
+  const pts = series.map((v, i) => `${(i * step).toFixed(1)},${(96 - (v / peak) * 92).toFixed(1)}`);
+  $(id).setAttribute("points", pts.join(" "));
+}
+
+function pushRates(down, up) {
+  hist.dl.push(down); hist.ul.push(up);
+  while (hist.dl.length > SPARK) hist.dl.shift();
+  while (hist.ul.length > SPARK) hist.ul.shift();
+  spark("ch-dl-p", hist.dl);
+  spark("ch-ul-p", hist.ul);
+  $("ch-dl-t").textContent = speed(down);
+  $("ch-ul-t").textContent = speed(up);
+}
+
+// --- column widths ----------------------------------------------------------
+// Stored on the server, in the same table the desktop list uses, so they follow
+// the person rather than one browser's localStorage.
+//
+// Designed widths match the desktop's for the columns that mean the same
+// thing; Progress and Actions have no desktop counterpart at these positions.
+// Name (index 0) is deliberately null: with table-layout:fixed the columns
+// that have no width absorb whatever is left over, so on a wide screen the
+// slack goes to the torrent name instead of being shared out into eight
+// columns of whitespace. A width the user drags onto it wins, as it should.
+const COL_DEFAULTS = [null, 90, 130, 110, 90, 90, 80, 60, 250];
+
+async function loadColumns() {
+  let saved = {};
+  try {
+    saved = (await api("GET", "/api/columns")) || {};
+  } catch (e) {
+    // A width is a preference; failing to read one is not worth a toast.
+  }
+  const cg = $("cols");
+  cg.textContent = "";
+  COL_DEFAULTS.forEach((def, i) => {
+    const c = document.createElement("col");
+    const w = saved[i] || def;
+    if (w) c.style.width = w + "px";
+    cg.append(c);
+  });
+  installGrips();
+}
+
+function installGrips() {
+  const cols = $("cols").children;
+  document.querySelectorAll("#head th").forEach((th, i) => {
+    if (i >= cols.length - 1) return;         // nothing to drag past the last
+    if (th.querySelector(".grip")) return;
+    const grip = document.createElement("div");
+    grip.className = "grip";
+    grip.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      const startX = ev.clientX;
+      const startW = cols[i].getBoundingClientRect().width;
+      document.body.classList.add("resizing");
+
+      const move = (e) => {
+        // 40px floor: narrower than this and the header caption is gone, so
+        // there is nothing left to grab or read.
+        cols[i].style.width = Math.max(40, startW + e.clientX - startX) + "px";
+      };
+      const up = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        document.body.classList.remove("resizing");
+        api("POST", "/api/columns", {
+          column: i,
+          width: Math.round(cols[i].getBoundingClientRect().width),
+        }).catch(() => {});
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+    th.append(grip);
+  });
+}
+loadColumns();
+
+// --- plugin index -----------------------------------------------------------
+//
+// The button opens this, not a surface: most plugins have no window, and the
+// question being asked is "what do I have and is it on".
+function plugNote(p) {
+  if (p.error) return ["err", p.error];
+  if (p.needs_approval) {
+    return ["warn", (T.plugins_needs_approval || "Waiting for approval") +
+      (p.permissions.length ? " - " + p.permissions.join(", ") : "")];
+  }
+  if (!p.enabled) return ["", T.disabled || "Off"];
+  if (p.permissions.length) {
+    return ["", (T.plugins_access || "Access") + ": " + p.permissions.join(", ")];
+  }
+  return ["", ""];
+}
+
+async function drawPlugList() {
+  const box = $("plugs-list");
+  box.textContent = "";
+  let list = [];
+  try {
+    list = await api("GET", "/api/plugins");
+  } catch (e) {
+    toast(e.message);
+    return;
+  }
+  if (!list.length) {
+    const p = document.createElement("div");
+    p.className = "pl-note";
+    p.textContent = T.plugins_none || "No plugins installed.";
+    box.append(p);
+    return;
+  }
+
+  for (const p of list) {
+    const row = document.createElement("div");
+    row.className = "pl-row";
+
+    const on = document.createElement("input");
+    on.type = "checkbox";
+    on.checked = p.enabled;
+    on.title = T.plugins || "Plugins";
+    on.onchange = async () => {
+      on.disabled = true;
+      try {
+        await api("POST", `/api/plugins/${encodeURIComponent(p.name)}/enabled`,
+                  { enabled: on.checked });
+      } catch (e) {
+        toast(e.message);
+        on.checked = !on.checked;
+      }
+      on.disabled = false;
+      // The host reloads, so what a plugin reports changes a moment later.
+      setTimeout(drawPlugList, 400);
+      setTimeout(plugScan, 600);
+    };
+
+    const main = document.createElement("div");
+    main.className = "pl-main";
+    const nm = document.createElement("div");
+    nm.className = "pl-name";
+    nm.textContent = p.title || p.name;      // never innerHTML - see header
+    main.append(nm);
+    const [cls, note] = plugNote(p);
+    if (note) {
+      const n = document.createElement("div");
+      n.className = "pl-note" + (cls ? " " + cls : "");
+      n.textContent = note;
+      main.append(n);
+    }
+
+    row.append(on, main);
+
+    // Only a running plugin that has declared a window has anything to open.
+    if (p.has_window) {
+      const open = document.createElement("button");
+      open.type = "button";
+      open.textContent = T.open || "Open";
+      open.onclick = () => { $("plugs").close(); plugOpen(p.name); };
+      row.append(open);
+    }
+    box.append(row);
+  }
+}
+
+// --- chart geometry ---------------------------------------------------------
+// Shares the desktop's two keys and its 48-320 range, so a chart is the same
+// width in both places rather than merely a similar size.
+let CHART_LIMITS = { min: 48, max: 320, default: 96 };
+
+async function loadCharts() {
+  let c;
+  try {
+    c = await api("GET", "/api/charts");
+  } catch (e) {
+    return;
+  }
+  CHART_LIMITS = { min: c.min, max: c.max, default: c.default };
+  $("ch-dl").style.width = c.down + "px";
+  $("ch-ul").style.width = c.up + "px";
+  installChartGrip("ch-dl", "down");
+  installChartGrip("ch-ul", "up");
+}
+
+function installChartGrip(svgId, which) {
+  const svg = $(svgId);
+  const box = svg.parentElement;
+  if (box.querySelector(".cgrip")) return;
+  const grip = document.createElement("div");
+  grip.className = "cgrip";
+  // Sits at the right-hand edge of this chart's own box.
+  grip.style.left = "";
+  grip.style.right = "auto";
+  const place = () => { grip.style.left = (svg.offsetLeft + svg.offsetWidth - 8) + "px"; };
+  place();
+
+  grip.addEventListener("mousedown", (ev) => {
+    ev.preventDefault();
+    const startX = ev.clientX;
+    const startW = svg.getBoundingClientRect().width;
+    document.body.classList.add("resizing");
+    const move = (e) => {
+      const w = Math.min(CHART_LIMITS.max,
+                Math.max(CHART_LIMITS.min, startW + e.clientX - startX));
+      svg.style.width = w + "px";
+      place();
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      document.body.classList.remove("resizing");
+      api("POST", "/api/charts", {
+        which,
+        width: Math.round(svg.getBoundingClientRect().width),
+      }).catch(() => {});
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+
+  // Double-click resets this one to the default, like the desktop's.
+  svg.addEventListener("dblclick", () => {
+    svg.style.width = CHART_LIMITS.default + "px";
+    place();
+    api("POST", "/api/charts", { which, width: CHART_LIMITS.default }).catch(() => {});
+  });
+
+  box.append(grip);
+}
+loadCharts();
+
+// --- drag and drop ----------------------------------------------------------
+//
+// Multi-torrent adding already worked through the file picker - batch inspect,
+// per-torrent file selection, one request for the lot. What it lacked was the
+// obvious way to reach it on a web page. Dropping files hands them to the very
+// same picker, so there is one code path and the batch panes come up exactly
+// as they do when the files are chosen by hand.
+(() => {
+  const overlay = $("drop");
+  let depth = 0;                    // dragenter/leave fire per child element
+
+  const hasFiles = (e) =>
+    e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+
+  window.addEventListener("dragenter", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth++;
+    overlay.classList.add("on");
+  });
+  window.addEventListener("dragover", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();                       // or the browser opens the file
+    e.dataTransfer.dropEffect = "copy";
+  });
+  window.addEventListener("dragleave", () => {
+    if (--depth <= 0) { depth = 0; overlay.classList.remove("on"); }
+  });
+
+  window.addEventListener("drop", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth = 0;
+    overlay.classList.remove("on");
+
+    const dropped = [...e.dataTransfer.files]
+      .filter((f) => f.name.toLowerCase().endsWith(".torrent"));
+    if (!dropped.length) {
+      toast(T.give_magnet_or_file || "Drop .torrent files.");
+      return;
+    }
+
+    // Hand them to the picker rather than re-implementing the flow: assigning
+    // a DataTransfer's FileList is the one supported way to fill a file input,
+    // and the change event then runs the existing batch inspection.
+    const dt = new DataTransfer();
+    for (const f of dropped) dt.items.add(f);
+    const picker = $("add-file");
+    picker.files = dt.files;
+
+    $("add-magnet").value = "";
+    if (!$("add").open) $("add").showModal();
+    picker.dispatchEvent(new Event("change"));
+  });
+})();
 </script>

@@ -1193,6 +1193,12 @@ fn handle_params(ui: &Rc<Ui>, args: &[String]) {
 fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     drain_notifications(window, ui);
 
+    // The web interface can change the language too, and it writes the setting
+    // rather than calling in here. This costs one string compare a second and
+    // returns immediately when nothing changed - `apply_language` is a no-op
+    // unless the stored locale differs from the one on screen.
+    apply_language(window, ui);
+
     let mut rows = ui.session.torrents(&ui.labels());
 
     // Counted here, before the filters below narrow `rows`: the tray reports
@@ -1257,12 +1263,75 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     model.set_vec(mapped);
 
     let (down, up) = ui.session.session_rates();
-    let rates = format!(
-        "DL: {}, UL: {}",
-        utils::to_human_speed(down),
-        utils::to_human_speed(up)
-    );
-    window.set_session_rates(rates.as_str().into());
+    // Two readings rather than one string: each sits beside its own arrow in
+    // the status bar, and the glyph says which is which.
+    window.set_rate_down(utils::to_human_speed(down).as_str().into());
+    window.set_rate_up(utils::to_human_speed(up).as_str().into());
+
+    // Reachability, from the only evidence available without asking a stranger
+    // on the internet: whether a peer out there has connected IN to us.
+    // `crate::bittorrent::mse` counts those on the accept path.
+    //
+    // Three states, and the middle one is the honest one - a port with no
+    // inbound traffic yet might be firewalled or might just be five seconds
+    // old, and nothing here can tell those apart.
+    {
+        let listening = ui.session.listen_port();
+        let inbound = crate::bittorrent::mse::inbound_from_internet();
+        let (state, key) = match (listening, inbound) {
+            (None, _) => (0, "port_closed"),
+            (Some(_), 0) => (1, "port_waiting"),
+            (Some(_), _) => (2, "port_open"),
+        };
+
+        let tr = ui.tr.borrow();
+        let tip = match listening {
+            Some(port) => format!("{}: {}\n{}", tr.i18n("port"), port, tr.i18n(key)),
+            None => tr.i18n(key),
+        };
+        drop(tr);
+
+        window.set_port_state(state);
+        window.set_port_tip(tip.as_str().into());
+    }
+
+    // The two privacy indicators, read from the settings rather than from the
+    // session: they say what this client was TOLD to do. Whether the proxy is
+    // actually reachable is a different question, and one the transfer rates
+    // answer better than an icon could.
+    {
+        let tr = ui.tr.borrow();
+
+        let proxy = crate::core::http::proxy_url(&ui.cfg);
+        window.set_proxy_active(proxy.is_some());
+        if let Some(url) = proxy {
+            // The host and port, never the credentials - a status bar tooltip
+            // is not a place to put a password.
+            let shown = url
+                .rsplit('@')
+                .next()
+                .unwrap_or("")
+                .trim_start_matches("socks5h://")
+                .to_owned();
+            window.set_proxy_tip(format!("{}: {shown}", tr.i18n("proxy")).as_str().into());
+        }
+
+        let bound = ui
+            .cfg
+            .get_string("network.bind_interface")
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        window.set_bound_active(bound.is_some());
+        if let Some(name) = bound {
+            // The watchdog runs from here because this is the only periodic
+            // tick there is; it only looks anything up when strict mode and a
+            // binding are both set, so an ordinary session pays nothing.
+            let intact = ui.session.watch_binding(&ui.cfg);
+            window.set_bound_lost(!intact);
+            let label = if intact { "bound_interface" } else { "bound_interface_lost" };
+            window.set_bound_tip(format!("{}: {name}", tr.i18n(label)).as_str().into());
+        }
+    }
 
     // The toolbar chart, from the same reading rather than a second one: two
     // calls a second apart would put the label and the chart slightly out of
@@ -1312,9 +1381,16 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     // rates computed above rather than recomputing on the same tick.
     //
     // The state words come from the translator, so the tooltip follows the
-    // language like everything else. "DL"/"UL" do not - they are the same
-    // abbreviations the status bar uses, and are read as symbols.
+    // language like everything else. "DL"/"UL" do not - they are read as
+    // symbols. They used to be shared with the status bar, which now shows the
+    // two rates against arrow glyphs instead; a tray tooltip is one line of
+    // text with no room for a glyph, so it keeps the abbreviations.
     let tray_tip = {
+        let rates = format!(
+            "DL: {}, UL: {}",
+            utils::to_human_speed(down),
+            utils::to_human_speed(up)
+        );
         let tr = ui.tr.borrow();
         format!(
             "{n_downloading} {}, {n_seeding} {} - {rates}",
@@ -1898,7 +1974,7 @@ fn open_remove_prompt(window: &MainWindow, ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
-    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
     let _ = window; // owner is set by wire_dialog_close
     *ui.remove_dialog.borrow_mut() = Some(dialog);
 }
@@ -2179,7 +2255,7 @@ fn open_add_magnet(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
-    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
     *ui.magnet_dialog.borrow_mut() = Some(dialog);
 }
 
@@ -2483,7 +2559,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
-    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
     *ui.torrent_dialog.borrow_mut() = Some(dialog);
 }
 
@@ -2567,7 +2643,7 @@ fn web_warning(d: &PreferencesDialog, tr: &Translator, password_set: bool) -> St
 
 /// The Web interface tab: the same settings `--webui-set` exposes, plus the
 /// password, which the CLI can only take through a prompt.
-/// Show an `Advanced` in the eight Advanced fields.
+/// Show an `Advanced` in the eleven Advanced fields.
 ///
 /// Shared by the initial load and the Reset button so the two cannot disagree
 /// about which field holds which knob.
@@ -2580,6 +2656,9 @@ fn put_advanced(dialog: &PreferencesDialog, adv: &crate::webui::Advanced) {
     dialog.set_web_max_conn_rate(adv.max_connection_rate.to_string().into());
     dialog.set_web_workers(adv.workers.to_string().into());
     dialog.set_web_max_body(adv.max_body_size.to_string().into());
+    dialog.set_web_auth_max_failures(adv.auth_max_failures.to_string().into());
+    dialog.set_web_auth_window(adv.auth_window.to_string().into());
+    dialog.set_web_auth_block(adv.auth_block.to_string().into());
 }
 
 fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
@@ -2785,6 +2864,9 @@ fn save_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
     num("webui.max_connection_rate", d.get_web_max_conn_rate());
     num("webui.workers", d.get_web_workers());
     num("webui.max_body_size", d.get_web_max_body());
+    num("webui.auth_max_failures", d.get_web_auth_max_failures());
+    num("webui.auth_window", d.get_web_auth_window());
+    num("webui.auth_block", d.get_web_auth_block());
 
     // Empty means "keep the stored hash". Anything else is hashed here - the
     // password itself is never written to the database.
@@ -2992,30 +3074,50 @@ fn wire_rules(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
 ///
 /// The margin covers the title bar and borders, which sit outside the client
 /// area this height applies to.
-fn clamp_to_screen(window: &impl slint::ComponentHandle, set: impl FnOnce(f32)) {
-    // Pretend the screen is this many logical pixels tall. The clamp only
-    // engages on a screen too short for the dialog, which is not a state a
-    // development machine can usually be put into - without this the branch
-    // ships untested.
-    if let Ok(forced) = std::env::var("NANOTORRENT_SCREEN_LIMIT")
-        && let Ok(h) = forced.parse::<f32>()
-    {
-        set(h);
-        return;
-    }
+pub(super) fn clamp_to_screen<T>(window: &T, set: impl FnOnce(&T, f32) + 'static)
+where
+    T: slint::ComponentHandle + 'static,
+{
+    // Deferred by one turn of the event loop, and that is the whole point.
+    //
+    // `show()` does not realise the window synchronously: called straight
+    // after it, `scale_factor()` still reports 1 and `position()` still
+    // reports (0, 0). On a 200% display that made the limit twice the screen
+    // height - so the clamp never engaged, the window grew past the bottom of
+    // the monitor, and the ScrollView never scrolled because as far as the
+    // window was concerned it fitted. One turn later both are real.
+    let weak = window.as_weak();
+    slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+        let Some(window) = weak.upgrade() else { return };
 
-    let Some(physical) = crate::core::utils::work_area_height() else {
-        return; // not wired up on this platform - leave it unclamped
-    };
-    let scale = window.window().scale_factor();
-    if !(scale.is_finite() && scale > 0.0) {
-        return;
-    }
-    const CHROME: f32 = 56.0;
-    let usable = (physical / scale) - CHROME;
-    if usable.is_finite() && usable > 200.0 {
-        set(usable);
-    }
+        // Pretend the screen is this many logical pixels tall. The clamp only
+        // engages on a screen too short for the dialog, which is not a state a
+        // development machine can usually be put into - without this the
+        // branch ships untested.
+        if let Ok(forced) = std::env::var("NANOTORRENT_SCREEN_LIMIT")
+            && let Ok(h) = forced.parse::<f32>()
+        {
+            set(&window, h);
+            return;
+        }
+
+        // The monitor this window is on, not the primary one: with two screens
+        // the two are routinely different heights, and asking the wrong one is
+        // how a dialog ends up taller than the screen showing it.
+        let at = window.window().position();
+        let Some(physical) = crate::core::utils::work_area_height_at(at.x, at.y) else {
+            return; // not wired up on this platform - leave it unclamped
+        };
+        let scale = window.window().scale_factor();
+        if !(scale.is_finite() && scale > 0.0) {
+            return;
+        }
+        const CHROME: f32 = 56.0;
+        let usable = (physical / scale) - CHROME;
+        if usable.is_finite() && usable > 200.0 {
+            set(&window, usable);
+        }
+    });
 }
 
 /// Open the Preferences dialog, building it on first use and re-showing the
@@ -3161,6 +3263,10 @@ fn open_preferences(ui: &Rc<Ui>) {
         wire_web(existing, ui);
         wire_plugins(existing, ui);
         let _ = existing.show();
+        // Re-clamped on every open, not just the first: the dialog is kept
+        // alive between opens, so if it was last used on another monitor it
+        // would otherwise keep that screen's limit on this one.
+        clamp_to_screen(existing, |d, h| d.set_screen_limit(h));
         return;
     }
 
@@ -3247,7 +3353,7 @@ fn open_preferences(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
-    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
     *ui.prefs_dialog.borrow_mut() = Some(dialog);
 }
 
@@ -3373,6 +3479,22 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
             .into(),
     );
     d.set_proxy_port(num(cfg.get_int("libtorrent.proxy_port")));
+    d.set_proxy_username(
+        cfg.get_string("libtorrent.proxy_username")
+            .unwrap_or_default()
+            .into(),
+    );
+    d.set_proxy_password(
+        cfg.get_string("libtorrent.proxy_password")
+            .unwrap_or_default()
+            .into(),
+    );
+    d.set_bind_interface(
+        cfg.get_string("network.bind_interface")
+            .unwrap_or_default()
+            .into(),
+    );
+    d.set_strict_network(cfg.get_bool("network.strict"));
     d.set_proxy_hostnames(cfg.get_bool("libtorrent.proxy_hostnames"));
     d.set_proxy_peers(cfg.get_bool("libtorrent.proxy_peers"));
     d.set_proxy_trackers(cfg.get_bool("libtorrent.proxy_trackers"));
@@ -3465,6 +3587,19 @@ fn save_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     cfg.set("libtorrent.proxy_type", &(d.get_proxy_type_index() as i64));
     cfg.set("libtorrent.proxy_host", &d.get_proxy_host().to_string());
     set_num(cfg, "libtorrent.proxy_port", &d.get_proxy_port());
+    cfg.set(
+        "libtorrent.proxy_username",
+        &d.get_proxy_username().to_string(),
+    );
+    cfg.set(
+        "libtorrent.proxy_password",
+        &d.get_proxy_password().to_string(),
+    );
+    cfg.set(
+        "network.bind_interface",
+        &d.get_bind_interface().trim().to_string(),
+    );
+    cfg.set("network.strict", &d.get_strict_network());
     cfg.set("libtorrent.proxy_hostnames", &d.get_proxy_hostnames());
     cfg.set("libtorrent.proxy_peers", &d.get_proxy_peers());
     cfg.set("libtorrent.proxy_trackers", &d.get_proxy_trackers());
@@ -3682,7 +3817,7 @@ fn open_about(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
-    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
     *ui.about_dialog.borrow_mut() = Some(dialog);
 }
 
@@ -3716,7 +3851,7 @@ fn open_cli_help(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
-    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
     *ui.cli_help_dialog.borrow_mut() = Some(dialog);
 }
 
@@ -3798,7 +3933,7 @@ fn open_update(ui: &Rc<Ui>, info: &crate::updatechecker::UpdateInfo) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
-    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
     *ui.update_dialog.borrow_mut() = Some(dialog);
 }
 
@@ -3947,7 +4082,7 @@ fn open_create_torrent(ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
-    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
     *ui.create_dialog.borrow_mut() = Some(dialog);
 }
 
@@ -4348,7 +4483,7 @@ fn ask_on_close(window: &MainWindow, ui: &Rc<Ui>) {
 
     wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
-    clamp_to_screen(&dialog, |h| dialog.set_screen_limit(h));
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
     *ui.close_prompt.borrow_mut() = Some(dialog);
 }
 

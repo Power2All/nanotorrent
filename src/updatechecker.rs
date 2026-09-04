@@ -108,17 +108,19 @@ pub fn check(handle: &tokio::runtime::Handle, cfg: &Configuration, slot: Slot, m
             .unwrap_or_default()
     };
 
+    // Built out here, not inside the task: `cfg` is a borrow and the task is
+    // 'static. Through the proxy when one is set - someone who routes their
+    // torrents through a proxy did not mean to exempt a request to GitHub that
+    // goes out from their own address every time the app starts.
+    let client = match crate::core::http::client(cfg) {
+        Ok(c) => c,
+        Err(err) => {
+            report(&slot, None, Some(err.to_string()), manual);
+            return;
+        }
+    };
+
     handle.spawn(async move {
-        let client = match reqwest::Client::builder()
-            .user_agent(crate::buildinfo::user_agent())
-            .build()
-        {
-            Ok(c) => c,
-            Err(err) => {
-                report(&slot, None, Some(err.to_string()), manual);
-                return;
-            }
-        };
 
         let response = match client
             .get(&url)

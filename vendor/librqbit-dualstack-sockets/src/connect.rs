@@ -31,7 +31,29 @@ pub async fn tcp_connect<'a>(
         bd.bind_sref(&sref, addr.is_ipv6())?;
     }
 
-    if bind_addr.port() > 0 {
+    // NanoTorrent: on Windows the device is applied by binding its address as
+    // the source, so the outgoing connection leaves by that interface. The
+    // bind then has to happen whether or not a source port was asked for -
+    // upstream only binds when a port is set, which would leave the source
+    // address unconfined.
+    let mut bind_addr = bind_addr;
+    let mut must_bind = bind_addr.port() > 0;
+    if let Some(bd) = opts.bind_device {
+        match bd.bind_ip(addr.is_ipv6()) {
+            Some(ip) => {
+                bind_addr = SocketAddr::new(ip, bind_addr.port());
+                must_bind = true;
+            }
+            // Only reachable on Windows, and only for a family this device has
+            // no address in. Refuse: connecting unbound is the leak.
+            #[cfg(windows)]
+            None => return Err(Error::BindDeviceNotSupported),
+            #[cfg(not(windows))]
+            None => {}
+        }
+    }
+
+    if must_bind {
         #[cfg(not(windows))]
         sref.set_reuse_port(true).map_err(Error::ReusePort)?;
         sref.set_reuse_address(true).map_err(Error::ReuseAddress)?;

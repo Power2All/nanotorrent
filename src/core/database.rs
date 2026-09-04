@@ -61,6 +61,9 @@ const MIGRATIONS: &[(&str, &str)] = &[
     migration!("20260901000001_enable_utp"),
     migration!("20260902000000_plugin_disabled_list"),
     migration!("20260902000001_plugin_grants"),
+    migration!("20260903000000_bind_interface"),
+    migration!("20260904000000_strict_network"),
+    migration!("20260904100000_web_bruteforce"),
 ];
 
 pub struct Database {

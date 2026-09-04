@@ -168,24 +168,35 @@ pub fn free_space_percent(path: &Path) -> Option<f64> {
 /// two differ by a factor of two, and using the raw number would let a dialog
 /// grow to twice the screen.
 #[cfg(windows)]
-pub fn work_area_height() -> Option<f32> {
-    let mut rect: winapi::shared::windef::RECT = unsafe { std::mem::zeroed() };
-    // SAFETY: SPI_GETWORKAREA writes a RECT, which is what we pass.
-    let ok = unsafe {
-        winapi::um::winuser::SystemParametersInfoW(
-            winapi::um::winuser::SPI_GETWORKAREA,
-            0,
-            &mut rect as *mut _ as *mut winapi::ctypes::c_void,
-            0,
-        )
+pub fn work_area_height_at(x: i32, y: i32) -> Option<f32> {
+    use winapi::um::winuser::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
     };
-    (ok != 0).then(|| (rect.bottom - rect.top) as f32)
+
+    // Was SPI_GETWORKAREA, which answers for the PRIMARY monitor and nothing
+    // else. On a second screen - shorter, or scaled differently - the caller
+    // divided the primary's height by this window's scale factor and got a
+    // limit taller than the monitor the window was actually on, so the clamp
+    // never engaged and tall dialogs ran off the bottom of the screen.
+    let point = winapi::shared::windef::POINT { x, y };
+    // SAFETY: a by-value POINT and a documented flag; the returned handle is
+    // not owned and is only passed straight back to GetMonitorInfoW.
+    let monitor = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST) };
+    if monitor.is_null() {
+        return None;
+    }
+
+    let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
+    info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+    // SAFETY: cbSize is set, which is the whole contract of this call.
+    let ok = unsafe { GetMonitorInfoW(monitor, &mut info) };
+    (ok != 0).then(|| (info.rcWork.bottom - info.rcWork.top) as f32)
 }
 
 /// No equivalent wired up off Windows yet: the dialogs simply size to their
 /// content there, which is what they did before the clamp existed.
 #[cfg(not(windows))]
-pub fn work_area_height() -> Option<f32> {
+pub fn work_area_height_at(_x: i32, _y: i32) -> Option<f32> {
     None
 }
 
@@ -232,3 +243,54 @@ mod tests {
         assert_eq!(to_human_speed(0), "0 bytes/s");
     }
 }
+
+
+#[cfg(test)]
+mod work_area {
+    /// The probe must answer for the monitor containing the point, not for the
+    /// primary one.
+    ///
+    /// It used to call SPI_GETWORKAREA, which only ever answers for the
+    /// primary monitor. On a second screen of a different height or scale the
+    /// caller divided the primary's height by this window's scale factor, got
+    /// a limit taller than the screen the window was on, and never clamped -
+    /// which is how a tall dialog ran off the bottom.
+    #[test]
+    #[cfg(windows)]
+    fn every_monitor_answers_for_itself() {
+        use winapi::um::winuser::{
+            GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+        };
+
+        // Probe a wide spread of the virtual desktop. Whatever monitor each
+        // point lands on, the answer must match that monitor's own work area.
+        for x in [-4000, 0, 1000, 3000, 5200, 9000] {
+            for y in [-2000, 0, 500, 1500, 3000] {
+                let point = winapi::shared::windef::POINT { x, y };
+                let monitor = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST) };
+                assert!(!monitor.is_null(), "NEAREST returned no monitor");
+
+                let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
+                info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+                assert!(unsafe { GetMonitorInfoW(monitor, &mut info) } != 0);
+                let expected = (info.rcWork.bottom - info.rcWork.top) as f32;
+
+                assert_eq!(
+                    super::work_area_height_at(x, y),
+                    Some(expected),
+                    "({x},{y}) did not report its own monitor"
+                );
+            }
+        }
+    }
+
+    /// A point nowhere near a monitor still gets an answer rather than None -
+    /// None means "unclamped", and silently unclamping is the bug.
+    #[test]
+    #[cfg(windows)]
+    fn a_far_off_point_still_clamps() {
+        let h = super::work_area_height_at(-100_000, -100_000);
+        assert!(h.is_some_and(|h| h > 200.0), "got {h:?}");
+    }
+}
+

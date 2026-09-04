@@ -1,0 +1,88 @@
+--- a/src/storage/filesystem/fs.rs
++++ b/src/storage/filesystem/fs.rs
+@@ -57,6 +57,56 @@ impl FilesystemStorage {
+     }
+ }
+ 
++/// NanoTorrent addition: join a torrent-supplied relative path onto the output
++/// folder, refusing anything that would not stay underneath it.
++///
++/// `TorrentMetaV1Info::validate` already rejects `..` and any component holding
++/// a `/` or `\`, which covers the classic traversal. It does **not** reject a
++/// drive prefix, and on Windows `PathBuf::push` REPLACES the buffer when the
++/// pushed path carries one - so a file named `C:evil.txt` survives validation
++/// and then discards the output folder entirely, writing to whatever the
++/// current directory of drive C happens to be. That is an arbitrary write
++/// outside the download folder from nothing but a malicious `.torrent`, and
++/// next to a portable install it is a DLL-planting primitive.
++///
++/// Requiring every component to be `Component::Normal` closes it: no prefix,
++/// no root, no `.`, no `..`. Checked here because this is the last thing
++/// between a torrent's idea of a filename and `OpenOptions::open`.
++fn safe_join(base: &Path, relative: &Path) -> anyhow::Result<PathBuf> {
++    use std::path::Component;
++
++    for component in relative.components() {
++        if !matches!(component, Component::Normal(_)) {
++            anyhow::bail!(
++                "refusing to use torrent path {relative:?}: {component:?} is not a plain name"
++            )
++        }
++    }
++    Ok(base.join(relative))
++}
++
++#[cfg(test)]
++mod nanotorrent_safe_join_tests {
++    use super::safe_join;
++    use std::path::{Path, PathBuf};
++
++    #[test]
++    fn a_plain_relative_path_lands_under_the_output_folder() {
++        let got = safe_join(Path::new("/downloads"), Path::new("show/ep1.mkv")).unwrap();
++        assert_eq!(got, PathBuf::from("/downloads").join("show/ep1.mkv"));
++    }
++
++    #[test]
++    fn nothing_escapes_the_output_folder() {
++        for evil in ["..", "../x", "/etc/passwd", "C:evil.txt", "C:/evil.txt"] {
++            assert!(
++                safe_join(Path::new("/downloads"), Path::new(evil)).is_err(),
++                "{evil} was accepted"
++            );
++        }
++    }
++}
++
+ impl TorrentStorage for FilesystemStorage {
+     fn pread_exact(&self, file_id: usize, offset: u64, buf: &mut [u8]) -> anyhow::Result<()> {
+         self.opened_files
+@@ -88,7 +138,7 @@ impl TorrentStorage for FilesystemStorage {
+     }
+ 
+     fn remove_file(&self, _file_id: usize, filename: &Path) -> anyhow::Result<()> {
+-        Ok(std::fs::remove_file(self.output_folder.join(filename))?)
++        Ok(std::fs::remove_file(safe_join(&self.output_folder, filename)?)?)
+     }
+ 
+     fn ensure_file_length(&self, file_id: usize, len: u64) -> anyhow::Result<()> {
+@@ -110,7 +160,7 @@ impl TorrentStorage for FilesystemStorage {
+     }
+ 
+     fn remove_directory_if_empty(&self, path: &Path) -> anyhow::Result<()> {
+-        let path = self.output_folder.join(path);
++        let path = safe_join(&self.output_folder, path)?;
+         if !path.is_dir() {
+             anyhow::bail!("cannot remove dir: {path:?} is not a directory")
+         }
+@@ -129,9 +179,8 @@ impl TorrentStorage for FilesystemStorage {
+     ) -> anyhow::Result<()> {
+         let mut files = Vec::<OpenedFile>::new();
+         for file_details in metadata.file_infos.iter() {
+-            let mut full_path = self.output_folder.clone();
+             let relative_path = &file_details.relative_filename;
+-            full_path.push(relative_path);
++            let full_path = safe_join(&self.output_folder, relative_path)?;
+ 
+             if file_details.attrs.padding {
+                 files.push(OpenedFile::new_dummy());

@@ -4464,7 +4464,7 @@ dependencies = [
 
 [[package]]
 name = "nanotorrent"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4479,6 +4479,7 @@ dependencies = [
  "librqbit-bencode",
  "librqbit-peer-protocol",
  "maxminddb",
+ "network-interface",
  "notify-rust",
  "num-bigint 0.5.1",
  "open",

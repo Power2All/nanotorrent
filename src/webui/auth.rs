@@ -24,8 +24,32 @@ use subtle::ConstantTimeEq;
 /// Argon2 already makes each guess expensive, which is most of the defence.
 /// This exists because nothing previously stopped a client simply trying
 /// forever - and `bind_address` can be set to 0.0.0.0.
-const MAX_FAILURES: u32 = 10;
-const LOCKOUT: std::time::Duration = std::time::Duration::from_secs(300);
+/// How the lockout is tuned, from Preferences or the web drawer.
+///
+/// The window and the block are separate on purpose. They used to be one
+/// number, which forced a choice nobody should have to make: a long lockout
+/// meant a long memory for stray typos, and a short memory meant a short
+/// lockout. Counting over a minute and then blocking for an hour is the shape
+/// people actually want.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// Failures within `window` that trip the lockout. Zero disables it.
+    pub max_failures: u32,
+    /// How long failures are remembered while counting.
+    pub window: std::time::Duration,
+    /// How long an address is refused once it has tripped.
+    pub block: std::time::Duration,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Limits {
+            max_failures: 5,
+            window: std::time::Duration::from_secs(60),
+            block: std::time::Duration::from_secs(3600),
+        }
+    }
+}
 
 /// Failed attempts per client address.
 ///
@@ -33,47 +57,100 @@ const LOCKOUT: std::time::Duration = std::time::Duration::from_secs(300);
 /// per user would be one global counter that any passer-by could use to lock
 /// the owner out.
 #[derive(Default)]
-pub struct Attempts(std::sync::Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>);
+pub struct Attempts {
+    limits: Limits,
+    state: std::sync::Mutex<std::collections::HashMap<String, Record>>,
+}
+
+/// One address's history: how many failures in the current window, when that
+/// window opened, and - once it has tripped - when it may try again.
+#[derive(Clone, Copy)]
+struct Record {
+    count: u32,
+    window_start: std::time::Instant,
+    blocked_until: Option<std::time::Instant>,
+}
 
 impl Attempts {
+    pub fn new(limits: Limits) -> Self {
+        Attempts {
+            limits,
+            state: Default::default(),
+        }
+    }
+
     /// How long this address must wait, or `None` if it may try now.
     ///
     /// A lapsed window resets the count on read, so the map does not need a
     /// sweeper task - an address that stops trying is forgotten the next time
     /// it appears.
     fn locked_for(&self, who: &str) -> Option<std::time::Duration> {
-        let mut map = self.0.lock().unwrap();
-        let (count, since) = *map.get(who)?;
-        let elapsed = since.elapsed();
-        if elapsed >= LOCKOUT {
-            map.remove(who);
+        if self.limits.max_failures == 0 {
             return None;
         }
-        (count >= MAX_FAILURES).then(|| LOCKOUT - elapsed)
+        let mut map = self.state.lock().unwrap();
+        let record = *map.get(who)?;
+
+        if let Some(until) = record.blocked_until {
+            return match until.checked_duration_since(std::time::Instant::now()) {
+                // Still serving it out.
+                Some(left) if !left.is_zero() => Some(left),
+                // Served. Forget the address entirely rather than leaving it
+                // one failure from another block.
+                _ => {
+                    map.remove(who);
+                    None
+                }
+            };
+        }
+
+        // Not blocked, and the counting window has lapsed: drop it, so the map
+        // needs no sweeper task and a quiet address is forgotten on sight.
+        if record.window_start.elapsed() >= self.limits.window {
+            map.remove(who);
+        }
+        None
     }
 
     fn record_failure(&self, who: &str) {
-        let mut map = self.0.lock().unwrap();
-        let now = std::time::Instant::now();
-        let entry = map.entry(who.to_string()).or_insert((0, now));
-        // Restart the window if the last failure was long enough ago, so
-        // occasional typos never accumulate into a lockout.
-        if entry.1.elapsed() >= LOCKOUT {
-            *entry = (0, now);
+        if self.limits.max_failures == 0 {
+            return;
         }
-        entry.0 += 1;
-        entry.1 = now;
+        let mut map = self.state.lock().unwrap();
+        let now = std::time::Instant::now();
+        let entry = map.entry(who.to_string()).or_insert(Record {
+            count: 0,
+            window_start: now,
+            blocked_until: None,
+        });
+
+        // Restart the window if the last one lapsed, so occasional typos
+        // spread over an afternoon never accumulate into a lockout.
+        if entry.blocked_until.is_none() && entry.window_start.elapsed() >= self.limits.window {
+            *entry = Record {
+                count: 0,
+                window_start: now,
+                blocked_until: None,
+            };
+        }
+        entry.count += 1;
+        if entry.count >= self.limits.max_failures {
+            entry.blocked_until = Some(now + self.limits.block);
+        }
 
         // Unbounded growth is the obvious way to turn a rate limiter into the
         // denial of service it was meant to prevent. Only entries that have
         // gone quiet are dropped, so an active attacker cannot flush their own.
         if map.len() > 1024 {
-            map.retain(|_, (_, seen)| seen.elapsed() < LOCKOUT);
+            let horizon = self.limits.window.max(self.limits.block);
+            map.retain(|_, r| {
+                r.blocked_until.is_some_and(|u| u > now) || r.window_start.elapsed() < horizon
+            });
         }
     }
 
     fn record_success(&self, who: &str) {
-        self.0.lock().unwrap().remove(who);
+        self.state.lock().unwrap().remove(who);
     }
 }
 
@@ -286,9 +363,10 @@ mod tests {
     /// finally type the right password, are both worse than no limiter.
     #[test]
     fn lockout_latches_and_clears() {
-        let a = super::Attempts::default();
+        let limits = super::Limits::default();
+        let a = super::Attempts::new(limits);
 
-        for _ in 0..super::MAX_FAILURES - 1 {
+        for _ in 0..limits.max_failures - 1 {
             a.record_failure("10.0.0.1");
         }
         assert!(a.locked_for("10.0.0.1").is_none(), "tripped one attempt early");
@@ -301,6 +379,64 @@ mod tests {
 
         a.record_success("10.0.0.1");
         assert!(a.locked_for("10.0.0.1").is_none(), "success did not clear it");
+    }
+
+    /// The block is served for the *block* duration, not the counting window.
+    /// Conflating the two was the old behaviour and is the bug this setting
+    /// exists to make impossible: five tries a minute, blocked for an hour.
+    #[test]
+    fn the_block_outlives_the_counting_window() {
+        let a = super::Attempts::new(super::Limits {
+            max_failures: 2,
+            window: std::time::Duration::from_millis(30),
+            block: std::time::Duration::from_secs(3600),
+        });
+
+        a.record_failure("10.0.0.1");
+        a.record_failure("10.0.0.1");
+        let left = a.locked_for("10.0.0.1").expect("should be blocked");
+        assert!(left > std::time::Duration::from_secs(3000), "{left:?}");
+
+        // Well past the counting window, and still blocked.
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        assert!(
+            a.locked_for("10.0.0.1").is_some(),
+            "the window lapsing released the block"
+        );
+    }
+
+    /// Failures spread wider than the window must never accumulate: someone
+    /// who mistypes once a day is not an attacker.
+    #[test]
+    fn failures_outside_the_window_do_not_accumulate() {
+        let a = super::Attempts::new(super::Limits {
+            max_failures: 3,
+            window: std::time::Duration::from_millis(20),
+            block: std::time::Duration::from_secs(60),
+        });
+
+        for _ in 0..6 {
+            a.record_failure("10.0.0.1");
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            assert!(
+                a.locked_for("10.0.0.1").is_none(),
+                "spread-out typos tripped the lockout"
+            );
+        }
+    }
+
+    /// Zero attempts means the feature is off - and off must mean nothing is
+    /// counted or blocked, not "blocks on the first try".
+    #[test]
+    fn zero_disables_the_limiter() {
+        let a = super::Attempts::new(super::Limits {
+            max_failures: 0,
+            ..super::Limits::default()
+        });
+        for _ in 0..50 {
+            a.record_failure("10.0.0.1");
+        }
+        assert!(a.locked_for("10.0.0.1").is_none(), "disabled limiter tripped");
     }
     #[test]
     fn hashes_are_salted() {

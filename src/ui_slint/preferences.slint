@@ -114,15 +114,29 @@ export component PreferencesDialog inherits Window {
     // few pixels under the content left the scrollbar up permanently.
     // min-height only sets how far it may be dragged down on a screen too
     // short for it - that is when the ScrollView earns its keep.
-    // The TabWidget's height is the tallest tab (Connection), so every other
-    // tab carries some empty space - that is inherent to a tabbed dialog and
-    // was true when the height was hard-coded too.
+    // The window resizes as you switch tabs, so no tab carries another tab's
+    // empty space.
     min-width: 700px;
     max-width: 700px;
     /// The tallest this window may be, in logical pixels - set from the
     /// monitor work area. Huge by default so a build that cannot read it (or
     /// a platform where it is not wired up) behaves as if unclamped.
     in property <length> screen-limit: 100000px;
+
+    /// Every list in this dialog stands ten rows tall, whether or not it has
+    /// ten rows in it. A list sized to its contents jumps about as rows come
+    /// and go, and one sized by `vertical-stretch` collapsed to nothing on the
+    /// short tabs now that the window follows the current tab. Past ten rows
+    /// the ListView scrolls rather than the dialog growing.
+    property <int> list-rows: 10;
+    /// Label and filter rows are a fixed 26px. The +2px is the 1px border on
+    /// each side of the box the list sits in.
+    property <length> list-height: root.list-rows * 26px + 2px;
+    /// Plugin rows are not fixed - a checkbox line plus a permissions line,
+    /// and more when there is an error or an approval prompt - so this is a
+    /// nominal row, not a measured one. Ten typical rows; taller ones simply
+    /// mean fewer are visible before it scrolls.
+    property <length> plugin-list-height: root.list-rows * 48px + 2px;
     // min == max, so the window is not resizable at all.
     //
     // Height = the tallest tab's content, plus the tab bar, the footer and the
@@ -138,12 +152,22 @@ export component PreferencesDialog inherits Window {
     // tallest tab and nothing scrolls. On a short screen the clamp wins and
     // the tab CONTENT scrolls - the tab bar and the footer stay put, because
     // both are outside the per-tab ScrollViews.
-    property <length> tallest-tab: max(tb1.preferred-height,
-        max(tb2.preferred-height,
-        max(tb3.preferred-height,
-        max(tb4.preferred-height,
-        max(tb5.preferred-height,
-        max(tb6.preferred-height, tb7.preferred-height))))));
+    //
+    // The height follows the tab you are LOOKING at, not the tallest one.
+    // Taking the maximum made every tab as tall as Connection, so General -
+    // four rows - opened with half a screen of nothing under it, and the
+    // window never shrank back when you moved off the tall tab.
+    //
+    // Note the body names do not run in tab order: tb7 is Plugins (index 5)
+    // and tb6 is Labels & filters (index 6).
+    property <length> tallest-tab:
+        tabs.current-index == 0 ? tb1.preferred-height :
+        tabs.current-index == 1 ? tb2.preferred-height :
+        tabs.current-index == 2 ? tb3.preferred-height :
+        tabs.current-index == 3 ? tb4.preferred-height :
+        tabs.current-index == 4 ? tb5.preferred-height :
+        tabs.current-index == 5 ? tb7.preferred-height :
+                                  tb6.preferred-height;
     // Tab bar, footer row, and the 12px padding top and bottom plus 10px
     // between the tabs and the footer.
     property <length> chrome: 40px + foot.preferred-height + 34px;
@@ -198,6 +222,15 @@ export component PreferencesDialog inherits Window {
     in-out property <int> proxy-type-index;
     in-out property <string> proxy-host;
     in-out property <string> proxy-port;
+    in-out property <string> proxy-username;
+    in-out property <string> proxy-password;
+    /// The credentialed proxy types: socks5-password (3) and http-password
+    /// (5). Kept as one expression so the two fields cannot disagree about
+    /// when they apply.
+    out property <bool> proxy-wants-credentials:
+        root.proxy-type-index == 3 || root.proxy-type-index == 5;
+    in-out property <string> bind-interface;
+    in-out property <bool> strict-network;
     in-out property <bool> proxy-hostnames;
     in-out property <bool> proxy-peers;
     in-out property <bool> proxy-trackers;
@@ -270,6 +303,9 @@ export component PreferencesDialog inherits Window {
     in-out property <string> web-workers;
     in-out property <string> web-shutdown-timeout;
     in-out property <string> web-max-body;
+    in-out property <string> web-auth-max-failures;
+    in-out property <string> web-auth-window;
+    in-out property <string> web-auth-block;
     /// Put the eight tuning fields back to the values `Advanced::default()`
     /// holds. Only the fields - the write still happens on OK, so this is as
     /// undoable as any other edit in the dialog.
@@ -481,6 +517,51 @@ export component PreferencesDialog inherits Window {
                             label: L.s(L.revision, "host");
                             LineEdit { text <=> root.proxy-host; horizontal-stretch: 1; enabled: root.proxy-type-index > 0; }
                             LineEdit { text <=> root.proxy-port; width: 110px; enabled: root.proxy-type-index > 0; }
+                        }
+
+                        // Shown always, enabled only for the types that use them:
+                        // hiding the row would make the credentialed types look
+                        // identical to the plain ones until you noticed the
+                        // proxy silently failing to authenticate.
+                        Labelled {
+                            label: L.s(L.revision, "username");
+                            LineEdit {
+                                text <=> root.proxy-username;
+                                horizontal-stretch: 1;
+                                enabled: root.proxy-wants-credentials;
+                            }
+                        }
+                        Labelled {
+                            label: L.s(L.revision, "password");
+                            LineEdit {
+                                text <=> root.proxy-password;
+                                horizontal-stretch: 1;
+                                enabled: root.proxy-wants-credentials;
+                                input-type: password;
+                            }
+                        }
+
+                        Labelled {
+                            label: L.s(L.revision, "bind_interface");
+                            LineEdit {
+                                text <=> root.bind-interface;
+                                horizontal-stretch: 1;
+                                placeholder-text: L.s(L.revision, "bind_interface_hint");
+                            }
+                        }
+
+                        // Deliberately not disabled by proxy-type: an interface
+                        // binding is protection on its own, with no proxy in
+                        // sight, and is the stronger of the two.
+                        CheckBox {
+                            text: L.s(L.revision, "strict_network");
+                            checked <=> root.strict-network;
+                        }
+                        Text {
+                            text: L.s(L.revision, "strict_network_hint");
+                            wrap: word-wrap;
+                            font-size: 11px;
+                            opacity: 0.7;
                         }
 
                         CheckBox { text: L.s(L.revision, "proxy_hostnames"); checked <=> root.proxy-hostnames; enabled: root.proxy-type-index > 0; }
@@ -701,6 +782,46 @@ export component PreferencesDialog inherits Window {
                                     edited => { root.web-changed(); }
                                 }
                             }
+                            Text {
+                                text: L.s(L.revision, "auth_lockout");
+                                font-weight: 600;
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "auth_max_failures");
+                                LineEdit {
+                                    text <=> root.web-auth-max-failures;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "auth_window");
+                                LineEdit {
+                                    text <=> root.web-auth-window;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
+                            Labelled {
+                                label: "    " + L.s(L.revision, "auth_block");
+                                LineEdit {
+                                    text <=> root.web-auth-block;
+                                    horizontal-stretch: 1;
+                                    input-type: number;
+                                    enabled: root.web-enabled;
+                                    edited => { root.web-changed(); }
+                                }
+                            }
+                            Text {
+                                text: L.s(L.revision, "auth_lockout_hint");
+                                wrap: word-wrap;
+                                font-size: 11px;
+                                opacity: 0.7;
+                            }
                             HorizontalLayout {
                                 padding-left: 190px;
                                 Button {
@@ -739,8 +860,7 @@ export component PreferencesDialog inherits Window {
                         }
 
                         Rectangle {
-                            vertical-stretch: 1;
-                            min-height: 140px;
+                            height: root.plugin-list-height;
                             border-color: Palette.border;
                             border-width: 1px;
                             border-radius: 4px;
@@ -849,7 +969,7 @@ export component PreferencesDialog inherits Window {
                         horizontal-stretch: 1;
                         Text { text: L.s(L.revision, "labels"); font-weight: 700; font-size: 13px; }
                         Rectangle {
-                            vertical-stretch: 1;
+                            height: root.list-height;
                             border-color: Palette.border;
                             border-width: 1px;
                             border-radius: 4px;
@@ -911,7 +1031,7 @@ export component PreferencesDialog inherits Window {
                         horizontal-stretch: 1;
                         Text { text: L.s(L.revision, "amp_filter"); font-weight: 700; font-size: 13px; }
                         Rectangle {
-                            vertical-stretch: 1;
+                            height: root.list-height;
                             border-color: Palette.border;
                             border-width: 1px;
                             border-radius: 4px;

@@ -93,9 +93,19 @@ export component PluginWindow inherits Window {
     title: root.window-title;
 
     preferred-width: 620px;
-    preferred-height: 440px;
+    /// The tallest this window may be, in logical pixels - set from the work
+    /// area of the monitor it opens on. Huge by default so a platform where it
+    /// is not wired up behaves as if unclamped.
+    ///
+    /// A plugin picks neither its own size nor the screen it lands on, so this
+    /// is the one window here whose content is written by someone who cannot
+    /// test it. Clamping keeps a long list inside the screen and lets the
+    /// ListView scroll instead of the window growing past the bottom.
+    in property <length> screen-limit: 100000px;
+    preferred-height: min(440px, root.screen-limit);
+    max-height: root.screen-limit;
     min-width: 360px;
-    min-height: 240px;
+    min-height: min(240px, root.screen-limit);
     background: Palette.background;
 
     in property <[PluginRowItem]> rows;

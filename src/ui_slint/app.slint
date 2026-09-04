@@ -838,6 +838,140 @@ component SpeedChart inherits Rectangle {
     }
 }
 
+// --- status bar glyphs ----------------------------------------------------
+// 20x20 viewboxes like the toolbar's, drawn at 13px. Straight-line polygons
+// only, for the reason IconButton gives: no dependence on SVG arc support.
+
+// Three stacked bars, for "torrents".
+component TorrentsIcon inherits Rectangle {
+    in property <color> ink;
+    width: 13px;
+    height: 13px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 2 3 L 18 3 L 18 6 L 2 6 Z M 2 8.5 L 18 8.5 L 18 11.5 L 2 11.5 Z M 2 14 L 18 14 L 18 17 L 2 17 Z";
+    }
+}
+
+// A hub with four satellites, for "DHT nodes".
+component NodesIcon inherits Rectangle {
+    in property <color> ink;
+    width: 13px;
+    height: 13px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 7.5 7.5 L 12.5 7.5 L 12.5 12.5 L 7.5 12.5 Z M 0 0 L 4.5 0 L 4.5 4.5 L 0 4.5 Z M 15.5 0 L 20 0 L 20 4.5 L 15.5 4.5 Z M 0 15.5 L 4.5 15.5 L 4.5 20 L 0 20 Z M 15.5 15.5 L 20 15.5 L 20 20 L 15.5 20 Z";
+    }
+}
+
+// Solid arrows, for the two transfer rates.
+component DownIcon inherits Rectangle {
+    in property <color> ink;
+    width: 13px;
+    height: 13px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 7.5 2 L 12.5 2 L 12.5 10 L 17 10 L 10 18 L 3 10 L 7.5 10 Z";
+    }
+}
+
+component UpIcon inherits Rectangle {
+    in property <color> ink;
+    width: 13px;
+    height: 13px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 7.5 18 L 12.5 18 L 12.5 10 L 17 10 L 10 2 L 3 10 L 7.5 10 Z";
+    }
+}
+
+// A plug, for "can peers reach this port".
+component PortIcon inherits Rectangle {
+    in property <color> ink;
+    width: 13px;
+    height: 13px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 5.5 1 L 8 1 L 8 5 L 5.5 5 Z M 12 1 L 14.5 1 L 14.5 5 L 12 5 Z M 3 6 L 17 6 L 17 11 L 13 11 L 13 19 L 7 19 L 7 11 L 3 11 Z";
+    }
+}
+
+// One reading in the status bar: a glyph, a value, and the word behind them.
+//
+// The word lives in the tooltip rather than on the bar. It used to be printed
+// in full inside a fixed 150px or 190px box, which is a clipped caption in any
+// of the 41 languages whose word for "torrents" is longer than English's - and
+// a number needs no fixed width at all.
+component StatusItem inherits Rectangle {
+    in property <string> value;
+    in property <string> tip;
+
+    // Sized by content, never by a hard-coded guess.
+    horizontal-stretch: 0;
+    min-width: row.min-width;
+
+    row := HorizontalLayout {
+        spacing: 5px;
+        alignment: start;
+        VerticalLayout { alignment: center; @children }
+        Text {
+            text: root.value;
+            font-size: 12px;
+            vertical-alignment: center;
+            color: Palette.foreground;
+        }
+    }
+
+    Tooltip {
+        Rectangle {
+            background: Palette.alternate-background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 4px;
+            HorizontalLayout {
+                padding: 6px;
+                Text { text: root.tip; font-size: 12px; color: Palette.foreground; }
+            }
+        }
+    }
+}
+
+// A globe with a band across it, for "traffic goes through a proxy".
+component ProxyIcon inherits Rectangle {
+    in property <color> ink;
+    width: 13px;
+    height: 13px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 2 2 L 18 2 L 18 6 L 2 6 Z M 2 8 L 18 8 L 18 12 L 2 12 Z M 2 14 L 18 14 L 18 18 L 2 18 Z M 8 0 L 12 0 L 12 20 L 8 20 Z";
+    }
+}
+
+// A link in a chain, for "bound to one interface".
+component BoundIcon inherits Rectangle {
+    in property <color> ink;
+    width: 13px;
+    height: 13px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 1 6 L 9 6 L 9 9 L 4 9 L 4 11 L 9 11 L 9 14 L 1 14 Z M 11 6 L 19 6 L 19 14 L 11 14 L 11 11 L 16 11 L 16 9 L 11 9 Z";
+    }
+}
+
 export component MainWindow inherits Window {
     // Fires while the window is being dragged, not only when it settles -
     // columns that lag behind the frame look broken, and the handler is a few
@@ -866,7 +1000,27 @@ export component MainWindow inherits Window {
     in property <string> status;
     in property <int> selected-count;
     in property <string> dht-nodes: "105";
-    in property <string> session-rates: "DL: 0 bytes/s, UL: 0 bytes/s";
+    in property <string> rate-down: "0 bytes/s";
+    in property <string> rate-up: "0 bytes/s";
+
+    /// Whether peers can reach this client's listening port.
+    ///
+    /// 0 not listening at all, 1 listening but nothing has arrived yet, 2 a
+    /// peer out on the internet has connected in. Only 2 is proof: a quiet
+    /// port might be firewalled or might simply be new, and the indicator says
+    /// "not yet known" rather than inventing a verdict it cannot support.
+    in property <int> port-state: 1;
+    in property <string> port-tip;
+
+    /// Privacy indicators. Both are absent unless actually configured - an
+    /// always-present grey icon reads as "off" at a glance whether it means
+    /// off or not, and these two are worth being sure about.
+    in property <bool> proxy-active;
+    in property <string> proxy-tip;
+    in property <bool> bound-active;
+    /// The bound interface has gone missing and everything is paused.
+    in property <bool> bound-lost;
+    in property <string> bound-tip;
 
     // Details of the selected torrent.
     in property <string> d-name: "-";
@@ -2054,17 +2208,76 @@ export component MainWindow inherits Window {
         }
 
         // --- status bar ------------------------------------------------------
+        // Glyph and number per reading, with the word in the tooltip. The
+        // captions used to be spelled out inside fixed 150px and 190px boxes,
+        // which clipped in every language wordier than English.
         if root.show-status: Rectangle {
             height: 26px;
             background: Palette.alternate-background;
             HorizontalLayout {
                 padding-left: 8px;
                 padding-right: 8px;
-                spacing: 24px;
-                Text { text: L.s(L.revision, "torrents_count") + ": " + root.rows.length; vertical-alignment: center; font-size: 12px; width: 150px; }
-                Text { text: L.s(L.revision, "dht_nodes_label") + ": " + root.dht-nodes; vertical-alignment: center; font-size: 12px; width: 190px; }
-                Text { text: root.session-rates; vertical-alignment: center; font-size: 12px; horizontal-stretch: 1; }
-                Text { text: root.status; vertical-alignment: center; font-size: 12px; color: #888; }
+                spacing: 16px;
+                alignment: start;
+
+                StatusItem {
+                    value: root.rows.length;
+                    tip: L.s(L.revision, "torrents_count");
+                    TorrentsIcon { ink: Palette.foreground.transparentize(0.25); }
+                }
+                StatusItem {
+                    value: root.dht-nodes;
+                    tip: L.s(L.revision, "dht_nodes_label");
+                    NodesIcon { ink: Palette.foreground.transparentize(0.25); }
+                }
+                // The same green and blue the toolbar charts use, so the two
+                // readings of the same thing agree at a glance.
+                StatusItem {
+                    value: root.rate-down;
+                    tip: L.s(L.revision, "download");
+                    DownIcon { ink: #2ea043; }
+                }
+                StatusItem {
+                    value: root.rate-up;
+                    tip: L.s(L.revision, "upload");
+                    UpIcon { ink: #2f80ed; }
+                }
+
+                // Reachability. Green only when a peer out on the internet has
+                // actually connected IN - see the note on `port-state`.
+                StatusItem {
+                    value: "";
+                    tip: root.port-tip;
+                    PortIcon {
+                        ink: root.port-state == 2 ? #2ea043
+                            : root.port-state == 1 ? Palette.foreground.transparentize(0.55)
+                            : #e5484d;
+                    }
+                }
+
+                // Shown only when in use. Green because both mean the same
+                // thing to the person looking: traffic is going somewhere
+                // other than straight out of this machine.
+                if root.proxy-active: StatusItem {
+                    value: "";
+                    tip: root.proxy-tip;
+                    ProxyIcon { ink: #2ea043; }
+                }
+                if root.bound-active: StatusItem {
+                    value: "";
+                    tip: root.bound-tip;
+                    // Red when the interface is gone: the one state in this
+                    // bar that means something is wrong right now.
+                    BoundIcon { ink: root.bound-lost ? #d1242f : #2ea043; }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+                Text {
+                    text: root.status;
+                    vertical-alignment: center;
+                    font-size: 12px;
+                    color: #888;
+                }
             }
         }
     }

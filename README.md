@@ -101,12 +101,12 @@ Country flags for the peers list live in `res/flags` (252 public-domain 32x24
 PNGs from flagpedia.net — see `res/flags/SOURCE.md`) and are embedded the same
 way; refresh them with `tools/update-flags.ps1`.
 
-The engine is vendored: `vendor/librqbit`, `vendor/librqbit-tracker-comms` and
-`vendor/librqbit-peer-protocol` are the published crates.io sources plus a
-small stack of mostly visibility-only patches, wired in via
-`[patch.crates-io]`. The two sibling crates are vendored because two features
-span crate boundaries — per-tracker announce stats, and the BEP 52 hash
-messages. See
+The engine is vendored: `vendor/librqbit`, `vendor/librqbit-tracker-comms`,
+`vendor/librqbit-peer-protocol` and `vendor/librqbit-dualstack-sockets` are the
+published crates.io sources plus a small stack of mostly visibility-only
+patches, wired in via `[patch.crates-io]`. The three sibling crates are
+vendored because some features reach past librqbit itself — per-tracker
+announce stats, the BEP 52 hash messages, and two Windows socket fixes. See
 `vendor/librqbit/PATCHES.md`; `build.rs` verifies the patches are present and
 fails with instructions if a re-vendor dropped one. Re-vendor with
 `tools/update-librqbit.ps1`.
@@ -127,6 +127,49 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   anonymous mode, proxy scoping. Ones with no librqbit mechanism are documented
   as no-ops. The active limits are enforced by the UI's refresh tick, so they
   do not apply to a headless build yet.
+- **Plugins in the web interface** - a plugin's window is state held by the
+  plugin host, not by the desktop window, so the browser renders the same
+  surface from the same data: `GET /api/plugins`, `GET /api/plugins/{name}`,
+  and `POST /api/plugins/{name}/event` for a click. A `.rhai` plugin written
+  for the desktop appears in the browser unchanged and needs no extra
+  permission — it is still `ui`, still the same fixed shape (an optional upper
+  list, a main list, a text field, some buttons), so a plugin cannot draw
+  arbitrary markup at a remote viewer. Verified end to end: the shipped
+  `rss.rhai`, driven entirely over HTTP, adds a feed and lists its items.
+- **Web interface brute-force lockout** - configurable in Preferences ▸ Web
+  interface, from the browser's own settings drawer, and via
+  `--set web-auth-max-failures|web-auth-window|web-auth-block`. Counts failed
+  logins **per address** — so nobody can lock the owner out by hammering it —
+  and refuses that address with `429` and a `Retry-After` once it trips.
+  Default: 5 failures within 60 seconds, then blocked for an hour. Zero
+  attempts disables it. The counting window and the block are separate
+  settings, because one number for both forces a choice between a long lockout
+  and a long memory for stray typos. Note that while blocked, even the correct
+  password is refused: the credentials are not looked at at all, which is what
+  makes the limit meaningful.
+- **Torrent path-escape guard** - a `.torrent` whose filename carries a drive
+  prefix (`C:evil.txt`) passes librqbit's traversal check, which only looks for
+  `..` and separators, and then discards the save folder entirely on Windows,
+  because `PathBuf::push` replaces the buffer when the pushed path has a
+  prefix. Demonstrated writing outside the download directory, into the
+  process's working directory — next to a portable install, a DLL-planting
+  primitive. Engine patch 0015 refuses any relative path whose components are
+  not all `Component::Normal`, at the storage layer, so it covers magnets too.
+- **Strict network mode ("stop rather than leak")** - optional, off by default.
+  Binding to a VPN interface or pointing at a SOCKS proxy is a *preference* on
+  its own: the components that cannot honour it carry on regardless, and on a
+  torrent client those are the loudest ones. DHT and uTP are UDP and neither has
+  any proxy code; local peer discovery is LAN multicast; UPnP talks to the
+  router. Strict mode switches off whatever the chosen protection cannot cover,
+  refuses to start when the named interface is not present, and pauses every
+  torrent if that interface disappears while running. What it does **not**
+  promise: it is not a firewall. It stops this client from talking around the
+  tunnel; it cannot stop anything else on the machine, and it cannot prove the
+  proxy is where it claims to be. Decision logic in `src/core/netguard.rs`.
+  On Windows the interface is applied by binding its address rather than the
+  device (there is no `SO_BINDTODEVICE`; engine patch 0014), which the strong
+  host model makes a real restriction - at the cost of being IPv4-only, since
+  one socket carries one address.
 - **Low-disk guard** - pause everything when free space on the default save
   path drops below a percentage of the volume. librqbit has no such mechanism,
   so this is checked here every 30s. Off by default; 5% when enabled.
@@ -462,6 +505,67 @@ require-encryption toggles for each.
 
 ## History
 
+**v0.3.3** is about not leaking, and about the web interface catching up with
+the window.
+
+**Strict network mode** is the headline, and it is a switch that says *stop
+rather than leak*. Binding to a VPN interface or pointing at a SOCKS proxy has
+always been a preference rather than a guarantee: the parts that cannot honour
+it carry on regardless, and on a torrent client those are the loudest ones. DHT
+and uTP are UDP and neither has any proxy code; local peer discovery is LAN
+multicast; UPnP talks to the router. Leave them running behind a proxy and the
+client announces its real address on every torrent while the settings screen
+says "proxy". Strict mode switches off whatever the chosen protection cannot
+cover, **refuses to start** if the named interface is not there, and **pauses
+every torrent** if it disappears while running. The status bar shows the proxy
+and the binding, and turns the interface red when it has gone.
+
+Binding to an interface also now works on **Windows**, where it never had.
+librqbit implements it as `SO_BINDTODEVICE`, which does not exist there, so the
+whole feature was Linux and macOS only and any Windows user who set one got
+*"binding to device is not supported on your OS"* and an application that would
+not start. Windows binds the interface's *address* instead — a real restriction
+under the strong host model, not a hint (engine patch 0014).
+
+**A security fix.** A malicious `.torrent` could write outside the download
+folder on Windows. The traversal check everyone tests for rejects `..` and path
+separators, and it does; what it does not reject is a drive prefix, and
+`PathBuf::push` throws the whole buffer away when the pushed path carries one.
+A file named `C:evil.txt` therefore passed validation and then landed relative
+to the current directory of drive C — next to a portable install, a
+DLL-planting primitive. Engine patch 0015 refuses any relative path whose
+components are not all plain names, at the storage layer, so it covers magnets
+too. Demonstrated against a real session before and after.
+
+**The web interface** was a list with an add button. It now has the desktop's
+toolbar — add magnet, add torrent, remove, resume, pause — with **multi-select**
+by ctrl-click and shift-click, the same **speed charts** as the window (sharing
+their width, so a chart is the same size in both places), **resizable columns**
+whose widths are stored server-side rather than in one browser, and
+**drag-and-drop** for adding torrents. Adding several at once already worked;
+now it is findable.
+
+**Plugins reach the browser.** A plugin's window is state held by the plugin
+host, not by the desktop window, so the browser renders the same surface from
+the same data. A `.rhai` plugin written for the desktop appears in the web
+interface unchanged and needs no extra permission — the shipped RSS reader
+works there as it does here. The web interface can also list every plugin and
+switch it on or off, but deliberately **cannot approve one**: consent to what a
+script may reach is given at the machine it runs on.
+
+**A brute-force lockout** for the web interface, configurable at last: how many
+failed logins, over what window, and how long the address is then refused
+(five in sixty seconds, then an hour, by default). It counts per address, so
+nobody can lock the owner out by hammering it, and the window and the block are
+separate settings — one number for both forces a choice between a long lockout
+and a long memory for stray typos.
+
+Fixed: dialogs could open **taller than the screen** with no scrollbar. The
+clamp measured the window before it existed, so on a 200% display it computed a
+limit twice the height of the monitor and never engaged. Preferences also sized
+every tab to the tallest one, and the plugin window was the only window with no
+clamp at all.
+
 **v0.3.2** gives plugins something to work with. 0.3.1 shipped a host that could
 watch torrents and drive them, which is enough for a script that tidies up after
 a download and not enough for anything that has to look outside the client. A
@@ -641,9 +745,10 @@ byte of content is requested. Verified against libtorrent's own v2 test swarm �
 all ten piece layers fetched and checked in 83 ms, then 1.43 GiB of a 1.45 GiB
 torrent downloaded and hash-verified.
 
-The patches were consolidated at the same time: **13 numbered features across 16
-files and four vendored crates**, one number per feature, applied in order and
-round-tripping clean. `vendor/librqbit/PATCHES.md` documents each one, what it
+The patches were consolidated at the same time, and again since: **15 numbered
+features across 20 files and four vendored crates**, one number per feature,
+applied in order and round-tripping clean — the whole stack reverses back to
+the pristine crates.io sources, which is what keeps a re-vendor honest. `vendor/librqbit/PATCHES.md` documents each one, what it
 seams open, and which of the old patches librqbit 9 made redundant.
 
 Four more BEPs came with it. **Fast extension** (BEP 6) speaks all five
