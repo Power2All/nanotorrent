@@ -2,12 +2,11 @@
 pub(crate) mod tests;
 
 use crate::Error;
-use std::{
-    ffi::CString,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    num::NonZeroU32,
-    str::FromStr,
-};
+use std::{ffi::CString, net::IpAddr, num::NonZeroU32, str::FromStr};
+// NanoTorrent: only the Windows arm keeps addresses, so importing these
+// unconditionally is an unused-import warning on every other platform.
+#[cfg(windows)]
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 #[derive(Debug, Clone)]
 pub struct BindDevice {
