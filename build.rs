@@ -281,6 +281,18 @@ fn verify_librqbit_patches() {
             "patches/0013-windows-udp-connreset-sockets.patch (a FIFTH vendored \n             crate; without it the DHT dies on Windows within a second of \n             starting and magnets never resolve)",
         ),
         (
+            "vendor/librqbit/src/storage/filesystem/fs.rs",
+            "fn safe_join",
+            "patches/0015-torrent-path-escape.patch (SECURITY - without it a \n             torrent whose filename carries a drive prefix, e.g. \n             \"C:evil.txt\", escapes the save folder entirely on Windows)",
+        ),
+        (
+            "vendor/librqbit-dualstack-sockets/src/bind_device.rs",
+            "pub fn bind_ip",
+            "patches/0014-windows-bind-interface-sockets.patch (without it 
+             bind-to-interface is a Linux/macOS-only feature and any 
+             Windows user who sets one cannot start the app at all)",
+        ),
+        (
             "vendor/librqbit/src/session.rs",
             "pub async fn add_synthetic_peer",
             "patches/0011-synthetic-peer.patch (WebSeed hangs off this)",

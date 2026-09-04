@@ -87,6 +87,28 @@
   </screenshots>
 
   <releases>
+    <release version="0.3.3" date="2026-09-04">
+      <description>
+        <p>Strict network mode: when a VPN interface or a SOCKS proxy is set, NanoTorrent switches off whatever that cannot cover — DHT, uTP, local peer discovery and UPnP — refuses to start if the interface is missing, and pauses everything if it disappears while running. Binding to an interface now works on Windows.</p>
+        <p>Security fix: a malicious .torrent whose filename carried a drive prefix could write outside the download folder on Windows.</p>
+        <p>The web interface gains the desktop toolbar, speed charts, resizable columns, multi-select, drag-and-drop adding, a configurable login lockout, and plugin control. Fixes dialogs that could open taller than the screen.</p>
+      </description>
+    </release>
+    <release version="0.3.2" date="2026-09-03">
+      <description>
+        <p>Plugins can reach the network, keep their own data, and open a window and a menu of their own. Includes an RSS feed reader as a plugin. Adds live download and upload charts to the toolbar.</p>
+      </description>
+    </release>
+    <release version="0.3.1" date="2026-09-02">
+      <description>
+        <p>Adds the plugin host: optional Rhai scripts that watch torrents and drive them, each declaring what it may reach and running only once approved. Plugins are off by default. Finishes desktop notifications on all three platforms.</p>
+      </description>
+    </release>
+    <release version="0.3.0" date="2026-09-01">
+      <description>
+        <p>BitTorrent v2 (BEP 52) and hybrid torrents, including v2 magnets. Adds the fast extension (BEP 6), upload-only (BEP 21), and per-tracker announce statistics.</p>
+      </description>
+    </release>
     <release version="0.2.5" date="2026-08-30">
       <description>
         <p>Set a torrent's save path without moving its files, for data relocated outside the app. Fixes a burst of download-complete notifications when starting with completed torrents.</p>

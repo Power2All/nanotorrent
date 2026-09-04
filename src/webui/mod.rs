@@ -99,6 +99,12 @@ pub struct Advanced {
     pub shutdown_timeout: u64,
     /// Request body ceiling in MEGABYTES, as typed; `build` converts.
     pub max_body_size: usize,
+    /// Failed logins from one address that trip the lockout. Zero disables it.
+    pub auth_max_failures: u32,
+    /// Seconds over which those failures are counted.
+    pub auth_window: u64,
+    /// Seconds an address is refused once it has tripped.
+    pub auth_block: u64,
 }
 
 impl Default for Advanced {
@@ -112,6 +118,13 @@ impl Default for Advanced {
             workers: 2,
             shutdown_timeout: 5,
             max_body_size: 8,
+            // Five tries a minute, then an hour out. Deliberately strict: this
+            // guards one password on a machine its owner can always reach by
+            // other means, so the cost of being wrong is small and the cost of
+            // being too permissive is someone else's.
+            auth_max_failures: 5,
+            auth_window: 60,
+            auth_block: 3600,
         }
     }
 }
@@ -162,6 +175,16 @@ impl Advanced {
             // keeps an unbounded body from being free memory for anyone
             // holding the password.
             max_body_size: count("webui.max_body_size", 1, 1024, d.max_body_size),
+            // Zero is meaningful: it switches the lockout off. Anything above
+            // it is clamped to something a person could plausibly mean.
+            auth_max_failures: count("webui.auth_max_failures", 0, 1000, d.auth_max_failures as usize)
+                as u32,
+            // At least a second of window - a zero window would count every
+            // failure in its own window and never trip.
+            auth_window: secs("webui.auth_window", 1, 86400, d.auth_window),
+            // A week's ceiling. No "forever": a lockout the owner cannot wait
+            // out is a way to lock yourself out of your own client.
+            auth_block: secs("webui.auth_block", 1, 604_800, d.auth_block),
         }
     }
 }
@@ -419,6 +442,18 @@ fn render_page(tr: &crate::ui::translator::Translator) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// `GET /favicon.ico` - the application icon.
+///
+/// Browsers ask for this unprompted on every first load, so without it the
+/// server answers its own page with a 404 in the console. The same PNG the
+/// desktop window uses, so the tab matches the app.
+async fn h_favicon() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("image/png")
+        .insert_header(("Cache-Control", "public, max-age=86400"))
+        .body(&include_bytes!("../../res/app.png")[..])
 }
 
 async fn h_index(state: web::Data<AppState>) -> impl Responder {
@@ -864,6 +899,330 @@ struct SettingDto {
     description: String,
 }
 
+// --- column widths ---------------------------------------------------------
+//
+// Stored in the same `column_state` table the desktop list uses, under its own
+// list id. Server-side rather than in localStorage so the widths follow the
+// person rather than the browser - the same reason the desktop keeps them in
+// the database instead of a config file next to the window.
+//
+// The desktop list has sixteen columns and this one has nine, so they cannot
+// share rows; what they do share is the designed widths for the columns that
+// mean the same thing.
+pub const WEB_LIST: &str = "webui";
+
+#[derive(Deserialize)]
+struct ColumnWidth {
+    column: i64,
+    width: f32,
+}
+
+/// `GET /api/columns` - the stored widths, as `{ "0": 260.0, ... }`.
+async fn h_columns(state: web::Data<AppState>) -> actix_web::Result<HttpResponse> {
+    let widths: std::collections::BTreeMap<String, f32> = state
+        .cfg
+        .get_column_widths(WEB_LIST)
+        .into_iter()
+        .map(|(id, w)| (id.to_string(), w))
+        .collect();
+    Ok(HttpResponse::Ok().json(widths))
+}
+
+/// `POST /api/columns` - remember one column's width.
+///
+/// Clamped rather than rejected: a width is a preference, and the only values
+/// worth refusing are the ones that would make a column unusable or push the
+/// table past any screen.
+async fn h_set_column(
+    state: web::Data<AppState>,
+    body: web::Json<ColumnWidth>,
+) -> actix_web::Result<HttpResponse> {
+    let body = body.into_inner();
+    if !(0..64).contains(&body.column) || !body.width.is_finite() {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "column out of range, or width is not a number"
+        })));
+    }
+    state
+        .cfg
+        .set_column_width(WEB_LIST, body.column, body.width.clamp(40.0, 1200.0));
+    Ok(HttpResponse::NoContent().finish())
+}
+
+// --- chart widths ----------------------------------------------------------
+//
+// The SAME two keys the desktop toolbar uses, and the same 48-320 range its
+// drag clamps to, so the charts are literally the same width in both places
+// rather than merely similar. Stored through `persistent_object` because these
+// are window geometry, not settings anyone would look for in Preferences.
+const CHART_KEYS: [&str; 2] = ["ui.chart_down_width", "ui.chart_up_width"];
+const CHART_DEFAULT: f32 = 96.0;
+const CHART_MIN: f32 = 48.0;
+const CHART_MAX: f32 = 320.0;
+
+#[derive(Deserialize)]
+struct ChartWidth {
+    /// "down" or "up".
+    which: String,
+    width: f32,
+}
+
+fn chart_key(which: &str) -> Option<&'static str> {
+    match which {
+        "down" => Some(CHART_KEYS[0]),
+        "up" => Some(CHART_KEYS[1]),
+        _ => None,
+    }
+}
+
+/// `GET /api/charts` - `{ "down": 96.0, "up": 96.0 }`, with the same bounds
+/// check the desktop applies when restoring them.
+async fn h_charts(state: web::Data<AppState>) -> actix_web::Result<HttpResponse> {
+    let read = |key: &str| -> f32 {
+        state
+            .cfg
+            .get_persistent(key)
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite() && (CHART_MIN..=CHART_MAX).contains(v))
+            .unwrap_or(CHART_DEFAULT)
+    };
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "down": read(CHART_KEYS[0]),
+        "up": read(CHART_KEYS[1]),
+        "min": CHART_MIN,
+        "max": CHART_MAX,
+        "default": CHART_DEFAULT,
+    })))
+}
+
+/// `POST /api/charts` - remember one chart's width.
+async fn h_set_chart(
+    state: web::Data<AppState>,
+    body: web::Json<ChartWidth>,
+) -> actix_web::Result<HttpResponse> {
+    let body = body.into_inner();
+    let Some(key) = chart_key(&body.which) else {
+        return Ok(HttpResponse::BadRequest()
+            .json(serde_json::json!({ "error": "which must be \"down\" or \"up\"" })));
+    };
+    if !body.width.is_finite() {
+        return Ok(HttpResponse::BadRequest()
+            .json(serde_json::json!({ "error": "width is not a number" })));
+    }
+    state
+        .cfg
+        .set_persistent(key, &body.width.clamp(CHART_MIN, CHART_MAX).to_string());
+    Ok(HttpResponse::NoContent().finish())
+}
+
+// --- plugins ---------------------------------------------------------------
+//
+// A plugin's surface is held by the plugin host (`plugins::ui`), not by the
+// desktop window - the window reads a snapshot and posts events back. These
+// three routes do exactly the same thing, so a `.rhai` plugin written for the
+// desktop shows up in the browser with no changes and no new permission: it is
+// still `ui`, still the same list-and-buttons shape.
+
+#[derive(Serialize)]
+struct PluginRowDto {
+    id: String,
+    title: String,
+    subtitle: String,
+    selected: bool,
+}
+
+impl From<&crate::plugins::ui::Row> for PluginRowDto {
+    fn from(r: &crate::plugins::ui::Row) -> Self {
+        PluginRowDto {
+            id: r.id.clone(),
+            title: r.title.clone(),
+            subtitle: r.subtitle.clone(),
+            selected: r.selected,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct PluginListDto {
+    name: String,
+    /// The plugin's own window title, empty when it has declared no window.
+    title: String,
+    configurable: bool,
+    /// The user's switch. Independent of whether it compiles: a broken plugin
+    /// stays on and shows its error, because switching it off would hide the
+    /// problem.
+    enabled: bool,
+    /// True once it is running and has declared a window - only then is there
+    /// anything to open.
+    has_window: bool,
+    /// Why it will not run, if it will not.
+    error: Option<String>,
+    /// Waiting for its permissions to be approved. The web interface can
+    /// switch a plugin on, but deliberately cannot approve one: consent to
+    /// what a script may reach is asked for at the machine it runs on.
+    needs_approval: bool,
+    /// What its header asks for, in words.
+    permissions: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct PluginSurfaceDto {
+    name: String,
+    title: String,
+    status: String,
+    placeholder: String,
+    configurable: bool,
+    /// `[id, label]` pairs, drawn left to right.
+    buttons: Vec<[String; 2]>,
+    groups: Vec<PluginRowDto>,
+    rows: Vec<PluginRowDto>,
+}
+
+/// What the browser is allowed to send back. Named rather than free-form so a
+/// request cannot invent an event the desktop window could not raise.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum PluginEventBody {
+    /// The plugin's chance to fill the surface before it is looked at - the
+    /// browser raises this when the panel is opened, as the window does.
+    Opened,
+    Row { id: String },
+    Group { id: String },
+    Button {
+        id: String,
+        #[serde(default)]
+        input: String,
+    },
+    Menu { id: String },
+    Configure,
+}
+
+/// Refuse anything the plugin host does not already know about.
+///
+/// Without this the name from the URL would reach `ui::post` unchecked, and a
+/// plugin that is disabled - or was never installed - would look to the host
+/// like one that simply had nothing on its surface.
+fn known_plugin(name: &str) -> bool {
+    crate::plugins::ui::windows().iter().any(|(n, _, _)| n == name)
+}
+
+/// `GET /api/plugins` - every plugin in the folder, running or not.
+///
+/// The whole folder rather than only the ones with a window: "which plugins do
+/// I have, and are they on" is the question the button is answering, and a
+/// plugin that is switched off has no window by definition - listing only
+/// windows would make a disabled plugin look like one that does not exist.
+async fn h_plugins(state: web::Data<AppState>) -> actix_web::Result<HttpResponse> {
+    let dir = crate::plugins::plugin_dir(&state.env);
+    let windows = crate::plugins::ui::windows();
+
+    let list: Vec<PluginListDto> = crate::plugins::scan(&dir, &state.cfg)
+        .into_iter()
+        .map(|p| {
+            let window = windows.iter().find(|(n, _, _)| *n == p.name);
+            PluginListDto {
+                title: window.map(|(_, t, _)| t.clone()).unwrap_or_default(),
+                configurable: window.is_some_and(|(_, _, c)| *c),
+                has_window: window.is_some(),
+                enabled: p.enabled,
+                error: p.error,
+                needs_approval: !p.granted && !p.requested.is_empty(),
+                permissions: p.requested.iter().map(|x| x.tag().to_owned()).collect(),
+                name: p.name,
+            }
+        })
+        .collect();
+    Ok(HttpResponse::Ok().json(list))
+}
+
+#[derive(Deserialize)]
+struct EnabledBody {
+    enabled: bool,
+}
+
+/// `POST /api/plugins/{name}/enabled` - switch one plugin on or off.
+///
+/// Reloads the host, so the change takes effect now rather than at the next
+/// start - the same thing the Preferences checkbox does. Approval is NOT
+/// granted here: switching a plugin on that has never been approved leaves it
+/// waiting, which is the point.
+async fn h_plugin_enabled(
+    state: web::Data<AppState>,
+    name: web::Path<String>,
+    body: web::Json<EnabledBody>,
+) -> actix_web::Result<HttpResponse> {
+    let name = name.into_inner();
+    let dir = crate::plugins::plugin_dir(&state.env);
+
+    // Only a plugin that is actually in the folder. Without this the name from
+    // the URL would be written straight into the disabled list, which would
+    // then carry entries for files that never existed.
+    if !crate::plugins::scan(&dir, &state.cfg).iter().any(|p| p.name == name) {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({
+            "error": "no such plugin"
+        })));
+    }
+
+    crate::plugins::set_enabled(&state.cfg, &name, body.enabled);
+    crate::plugins::reload(state.session.clone(), state.cfg.clone(), state.env.clone());
+    Ok(HttpResponse::NoContent().finish())
+}
+
+/// `GET /api/plugins/{name}` - one plugin's surface as it stands now.
+async fn h_plugin(name: web::Path<String>) -> actix_web::Result<HttpResponse> {
+    let name = name.into_inner();
+    let Some(ui) = crate::plugins::ui::snapshot(&name).filter(|u| u.has_window()) else {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({
+            "error": "no such plugin, or it has no window"
+        })));
+    };
+
+    Ok(HttpResponse::Ok().json(PluginSurfaceDto {
+        name,
+        title: ui.title.clone(),
+        status: ui.status.clone(),
+        placeholder: ui.placeholder.clone(),
+        configurable: ui.configurable,
+        buttons: ui
+            .buttons
+            .iter()
+            .map(|(id, label)| [id.clone(), label.clone()])
+            .collect(),
+        groups: ui.groups.iter().map(PluginRowDto::from).collect(),
+        rows: ui.rows.iter().map(PluginRowDto::from).collect(),
+    }))
+}
+
+/// `POST /api/plugins/{name}/event` - a click, in the plugin's own terms.
+///
+/// Fire and forget, exactly as the desktop window does: the plugin runs on the
+/// host's own thread and reports by updating its surface, which the next GET
+/// picks up. Waiting for it here would tie a browser request to however long
+/// someone's script decides to take.
+async fn h_plugin_event(
+    name: web::Path<String>,
+    body: web::Json<PluginEventBody>,
+) -> actix_web::Result<HttpResponse> {
+    use crate::plugins::ui::UiEvent;
+
+    let plugin = name.into_inner();
+    if !known_plugin(&plugin) {
+        return Ok(HttpResponse::NotFound().json(serde_json::json!({
+            "error": "no such plugin, or it has no window"
+        })));
+    }
+
+    crate::plugins::ui::post(match body.into_inner() {
+        PluginEventBody::Opened => UiEvent::Opened { plugin },
+        PluginEventBody::Row { id } => UiEvent::Row { plugin, id },
+        PluginEventBody::Group { id } => UiEvent::Group { plugin, id },
+        PluginEventBody::Button { id, input } => UiEvent::Button { plugin, id, input },
+        PluginEventBody::Menu { id } => UiEvent::Menu { plugin, id },
+        PluginEventBody::Configure => UiEvent::Configure { plugin },
+    });
+    Ok(HttpResponse::Accepted().finish())
+}
+
 #[derive(Serialize)]
 struct SectionDto {
     #[serde(skip)]
@@ -1156,7 +1515,11 @@ fn build(
     // Built out here, not in the factory closure: the closure runs once per
     // worker, so constructing it there would give each worker its own counter
     // and multiply the real attempt limit by the worker count.
-    let attempts = web::Data::new(auth::Attempts::default());
+    let attempts = web::Data::new(auth::Attempts::new(auth::Limits {
+        max_failures: advanced.auth_max_failures,
+        window: std::time::Duration::from_secs(advanced.auth_window),
+        block: std::time::Duration::from_secs(advanced.auth_block),
+    }));
 
     // Megabytes in the setting, bytes here. Computed outside the factory
     // closure, which runs per worker and cannot borrow `advanced` - it is
@@ -1181,6 +1544,7 @@ fn build(
             // password.
             .app_data(web::JsonConfig::default().limit(body_limit))
             .route("/", web::get().to(h_index))
+            .route("/favicon.ico", web::get().to(h_favicon))
             .service(
                 web::scope("/api")
                     .route("/health", web::get().to(h_health))
@@ -1193,6 +1557,14 @@ fn build(
                     .route("/torrents/{hash}/pause", web::post().to(h_pause))
                     .route("/torrents/{hash}/resume", web::post().to(h_resume))
                     .route("/torrents/{hash}/recheck", web::post().to(h_recheck))
+                    .route("/columns", web::get().to(h_columns))
+                    .route("/columns", web::post().to(h_set_column))
+                    .route("/charts", web::get().to(h_charts))
+                    .route("/charts", web::post().to(h_set_chart))
+                    .route("/plugins", web::get().to(h_plugins))
+                    .route("/plugins/{name}/enabled", web::post().to(h_plugin_enabled))
+                    .route("/plugins/{name}", web::get().to(h_plugin))
+                    .route("/plugins/{name}/event", web::post().to(h_plugin_event))
                     .route("/torrents/{hash}/move", web::post().to(h_move))
                     .route("/torrents/{hash}/location", web::post().to(h_set_location))
                     .route("/settings", web::get().to(h_settings))
@@ -1455,6 +1827,84 @@ mod tests {
             total_wanted: 0,
             total_wanted_remaining: 0,
             upload_payload_rate: 0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod page_script {
+    /// The page is one `<script>`, so a duplicate top-level `let`/`const` is a
+    /// SyntaxError that takes the entire interface down - not one feature, all
+    /// of them. That shipped once (`selected`, declared by both the add dialog
+    /// and the toolbar), and a blank page is a bad way to find out.
+    ///
+    /// Only top-level declarations count, which here means column zero: every
+    /// nested one in this file is indented.
+    #[test]
+    fn no_duplicate_top_level_declarations() {
+        let html = include_str!("index.html");
+        let script = html
+            .split_once("<script>")
+            .expect("the page has a script block")
+            .1;
+
+        let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        for (n, line) in script.lines().enumerate() {
+            let Some(rest) = line
+                .strip_prefix("let ")
+                .or_else(|| line.strip_prefix("const "))
+                .or_else(|| line.strip_prefix("var "))
+            else {
+                continue;
+            };
+            // `let a = 1, b = 2;` is one statement declaring two names.
+            for part in rest.split(',') {
+                let name = part
+                    .split(['=', ';', ' ', ':'])
+                    .next()
+                    .unwrap_or("")
+                    .trim();
+                if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    continue;
+                }
+                if let Some(first) = seen.insert(name, n + 1) {
+                    panic!(
+                        "`{name}` is declared twice at the top level of index.html \
+                         (lines {first} and {}) - that is a SyntaxError and blanks \
+                         the whole page",
+                        n + 1
+                    );
+                }
+            }
+        }
+    }
+
+    /// Every `{{key}}` the markup asks for has to exist in en-US, or it renders
+    /// as an empty string and a control ends up with no label at all.
+    #[test]
+    fn every_template_key_is_translated() {
+        let html = include_str!("index.html");
+        let english: serde_json::Value = serde_json::from_str(
+            crate::ui::translator::EMBEDDED_LANGS
+                .iter()
+                .find(|(l, _)| *l == crate::DEFAULT_LOCALE)
+                .expect("en-US is embedded")
+                .1,
+        )
+        .expect("en-US parses");
+
+        let mut rest = html;
+        while let Some(start) = rest.find("{{") {
+            let Some(end) = rest[start..].find("}}") else { break };
+            let key = &rest[start + 2..start + end];
+            rest = &rest[start + end + 2..];
+            if key == "__T__" {
+                continue;
+            }
+            assert!(
+                english.get(key).is_some(),
+                "index.html asks for {{{{{key}}}}}, which en-US does not have"
+            );
         }
     }
 }

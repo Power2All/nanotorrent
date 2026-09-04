@@ -116,6 +116,11 @@ pub fn open(name: &str) {
         // Raise it: choosing it a second time should bring the window
         // forward, not silently do nothing because it is already up.
         window.window().set_minimized(false);
+        // Same treatment every other window gets, and re-done on each open
+        // rather than only at creation: these windows are kept alive between
+        // opens, so one opened on another monitor would otherwise keep that
+        // screen's limit.
+        super::clamp_to_screen(window, |w, h| w.set_screen_limit(h));
         true
     });
 

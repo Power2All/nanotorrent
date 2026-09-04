@@ -217,11 +217,19 @@ pub struct Session {
     /// accumulated forever.
     events: EventBus,
     ipfilter_active: Arc<std::sync::atomic::AtomicBool>,
+    /// Set once the bound interface has gone missing, so the pause happens on
+    /// the transition rather than on every tick.
+    binding_lost: Arc<std::sync::atomic::AtomicBool>,
     /// Torrents paused by the queue scheduler (as opposed to by the user).
     queue_paused: Arc<Mutex<std::collections::HashSet<String>>>,
     /// librqbit's JSON session folder (holds the per-torrent `.bitv`
     /// fastresume files), for force-recheck.
     session_path: std::path::PathBuf,
+    /// The one HTTP client for anything this session fetches itself - web
+    /// seeds, today. Built once from the settings, which is safe because
+    /// changing the proxy already tears the whole session down and rebuilds
+    /// it, so a stale client cannot outlive the setting that made it.
+    http: reqwest::Client,
 }
 
 /// Translate the settings database into librqbit's `SessionOptions`.
@@ -252,7 +260,53 @@ fn azureus_peer_id(version: &str) -> librqbit::Id20 {
     )
 }
 
-fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptions {
+/// Work out what strict mode allows, from the settings and this machine.
+///
+/// Returns the restrictions to build with, or the reason not to start at all.
+/// Kept next to the session because refusing to start IS the feature: a
+/// component that cannot be covered must not run, and protection that is not
+/// in place must stop the client rather than be quietly skipped.
+fn strict_limits(cfg: &Configuration) -> Result<crate::core::netguard::Restrictions> {
+    use crate::core::netguard::{Decision, Intent, decide, look_up};
+
+    let bind_interface = cfg
+        .get_string("network.bind_interface")
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+
+    let intent = Intent {
+        strict: cfg.get_bool("network.strict"),
+        proxy: crate::core::http::proxy_url(cfg).is_some(),
+        bind_interface: bind_interface.clone(),
+    };
+
+    // Only looked up when one was named, so a machine with no VPN pays nothing
+    // for enumerating its interfaces on every session rebuild.
+    let facts = bind_interface.as_deref().map(look_up);
+
+    match decide(&intent, facts) {
+        Decision::Open => Ok(Default::default()),
+        Decision::Restricted(limits) => {
+            if limits.any() {
+                tracing::info!(
+                    "strict mode: not starting {}",
+                    limits.describe().join(", ")
+                );
+            }
+            Ok(limits)
+        }
+        Decision::Refuse(why) => {
+            tracing::error!("refusing to start: {why}");
+            Err(anyhow::anyhow!("{why}"))
+        }
+    }
+}
+
+fn build_session_options(
+    cfg: &Configuration,
+    env: &Environment,
+    limits: crate::core::netguard::Restrictions,
+) -> SessionOptions {
     // Peer ID: Azureus-style `-NT-` prefix, or a fully random id (no client
     // fingerprint) in anonymous mode.
     let anonymous = cfg.get_bool("libtorrent.anonymous_mode");
@@ -322,10 +376,21 @@ fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptio
 
     SessionOptions {
         blocklist_url,
+        // Bind every socket - peers, trackers, DHT, uTP - to one interface.
+        //
+        // Empty means today's behaviour: the OS picks a source address from
+        // its routing table. Naming a VPN's interface is stronger than routing
+        // torrent traffic through a proxy, because the operating system
+        // enforces it rather than each component remembering to ask: when the
+        // tunnel drops the interface goes with it and every bound socket fails
+        // at once, instead of quietly reverting to the real address.
+        bind_device_name: cfg
+            .get_string("network.bind_interface")
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty()),
         // librqbit 9 folds the three DHT switches into one Option - None is
         // "no DHT at all", and persistence is a field inside it.
-        dht: cfg
-            .get_bool("libtorrent.enable_dht")
+        dht: (cfg.get_bool("libtorrent.enable_dht") && !limits.disable_dht)
             .then(|| librqbit::DhtSessionConfig {
                 persistence: Some(librqbit::dht::DhtPersistenceConfig {
                     config_filename: Some(env.get_application_data_path().join("dht.json")),
@@ -348,19 +413,32 @@ fn build_session_options(cfg: &Configuration, env: &Environment) -> SessionOptio
         // uTP (BEP 29) alongside TCP when asked for. Off by default: it is
         // a second socket, on UDP, and upstream still calls it experimental.
         listen: Some(librqbit::ListenerOptions {
-            mode: if cfg.get_bool("libtorrent.enable_utp") {
+            mode: if cfg.get_bool("libtorrent.enable_utp") && !limits.disable_utp {
                 librqbit::ListenerMode::TcpAndUtp
             } else {
                 librqbit::ListenerMode::TcpOnly
             },
             listen_addr: (std::net::Ipv6Addr::UNSPECIFIED, listen_port).into(),
-            enable_upnp_port_forwarding: true,
+            // ListenerOptions has its own copy of this, and
+            // SessionOptions::ipv4_only feeds only the stream connector and
+            // the DHT. Without it here the listener binds [::] regardless,
+            // which on Windows cannot be pinned to a v4-only interface.
+            ipv4_only: limits.ipv4_only,
+            // Off in strict mode: UPnP asks the local router to open a
+            // port, which both announces this machine on the LAN and is
+            // meaningless when the traffic leaves through a tunnel anyway.
+            enable_upnp_port_forwarding: !limits.disable_upnp,
             ..Default::default()
         }),
         // Local service discovery (BEP 14). The preference has existed since
         // the PicoTorrent settings were imported and defaults to ON; it was
         // stored but never applied, because librqbit 8 could not do it.
-        disable_local_service_discovery: !cfg.get_bool("libtorrent.enable_lsd"),
+        disable_local_service_discovery: !cfg.get_bool("libtorrent.enable_lsd")
+            || limits.disable_lsd,
+        // Strict mode with a v4-only tunnel: a v6 socket would route around
+        // the binding through the ordinary interface, which is the leak the
+        // binding was for.
+        ipv4_only: limits.ipv4_only,
         connect: Some(librqbit::ConnectionOptions {
             proxy_url: socks_proxy_url,
             ..Default::default()
@@ -695,7 +773,7 @@ impl Session {
             .map(PathBuf::from)
             .unwrap_or_else(Environment::get_downloads_path);
 
-        let opts = build_session_options(cfg, env);
+        let opts = build_session_options(cfg, env, strict_limits(cfg)?);
 
         // Before librqbit reads it: an unreadable index is fatal there, and a
         // torrent client that will not launch is worse than one that lost its
@@ -716,11 +794,16 @@ impl Session {
                 reset_dht_port(&env.get_application_data_path().join("dht.json"));
                 rt.block_on(RqbitSession::new_with_opts(
                     default_save_path,
-                    build_session_options(cfg, env),
+                    build_session_options(cfg, env, strict_limits(cfg)?),
                 ))?
             }
         };
         let api = Api::new(inner.clone(), None);
+
+        // Built here so a bad proxy setting stops the session from starting
+        // rather than being discovered later by a web seed going direct.
+        let http = crate::core::http::client(cfg)
+            .map_err(|e| anyhow::anyhow!("cannot build an HTTP client for web seeds: {e}"))?;
 
         let session = Session {
             rt,
@@ -729,11 +812,13 @@ impl Session {
             db,
             meta: Arc::new(Mutex::new(HashMap::new())),
             events: EventBus::new(),
+            binding_lost: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             ipfilter_active: Arc::new(std::sync::atomic::AtomicBool::new(
                 ipfilter_url(cfg).is_some(),
             )),
             queue_paused: Arc::new(Mutex::new(std::collections::HashSet::new())),
             session_path: env.get_session_state_path(),
+            http,
         };
 
         session.spawn_low_disk_guard(cfg);
@@ -795,7 +880,19 @@ impl Session {
     /// from the (changed) configuration - "apply preferences without
     /// restart". Torrent state comes back through the JSON persistence.
     pub fn apply_settings(&self, env: &Environment, cfg: &Configuration) {
-        let opts = build_session_options(cfg, env);
+        // A refusal here keeps the session that is already running rather than
+        // rebuilding into one that would leak. The settings are saved either
+        // way - the user can see what they asked for and fix it - but nothing
+        // goes on the network under a promise this build cannot keep.
+        let limits = match strict_limits(cfg) {
+            Ok(limits) => limits,
+            Err(err) => {
+                tracing::error!("settings not applied: {err}");
+                report_error(&self.events, format!("{err}"));
+                return;
+            }
+        };
+        let opts = build_session_options(cfg, env, limits);
         let default_save_path = cfg
             .get_string("default_save_path")
             .map(PathBuf::from)
@@ -886,6 +983,47 @@ impl Session {
     /// own future on it rather than through one of the methods here.
     pub fn handle(&self) -> tokio::runtime::Handle {
         self.rt.handle().clone()
+    }
+
+    /// The running half of the kill switch.
+    ///
+    /// `strict_limits` refuses at start-up; this catches the interface going
+    /// away while the client is running, which is the case people actually
+    /// hit - a VPN drops, its adapter disappears, and every socket quietly
+    /// falls back to the ordinary route. Returns whether the binding is
+    /// intact, for the status bar.
+    ///
+    /// Nothing is resumed when the interface comes back. Torrents paused here
+    /// are indistinguishable from torrents the user paused, and guessing wrong
+    /// would start traffic nobody asked to start.
+    pub fn watch_binding(&self, cfg: &Configuration) -> bool {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        let name = cfg
+            .get_string("network.bind_interface")
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        let Some(name) = name.filter(|_| cfg.get_bool("network.strict")) else {
+            self.binding_lost.store(false, Relaxed);
+            return true;
+        };
+
+        let present = crate::core::netguard::look_up(&name).exists;
+        if !crate::core::netguard::just_lost(&self.binding_lost, present) {
+            return present;
+        }
+
+        tracing::error!("network interface \"{name}\" is gone - pausing everything");
+        self.push_error(format!(
+            "Network interface \"{name}\" is no longer present. All torrents have been paused."
+        ));
+        let handles: Vec<Arc<ManagedTorrent>> = self
+            .rq()
+            .with_torrents(|torrents| torrents.map(|(_, h)| h.clone()).collect());
+        for handle in handles {
+            let _ = self.rt.block_on(self.rq().pause(&handle));
+        }
+        false
     }
 
     /// Whether a blocklist was configured for this session (the status bar
@@ -1273,6 +1411,10 @@ impl Session {
     /// metadata before returning, which can take a long time (or forever for
     /// dead magnets), so this must never block the UI thread.
     pub fn add_torrent(&self, source: AddTorrentSource, params: AddParams) {
+        // Cloned before the spawn below: the task outlives this borrow of
+        // `self`, so the client has to travel with it rather than be reached
+        // for later.
+        let http = self.http.clone();
         let mut opts = AddTorrentOptions {
             paused: !params.start_torrent,
             output_folder: params.save_path.clone(),
@@ -1374,6 +1516,7 @@ impl Session {
                             &tokio::runtime::Handle::current(),
                             &handle,
                             bytes,
+                            http.clone(),
                         );
                     }
                 }

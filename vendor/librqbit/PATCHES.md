@@ -1,6 +1,10 @@
 # NanoTorrent patches on librqbit
 
-Currently vendored: **librqbit 9.0.1** and **librqbit-tracker-comms 9.0.1**.
+Currently vendored: **librqbit 9.0.1**, **librqbit-tracker-comms 9.0.1**,
+**librqbit-peer-protocol 9.0.1** and **librqbit-dualstack-sockets 0.7.0**.
+
+The first three share librqbit's version number; the sockets crate is
+versioned separately and moves on its own schedule.
 
 These are unmodified copies of the **published** crates from crates.io (so all
 their dependencies still resolve from crates.io) plus the patches in
@@ -9,8 +13,9 @@ their dependencies still resolve from crates.io) plus the patches in
 Most of them are visibility-only: they expose read access to data the engine
 already maintains, or add an option that defaults to `None`/`false` so the
 engine behaves exactly as upstream when NanoTorrent doesn't ask for anything.
-The three that do change behaviour (0006, 0007, and the seams once a transform
-is installed) are called out below.
+The ones that do change behaviour, and the bug fixes, are marked as such in the
+**Kind** column of the table below - which is the list, rather than a second
+copy of it here that goes stale every time a patch lands.
 
 `build.rs` checks at compile time that every patch is present and fails with
 instructions if a re-vendor dropped one.
@@ -18,9 +23,12 @@ instructions if a re-vendor dropped one.
 ## Applying
 
 The patches are **ordered**: each is a diff from the state the previous one
-left behind, so they must be applied 0001 → 0007. Patches named `*-comms.patch`
-apply to `vendor/librqbit-tracker-comms`; everything else applies to
-`vendor/librqbit`. `tools/update-librqbit.ps1` handles both.
+left behind, so they must be applied lowest number first. The suffix picks the
+crate - `*-comms.patch` to `vendor/librqbit-tracker-comms`,
+`*-peerproto.patch` to `vendor/librqbit-peer-protocol`, `*-sockets.patch` to
+`vendor/librqbit-dualstack-sockets`, and everything else to `vendor/librqbit`.
+`tools/update-librqbit.ps1` applies them all in name order and reports any that
+no longer land cleanly.
 
 | # | Patch | Files | Kind |
 | --- | --- | --- | --- |
@@ -37,7 +45,8 @@ apply to `vendor/librqbit-tracker-comms`; everything else applies to
 | 0011 | synthetic peer | 1 | opt-in seam |
 | 0012 | upload-only (BEP 21) | 1 | **behaviour** |
 | 0013 | Windows UDP resets (`-sockets`) | 1 | **bug fix** |
-| 0014 | quiet an upstream warning (`-sockets`) | 1 | cosmetic |
+| 0014 | Windows bind-to-interface (`-sockets`) | 3 | **behaviour** |
+| 0015 | torrent path escape | 1 | **security** |
 
 ## 0001 - engine visibility
 
@@ -462,19 +471,108 @@ the DHT, uTP and LSD together.
 Measured afterwards: the routing table reaches ~1200 nodes and drives requests
 to completion, where before it never grew past what was loaded from cache.
 
-## 0014 - quiet an upstream warning (`0014-quiet-upstream-warning-sockets.patch`)
+## 0014 - Windows bind-to-interface (`0014-windows-bind-interface-sockets.patch`)
 
-Applies to **`vendor/librqbit-dualstack-sockets`**. One character.
+Applies to **`vendor/librqbit-dualstack-sockets`**. Three files.
 
-`BindDevice::new_from_name` has a `#[cfg(windows)]` arm that returns
-`BindDeviceNotSupported` without looking at its argument, so every Windows
-build of the crate emits `unused variable: name`. Renamed to `_name`.
+Upstream implements `SessionOptions::bind_device_name` as `SO_BINDTODEVICE`,
+which does not exist on Windows: `BindDevice::new_from_name` is a
+`#[cfg(windows)]` stub returning `BindDeviceNotSupported`. So "bind all traffic
+to this interface" - the whole point of the VPN half of strict mode - was a
+Linux/macOS-only feature, and any Windows user who set one got
+*"binding to device is not supported on your OS"* and an app that would not
+start.
 
-Purely cosmetic, and upstream's rather than ours - but a warning nobody can act
-on is a warning everybody learns to scroll past, and the build is otherwise
-clean. Carried as a patch rather than an edit so `tools/update-librqbit.ps1`
-does not drop it on the next version bump.
+Windows' equivalent is to bind the socket to the interface's own local
+address. That is a real restriction rather than a hint: Windows has defaulted
+to the **strong host model** since Vista, so a socket bound to the tunnel's
+address can only leave by the tunnel.
 
+The awkward part is the seam. Upstream's is `bind_sref(&socket)` - "apply
+yourself to this socket" - and both call sites bind the socket themselves
+immediately afterwards, so binding an address inside `bind_sref` collides with
+the bind that follows. The patch therefore adds `BindDevice::bind_ip(is_v6)`,
+which answers *which address should this socket bind to* and returns `None`
+everywhere `SO_BINDTODEVICE` already does the job. `bind_sref` becomes a no-op
+on Windows instead of an error.
+
+The three edits:
+
+- **`bind_device.rs`** - the Windows `new_from_name` resolves the adapter name
+  (case-insensitively; Windows shows people names nobody retypes exactly) to
+  its addresses, skipping loopback and link-local, since 169.254/16 is what an
+  adapter has when it has nothing. A routable IPv4 address is required, and its
+  absence is an error rather than a fallback to an unbound socket.
+- **`connect.rs`** - outgoing connections bind the device address as their
+  source. Upstream only binds at all when a source port was requested, which
+  would have left the source address unconfined; with a device present the bind
+  is unconditional.
+- **`socket.rs`** - two hunks. Listeners bind the device address instead of the
+  requested wildcard; only the address is replaced, so the family check after
+  the bind still holds. And the family is now chosen *before* the socket is
+  created: an **unspecified** `[::]` request against a device with no IPv6 is
+  downgraded to IPv4. Several callers ask for `[::]` unconditionally - the UDP
+  tracker client and the DHT among them - and one hunk here fixes all of them,
+  where chasing the call sites would have meant patching two more crates. A
+  specific address is never rewritten.
+
+A family the device has no address in is a hard error on Windows, never a
+silent fall back to the unspecified address - that fallback *is* the leak this
+exists to prevent.
+
+Note that `SessionOptions::ipv4_only` does not reach the peer listener:
+`ListenerOptions` has its own copy, and the session-level flag feeds only the
+stream connector and the DHT. NanoTorrent sets both (`build_session_options`).
+
+**One socket carries one address**, so this cannot be dualstack: a listener
+pinned to a v6 address stops accepting v4 without saying so. `netguard::decide`
+therefore forces `ipv4_only` on Windows whenever an interface is bound. No v6
+at all is no v6 leak, and it keeps the behaviour predictable; the cost is that
+a v6-capable tunnel does not carry v6 on Windows.
+
+
+## 0015 - torrent path escape (`0015-torrent-path-escape.patch`)
+
+**Security fix.** A malicious `.torrent` could write outside the save folder on
+Windows.
+
+`TorrentMetaV1Info::validate` (librqbit-core) rejects a `..` component and any
+component containing `/` or `\`, which is the path traversal everyone tests
+for. It does **not** reject a drive prefix. On Windows `PathBuf::push` replaces
+the whole buffer when the pushed path carries one, so a file named
+`C:evil.txt`:
+
+1. passes validation - no `..`, no separator;
+2. becomes `PathBuf::from("C:evil.txt")` in `to_pathbuf`;
+3. and in `FilesystemStorage::init`, `full_path.push(relative_path)` **throws
+   the output folder away**, leaving `C:evil.txt` - a path relative to the
+   current directory of drive C.
+
+The file is then created with `OpenOptions`. Demonstrated against a real
+session: with the guard removed, adding such a torrent with the save folder in
+`%TEMP%` created `C:\Coding\nanotorrent\evil.txt`, the process working
+directory. A file dropped next to the executable is a DLL-planting primitive,
+and it needs nothing but a torrent someone was handed.
+
+The patch adds `safe_join`, which refuses any relative path whose components
+are not all `Component::Normal` - no prefix, no root, no `.`, no `..` - and
+routes `init`, `remove_file` and `remove_directory_if_empty` through it. It is
+deliberately at the storage layer: that is the last thing between a torrent's
+idea of a filename and `open()`, and it covers magnets, whose metadata arrives
+from peers long after the torrent was added.
+
+Two lesser Windows oddities are *not* rejected, because neither leaves the save
+folder: `name:stream` creates an NTFS alternate data stream attached to a file
+inside it, and a reserved device name such as `CON` resolves to a device rather
+than a file. Both are worth revisiting; neither is an escape.
+
+Reported upstream-shaped rather than upstream-fixed: the root cause is in
+librqbit-core's `validate`, which NanoTorrent does not vendor. Guarding at the
+storage layer fixes it here without vendoring a fifth crate.
+
+The regression test lives in the app (`src/core/netguard.rs`, `path_escape`)
+rather than here, because a vendored crate's own tests cannot run - it is not a
+workspace member and cargo refuses to test it for want of dev-dependencies.
 
 ## What is still missing for v2
 
@@ -508,6 +606,7 @@ the librqbit 8 → 9 bump.
 | 0007 | anonymous mode | folded into 0003 - identical shape to the PeX toggle, same three files, same anchors |
 | 0009 | `#![allow(mismatched_lifetime_syntaxes)]` in `lib.rs` | librqbit 9.0.1 builds warning-free on current rustc, which is exactly the condition the patch named for its own deletion |
 | 0010 | Windows short-read/short-write fix in `FilesystemStorage` | **fixed upstream.** `pread_exact` now loops and turns `Ok(0)` into `UnexpectedEof` instead of discarding the byte count, and `pwrite_all` advances buffer and offset instead of rewriting `buf` at the same offset every pass. The code moved to `storage/filesystem/opened_file.rs` (`OurFileExt`) |
+| 0014 | quiet an upstream warning (`unused variable: name`) | **subsumed by the patch that now holds the number.** It renamed the unused `name` argument of the Windows `BindDevice::new_from_name` stub to `_name`; today's 0014 replaces that stub with an implementation that *uses* the argument, so there is no warning left to quiet and the two would collide on the same lines. The number was reused rather than left as a hole, on the same rule as the earlier consolidations |
 | 0011 | our own name in the BEP 10 extended handshake | **available upstream.** librqbit 9 has `SessionOptions::client_name_and_version`, so the `CLIENT_NAME` static is gone and `build_session_options` sets the option instead |
 
 A second consolidation followed, once the v2 and BEP 6 work was in: what had

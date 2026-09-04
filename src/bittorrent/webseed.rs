@@ -440,6 +440,10 @@ pub fn spawn_all(
     runtime: &tokio::runtime::Handle,
     handle: &Arc<librqbit::ManagedTorrent>,
     torrent_bytes: &[u8],
+    // Handed in rather than built here. A web seed fetches torrent payload
+    // over HTTP, so it is exactly the traffic a proxy is turned on to cover -
+    // and a client built locally would have quietly gone direct.
+    client: reqwest::Client,
 ) {
     let urls = parse_url_list(torrent_bytes);
     if urls.is_empty() {
@@ -477,17 +481,6 @@ pub fn spawn_all(
         piece_length: metadata.lengths().default_piece_length() as u64,
         total_pieces: metadata.lengths().total_pieces(),
         files,
-    };
-
-    let client = match reqwest::Client::builder()
-        .user_agent(crate::buildinfo::user_agent())
-        .build()
-    {
-        Ok(c) => c,
-        Err(err) => {
-            tracing::warn!("web seed disabled: cannot build an HTTP client: {err:#}");
-            return;
-        }
     };
 
     for (i, url) in urls.into_iter().enumerate() {
@@ -743,6 +736,7 @@ mod tests {
             &tokio::runtime::Handle::current(),
             &handle,
             &torrent,
+            reqwest::Client::new(),
         );
 
         let finished = tokio::time::timeout(

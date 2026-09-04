@@ -124,9 +124,16 @@ pub const SETTINGS: &[Setting] = &[
     Setting { name: "anonymous-mode", key: "libtorrent.anonymous_mode", section: "connection", kind: Kind::Bool },
 
     // --- Proxy -----------------------------------------------------------
+    Setting { name: "bind-interface", key: "network.bind_interface", section: "proxy", kind: Kind::Text },
+    Setting { name: "strict-network", key: "network.strict", section: "proxy", kind: Kind::Bool },
     Setting { name: "proxy-type", key: "libtorrent.proxy_type", section: "proxy", kind: Kind::Index(PROXY_TYPES) },
     Setting { name: "proxy-host", key: "libtorrent.proxy_host", section: "proxy", kind: Kind::Text },
     Setting { name: "proxy-port", key: "libtorrent.proxy_port", section: "proxy", kind: Kind::Int { lo: 1, hi: 65535, unit: "" } },
+    Setting { name: "proxy-username", key: "libtorrent.proxy_username", section: "proxy", kind: Kind::Text },
+    // Plain text, like the value in the database - a SOCKS password has to be
+    // replayed to the proxy, so there is nothing to hash it into. It prints
+    // like any other setting; treat the settings database as a secret.
+    Setting { name: "proxy-password", key: "libtorrent.proxy_password", section: "proxy", kind: Kind::Text },
     Setting { name: "proxy-hostnames", key: "libtorrent.proxy_hostnames", section: "proxy", kind: Kind::Bool },
     Setting { name: "proxy-peers", key: "libtorrent.proxy_peers", section: "proxy", kind: Kind::Bool },
     Setting { name: "proxy-trackers", key: "libtorrent.proxy_trackers", section: "proxy", kind: Kind::Bool },
@@ -141,6 +148,9 @@ pub const SETTINGS: &[Setting] = &[
     Setting { name: "web-tls-mode", key: "webui.tls_mode", section: "web_interface", kind: Kind::Web("tls_mode") },
     Setting { name: "web-cert", key: "webui.tls_cert_path", section: "web_interface", kind: Kind::Web("tls_cert_path") },
     Setting { name: "web-key", key: "webui.tls_key_path", section: "web_interface", kind: Kind::Web("tls_key_path") },
+    Setting { name: "web-auth-max-failures", key: "webui.auth_max_failures", section: "web_interface", kind: Kind::Int { lo: 0, hi: 1000, unit: "attempts" } },
+    Setting { name: "web-auth-window", key: "webui.auth_window", section: "web_interface", kind: Kind::Int { lo: 1, hi: 86400, unit: "seconds" } },
+    Setting { name: "web-auth-block", key: "webui.auth_block", section: "web_interface", kind: Kind::Int { lo: 1, hi: 604800, unit: "seconds" } },
 
     // Advanced. Ranges match Advanced::load, which clamps on the way out too.
     Setting { name: "web-request-timeout", key: "webui.client_request_timeout", section: "web_interface", kind: Kind::Int { lo: 1, hi: 3600, unit: "s" } },

@@ -191,10 +191,26 @@ pub fn register(
     // exfiltration: a plugin holding both can post your torrent list anywhere.
     // That pairing is why the approval prompt lists every permission together
     // rather than asking about them one at a time.
-    if perms.contains(&Permission::Network) {
+    //
+    // The client is built ONCE, from the settings, so every plugin request
+    // takes whatever route the proxy setting says. If it cannot be built the
+    // network functions are simply not registered - the same fail-closed shape
+    // permissions use, and better than handing out a client that silently goes
+    // direct on a setup where that is the one thing not to do.
+    let http = match crate::core::http::client_arc(&cfg) {
+        Ok(client) => Some(client),
+        Err(err) => {
+            tracing::error!("plugin {name}: no HTTP client ({err}); network is unavailable");
+            None
+        }
+    };
+
+    if let Some(http) = http.clone()
+        && perms.contains(&Permission::Network)
+    {
         let handle = session.handle();
         engine.register_fn("http_get", move |url: &str| -> Map {
-            http_get(&handle, url)
+            http_get(&handle, &http, url)
         });
     }
 
@@ -202,15 +218,18 @@ pub fn register(
     // and then add them to the session. Feeds that list `.torrent` files
     // rather than magnet links are the ordinary case, and handing a script raw
     // torrent bytes to pass straight back would buy nothing.
-    if perms.contains(&Permission::Network) && perms.contains(&Permission::Add) {
-        let (handle, s) = (session.handle(), session.clone());
+    if let Some(http) = http
+        && perms.contains(&Permission::Network)
+        && perms.contains(&Permission::Add)
+    {
+        let (handle, s, c) = (session.handle(), session.clone(), http.clone());
         engine.register_fn("add_torrent_url", move |url: &str| -> bool {
-            add_url(&handle, &s, url, None)
+            add_url(&handle, &c, &s, url, None)
         });
 
-        let (handle, s) = (session.handle(), session.clone());
+        let (handle, s, c) = (session.handle(), session.clone(), http);
         engine.register_fn("add_torrent_url", move |url: &str, save_path: &str| -> bool {
-            add_url(&handle, &s, url, Some(save_path.to_string()))
+            add_url(&handle, &c, &s, url, Some(save_path.to_string()))
         });
     }
 
@@ -444,9 +463,9 @@ fn store_set(cfg: &Configuration, key: &str, k: &str, v: &str) -> bool {
 /// A function rather than a closure body so a test can drive the same code the
 /// engine does: it is the difference between checking that a feed is read and
 /// checking that a feed is read *the way plugins read one*.
-fn http_get(handle: &tokio::runtime::Handle, url: &str) -> Map {
+fn http_get(handle: &tokio::runtime::Handle, client: &reqwest::Client, url: &str) -> Map {
     let mut map = Map::new();
-    match fetch(handle, url) {
+    match fetch(handle, client, url) {
         Ok((status, body)) => {
             map.insert("ok".into(), Dynamic::from((200..300).contains(&status)));
             map.insert("status".into(), Dynamic::from(i64::from(status)));
@@ -472,8 +491,12 @@ fn http_get(handle: &tokio::runtime::Handle, url: &str) -> Map {
 /// Capped in both directions - a deadline and a byte ceiling - because the URL
 /// comes from a script and the script may have got it from a feed, which is to
 /// say from a stranger.
-fn fetch(handle: &tokio::runtime::Handle, url: &str) -> Result<(u16, String), String> {
-    let bytes = fetch_bytes(handle, url)?;
+fn fetch(
+    handle: &tokio::runtime::Handle,
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<(u16, String), String> {
+    let bytes = fetch_bytes(handle, client, url)?;
     let status = bytes.0;
     String::from_utf8(bytes.1)
         .map(|body| (status, body))
@@ -496,18 +519,22 @@ fn checked_url(url: &str) -> Result<String, String> {
 
 fn fetch_bytes(
     handle: &tokio::runtime::Handle,
+    client: &reqwest::Client,
     url: &str,
 ) -> Result<(u16, Vec<u8>), String> {
     let url = checked_url(url)?;
+    // Cloned in rather than built here: this is the client core::http made,
+    // which already carries the proxy setting. Building one at the call site
+    // is how the leak happened the first time.
+    let client = client.clone();
 
     handle.block_on(async move {
-        let client = reqwest::Client::builder()
-            .user_agent(crate::buildinfo::user_agent())
+        let mut response = client
+            .get(&url)
             .timeout(HTTP_TIMEOUT)
-            .build()
+            .send()
+            .await
             .map_err(|e| e.to_string())?;
-
-        let mut response = client.get(&url).send().await.map_err(|e| e.to_string())?;
         let status = response.status().as_u16();
 
         // Streamed rather than `.bytes()`, so an endless response is cut off
@@ -527,6 +554,7 @@ fn fetch_bytes(
 /// first and added as torrent bytes.
 fn add_url(
     handle: &tokio::runtime::Handle,
+    client: &reqwest::Client,
     session: &Session,
     url: &str,
     save_path: Option<String>,
@@ -546,7 +574,7 @@ fn add_url(
         return true;
     }
 
-    match fetch_bytes(handle, url) {
+    match fetch_bytes(handle, client, url) {
         Ok((status, bytes)) if (200..300).contains(&status) => {
             session.add_torrent(
                 crate::bittorrent::session::AddTorrentSource::TorrentFileBytes(bytes),
@@ -1139,7 +1167,9 @@ mod tests {
 
         // The real HTTP path and the real parser.
         let h = handle.clone();
-        engine.register_fn("http_get", move |u: &str| -> Map { http_get(&h, u) });
+        engine.register_fn("http_get", move |u: &str| -> Map {
+            http_get(&h, &reqwest::Client::new(), u)
+        });
         engine.register_fn("parse_xml", |text: &str| -> Dynamic {
             parse_xml(text).unwrap_or(Dynamic::UNIT)
         });
@@ -1214,7 +1244,11 @@ mod tests {
             .unwrap();
 
         // Port 1 on loopback: nothing listens there, and it fails fast.
-        let response = http_get(runtime.handle(), "http://127.0.0.1:1/feed.xml");
+        let response = http_get(
+            runtime.handle(),
+            &reqwest::Client::new(),
+            "http://127.0.0.1:1/feed.xml",
+        );
         assert!(!response.get("ok").unwrap().clone().as_bool().unwrap());
         assert_eq!(response.get("status").unwrap().clone().as_int().unwrap(), 0);
         assert!(
@@ -1298,7 +1332,9 @@ mod tests {
         });
 
         let h = runtime.handle().clone();
-        engine.register_fn("http_get", move |u: &str| -> Map { http_get(&h, u) });
+        engine.register_fn("http_get", move |u: &str| -> Map {
+            http_get(&h, &reqwest::Client::new(), u)
+        });
         engine.register_fn("parse_xml", |t: &str| -> Dynamic {
             parse_xml(t).unwrap_or(Dynamic::UNIT)
         });
@@ -1462,7 +1498,9 @@ mod tests {
         });
 
         let h = runtime.handle().clone();
-        engine.register_fn("http_get", move |u: &str| -> Map { http_get(&h, u) });
+        engine.register_fn("http_get", move |u: &str| -> Map {
+            http_get(&h, &reqwest::Client::new(), u)
+        });
         engine.register_fn("parse_xml", |t: &str| -> Dynamic {
             parse_xml(t).unwrap_or(Dynamic::UNIT)
         });

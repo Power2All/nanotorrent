@@ -557,6 +557,60 @@ impl StreamTransform for MseTransform {
     }
 }
 
+/// Incoming peer connections that arrived from a public address.
+///
+/// The only honest evidence this client has that its listening port is
+/// reachable from the internet: a peer out there opened a connection TO us and
+/// got as far as the handshake. librqbit exposes no reachability signal, and
+/// nothing here is going to ask a third-party "what is my IP" service about it
+/// - a client that promises no telemetry does not get to make an exception for
+/// its own status bar.
+///
+/// Counted at the accept path rather than after a successful handshake: the
+/// connection arriving at all is what proves the port is open. Whether the peer
+/// then speaks a protocol we like is a different question.
+static INBOUND_FROM_INTERNET: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// How many peers have reached us from outside the local network.
+pub fn inbound_from_internet() -> u64 {
+    INBOUND_FROM_INTERNET.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether this peer is out on the internet rather than beside us.
+///
+/// Private, loopback, link-local, carrier-grade-NAT and unspecified addresses
+/// do not count. A peer found by local service discovery connects inbound
+/// without any of it crossing a router, so counting one would light up
+/// "reachable" on a machine behind a firewall that blocks everything - which is
+/// exactly the case this indicator exists to tell apart.
+fn is_from_internet(addr: &SocketAddr) -> bool {
+    match addr.ip() {
+        std::net::IpAddr::V4(ip) => {
+            let o = ip.octets();
+            !(ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_broadcast()
+                || ip.is_documentation()
+                || ip.is_unspecified()
+                // 100.64.0.0/10, carrier-grade NAT: the peer is inside the
+                // ISP's own network, not out on the internet.
+                || (o[0] == 100 && (64..128).contains(&o[1]))
+                // 0.0.0.0/8 is not routable either.
+                || o[0] == 0)
+        }
+        std::net::IpAddr::V6(ip) => {
+            let first = ip.segments()[0];
+            !(ip.is_loopback()
+                || ip.is_unspecified()
+                // fc00::/7 unique-local, fe80::/10 link-local.
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80)
+        }
+    }
+}
+
 /// Accepts incoming peers that speak MSE/PE, transparently passing plaintext
 /// peers through unless `require` is set (in which case plaintext is dropped).
 #[derive(Debug)]
@@ -572,11 +626,17 @@ const BT_PSTR: &[u8; 20] = b"\x13BitTorrent protocol";
 impl IncomingStreamTransform for IncomingMseTransform {
     fn transform(
         &self,
-        _addr: SocketAddr,
+        addr: SocketAddr,
         info_hashes: Vec<Id20>,
         mut read: BoxAsyncRead,
         mut write: BoxAsyncWrite,
     ) -> futures::future::BoxFuture<'_, Result<(BoxAsyncRead, BoxAsyncWrite)>> {
+        // Before anything else: a peer dialled us and the connection landed
+        // here, which is the whole of the evidence that the port is open.
+        if is_from_internet(&addr) {
+            INBOUND_FROM_INTERNET.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+
         let require = self.require;
         Box::pin(async move {
             // Peek the first 20 bytes to tell plaintext from encrypted.
@@ -822,5 +882,70 @@ mod tests {
         assert_eq!(BT_PSTR.len(), 20);
         assert_eq!(BT_PSTR[0], 19);
         assert_eq!(&BT_PSTR[1..], b"BitTorrent protocol");
+    }
+
+    /// A peer beside us on the LAN proves nothing about the internet.
+    ///
+    /// This is the whole correctness of the reachability indicator: local
+    /// service discovery hands us inbound connections that never crossed a
+    /// router, so counting one would show "reachable" on a machine whose
+    /// firewall blocks every incoming packet.
+    #[test]
+    fn only_peers_from_the_internet_count_as_reachability() {
+        let addr = |s: &str| s.parse::<SocketAddr>().expect(s);
+
+        for local in [
+            "127.0.0.1:6881",          // loopback
+            "10.0.0.5:6881",           // private
+            "192.168.1.20:6881",       // private
+            "172.16.4.9:6881",         // private
+            "169.254.10.1:6881",       // link-local
+            "100.64.3.7:6881",         // carrier-grade NAT
+            "0.0.0.0:6881",            // unspecified
+            "[::1]:6881",              // loopback v6
+            "[fe80::1]:6881",          // link-local v6
+            "[fc00::1]:6881",          // unique-local v6
+            "[fd12:3456::1]:6881",     // unique-local v6
+        ] {
+            assert!(
+                !is_from_internet(&addr(local)),
+                "{local} is not the internet"
+            );
+        }
+
+        for public in [
+            "8.8.8.8:6881",
+            "1.1.1.1:51413",
+            "203.0.114.9:6881",        // just outside the documentation range
+            "100.128.0.1:6881",        // just past carrier-grade NAT
+            "[2001:4860:4860::8888]:6881",
+            "[2a00:1450:4009:81f::200e]:6881",
+        ] {
+            assert!(
+                is_from_internet(&addr(public)),
+                "{public} is the internet"
+            );
+        }
+    }
+
+    /// The counter only moves for peers that came from outside.
+    #[test]
+    fn the_counter_ignores_local_peers() {
+        let before = inbound_from_internet();
+
+        // Same arithmetic the transform does, without standing up a socket.
+        for a in ["192.168.0.2:6881", "127.0.0.1:6881"] {
+            if is_from_internet(&a.parse().unwrap()) {
+                INBOUND_FROM_INTERNET.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        assert_eq!(inbound_from_internet(), before, "local peers must not count");
+
+        for a in ["8.8.4.4:6881", "[2606:4700::1111]:6881"] {
+            if is_from_internet(&a.parse().unwrap()) {
+                INBOUND_FROM_INTERNET.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        assert_eq!(inbound_from_internet(), before + 2, "public peers must count");
     }
 }

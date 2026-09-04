@@ -170,6 +170,23 @@ pub fn snapshot(plugin: &str) -> Option<PluginUi> {
     registry().lock().ok()?.plugins.get(plugin).cloned()
 }
 
+/// Every plugin that has declared a window, in a stable order.
+///
+/// `(name, title, configurable)`. Used by the web interface, which lists the
+/// same plugins the desktop menu bar offers and renders their surfaces itself
+/// - the surface state lives here, not in the Slint window, so a second
+/// renderer costs nothing but the drawing.
+pub fn windows() -> Vec<(String, String, bool)> {
+    let Ok(reg) = registry().lock() else {
+        return Vec::new();
+    };
+    reg.plugins
+        .iter()
+        .filter(|(_, ui)| ui.has_window())
+        .map(|(name, ui)| (name.clone(), ui.title.clone(), ui.configurable))
+        .collect()
+}
+
 /// Every plugin that has declared a menu, in a stable order - the menu bar.
 ///
 /// `(plugin name, dropdown title)`. A plugin with a title but no items is not
@@ -328,6 +345,33 @@ mod tests {
             "a plugin must occupy exactly one place in the menu bar"
         );
         assert_eq!(menu_items("twice").len(), 2);
+    }
+
+    /// `windows()` is what the web API lists, so it must show exactly the
+    /// plugins that have declared a window - not every plugin that has ever
+    /// touched its surface. A plugin with only a menu, or only a status line,
+    /// has nothing for the browser to draw.
+    #[test]
+    fn only_plugins_with_a_window_are_listed() {
+        update("web-has-window", |ui| {
+            ui.title = String::from("Has one");
+            ui.configurable = true;
+        });
+        update("web-no-window", |ui| ui.status = String::from("no window here"));
+
+        let listed = windows();
+        let found = |name: &str| listed.iter().any(|(n, _, _)| n == name);
+
+        assert!(found("web-has-window"), "a declared window was not listed");
+        assert!(!found("web-no-window"), "a plugin with no window was listed");
+
+        let (_, title, configurable) = listed
+            .iter()
+            .find(|(n, _, _)| n == "web-has-window")
+            .cloned()
+            .expect("just asserted it is there");
+        assert_eq!(title, "Has one");
+        assert!(configurable);
     }
 
     /// One plugin's surfaces are not another's, and the snapshot is a copy -
