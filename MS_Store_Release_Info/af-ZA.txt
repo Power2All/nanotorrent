@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Afrikaans (Suid-Afrika) - Partner Center: Afrikaans (South Africa) (af-ZA)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > af-ZA. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent is 'n klein en vinnige BitTorrent-kliënt wat nie in die pad staan nie.
+
+Dit is 'n inheemse toepassing wat in Rust geskryf is, nie 'n webblad in 'n venster nie. Dit begin dadelik en gebruik 'n breukdeel van die geheue wat 'n tipiese moderne kliënt nodig het.
+
+Geen rekening nie. Geen advertensies nie. Geen telemetrie, geen ontleding, geen ineenstortingsverslae nie. Niks word oor jou of oor wat jy aflaai ingesamel nie. NanoTorrent is oopbron onder die MIT-lisensie, dus is dit iets wat nagegaan kan word eerder as iets wat op vertroue aanvaar moet word.
+
+Voeg torrents by uit lêers of magneetskakels, volg hulle in 'n lys wat jy kan sorteer, etiketteer en filter, en maak die besonderhedepaneel oop vir lêers, eweknieë en spoorders. DHT, eweknie-uitruiling, verskeie spoordervlakke, UDP-spoorders en private torrents word almal ondersteun, en verbindings kan geënkripteer word, met die keuse om alles wat nie geënkripteer is nie te weier.
+
+Daar is meer as een manier om dit te bestuur. Die tafelbladvenster is die voor die hand liggende. 'n Opsionele webkoppelvlak, by verstek afgeskakel en met 'n wagwoord beskerm, laat jou 'n lopende kliënt beheer vanuit 'n blaaier op 'n ander masjien. En elke instelling is vanaf die opdraglyn beskikbaar, wat NanoTorrent skripbaar maak en bruikbaar op 'n masjien sonder skerm.
+
+Jy kan ook jou eie torrents skep, insluitend BitTorrent v2 en hibriede.
+
+Die landvlae van eweknieë kom uit 'n databasis wat op jou eie rekenaar gehou word. Geen adres word ooit oor die netwerk opgesoek nie.
+
+Beskikbaar in 41 tale, met ligte en donker temas wat Windows volg.
+
+NanoTorrent is 'n Rust-oordrag van PicoTorrent deur Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Weergawe 0.3.3
+
+- Streng netwerkmodus: as jy aan 'n VPN-adapter bind of 'n SOCKS-instaanbediener gebruik, skakel NanoTorrent alles af wat nie daardeur kan gaan nie, weier om te begin as die adapter ontbreek, en onderbreek elke torrent as dit verdwyn.
+- Binding aan 'n netwerkadapter werk nou op Windows.
+- Die statusbalk wys of jou luisterpoort bereik kan word, en of 'n instaanbediener of 'n gebinde adapter gebruik word.
+- Sekuriteitsherstel: 'n spesiaal vervaardigde torrentlêer kon buite jou aflaaigids skryf op Windows.
+- Die webkoppelvlak kry die werkskerm se nutsbalk, spoedgrafieke, meervoudige keuse, verstelbare kolomme en sleep-en-los byvoeging.
+- Inproppe verskyn nou in die webkoppelvlak en kan daar aan- en afgeskakel word.
+- Die webkoppelvlak kan 'n adres blokkeer na herhaalde mislukte aanmeldings. Hoeveel pogings, oor hoe lank, en hoe lank die blokkade duur is alles instelbaar.
+- Vensters wat hoër as die skerm kon oopmaak sonder om te rol, is reggestel.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Inheemse Rust-toepassing: begin vinnig en spaar geheue
+Nooit advertensies, telemetrie of 'n rekening nie
+Magneetskakels en .torrent-lêers
+DHT, eweknie-uitruiling, spoordervlakke en UDP-spoorders
+Verbindingsenkripsie (MSE/PE), op versoek verpligtend
+Skep torrents, insluitend BitTorrent v2 en hibriede
+Ondersteuning vir SOCKS- en HTTP-instaanbediener
+Opsionele wagwoordbeskermde webkoppelvlak vir afstandbeheer
+Volledige opdraglyn vir skripte en masjiene sonder skerm
+Etikette en filters hou 'n lang lys in orde
+Eweknieë se landvlae word op jou eie rekenaar opgesoek
+Ligte en donker temas wat Windows volg
+Beskikbaar in 41 tale
+Oopbron onder die MIT-lisensie
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent-kliënt
+magneetskakel
+p2p
+lêerdeling
+aflaaibestuurder
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent is oopbronsagteware wat onder die MIT-lisensie vrygestel is.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent is vrye oopbronsagteware wat onder die MIT-lisensie vrygestel is. Die volledige lisensieteks en die hele bronkode is beskikbaar by https://github.com/Power2All/nanotorrent
+
+Die sagteware word "soos dit is" verskaf, sonder enige waarborg, uitdruklik of geïmpliseer. Derdepartykomponente behou hul eie lisensies, wat in die bronkodebewaarplek gelys word.
+
+NanoTorrent is 'n algemene hulpmiddel vir lêeroordrag. Dit huisves, indekseer, verskaf, beveel aan of onderskryf geen inhoud hoegenaamd nie. Dit is jou verantwoordelikheid om te sorg dat jou gebruik daarvan die wet van jou land en die regte van kopieregeienaars nakom.
+
+NanoTorrent word hoofsaaklik met KI-hulp onder menslike hersiening ontwikkel, soos verklaar in AI-DECLARATION.md in die bronkodebewaarplek.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

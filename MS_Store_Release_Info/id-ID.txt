@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > id-ID. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent adalah klien BitTorrent yang kecil dan cepat serta tidak mengganggu.
+
+Ini aplikasi asli yang ditulis dalam Rust, bukan halaman web di dalam jendela. Aplikasi ini langsung terbuka dan memakai sebagian kecil dari memori yang dibutuhkan klien modern pada umumnya.
+
+Tanpa akun. Tanpa iklan. Tanpa telemetri, tanpa analitik, tanpa laporan galat. Tidak ada apa pun yang dikumpulkan tentang Anda maupun tentang apa yang Anda unduh. NanoTorrent bersumber terbuka di bawah Lisensi MIT, jadi hal ini dapat diperiksa, bukan sekadar janji.
+
+Tambahkan torrent dari berkas atau tautan magnet, pantau dalam daftar yang dapat diurutkan, diberi label, dan disaring, lalu buka panel rincian untuk berkas, rekan, dan pelacak. DHT, pertukaran rekan, beberapa tingkat pelacak, pelacak UDP, dan torrent privat semuanya didukung, dan koneksi dapat dienkripsi, bila perlu menolak semua yang tidak terenkripsi.
+
+Ada lebih dari satu cara mengendalikannya. Jendela destop adalah cara yang paling jelas. Antarmuka web opsional, mati secara bawaan dan dilindungi kata sandi, memungkinkan Anda mengendalikan klien yang sedang berjalan dari peramban di mesin lain. Dan setiap pengaturan tersedia dari baris perintah, sehingga NanoTorrent dapat diskripkan dan dipakai pada mesin tanpa layar.
+
+Anda juga dapat membuat torrent sendiri, termasuk BitTorrent v2 dan hibrida.
+
+Bendera negara rekan berasal dari basis data yang disimpan di komputer Anda sendiri. Tidak ada alamat yang pernah dicari lewat jaringan.
+
+Tersedia dalam 41 bahasa, dengan tema terang dan gelap yang mengikuti Windows.
+
+NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versi 0.3.3
+
+- Mode jaringan ketat: saat Anda mengikat ke adaptor VPN atau memakai proksi SOCKS, NanoTorrent mematikan semua yang tidak bisa melewatinya, menolak mulai jika adaptor tidak ada, dan menjeda semua torrent jika adaptor menghilang.
+- Pengikatan ke adaptor jaringan kini berfungsi di Windows.
+- Bilah status menunjukkan apakah porta Anda dapat dijangkau, dan apakah proksi atau adaptor terikat sedang dipakai.
+- Perbaikan keamanan: berkas torrent yang dibuat khusus dapat menulis di luar folder unduhan Anda di Windows.
+- Antarmuka web mendapat bilah alat desktop, grafik kecepatan, pilihan ganda, kolom yang dapat diubah ukurannya, dan penambahan dengan seret dan lepas.
+- Plugin kini muncul di antarmuka web dan dapat dinyalakan serta dimatikan dari sana.
+- Antarmuka web dapat memblokir alamat setelah berulang kali gagal masuk. Jumlah percobaan, rentang waktu, dan lama blokir dapat diatur.
+- Memperbaiki jendela yang bisa terbuka lebih tinggi dari layar tanpa bisa digulir.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Aplikasi asli Rust: cepat terbuka dan hemat memori
+Tidak pernah ada iklan, telemetri, atau akun
+Tautan magnet dan berkas .torrent
+DHT, pertukaran rekan, tingkat pelacak, dan pelacak UDP
+Enkripsi koneksi (MSE/PE), bisa diwajibkan
+Membuat torrent, termasuk BitTorrent v2 dan hibrida
+Dukungan proksi SOCKS dan HTTP
+Antarmuka web opsional yang dilindungi kata sandi
+Baris perintah lengkap untuk skrip dan mesin tanpa layar
+Label dan saringan menjaga daftar panjang tetap rapi
+Bendera negara rekan ditentukan di komputer Anda sendiri
+Tema terang dan gelap yang mengikuti Windows
+Tersedia dalam 41 bahasa
+Sumber terbuka di bawah Lisensi MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+klien torrent
+tautan magnet
+p2p
+berbagi berkas
+pengelola unduhan
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent adalah perangkat lunak sumber terbuka di bawah Lisensi MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent adalah perangkat lunak bebas dan sumber terbuka yang dirilis di bawah Lisensi MIT. Teks lengkap lisensi dan seluruh kode sumber tersedia di https://github.com/Power2All/nanotorrent
+
+Perangkat lunak ini disediakan "sebagaimana adanya", tanpa jaminan apa pun, tersurat maupun tersirat. Komponen pihak ketiga tetap memakai lisensinya masing-masing, yang didaftar di repositori kode sumber.
+
+NanoTorrent adalah alat transfer berkas serbaguna. Ia tidak menghosting, tidak mengindeks, tidak menyediakan, tidak merekomendasikan, dan tidak mendukung konten apa pun. Anda bertanggung jawab memastikan penggunaan Anda mematuhi hukum di negara Anda dan hak para pemegang hak cipta.
+
+NanoTorrent dikembangkan terutama dengan bantuan AI di bawah tinjauan manusia, sebagaimana dinyatakan dalam AI-DECLARATION.md di repositori kode sumber.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

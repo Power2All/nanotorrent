@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Català (Espanya) - Partner Center: Catalan (Spain) (ca-ES)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > ca-ES. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+El NanoTorrent és un client BitTorrent petit i ràpid que no us fa nosa.
+
+És una aplicació nativa escrita en Rust, i no una pàgina web dins d'una finestra. S'inicia a l'instant i fa servir una fracció de la memòria que necessita un client modern habitual.
+
+Sense compte. Sense publicitat. Sense telemetria, sense analítica, sense informes de fallada. No es recull res sobre vós ni sobre allò que baixeu. El NanoTorrent és programari lliure amb llicència MIT, de manera que això és comprovable i no una simple promesa.
+
+Afegiu torrents des de fitxers o enllaços magnet, seguiu-los en una llista que podeu ordenar, etiquetar i filtrar, i obriu el plafó de detalls per a fitxers, parells i rastrejadors. S'admeten DHT, intercanvi de parells, diversos nivells de rastrejadors, rastrejadors UDP i torrents privats, i les connexions es poden xifrar, rebutjant si voleu tot allò que no ho estigui.
+
+Hi ha més d'una manera de fer-lo anar. La finestra d'escriptori és l'evident. Una interfície web opcional, desactivada per defecte i protegida amb contrasenya, permet governar un client en execució des del navegador d'una altra màquina. I tots els paràmetres són accessibles des de la línia d'ordres, cosa que fa el NanoTorrent automatitzable i utilitzable en una màquina sense pantalla.
+
+També podeu crear torrents, inclosos els de BitTorrent v2 i híbrids.
+
+Les banderes dels parells provenen d'una base de dades desada al vostre ordinador. Mai no es consulta cap adreça per la xarxa.
+
+Disponible en 41 idiomes, amb temes clar i fosc que segueixen el Windows.
+
+El NanoTorrent és una adaptació en Rust del PicoTorrent, de Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versió 0.3.3
+
+- Mode de xarxa estricte: en vincular-vos a un adaptador VPN o usar un servidor intermediari SOCKS, NanoTorrent desactiva tot allò que no hi pot passar, es nega a iniciar-se si falta l'adaptador i posa en pausa tots els torrents si desapareix.
+- La vinculació a un adaptador de xarxa ja funciona al Windows.
+- La barra d'estat mostra si es pot arribar al port d'escolta i si s'usa un servidor intermediari o un adaptador vinculat.
+- Correcció de seguretat: un fitxer torrent manipulat podia escriure fora de la carpeta de baixades al Windows.
+- La interfície web incorpora la barra d'eines de l'escriptori, gràfics de velocitat, selecció múltiple, columnes redimensionables i addició arrossegant.
+- Els connectors ara apareixen a la interfície web i s'hi poden activar i desactivar.
+- La interfície web pot bloquejar una adreça després de diversos inicis de sessió fallits. Els intents, el període i la durada del bloqueig són configurables.
+- S'han corregit finestres que podien obrir-se més altes que la pantalla sense poder desplaçar-se.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Aplicació nativa en Rust: s'inicia de pressa i gasta poca memòria
+Mai publicitat, telemetria ni comptes
+Enllaços magnet i fitxers .torrent
+DHT, intercanvi de parells, nivells de rastrejadors i rastrejadors UDP
+Xifratge de connexions (MSE/PE), exigible si voleu
+Creació de torrents, inclosos BitTorrent v2 i híbrids
+Compatibilitat amb servidors intermediaris SOCKS i HTTP
+Interfície web opcional protegida amb contrasenya
+Línia d'ordres completa per a scripts i màquines sense pantalla
+Etiquetes i filtres per mantenir ordenada una llista llarga
+Banderes dels parells resoltes al vostre ordinador
+Temes clar i fosc que segueixen el Windows
+Disponible en 41 idiomes
+Programari lliure amb llicència MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+client torrent
+enllaç magnet
+p2p
+compartició de fitxers
+gestor de baixades
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. El NanoTorrent és programari lliure publicat amb llicència MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+El NanoTorrent és programari lliure i de codi obert publicat amb llicència MIT. El text complet de la llicència i tot el codi font són a https://github.com/Power2All/nanotorrent
+
+El programari es proporciona "tal com és", sense cap mena de garantia, expressa ni implícita. Els components de tercers conserven les seves pròpies llicències, enumerades al dipòsit del codi font.
+
+El NanoTorrent és una eina de transferència de fitxers d'ús general. No allotja, no indexa, no subministra, no recomana ni avala cap contingut. És responsabilitat vostra assegurar-vos que l'ús que en feu compleix la llei del vostre país i els drets dels titulars de drets d'autor.
+
+El NanoTorrent es desenvolupa predominantment amb assistència d'IA sota revisió humana, tal com es declara a AI-DECLARATION.md al dipòsit del codi font.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

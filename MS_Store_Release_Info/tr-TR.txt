@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Türkçe (Türkiye) - Partner Center: Turkish (Turkey) (tr-TR)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > tr-TR. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent, yolunuza çıkmayan küçük ve hızlı bir BitTorrent istemcisidir.
+
+Rust ile yazılmış yerel bir uygulamadır, pencere içindeki bir web sayfası değil. Anında açılır ve tipik bir modern istemcinin gerektirdiği belleğin çok küçük bir bölümünü kullanır.
+
+Hesap yok. Reklam yok. Telemetri, analitik veya çökme raporu yok. Sizinle ya da indirdiklerinizle ilgili hiçbir şey toplanmaz. NanoTorrent, MIT lisansı altında açık kaynaklıdır; yani bu, güvenmek zorunda olduğunuz bir söz değil, doğrulayabileceğiniz bir şeydir.
+
+Torrentleri dosyalardan veya magnet bağlantılarından ekleyin, sıralayabileceğiniz, etiketleyebileceğiniz ve süzebileceğiniz bir listede izleyin ve dosyalar, eşler ve izleyiciler için ayrıntı panelini açın. DHT, eş değişimi, çoklu izleyici katmanları, UDP izleyicileri ve özel torrentlerin tümü desteklenir; bağlantılar şifrelenebilir ve isterseniz şifresiz olan her şey reddedilebilir.
+
+Kullanmanın birden fazla yolu var. Masaüstü penceresi bariz olanı. Varsayılan olarak kapalı ve parolayla korunan isteğe bağlı bir web arayüzü, çalışan bir istemciyi başka bir makinedeki tarayıcıdan yönetmenizi sağlar. Ve her ayar komut satırından erişilebilir; bu da NanoTorrent'i betiklenebilir ve ekransız bir makinede kullanılabilir kılar.
+
+Kendi torrentlerinizi de oluşturabilirsiniz; BitTorrent v2 ve karma olanlar dahil.
+
+Eşlerin ülke bayrakları kendi bilgisayarınızda tutulan bir veritabanından gelir. Hiçbir adres asla ağ üzerinden sorgulanmaz.
+
+41 dilde kullanılabilir; Windows'u izleyen açık ve koyu temalarla.
+
+NanoTorrent, Viktor Elofsson'ın PicoTorrent uygulamasının Rust'a aktarımıdır.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Sürüm 0.3.3
+
+- Katı ağ kipi: bir VPN bağdaştırıcısına bağlandığınızda veya SOCKS vekil sunucusu kullandığınızda NanoTorrent oradan geçemeyen her şeyi kapatır, bağdaştırıcı yoksa başlamayı reddeder ve kaybolursa tüm torrentleri duraklatır.
+- Ağ bağdaştırıcısına bağlanma artık Windows'ta da çalışıyor.
+- Durum çubuğu, dinleme bağlantı noktanıza erişilip erişilemediğini ve vekil sunucu ya da bağlı bağdaştırıcı kullanılıp kullanılmadığını gösterir.
+- Güvenlik düzeltmesi: özel hazırlanmış bir torrent dosyası Windows'ta indirme klasörünüzün dışına yazabiliyordu.
+- Web arayüzü masaüstü araç çubuğunu, hız grafiklerini, çoklu seçimi, yeniden boyutlandırılabilir sütunları ve sürükleyip bırakarak eklemeyi kazandı.
+- Eklentiler artık web arayüzünde görünüyor ve oradan açılıp kapatılabiliyor.
+- Web arayüzü tekrarlanan başarısız oturum açmalardan sonra bir adresi engelleyebilir. Deneme sayısı, süre ve engelleme süresi ayarlanabilir.
+- Ekrandan yüksek açılıp kaydırılamayan pencereler düzeltildi.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Yerel Rust uygulaması: hızlı açılır, belleği az kullanır
+Asla reklam, telemetri veya hesap yok
+Magnet bağlantıları ve .torrent dosyaları
+DHT, eş değişimi, izleyici katmanları ve UDP izleyicileri
+Bağlantı şifrelemesi (MSE/PE), istenirse zorunlu
+BitTorrent v2 ve karma olanlar dahil torrent oluşturma
+SOCKS ve HTTP vekil sunucu desteği
+İsteğe bağlı, parolayla korunan web arayüzü
+Betikler ve ekransız makineler için tam komut satırı
+Uzun bir listeyi düzenli tutan etiketler ve süzgeçler
+Eşlerin ülke bayrakları kendi bilgisayarınızda çözümlenir
+Windows'u izleyen açık ve koyu temalar
+41 dilde kullanılabilir
+MIT lisansı altında açık kaynak
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent istemcisi
+magnet bağlantısı
+p2p
+dosya paylaşımı
+indirme yöneticisi
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent, MIT lisansı altında yayımlanan açık kaynaklı bir yazılımdır.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent, MIT lisansı altında yayımlanan özgür ve açık kaynaklı bir yazılımdır. Lisansın tam metni ve kaynak kodun tamamı https://github.com/Power2All/nanotorrent adresinde bulunabilir.
+
+Yazılım, açık veya zımni hiçbir garanti olmaksızın "olduğu gibi" sunulur. Üçüncü taraf bileşenler kendi lisanslarını korur; bunlar kaynak kod deposunda listelenmiştir.
+
+NanoTorrent genel amaçlı bir dosya aktarım aracıdır. Hiçbir içeriği barındırmaz, dizinlemez, sağlamaz, önermez veya desteklemez. Kullanımınızın ülkenizdeki yasalara ve telif hakkı sahiplerinin haklarına uygun olmasını sağlamak sizin sorumluluğunuzdadır.
+
+NanoTorrent, kaynak kod deposundaki AI-DECLARATION.md dosyasında beyan edildiği üzere, ağırlıklı olarak insan denetiminde yapay zekâ desteğiyle geliştirilmektedir.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

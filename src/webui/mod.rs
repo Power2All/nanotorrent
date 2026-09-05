@@ -498,6 +498,107 @@ async fn h_session(state: web::Data<AppState>) -> actix_web::Result<impl Respond
     Ok(web::Json(info))
 }
 
+/// How often a connected browser is sent a fresh snapshot.
+///
+/// One second, matching the desktop window's own tick. Polling could not
+/// afford this - every request re-ran Argon2 - but a stream authenticates once,
+/// so the frequency is now a question of bandwidth rather than CPU, and a few
+/// kilobytes of JSON a second over a LAN is nothing.
+const EVENT_TICK: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Everything the page redraws itself from, in one object.
+///
+/// Built on the blocking pool: every session call in here blocks, which is the
+/// same reason the individual handlers use `web::block`.
+fn snapshot(state: &AppState) -> serde_json::Value {
+    let labels: HashMap<i32, String> = state
+        .cfg
+        .get_labels()
+        .into_iter()
+        .map(|l| (l.id, l.name))
+        .collect();
+    let rows: Vec<TorrentDto> = state
+        .session
+        .torrents(&labels)
+        .into_iter()
+        .map(TorrentDto::from)
+        .collect();
+    let (down, up) = state.session.session_rates();
+
+    let mut errors = Vec::new();
+    if let Ok(rx) = state.errors.lock() {
+        while let Ok(event) = rx.try_recv() {
+            if let SessionEvent::Error(message) = event {
+                errors.push(message);
+            }
+        }
+    }
+
+    serde_json::json!({
+        "session": SessionInfo {
+            version: crate::buildinfo::version(),
+            listen_port: state.session.listen_port(),
+            dht_nodes: state.session.dht_nodes(),
+            download_rate: down,
+            upload_rate: up,
+            torrents: rows.len(),
+        },
+        "torrents": rows,
+        "errors": errors,
+    })
+}
+
+/// `GET /api/events` - a Server-Sent Events stream of snapshots.
+///
+/// This replaces polling `/api/session`, `/api/torrents` and `/api/errors` on a
+/// timer. The three endpoints remain: they are the documented API, they are
+/// what a script would use, and they are the fallback for a browser that
+/// cannot open a stream.
+///
+/// The reason is not the JSON, which is tiny. It is that HTTP Basic auth
+/// verifies the password with Argon2 on EVERY request - deliberately expensive,
+/// measured here at ~21ms against ~0.8ms for a request that never reaches it.
+/// Three of those every two seconds is about 3% of a core, continuously, for
+/// each open tab. A stream pays it once, when it connects.
+///
+/// SSE rather than a WebSocket: this is one-way traffic - every action the page
+/// takes is already a POST - and a plain GET inherits the Basic auth that a
+/// WebSocket handshake cannot carry in a browser. It also needs no dependency
+/// and reconnects by itself.
+///
+/// ponytail: one sampler per connection, so two open tabs sample twice. Fine
+/// for a personal client; a shared broadcast is the upgrade if it ever matters.
+async fn h_events(state: web::Data<AppState>) -> impl Responder {
+    use futures::SinkExt;
+
+    let (mut tx, rx) =
+        futures::channel::mpsc::channel::<Result<web::Bytes, actix_web::Error>>(4);
+
+    actix_web::rt::spawn(async move {
+        loop {
+            let st = state.clone();
+            let Ok(payload) = web::block(move || snapshot(&st)).await else {
+                break;
+            };
+            let frame = format!("data: {payload}\n\n");
+            // Fails once the browser has gone, which is how this task ends -
+            // there is no other owner to tell it to stop.
+            if tx.send(Ok(web::Bytes::from(frame))).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(EVENT_TICK).await;
+        }
+    });
+
+    HttpResponse::Ok()
+        .content_type("text/event-stream")
+        // A cached or buffered event stream is not an event stream. The last
+        // header is for reverse proxies, which buffer by default.
+        .insert_header(("Cache-Control", "no-store"))
+        .insert_header(("X-Accel-Buffering", "no"))
+        .streaming(rx)
+}
+
 /// `GET /api/torrents` - one row per torrent, the same fields the main
 /// window's list shows, with label ids already resolved to names.
 async fn h_torrents(state: web::Data<AppState>) -> actix_web::Result<impl Responder> {
@@ -1548,6 +1649,7 @@ fn build(
             .service(
                 web::scope("/api")
                     .route("/health", web::get().to(h_health))
+                    .route("/events", web::get().to(h_events))
                     .route("/session", web::get().to(h_session))
                     .route("/errors", web::get().to(h_errors))
                     .route("/torrents", web::get().to(h_torrents))

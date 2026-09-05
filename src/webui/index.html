@@ -922,8 +922,29 @@ document.addEventListener("keydown", (e) => {
 // Deep link, so the drawer can be bookmarked and linked to.
 if (location.hash === "#preferences") openPrefs();
 
-// --- polling ----------------------------------------------------------------
+// --- live updates -----------------------------------------------------------
 let failures = 0;
+
+// One place that redraws everything, whether the data arrived over the stream
+// or over the three polled endpoints. Two copies of this drifted apart the
+// moment either changed.
+function applySnapshot(info, list, errors) {
+  $("version").textContent = "v" + info.version;
+  $("dl").textContent = speed(info.download_rate);
+  $("ul").textContent = speed(info.upload_rate);
+  $("dht").textContent = info.dht_nodes === null ? "-" : info.dht_nodes;
+  $("count").textContent = info.torrents;
+  pushRates(info.download_rate, info.upload_rate);
+  LAST_TORRENTS = list;
+  renderRows(list);
+  // Torrents may have been removed underneath the selection.
+  const alive = new Set(list.map((t) => t.info_hash));
+  for (const h of [...selectedHashes]) if (!alive.has(h)) selectedHashes.delete(h);
+  paintSelection();
+  // The session error queue drains on read, so anything here is new.
+  for (const e of errors) toast(e);
+}
+
 async function refresh() {
   try {
     const [info, list, errs] = await Promise.all([
@@ -931,26 +952,40 @@ async function refresh() {
       api("GET", "/api/torrents"),
       api("GET", "/api/errors"),
     ]);
-    $("version").textContent = "v" + info.version;
-    $("dl").textContent = speed(info.download_rate);
-    $("ul").textContent = speed(info.upload_rate);
-    $("dht").textContent = info.dht_nodes === null ? "-" : info.dht_nodes;
-    $("count").textContent = info.torrents;
-    pushRates(info.download_rate, info.upload_rate);
-    LAST_TORRENTS = list;
-    renderRows(list);
-    // Torrents may have been removed underneath the selection.
-    const alive = new Set(list.map((t) => t.info_hash));
-    for (const h of [...selectedHashes]) if (!alive.has(h)) selectedHashes.delete(h);
-    paintSelection();
-    // The session error queue drains on read, so anything here is new.
-    for (const e of errs.errors) toast(e);
+    applySnapshot(info, list, errs.errors);
     failures = 0;
   } catch (e) {
     // Only complain once per outage, or a closed laptop lid produces a wall
     // of identical toasts.
     if (failures++ === 0) toast(T.lost_contact + ": " + e.message);
   }
+}
+
+// The stream. One connection, authenticated once, pushed to every second.
+//
+// Polling cost far more than the JSON it fetched: Basic auth re-runs Argon2 on
+// every request, so three requests every two seconds burned a few percent of a
+// core per open tab. This pays that once.
+//
+// EventSource reconnects on its own, so there is no retry loop here - only a
+// toast the first time contact is lost, matching what polling did.
+function startStream() {
+  const es = new EventSource("/api/events");
+
+  es.onmessage = (ev) => {
+    try {
+      const s = JSON.parse(ev.data);
+      applySnapshot(s.session, s.torrents, s.errors);
+      failures = 0;
+    } catch (e) {
+      // A malformed frame is not worth tearing the connection down for.
+    }
+  };
+
+  es.onerror = () => {
+    if (failures++ === 0) toast(T.lost_contact);
+  };
+  return es;
 }
 
 // --- folder browser ---------------------------------------------------------
@@ -1223,7 +1258,16 @@ function applyTheme(value) {
 // hangs until it is killed.
 const REFRESH = Number(new URLSearchParams(location.search).get("refresh") ?? 2);
 refresh();
-if (REFRESH > 0) setInterval(refresh, REFRESH * 1000);
+// Stream when the browser can, poll when it cannot. `?refresh=` still forces
+// polling, which is the way back if a proxy in the middle buffers the stream.
+if (window.EventSource && !new URLSearchParams(location.search).has("refresh")) {
+  // No priming poll: the server sends its first frame before it sleeps, so
+  // the stream paints as fast as three requests would have, without making
+  // them.
+  startStream();
+} else if (REFRESH > 0) {
+  setInterval(refresh, REFRESH * 1000);
+}
 
 // --- plugins ---------------------------------------------------------------
 //

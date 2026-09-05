@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: 繁體中文 (台灣) - app locale zh-TW - Partner Center: Chinese (Traditional) (zh-Hant)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > zh-Hant. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent 是一款小巧快速、不礙事的 BitTorrent 用戶端。
+
+它是以 Rust 撰寫的原生應用程式，而不是包在視窗裡的網頁。啟動立即完成，佔用的記憶體只是常見現代用戶端的一小部分。
+
+不需帳戶。沒有廣告。沒有遙測、沒有分析、沒有當機報告。不會蒐集關於您本人或您所下載內容的任何資訊。NanoTorrent 採用 MIT 授權開放原始碼，因此這一點可以查證，而不必只憑承諾。
+
+從檔案或磁力連結加入種子，在可排序、可加標籤、可篩選的清單中檢視，並開啟詳細資料面板查看檔案、節點與追蹤器。DHT、節點交換、多層追蹤器、UDP 追蹤器與私有種子皆受支援，連線可以加密，並可選擇拒絕一切未加密的連線。
+
+操作方式不只一種。桌面視窗是最直接的一種。選用的網頁介面預設關閉並以密碼保護，可讓您從另一台機器的瀏覽器控制執行中的用戶端。每一項設定也都能透過命令列使用，因此 NanoTorrent 可以撰寫指令碼，也能在沒有螢幕的機器上使用。
+
+您也可以自行建立種子，包括 BitTorrent v2 與混合種子。
+
+節點的國家/地區旗標來自儲存在您自己電腦上的資料庫。任何位址都不會透過網路查詢。
+
+提供 41 種語言，淺色與深色佈景主題跟隨 Windows。
+
+NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+版本 0.3.3
+
+- 嚴格網路模式：繫結 VPN 介面卡或使用 SOCKS Proxy 時，NanoTorrent 會關閉所有無法經由其傳輸的功能；介面卡不存在時拒絕啟動，消失時暫停所有種子。
+- 繫結網路介面卡現在也可在 Windows 上使用。
+- 狀態列會顯示接聽連接埠是否可連線，以及是否正在使用 Proxy 或已繫結的介面卡。
+- 安全性修正：特製的種子檔案在 Windows 上可能寫入下載資料夾之外。
+- 網頁介面新增桌面工具列、速度圖表、多重選取、可調整寬度的欄位以及拖放新增。
+- 外掛程式現在也會出現在網頁介面中，並可在該處開啟與關閉。
+- 網頁介面可在多次登入失敗後封鎖某個位址。嘗試次數、時間範圍與封鎖時長皆可設定。
+- 修正了可能高於螢幕且無法捲動的視窗。
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Rust 原生應用程式：啟動快，記憶體用量低
+永遠沒有廣告、遙測或帳戶
+支援磁力連結與 .torrent 檔案
+DHT、節點交換、追蹤器分層與 UDP 追蹤器
+連線加密（MSE/PE），可設為強制
+建立種子，包括 BitTorrent v2 與混合種子
+支援 SOCKS 與 HTTP Proxy
+選用的密碼保護網頁介面，便於遠端控制
+完整命令列，適合指令碼與無螢幕的機器
+標籤與篩選讓長清單保持條理
+節點國家/地區旗標在您自己的電腦上解析
+淺色與深色佈景主題跟隨 Windows
+提供 41 種語言
+依 MIT 授權開放原始碼
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+種子
+bittorrent
+種子用戶端
+磁力連結
+p2p
+檔案分享
+下載管理員
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All。NanoTorrent 是依 MIT 授權發布的開放原始碼軟體。
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent 是依 MIT 授權發布的自由開放原始碼軟體。完整授權條款與全部原始碼請見 https://github.com/Power2All/nanotorrent
+
+本軟體以「現狀」提供，不附帶任何明示或默示的擔保。第三方元件保留各自的授權條款，並在原始碼儲存庫中列出。
+
+NanoTorrent 是通用的檔案傳輸工具。它不代管、不索引、不提供、不推薦也不背書任何內容。您有責任確保自己的使用符合所在國家/地區的法律以及著作權人的權利。
+
+如原始碼儲存庫中的 AI-DECLARATION.md 所聲明，NanoTorrent 主要在人工審核下借助人工智慧開發。
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

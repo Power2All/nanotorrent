@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Español (España) - Partner Center: Spanish (Spain) (es-ES)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > es-ES. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent es un cliente BitTorrent pequeño y rápido que no se interpone en su camino.
+
+Es una aplicación nativa escrita en Rust, no una página web dentro de una ventana. Arranca al instante y usa una fracción de la memoria que necesita un cliente moderno típico.
+
+Sin cuenta. Sin publicidad. Sin telemetría, sin análisis, sin informes de fallos. No se recopila nada sobre usted ni sobre lo que descarga. NanoTorrent es software libre bajo la licencia MIT, de modo que esto se puede comprobar en lugar de tener que creerlo.
+
+Añada torrents desde archivos o enlaces magnet, sígalos en una lista que puede ordenar, etiquetar y filtrar, y abra el panel de detalles para archivos, pares y rastreadores. Se admiten DHT, intercambio de pares, varios niveles de rastreadores, rastreadores UDP y torrents privados, y las conexiones pueden cifrarse, rechazando si lo desea todo lo que no lo esté.
+
+Hay más de una forma de manejarlo. La ventana de escritorio es la evidente. Una interfaz web opcional, desactivada de forma predeterminada y protegida con contraseña, permite controlar un cliente en ejecución desde el navegador de otro equipo. Y todos los ajustes están disponibles en la línea de comandos, lo que hace que NanoTorrent sea automatizable y utilizable en un equipo sin pantalla.
+
+También puede crear torrents, incluidos los de BitTorrent v2 e híbridos.
+
+Las banderas de país de los pares proceden de una base de datos guardada en su propio equipo. Nunca se consulta ninguna dirección a través de la red.
+
+Disponible en 41 idiomas, con temas claro y oscuro que siguen a Windows.
+
+NanoTorrent es una adaptación a Rust de PicoTorrent, de Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versión 0.3.3
+
+- Modo de red estricto: al vincularse a un adaptador VPN o usar un proxy SOCKS, NanoTorrent desactiva todo lo que no pueda pasar por ahí, se niega a iniciarse si falta el adaptador y pausa todos los torrents si desaparece.
+- La vinculación a un adaptador de red ya funciona en Windows.
+- La barra de estado muestra si se puede alcanzar su puerto de escucha y si se usa un proxy o un adaptador vinculado.
+- Corrección de seguridad: un archivo torrent manipulado podía escribir fuera de su carpeta de descargas en Windows.
+- La interfaz web incorpora la barra de herramientas del escritorio, gráficos de velocidad, selección múltiple, columnas redimensionables y añadir arrastrando.
+- Los complementos ahora aparecen en la interfaz web y pueden activarse y desactivarse desde ahí.
+- La interfaz web puede bloquear una dirección tras varios inicios de sesión fallidos. Los intentos, el periodo y la duración del bloqueo son configurables.
+- Corregidas las ventanas que podían abrirse más altas que la pantalla sin poder desplazarse.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Aplicación nativa en Rust: arranque rápido y poca memoria
+Nunca publicidad, telemetría ni cuentas
+Enlaces magnet y archivos .torrent
+DHT, intercambio de pares, niveles de rastreadores y rastreadores UDP
+Cifrado de conexiones (MSE/PE), exigible si lo desea
+Creación de torrents, incluidos BitTorrent v2 e híbridos
+Compatibilidad con proxy SOCKS y HTTP
+Interfaz web opcional protegida con contraseña
+Línea de comandos completa para scripts y equipos sin pantalla
+Etiquetas y filtros para mantener ordenada una lista larga
+Banderas de país de los pares resueltas en su propio equipo
+Temas claro y oscuro que siguen a Windows
+Disponible en 41 idiomas
+Software libre bajo la licencia MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+cliente torrent
+enlace magnet
+p2p
+compartir archivos
+gestor de descargas
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent es software libre publicado bajo la licencia MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent es software libre y de código abierto publicado bajo la licencia MIT. El texto completo de la licencia y todo el código fuente están disponibles en https://github.com/Power2All/nanotorrent
+
+El software se proporciona "tal cual", sin garantía de ningún tipo, expresa o implícita. Los componentes de terceros conservan sus propias licencias, que se enumeran en el repositorio del código fuente.
+
+NanoTorrent es una herramienta de transferencia de archivos de uso general. No aloja, indexa, suministra, recomienda ni respalda ningún contenido. Usted es responsable de asegurarse de que su uso cumple la ley de su país y los derechos de los titulares de derechos de autor.
+
+NanoTorrent se desarrolla predominantemente con asistencia de IA bajo revisión humana, tal como se declara en AI-DECLARATION.md en el repositorio del código fuente.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

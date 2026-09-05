@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Tiếng Việt (Việt Nam) - Partner Center: Vietnamese (Vietnam) (vi-VN)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > vi-VN. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent là một ứng dụng BitTorrent nhỏ gọn và nhanh, không gây vướng víu.
+
+Đây là ứng dụng gốc viết bằng Rust, không phải một trang web đặt trong cửa sổ. Nó khởi động tức thì và dùng một phần nhỏ bộ nhớ mà một ứng dụng hiện đại thông thường cần đến.
+
+Không tài khoản. Không quảng cáo. Không đo từ xa, không phân tích, không báo cáo sự cố. Không thu thập bất cứ điều gì về bạn hay về những gì bạn tải xuống. NanoTorrent là mã nguồn mở theo giấy phép MIT, nên điều này có thể kiểm chứng chứ không phải chỉ là lời hứa.
+
+Thêm torrent từ tệp hoặc liên kết magnet, theo dõi chúng trong danh sách có thể sắp xếp, gắn nhãn và lọc, rồi mở bảng chi tiết để xem tệp, máy ngang hàng và tracker. DHT, trao đổi máy ngang hàng, nhiều tầng tracker, tracker UDP và torrent riêng tư đều được hỗ trợ, còn kết nối thì có thể mã hóa, tùy ý từ chối mọi kết nối không mã hóa.
+
+Có nhiều hơn một cách để điều khiển. Cửa sổ trên máy tính là cách hiển nhiên. Giao diện web tùy chọn, mặc định tắt và được bảo vệ bằng mật khẩu, cho phép bạn điều khiển một ứng dụng đang chạy từ trình duyệt trên máy khác. Và mọi thiết lập đều có trên dòng lệnh, khiến NanoTorrent có thể viết kịch bản và dùng được trên máy không có màn hình.
+
+Bạn cũng có thể tự tạo torrent, kể cả BitTorrent v2 và loại lai.
+
+Cờ quốc gia của máy ngang hàng lấy từ cơ sở dữ liệu lưu trên chính máy bạn. Không có địa chỉ nào từng được tra cứu qua mạng.
+
+Có sẵn bằng 41 ngôn ngữ, với giao diện sáng và tối đi theo Windows.
+
+NanoTorrent là bản chuyển sang Rust của PicoTorrent do Viktor Elofsson viết.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Phiên bản 0.3.3
+
+- Chế độ mạng nghiêm ngặt: khi gắn với bộ điều hợp VPN hoặc dùng proxy SOCKS, NanoTorrent tắt mọi thứ không đi qua được, từ chối khởi động nếu thiếu bộ điều hợp, và tạm dừng mọi torrent nếu nó biến mất.
+- Việc gắn với bộ điều hợp mạng nay đã hoạt động trên Windows.
+- Thanh trạng thái cho biết cổng lắng nghe có thể truy cập được không, và có đang dùng proxy hay bộ điều hợp đã gắn hay không.
+- Sửa lỗi bảo mật: một tệp torrent được tạo có chủ đích có thể ghi ra ngoài thư mục tải xuống trên Windows.
+- Giao diện web có thêm thanh công cụ của ứng dụng, biểu đồ tốc độ, chọn nhiều mục, cột đổi được độ rộng và thêm bằng cách kéo thả.
+- Phần mở rộng nay xuất hiện trong giao diện web và có thể bật tắt tại đó.
+- Giao diện web có thể chặn một địa chỉ sau nhiều lần đăng nhập thất bại. Số lần, khoảng thời gian và thời lượng chặn đều đặt được.
+- Đã sửa các cửa sổ có thể mở cao hơn màn hình mà không cuộn được.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Ứng dụng gốc bằng Rust: khởi động nhanh, ít tốn bộ nhớ
+Không bao giờ có quảng cáo, đo từ xa hay tài khoản
+Liên kết magnet và tệp .torrent
+DHT, trao đổi máy ngang hàng, tầng tracker và tracker UDP
+Mã hóa kết nối (MSE/PE), có thể đặt là bắt buộc
+Tạo torrent, kể cả BitTorrent v2 và loại lai
+Hỗ trợ proxy SOCKS và HTTP
+Giao diện web tùy chọn được bảo vệ bằng mật khẩu
+Dòng lệnh đầy đủ cho kịch bản và máy không màn hình
+Nhãn và bộ lọc giữ cho danh sách dài luôn ngăn nắp
+Cờ quốc gia của máy ngang hàng được tra trên chính máy bạn
+Giao diện sáng và tối đi theo Windows
+Có sẵn bằng 41 ngôn ngữ
+Mã nguồn mở theo giấy phép MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+ứng dụng torrent
+liên kết magnet
+p2p
+chia sẻ tệp
+trình quản lý tải
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent là phần mềm mã nguồn mở phát hành theo giấy phép MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent là phần mềm tự do nguồn mở phát hành theo giấy phép MIT. Toàn văn giấy phép và toàn bộ mã nguồn có tại https://github.com/Power2All/nanotorrent
+
+Phần mềm được cung cấp "nguyên trạng", không kèm bảo đảm nào, dù minh thị hay ngụ ý. Các thành phần của bên thứ ba giữ giấy phép riêng, được liệt kê trong kho mã nguồn.
+
+NanoTorrent là công cụ truyền tệp dùng chung cho mọi mục đích. Nó không lưu trữ, không lập chỉ mục, không cung cấp, không khuyến nghị và không tán thành bất kỳ nội dung nào. Bạn có trách nhiệm bảo đảm việc sử dụng của mình tuân thủ pháp luật nước bạn và quyền của chủ sở hữu quyền tác giả.
+
+NanoTorrent được phát triển chủ yếu với sự hỗ trợ của trí tuệ nhân tạo dưới sự rà soát của con người, như đã công bố trong AI-DECLARATION.md tại kho mã nguồn.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Dansk (Danmark) - Partner Center: Danish (Denmark) (da-DK)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > da-DK. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent er en lille og hurtig BitTorrent-klient, der holder sig af vejen.
+
+Det er et indbygget program skrevet i Rust, ikke en webside i et vindue. Det starter med det samme og bruger en brøkdel af den hukommelse, en typisk moderne klient kræver.
+
+Ingen konto. Ingen reklamer. Ingen telemetri, ingen analyse, ingen nedbrudsrapporter. Der indsamles intet om dig eller om det, du henter. NanoTorrent er open source under MIT-licensen, så det kan efterprøves i stedet for at skulle tages på tro.
+
+Tilføj torrents fra filer eller magnetlinks, følg dem i en liste, du kan sortere, mærke og filtrere, og åbn detaljepanelet for filer, modparter og trackere. DHT, udveksling af modparter, flere trackerniveauer, UDP-trackere og private torrents understøttes alle, og forbindelser kan krypteres, om ønsket med afvisning af alt ukrypteret.
+
+Der er mere end én måde at styre det på. Skrivebordsvinduet er den oplagte. En valgfri webgrænseflade, slået fra som standard og beskyttet med adgangskode, lader dig styre en kørende klient fra en browser på en anden maskine. Og alle indstillinger findes på kommandolinjen, hvilket gør NanoTorrent scriptbart og brugbart på en maskine uden skærm.
+
+Du kan også selv oprette torrents, herunder BitTorrent v2 og hybride.
+
+Modparternes landeflag kommer fra en database, der ligger på din egen computer. Ingen adresse slås nogensinde op over netværket.
+
+Fås på 41 sprog, med lyst og mørkt tema, der følger Windows.
+
+NanoTorrent er en Rust-portering af PicoTorrent af Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Version 0.3.3
+
+- Streng netværkstilstand: når du binder til en VPN-adapter eller bruger en SOCKS-proxy, slår NanoTorrent alt fra, der ikke kan gå igennem den, nægter at starte, hvis adapteren mangler, og sætter alle torrents på pause, hvis den forsvinder.
+- Binding til en netværksadapter virker nu på Windows.
+- Statuslinjen viser, om din lytteport kan nås, og om en proxy eller en bundet adapter er i brug.
+- Sikkerhedsrettelse: en særligt udformet torrentfil kunne skrive uden for din downloadmappe på Windows.
+- Webgrænsefladen får skrivebordets værktøjslinje, hastighedsdiagrammer, flervalg, justerbare kolonner og tilføjelse ved at trække og slippe.
+- Plugins vises nu i webgrænsefladen og kan slås til og fra derfra.
+- Webgrænsefladen kan blokere en adresse efter gentagne mislykkede logins. Antal forsøg, tidsrum og blokeringens længde kan indstilles.
+- Rettet vinduer, der kunne åbne højere end skærmen uden mulighed for at rulle.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Indbygget Rust-program: starter hurtigt og bruger lidt hukommelse
+Aldrig reklamer, telemetri eller konto
+Magnetlinks og .torrent-filer
+DHT, udveksling af modparter, trackerniveauer og UDP-trackere
+Kryptering af forbindelser (MSE/PE), om ønsket påkrævet
+Oprettelse af torrents, herunder BitTorrent v2 og hybride
+Understøttelse af SOCKS- og HTTP-proxy
+Valgfri adgangskodebeskyttet webgrænseflade til fjernstyring
+Fuld kommandolinje til scripts og maskiner uden skærm
+Mærkater og filtre holder styr på en lang liste
+Modparternes landeflag slås op på din egen computer
+Lyst og mørkt tema, der følger Windows
+Fås på 41 sprog
+Open source under MIT-licensen
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrentklient
+magnetlink
+p2p
+fildeling
+downloadhåndtering
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent er open source-software udgivet under MIT-licensen.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent er fri open source-software udgivet under MIT-licensen. Hele licensteksten og al kildekode findes på https://github.com/Power2All/nanotorrent
+
+Softwaren leveres "som den er", uden nogen form for garanti, udtrykkelig eller stiltiende. Tredjepartskomponenter beholder deres egne licenser, som er anført i kildekodearkivet.
+
+NanoTorrent er et alment værktøj til filoverførsel. Det hoster, indekserer, leverer, anbefaler eller understøtter ikke noget indhold overhovedet. Du er selv ansvarlig for, at din brug overholder loven i dit land og rettighedshavernes rettigheder.
+
+NanoTorrent udvikles overvejende med AI-hjælp under menneskelig gennemgang, som erklæret i AI-DECLARATION.md i kildekodearkivet.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

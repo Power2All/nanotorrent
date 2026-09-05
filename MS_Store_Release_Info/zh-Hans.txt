@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: 简体中文 (中国) - app locale zh-CN - Partner Center: Chinese (Simplified) (zh-Hans)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > zh-Hans. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent 是一款小巧快速、不碍事的 BitTorrent 客户端。
+
+它是用 Rust 编写的原生应用程序，而不是套在窗口里的网页。启动即开，占用的内存只是常见现代客户端的一小部分。
+
+无需账户。没有广告。没有遥测、没有分析、没有崩溃报告。不会收集关于您本人或您所下载内容的任何信息。NanoTorrent 采用 MIT 许可证开源，因此这一点可以核实，而不必仅凭承诺。
+
+从文件或磁力链接添加种子，在可排序、可加标签、可筛选的列表中查看，并打开详情面板查看文件、节点与 Tracker。DHT、节点交换、多层 Tracker、UDP Tracker 和私有种子均受支持，连接可以加密，并可选择拒绝一切未加密的连接。
+
+操作方式不止一种。桌面窗口是最直接的一种。可选的 Web 界面默认关闭并有密码保护，可让您从另一台机器的浏览器控制正在运行的客户端。每一项设置也都能通过命令行使用，因此 NanoTorrent 可以编写脚本，也能在没有显示器的机器上使用。
+
+您还可以创建自己的种子，包括 BitTorrent v2 和混合种子。
+
+节点的国家/地区旗标来自保存在您自己电脑上的数据库。任何地址都不会通过网络进行查询。
+
+提供 41 种语言，浅色与深色主题跟随 Windows。
+
+NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+版本 0.3.3
+
+- 严格网络模式：绑定 VPN 适配器或使用 SOCKS 代理时，NanoTorrent 会关闭所有无法经由其传输的功能；适配器缺失时拒绝启动，消失时暂停所有种子。
+- 绑定网络适配器现在也可在 Windows 上使用。
+- 状态栏显示监听端口是否可达，以及是否正在使用代理或已绑定的适配器。
+- 安全修复：特制的种子文件在 Windows 上可能写入下载文件夹之外。
+- 网页界面新增桌面工具栏、速度图表、多选、可调整宽度的列以及拖放添加。
+- 插件现在也会出现在网页界面中，并可在那里开启和关闭。
+- 网页界面可在多次登录失败后封禁某个地址。尝试次数、时间范围和封禁时长均可设置。
+- 修复了可能高于屏幕且无法滚动的窗口。
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Rust 原生应用：启动快，内存占用低
+永远没有广告、遥测或账户
+支持磁力链接和 .torrent 文件
+DHT、节点交换、Tracker 分层与 UDP Tracker
+连接加密（MSE/PE），可设为强制
+创建种子，包括 BitTorrent v2 与混合种子
+支持 SOCKS 与 HTTP 代理
+可选的密码保护 Web 界面，便于远程控制
+完整命令行，适合脚本与无显示器的机器
+标签与筛选让长列表保持条理
+节点国家/地区旗标在您自己的电脑上解析
+浅色与深色主题跟随 Windows
+提供 41 种语言
+基于 MIT 许可证开源
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+种子
+bittorrent
+种子客户端
+磁力链接
+p2p
+文件共享
+下载管理器
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All。NanoTorrent 是依据 MIT 许可证发布的开源软件。
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent 是依据 MIT 许可证发布的自由开源软件。完整许可证文本与全部源代码见 https://github.com/Power2All/nanotorrent
+
+本软件按“原样”提供，不附带任何明示或默示的担保。第三方组件保留各自的许可证，并在源代码仓库中列出。
+
+NanoTorrent 是通用的文件传输工具。它不托管、不索引、不提供、不推荐也不认可任何内容。您有责任确保自己的使用符合所在国家/地区的法律以及著作权人的权利。
+
+如源代码仓库中的 AI-DECLARATION.md 所声明，NanoTorrent 主要在人工审核下借助人工智能开发。
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

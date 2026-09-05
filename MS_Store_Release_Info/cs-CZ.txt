@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Čeština (Česko) - Partner Center: Czech (Czechia) (cs-CZ)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > cs-CZ. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent je malý a rychlý klient BitTorrent, který vám nepřekáží.
+
+Je to nativní aplikace napsaná v jazyce Rust, nikoli webová stránka v okně. Spustí se okamžitě a spotřebuje zlomek paměti, jakou potřebuje běžný moderní klient.
+
+Žádný účet. Žádná reklama. Žádná telemetrie, žádná analytika, žádná hlášení o pádech. Nesbírá se nic o vás ani o tom, co stahujete. NanoTorrent je otevřený software pod licencí MIT, takže si to můžete ověřit, místo abyste tomu museli věřit.
+
+Přidávejte torrenty ze souborů nebo z odkazů magnet, sledujte je v seznamu, který lze řadit, opatřovat štítky a filtrovat, a otevřete panel podrobností se soubory, protějšky a trackery. Podporovány jsou DHT, výměna protějšků, více úrovní trackerů, UDP trackery i soukromé torrenty a spojení lze šifrovat, případně odmítat vše nešifrované.
+
+Ovládat jej lze více způsoby. Okno na ploše je ten zřejmý. Volitelné webové rozhraní, ve výchozím stavu vypnuté a chráněné heslem, umožňuje řídit běžícího klienta z prohlížeče na jiném stroji. A každé nastavení je dostupné z příkazové řádky, díky čemuž lze NanoTorrent skriptovat a používat na stroji bez obrazovky.
+
+Můžete také vytvářet vlastní torrenty, včetně BitTorrent v2 a hybridních.
+
+Vlajky zemí protějšků pocházejí z databáze uložené ve vašem počítači. Žádná adresa se nikdy nedotazuje po síti.
+
+K dispozici ve 41 jazycích, se světlým a tmavým motivem, které následují Windows.
+
+NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Verze 0.3.3
+
+- Přísný síťový režim: při vázání na adaptér VPN nebo použití proxy SOCKS NanoTorrent vypne vše, co jím nemůže projít, odmítne se spustit, pokud adaptér chybí, a pozastaví všechny torrenty, pokud zmizí.
+- Vázání na síťový adaptér nyní funguje i ve Windows.
+- Stavový řádek ukazuje, zda je naslouchající port dosažitelný a zda se používá proxy nebo vázaný adaptér.
+- Bezpečnostní oprava: speciálně připravený soubor torrent mohl ve Windows zapisovat mimo složku stahování.
+- Webové rozhraní získává panel nástrojů z aplikace, grafy rychlosti, vícenásobný výběr, měnitelné sloupce a přidávání přetažením.
+- Zásuvné moduly se nyní zobrazují ve webovém rozhraní a lze je tam zapínat a vypínat.
+- Webové rozhraní může zablokovat adresu po opakovaných neúspěšných přihlášeních. Počet pokusů, časové okno i délka blokace se nastavují.
+- Opraveno: okna se mohla otevřít vyšší než obrazovka bez možnosti posouvání.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Nativní aplikace v Rustu: rychlý start a nízká spotřeba paměti
+Nikdy žádná reklama, telemetrie ani účet
+Odkazy magnet a soubory .torrent
+DHT, výměna protějšků, úrovně trackerů a UDP trackery
+Šifrování spojení (MSE/PE), volitelně vyžadované
+Vytváření torrentů, včetně BitTorrent v2 a hybridních
+Podpora proxy SOCKS a HTTP
+Volitelné webové rozhraní chráněné heslem
+Plnohodnotná příkazová řádka pro skripty a stroje bez obrazovky
+Štítky a filtry udrží pořádek i v dlouhém seznamu
+Vlajky zemí protějšků se určují ve vašem počítači
+Světlý a tmavý motiv následující Windows
+K dispozici ve 41 jazycích
+Otevřený zdrojový kód pod licencí MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent klient
+odkaz magnet
+p2p
+sdílení souborů
+správce stahování
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent je otevřený software vydaný pod licencí MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent je svobodný software s otevřeným zdrojovým kódem vydaný pod licencí MIT. Úplné znění licence i celý zdrojový kód najdete na https://github.com/Power2All/nanotorrent
+
+Software je poskytován "tak, jak je", bez jakékoli záruky, výslovné či předpokládané. Komponenty třetích stran si ponechávají vlastní licence, uvedené v repozitáři zdrojového kódu.
+
+NanoTorrent je obecný nástroj pro přenos souborů. Nehostuje, neindexuje, nedodává, nedoporučuje ani nepodporuje žádný obsah. Odpovídáte za to, aby vaše používání bylo v souladu se zákony vaší země a s právy držitelů autorských práv.
+
+NanoTorrent je vyvíjen převážně s pomocí umělé inteligence pod lidským dohledem, jak je uvedeno v souboru AI-DECLARATION.md v repozitáři zdrojového kódu.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > fi-FI. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent on pieni ja nopea BitTorrent-asiakasohjelma, joka ei ole tiellä.
+
+Se on Rust-kielellä kirjoitettu natiivisovellus, ei verkkosivu ikkunassa. Se käynnistyy välittömästi ja käyttää murto-osan siitä muistista, jonka tavanomainen nykyaikainen asiakasohjelma tarvitsee.
+
+Ei tiliä. Ei mainoksia. Ei telemetriaa, ei analytiikkaa, ei kaatumisraportteja. Sinusta tai lataamastasi sisällöstä ei kerätä mitään. NanoTorrent on avointa lähdekoodia MIT-lisenssillä, joten tämän voi tarkistaa eikä sitä tarvitse uskoa.
+
+Lisää torrentteja tiedostoista tai magnet-linkeistä, seuraa niitä luettelossa, jota voit järjestää, merkitä ja suodattaa, ja avaa tietopaneeli tiedostoja, vertaisia ja seurantapalvelimia varten. DHT, vertaisten vaihto, useat seurantapalvelintasot, UDP-seurantapalvelimet ja yksityiset torrentit ovat kaikki tuettuja, ja yhteydet voidaan salata, haluttaessa hylkäämällä kaikki salaamaton.
+
+Ohjelmaa voi käyttää useammalla tavalla. Työpöytäikkuna on niistä ilmeisin. Valinnainen verkkokäyttöliittymä, oletuksena poissa käytöstä ja salasanalla suojattu, antaa ohjata käynnissä olevaa asiakasohjelmaa toisen koneen selaimesta. Ja jokainen asetus on käytettävissä komentoriviltä, mikä tekee NanoTorrentista skriptattavan ja käyttökelpoisen koneella, jossa ei ole näyttöä.
+
+Voit myös luoda omia torrentteja, mukaan lukien BitTorrent v2 ja hybridit.
+
+Vertaisten maalliput tulevat tietokannasta, joka on omalla koneellasi. Yhtään osoitetta ei koskaan haeta verkon yli.
+
+Saatavilla 41 kielellä, vaalealla ja tummalla teemalla, jotka seuraavat Windowsia.
+
+NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versio 0.3.3
+
+- Tiukka verkkotila: kun sidot VPN-sovittimeen tai käytät SOCKS-välityspalvelinta, NanoTorrent poistaa käytöstä kaiken, mikä ei kulje sen kautta, kieltäytyy käynnistymästä jos sovitin puuttuu, ja keskeyttää kaikki torrentit jos se katoaa.
+- Verkkosovittimeen sitominen toimii nyt myös Windowsissa.
+- Tilarivi näyttää, onko kuunteluporttiisi pääsy ja onko välityspalvelin tai sidottu sovitin käytössä.
+- Tietoturvakorjaus: erityisesti muotoiltu torrent-tiedosto saattoi kirjoittaa latauskansion ulkopuolelle Windowsissa.
+- Verkkokäyttöliittymä saa työpöydän työkalurivin, nopeuskaaviot, monivalinnan, koon muuttamisen sarakkeille ja lisäämisen vetämällä.
+- Laajennukset näkyvät nyt verkkokäyttöliittymässä ja ne voi kytkeä siellä päälle ja pois.
+- Verkkokäyttöliittymä voi estää osoitteen toistuvien epäonnistuneiden kirjautumisten jälkeen. Yritysten määrä, aikaikkuna ja eston kesto ovat asetuksia.
+- Korjattu ikkunat, jotka saattoivat avautua näyttöä korkeampina ilman vieritystä.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Natiivi Rust-sovellus: käynnistyy nopeasti ja säästää muistia
+Ei koskaan mainoksia, telemetriaa tai tiliä
+Magnet-linkit ja .torrent-tiedostot
+DHT, vertaisten vaihto, seurantapalvelintasot ja UDP-seurantapalvelimet
+Yhteyksien salaus (MSE/PE), haluttaessa pakollinen
+Torrenttien luonti, mukaan lukien BitTorrent v2 ja hybridit
+Tuki SOCKS- ja HTTP-välityspalvelimille
+Valinnainen salasanasuojattu verkkokäyttöliittymä etäohjaukseen
+Täysi komentorivi skripteille ja näytöttömille koneille
+Merkinnät ja suodattimet pitävät pitkän luettelon järjestyksessä
+Vertaisten maalliput haetaan omalta koneeltasi
+Vaalea ja tumma teema, jotka seuraavat Windowsia
+Saatavilla 41 kielellä
+Avointa lähdekoodia MIT-lisenssillä
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent-asiakas
+magnet-linkki
+p2p
+tiedostonjako
+latausten hallinta
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent on avoimen lähdekoodin ohjelmisto MIT-lisenssillä.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent on vapaa avoimen lähdekoodin ohjelmisto, joka julkaistaan MIT-lisenssillä. Lisenssin koko teksti ja täydellinen lähdekoodi ovat saatavilla osoitteessa https://github.com/Power2All/nanotorrent
+
+Ohjelmisto toimitetaan "sellaisenaan", ilman minkäänlaista nimenomaista tai oletettua takuuta. Kolmansien osapuolten komponentit säilyttävät omat lisenssinsä, jotka on lueteltu lähdekoodivarastossa.
+
+NanoTorrent on yleiskäyttöinen tiedostonsiirtotyökalu. Se ei isännöi, indeksoi, toimita, suosittele eikä tue mitään sisältöä. Vastaat itse siitä, että käyttösi noudattaa maasi lakia ja tekijänoikeuksien haltijoiden oikeuksia.
+
+NanoTorrent kehitetään pääosin tekoälyn avulla ihmisen valvonnassa, kuten lähdekoodivaraston tiedostossa AI-DECLARATION.md ilmoitetaan.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

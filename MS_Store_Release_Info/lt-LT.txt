@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Lietuvių (Lietuva) - Partner Center: Lithuanian (Lithuania) (lt-LT)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > lt-LT. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent yra mažas ir greitas BitTorrent klientas, kuris nesipainioja po kojomis.
+
+Tai savoji programa, parašyta Rust kalba, o ne tinklalapis lange. Ji pasileidžia akimirksniu ir sunaudoja tik dalį atminties, kurios reikia įprastam šiuolaikiniam klientui.
+
+Jokios paskyros. Jokių reklamų. Jokios telemetrijos, analitikos ar strigčių ataskaitų. Nerenkama nieko nei apie jus, nei apie tai, ką atsisiunčiate. NanoTorrent yra atvirojo kodo programa su MIT licencija, tad tuo galima įsitikinti, o ne tiesiog patikėti.
+
+Pridėkite torrentus iš failų arba magnetinių nuorodų, stebėkite juos sąraše, kurį galima rikiuoti, žymėti ir filtruoti, ir atverkite išsamios informacijos skydelį failams, dalyviams ir sekikliams. Palaikomi DHT, dalyvių mainai, keli sekiklių lygiai, UDP sekikliai ir privatūs torrentai, o ryšius galima šifruoti, pageidaujant atmetant visa, kas nešifruota.
+
+Valdyti galima ne vienu būdu. Darbalaukio langas yra akivaizdusis. Neprivaloma saityno sąsaja, pagal numatytuosius nustatymus išjungta ir apsaugota slaptažodžiu, leidžia valdyti veikiantį klientą iš kitos mašinos naršyklės. O kiekvienas nustatymas pasiekiamas komandų eilutėje, todėl NanoTorrent tinka scenarijams ir mašinai be ekrano.
+
+Taip pat galite kurti savo torrentus, įskaitant BitTorrent v2 ir hibridinius.
+
+Dalyvių šalių vėliavos imamos iš duomenų bazės, laikomos jūsų kompiuteryje. Joks adresas niekada neieškomas tinkle.
+
+Prieinama 41 kalba, su šviesia ir tamsia tema, kurios seka Windows.
+
+NanoTorrent yra Viktoro Elofssono PicoTorrent perkėlimas į Rust kalbą.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versija 0.3.3
+
+- Griežtas tinklo režimas: susiejus su VPN adapteriu arba naudojant SOCKS tarpinį serverį, NanoTorrent išjungia viską, kas pro jį negali praeiti, atsisako pasileisti, jei adapterio nėra, ir pristabdo visus torentus, jei jis dingsta.
+- Susiejimas su tinklo adapteriu dabar veikia ir Windows sistemoje.
+- Būsenos juosta rodo, ar jūsų prievadas pasiekiamas ir ar naudojamas tarpinis serveris arba susietas adapteris.
+- Saugumo pataisa: specialiai parengtas torento failas Windows sistemoje galėjo rašyti už atsisiuntimų aplanko ribų.
+- Žiniatinklio sąsaja gavo darbalaukio įrankių juostą, greičio diagramas, kelių elementų žymėjimą, keičiamo pločio stulpelius ir pridėjimą vilkimu.
+- Papildiniai dabar rodomi žiniatinklio sąsajoje ir ten pat įjungiami bei išjungiami.
+- Žiniatinklio sąsaja gali užblokuoti adresą po pakartotinių nesėkmingų prisijungimų. Bandymų skaičius, laikotarpis ir blokavimo trukmė yra nustatomi.
+- Pataisyti langai, kurie galėjo atsidaryti aukštesni už ekraną be galimybės slinkti.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Savoji Rust programa: greitas paleidimas ir mažai atminties
+Niekada jokių reklamų, telemetrijos ar paskyrų
+Magnetinės nuorodos ir .torrent failai
+DHT, dalyvių mainai, sekiklių lygiai ir UDP sekikliai
+Ryšių šifravimas (MSE/PE), pageidaujant privalomas
+Torrentų kūrimas, įskaitant BitTorrent v2 ir hibridinius
+SOCKS ir HTTP tarpinio serverio palaikymas
+Neprivaloma slaptažodžiu apsaugota saityno sąsaja
+Pilna komandų eilutė scenarijams ir mašinoms be ekrano
+Žymos ir filtrai padeda tvarkyti ilgą sąrašą
+Dalyvių šalių vėliavos nustatomos jūsų kompiuteryje
+Šviesi ir tamsi tema, kurios seka Windows
+Prieinama 41 kalba
+Atvirasis kodas su MIT licencija
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrentas
+bittorrent
+torrentų klientas
+magnetinė nuoroda
+p2p
+failų dalijimasis
+atsiuntimų tvarkyklė
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent yra atvirojo kodo programinė įranga su MIT licencija.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent yra laisva atvirojo kodo programinė įranga, išleista su MIT licencija. Visas licencijos tekstas ir visas pirminis kodas pasiekiami adresu https://github.com/Power2All/nanotorrent
+
+Programinė įranga teikiama „tokia, kokia yra“, be jokių tiesioginių ar numanomų garantijų. Trečiųjų šalių komponentai išlaiko savo licencijas, išvardytas pirminio kodo saugykloje.
+
+NanoTorrent yra bendrosios paskirties failų perdavimo įrankis. Jis netalpina, neindeksuoja, neteikia, nerekomenduoja ir nepalaiko jokio turinio. Jūs atsakote už tai, kad jūsų naudojimas atitiktų jūsų šalies įstatymus ir autorių teisių turėtojų teises.
+
+NanoTorrent kuriamas daugiausia dirbtinio intelekto pagalba, prižiūrint žmogui, kaip nurodyta faile AI-DECLARATION.md pirminio kodo saugykloje.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

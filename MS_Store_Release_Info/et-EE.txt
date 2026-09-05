@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Eesti (Eesti) - Partner Center: Estonian (Estonia) (et-EE)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > et-EE. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent on väike ja kiire BitTorrenti klient, mis ei jää jalgu.
+
+See on Rustis kirjutatud pärisrakendus, mitte veebileht aknas. See käivitub silmapilkselt ja kasutab murdosa mälust, mida vajab tavaline nüüdisaegne klient.
+
+Kontot pole. Reklaami pole. Telemeetriat, analüütikat ega tõrketeateid pole. Teie ega teie allalaadimiste kohta ei koguta midagi. NanoTorrent on avatud lähtekoodiga MIT-litsentsi all, nii et seda saab kontrollida, mitte pelgalt uskuda.
+
+Lisage torrenteid failidest või magnetlinkidest, jälgige neid loendis, mida saab sortida, siltidega märgistada ja filtreerida, ning avage üksikasjade paneel failide, partnerite ja jälgijate jaoks. Toetatud on DHT, partnerivahetus, mitu jälgijataset, UDP-jälgijad ja privaatsed torrentid, ning ühendusi saab krüptida, soovi korral keeldudes kõigest krüptimata.
+
+Seda saab juhtida mitmel viisil. Töölauaaken on ilmselge. Valikuline veebiliides, vaikimisi välja lülitatud ja parooliga kaitstud, võimaldab juhtida töötavat klienti teise masina brauserist. Ja iga säte on kättesaadav käsurealt, mis teeb NanoTorrenti skriptitavaks ja kasutatavaks ka ekraanita masinas.
+
+Saate ka ise torrenteid luua, sealhulgas BitTorrent v2 ja hübriidseid.
+
+Partnerite riigilipud pärinevad andmebaasist, mis asub teie enda arvutis. Ühtegi aadressi ei päritа kunagi üle võrgu.
+
+Saadaval 41 keeles, hele ja tume kujundus järgivad Windowsi.
+
+NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versioon 0.3.3
+
+- Range võrgurežiim: VPN-adapteriga sidumisel või SOCKS-puhverserveri kasutamisel lülitab NanoTorrent välja kõik, mis sealt läbi ei pääse, keeldub käivitumast, kui adapter puudub, ja peatab kõik torrentid, kui see kaob.
+- Võrguadapteriga sidumine töötab nüüd ka Windowsis.
+- Olekuriba näitab, kas teie kuulamisport on kättesaadav ja kas kasutusel on puhverserver või seotud adapter.
+- Turvaparandus: pahatahtlik torrent-fail võis Windowsis kirjutada väljapoole allalaadimiskausta.
+- Veebiliides sai töölaua tööriistariba, kiirusgraafikud, mitmikvaliku, muudetava laiusega veerud ja lohistades lisamise.
+- Pluginad ilmuvad nüüd veebiliidesesse ja neid saab seal sisse ja välja lülitada.
+- Veebiliides võib aadressi pärast korduvaid ebaõnnestunud sisselogimisi blokeerida. Katsete arv, ajavahemik ja blokeeringu pikkus on seadistatavad.
+- Parandatud aknad, mis võisid avaneda ekraanist kõrgemana ilma kerimisvõimaluseta.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Rustis pärisrakendus: käivitub kiiresti ja on mälusäästlik
+Mitte kunagi reklaami, telemeetriat ega kontot
+Magnetlingid ja .torrent-failid
+DHT, partnerivahetus, jälgijatasemed ja UDP-jälgijad
+Ühenduste krüptimine (MSE/PE), soovi korral kohustuslik
+Torrentite loomine, sealhulgas BitTorrent v2 ja hübriidsed
+SOCKS- ja HTTP-puhverserveri tugi
+Valikuline parooliga kaitstud veebiliides kaugjuhtimiseks
+Täielik käsurida skriptide ja ekraanita masinate jaoks
+Sildid ja filtrid hoiavad pika loendi korras
+Partnerite riigilipud tuvastatakse teie enda arvutis
+Hele ja tume kujundus järgivad Windowsi
+Saadaval 41 keeles
+Avatud lähtekood MIT-litsentsi all
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrentiklient
+magnetlink
+p2p
+failide jagamine
+allalaadimishaldur
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent on avatud lähtekoodiga tarkvara MIT-litsentsi all.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent on vaba avatud lähtekoodiga tarkvara, mis on välja antud MIT-litsentsi all. Litsentsi täistekst ja kogu lähtekood on saadaval aadressil https://github.com/Power2All/nanotorrent
+
+Tarkvara antakse "nagu on", ilma igasuguse otsese või kaudse garantiita. Kolmandate osapoolte komponendid säilitavad oma litsentsid, mis on loetletud lähtekoodihoidlas.
+
+NanoTorrent on üldotstarbeline failiedastusvahend. See ei majuta, indekseeri, tarni, soovita ega toeta mingit sisu. Teie vastutate selle eest, et teie kasutus vastaks teie riigi seadustele ja autoriõiguste omajate õigustele.
+
+NanoTorrenti arendatakse valdavalt tehisintellekti abil inimese järelevalve all, nagu on deklareeritud lähtekoodihoidla failis AI-DECLARATION.md.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

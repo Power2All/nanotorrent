@@ -1,0 +1,90 @@
+================================================================================
+NanoTorrent 0.3.3 - Microsoft Store listing
+Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > hu-HU. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+A NanoTorrent egy kicsi és gyors BitTorrent-kliens, amely nem áll az útjában.
+
+Ez egy Rust nyelven írt natív alkalmazás, nem pedig egy ablakba zárt weboldal. Azonnal elindul, és töredékét használja annak a memóriának, amelyre egy szokásos mai kliensnek szüksége van.
+
+Nincs fiók. Nincs reklám. Nincs telemetria, nincs analitika, nincs összeomlásjelentés. Semmit nem gyűjtünk Önről vagy arról, amit letölt. A NanoTorrent nyílt forráskódú, MIT licenc alatt, így ez ellenőrizhető, nem pedig puszta ígéret.
+
+Adjon hozzá torrenteket fájlból vagy magnet hivatkozásból, kövesse őket egy listában, amelyet rendezhet, címkézhet és szűrhet, és nyissa meg a részletek panelt a fájlokhoz, partnerekhez és követőkhöz. Támogatott a DHT, a partnercsere, a több követőszint, az UDP-követők és a privát torrentek, a kapcsolatok pedig titkosíthatók, igény szerint elutasítva mindent, ami titkosítatlan.
+
+Többféleképpen is vezérelhető. Az asztali ablak a kézenfekvő. Egy választható webes felület, amely alapértelmezés szerint ki van kapcsolva és jelszóval védett, lehetővé teszi egy futó kliens irányítását egy másik gép böngészőjéből. És minden beállítás elérhető parancssorból, ami a NanoTorrentet parancsfájlozhatóvá és képernyő nélküli gépen is használhatóvá teszi.
+
+Saját torrenteket is készíthet, beleértve a BitTorrent v2 és a hibrid változatokat.
+
+A partnerek országzászlói egy, a saját számítógépén tárolt adatbázisból származnak. Egyetlen címet sem kérdezünk le soha a hálózaton keresztül.
+
+41 nyelven érhető el, világos és sötét témával, amelyek követik a Windowst.
+
+A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+0.3.3-as verzió
+
+- Szigorú hálózati mód: ha VPN-adapterhez köt vagy SOCKS-proxyt használ, a NanoTorrent kikapcsol mindent, ami nem tud rajta áthaladni, nem indul el, ha az adapter hiányzik, és szünetelteti az összes torrentet, ha eltűnik.
+- A hálózati adapterhez kötés már Windowson is működik.
+- Az állapotsor mutatja, elérhető-e a figyelő port, és használatban van-e proxy vagy kötött adapter.
+- Biztonsági javítás: egy szándékosan elrontott torrentfájl a letöltési mappán kívülre írhatott Windowson.
+- A webes felület megkapta az asztali eszköztárat, a sebességdiagramokat, a többszörös kijelölést, az átméretezhető oszlopokat és a húzással hozzáadást.
+- A bővítmények már a webes felületen is megjelennek, és onnan is be- és kikapcsolhatók.
+- A webes felület letilthat egy címet ismételt sikertelen bejelentkezés után. A kísérletek száma, az időszak és a tiltás hossza beállítható.
+- Javítva: az ablakok a képernyőnél magasabbra nyílhattak, görgetés nélkül.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Natív Rust alkalmazás: gyorsan indul, keveset fogyaszt
+Soha semmilyen reklám, telemetria vagy fiók
+Magnet hivatkozások és .torrent fájlok
+DHT, partnercsere, követőszintek és UDP-követők
+Kapcsolattitkosítás (MSE/PE), igény szerint kötelezően
+Torrentek készítése, beleértve a BitTorrent v2-t és a hibrideket
+SOCKS és HTTP proxy támogatása
+Választható, jelszóval védett webes felület távvezérléshez
+Teljes parancssor parancsfájlokhoz és képernyő nélküli gépekhez
+Címkék és szűrők rendet tartanak a hosszú listában
+A partnerek országzászlói a saját gépén dőlnek el
+Világos és sötét téma, amely követi a Windowst
+41 nyelven érhető el
+Nyílt forráskód MIT licenc alatt
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent kliens
+magnet hivatkozás
+p2p
+fájlmegosztás
+letöltéskezelő
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. A NanoTorrent nyílt forráskódú szoftver, MIT licenc alatt kiadva.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+A NanoTorrent szabad, nyílt forráskódú szoftver, amelyet MIT licenc alatt adtak ki. A licenc teljes szövege és a teljes forráskód elérhető a https://github.com/Power2All/nanotorrent címen.
+
+A szoftvert „adott állapotában” bocsátjuk rendelkezésre, mindenféle kifejezett vagy vélelmezett jótállás nélkül. A harmadik felektől származó összetevők megtartják saját licencüket, amelyeket a forráskódtár sorol fel.
+
+A NanoTorrent általános célú fájlátviteli eszköz. Semmilyen tartalmat nem tárol, nem indexel, nem szolgáltat, nem ajánl és nem támogat. Az Ön felelőssége gondoskodni arról, hogy a használat megfeleljen az országa jogszabályainak és a szerzői jogok jogosultjainak jogainak.
+
+A NanoTorrent túlnyomórészt mesterséges intelligencia segítségével, emberi felügyelet mellett készül, ahogyan azt a forráskódtár AI-DECLARATION.md fájlja kijelenti.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All
