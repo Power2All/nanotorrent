@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -158,7 +158,7 @@ serde_json = "1.0.151"
 # minor bump is breaking in semver, so moving to 0.42 does not upgrade the
 # shared copy - it compiles a second one alongside it. Bump this when the
 # vendored librqbit moves, not before.
-quick-xml = "0.41"
+quick-xml = "0.42"
 # The UI toolkit. Optional so --no-default-features gives a headless daemon.
 # Decoding res/flags/*.png into Slint images for the peers list. Already in the
 # tree via Slint's own image support, so naming it costs no new crate.

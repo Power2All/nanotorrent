@@ -381,10 +381,7 @@ pub fn parse(torrent_bytes: &[u8]) -> Result<Option<V2Meta>, String> {
                 }
                 layers.insert(
                     root,
-                    bytes
-                        .chunks_exact(32)
-                        .map(|c| <[u8; 32]>::try_from(c).unwrap())
-                        .collect(),
+                    bytes.as_chunks::<32>().0.to_vec(),
                 );
             }
         }
@@ -959,7 +956,7 @@ fn synthetic_v1_info_ben(meta: &V2Meta) -> super::torrent_create::Ben {
         }
     }
 
-    let info = Ben::Dict(vec![
+    Ben::Dict(vec![
         (b"files".to_vec(), Ben::List(files)),
         (b"name".to_vec(), Ben::s(&meta.name)),
         (
@@ -974,9 +971,7 @@ fn synthetic_v1_info_ben(meta: &V2Meta) -> super::torrent_create::Ben {
             b"private".to_vec(),
             Ben::Int(if meta.private { 1 } else { 0 }),
         ),
-    ]);
-
-    info
+    ])
 }
 
 /// Everything the engine needs to take on a v2-only torrent.
@@ -1583,12 +1578,11 @@ mod tests {
 
         let mut proof = Vec::new();
         // The run's own root sits this far up; its siblings are the uncles.
-        let mut level = plan.base_layer as usize + log2_exact(plan.length as usize) as usize;
+        let first = plan.base_layer as usize + log2_exact(plan.length as usize) as usize;
         let mut pos = start / plan.length as usize;
-        for _ in 0..plan.proof_layers {
+        for level in (first..).take(plan.proof_layers as usize) {
             let sibling = if pos.is_multiple_of(2) { pos + 1 } else { pos - 1 };
             proof.push(tree[level][sibling]);
-            level += 1;
             pos /= 2;
         }
         (base, proof)

@@ -8,8 +8,10 @@
 // the Win32 dialog applies on Ok too, and a half-edited port number should not
 // take effect the moment a digit lands.
 
-import { TabWidget, Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView, Palette } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView, Palette } from "std-widgets.slint";
 import { L } from "globals.slint";
+import { DetailTab, TabStrip, GeneralIcon, DownloadsIcon, ConnectionIcon,
+         ProxyTabIcon, WebTabIcon, PluginsIcon, LabelsIcon } from "tabs.slint";
 
 // A left-aligned bold caption with its control beside it, which is the shape
 // almost every row in this dialog takes.
@@ -116,8 +118,17 @@ export component PreferencesDialog inherits Window {
     // short for it - that is when the ScrollView earns its keep.
     // The window resizes as you switch tabs, so no tab carries another tab's
     // empty space.
-    min-width: 700px;
-    max-width: 700px;
+    // Wide enough that the dropdowns and text fields have room to be read
+    // and typed into, which is what actually sets this number - the tab strip
+    // scrolls when a translation outgrows it, so it is not deciding the width
+    // for every language.
+    //
+    // min == max: the dialog is not resizable, so there is no way to drag it
+    // narrow enough to cramp the controls.
+    // 900, not 880: the panes now keep a strip clear on the right for the
+    // scrollbar, and that came out of the space the controls had.
+    min-width: 900px;
+    max-width: 900px;
     /// The tallest this window may be, in logical pixels - set from the
     /// monitor work area. Huge by default so a build that cannot read it (or
     /// a platform where it is not wired up) behaves as if unclamped.
@@ -161,16 +172,21 @@ export component PreferencesDialog inherits Window {
     // Note the body names do not run in tab order: tb7 is Plugins (index 5)
     // and tb6 is Labels & filters (index 6).
     property <length> tallest-tab:
-        tabs.current-index == 0 ? tb1.preferred-height :
-        tabs.current-index == 1 ? tb2.preferred-height :
-        tabs.current-index == 2 ? tb3.preferred-height :
-        tabs.current-index == 3 ? tb4.preferred-height :
-        tabs.current-index == 4 ? tb5.preferred-height :
-        tabs.current-index == 5 ? tb7.preferred-height :
+        root.current-tab == 0 ? tb1.preferred-height :
+        root.current-tab == 1 ? tb2.preferred-height :
+        root.current-tab == 2 ? tb3.preferred-height :
+        root.current-tab == 3 ? tb4.preferred-height :
+        root.current-tab == 4 ? tb5.preferred-height :
+        root.current-tab == 5 ? tb7.preferred-height :
                                   tb6.preferred-height;
     // Tab bar, footer row, and the 12px padding top and bottom plus 10px
     // between the tabs and the footer.
-    property <length> chrome: 40px + foot.preferred-height + 34px;
+    // The strip's reserved room, NOT its height: reading `tabstrip.height`
+    // closed a binding loop - the window's height comes from `chrome`, which
+    // fed the layout that decides the strip's height, which fed `chrome`.
+    // `bar-room` is derived from the strip's WIDTH, so it breaks the cycle
+    // while giving the same number.
+    property <length> chrome: 30px + tabstrip.bar-room + 2px + foot.preferred-height + 34px;
     min-height: min(self.tallest-tab + self.chrome, root.screen-limit);
     max-height: min(self.tallest-tab + self.chrome, root.screen-limit);
     background: Palette.background;
@@ -316,7 +332,7 @@ export component PreferencesDialog inherits Window {
     // Writable so a failed Ok can bring the Web interface tab back to the
     // front - the error it reports is on that tab, and pressing Ok from any
     // other one would otherwise leave the dialog open with no visible reason.
-    in-out property <int> current-tab <=> tabs.current-index;
+    in-out property <int> current-tab;
 
     body := VerticalLayout {
         padding: 12px;
@@ -326,15 +342,80 @@ export component PreferencesDialog inherits Window {
         // change tab. So the scrolling happens inside each Tab instead, and
         // the widget itself just fills what height the window has. The footer
         // below is outside all of it and is always reachable.
-        tabs := TabWidget {
-        vertical-stretch: 1;
+        VerticalLayout {
+            vertical-stretch: 1;
 
-            Tab {
-                title: L.s(L.revision, "general");
+            // The same strip the details panel draws, for the same reason:
+            // TabWidget spreads its tabs over the full width and leaves no
+            // room for an icon.
+            Rectangle { height: 1px; background: Palette.border; }
+            tabstrip := TabStrip {
+                DetailTab {
+                    label: L.s(L.revision, "general");
+                    selected: root.current-tab == 0;
+                    picked => { root.current-tab = 0; }
+                    GeneralIcon { ink: parent.ink; }
+                }
+                DetailTab {
+                    label: L.s(L.revision, "downloads");
+                    selected: root.current-tab == 1;
+                    picked => { root.current-tab = 1; }
+                    DownloadsIcon { ink: parent.ink; }
+                }
+                DetailTab {
+                    label: L.s(L.revision, "connection");
+                    selected: root.current-tab == 2;
+                    picked => { root.current-tab = 2; }
+                    ConnectionIcon { ink: parent.ink; }
+                }
+                DetailTab {
+                    label: L.s(L.revision, "proxy");
+                    selected: root.current-tab == 3;
+                    picked => { root.current-tab = 3; }
+                    ProxyTabIcon { ink: parent.ink; }
+                }
+                DetailTab {
+                    label: L.s(L.revision, "web_interface");
+                    selected: root.current-tab == 4;
+                    picked => { root.current-tab = 4; }
+                    WebTabIcon { ink: parent.ink; }
+                }
+                DetailTab {
+                    label: L.s(L.revision, "plugins");
+                    selected: root.current-tab == 5;
+                    picked => { root.current-tab = 5; }
+                    PluginsIcon { ink: parent.ink; }
+                }
+                DetailTab {
+                    label: L.s(L.revision, "labels_and_filters");
+                    selected: root.current-tab == 6;
+                    picked => { root.current-tab = 6; }
+                    LabelsIcon { ink: parent.ink; }
+                }
+            }
+            Rectangle { height: 1px; background: Palette.border; }
+
+            // Every pane is instantiated and fills this box; only the
+            // current one is drawn. They cannot go behind an `if`: the
+            // window height is measured from these bodies, and an element
+            // inside a conditional is not there to measure.
+            panes := Rectangle {
+                vertical-stretch: 1;
+
+            Rectangle {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                visible: root.current-tab == 0;
                 ScrollView {
                     vertical-scrollbar-policy: as-needed;
                     tb1 := VerticalLayout {
                         padding: 12px;
+                        // Room for the vertical scrollbar, which a ScrollView draws inside
+                        // its own bounds - over the right-hand edge of whatever is there.
+                        //
+                        // A constant, not a test for whether the bar is showing: that test
+                        // reads viewport-height, padding feeds height, and height feeds
+                        // viewport-height. Slint calls that a binding loop.
+                        padding-right: 28px;
                         spacing: 10px;
 
                         Labelled {
@@ -401,12 +482,20 @@ export component PreferencesDialog inherits Window {
                 }
             }
 
-            Tab {
-                title: L.s(L.revision, "downloads");
+            Rectangle {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                visible: root.current-tab == 1;
                 ScrollView {
                     vertical-scrollbar-policy: as-needed;
                     tb2 := VerticalLayout {
                         padding: 12px;
+                        // Room for the vertical scrollbar, which a ScrollView draws inside
+                        // its own bounds - over the right-hand edge of whatever is there.
+                        //
+                        // A constant, not a test for whether the bar is showing: that test
+                        // reads viewport-height, padding feeds height, and height feeds
+                        // viewport-height. Slint calls that a binding loop.
+                        padding-right: 28px;
                         spacing: 10px;
 
                         Labelled {
@@ -460,12 +549,20 @@ export component PreferencesDialog inherits Window {
                 }
             }
 
-            Tab {
-                title: L.s(L.revision, "connection");
+            Rectangle {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                visible: root.current-tab == 2;
                 ScrollView {
                     vertical-scrollbar-policy: as-needed;
                     tb3 := VerticalLayout {
                         padding: 12px;
+                        // Room for the vertical scrollbar, which a ScrollView draws inside
+                        // its own bounds - over the right-hand edge of whatever is there.
+                        //
+                        // A constant, not a test for whether the bar is showing: that test
+                        // reads viewport-height, padding feeds height, and height feeds
+                        // viewport-height. Slint calls that a binding loop.
+                        padding-right: 28px;
                         spacing: 10px;
 
                         Labelled {
@@ -496,12 +593,20 @@ export component PreferencesDialog inherits Window {
                 }
             }
 
-            Tab {
-                title: L.s(L.revision, "proxy");
+            Rectangle {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                visible: root.current-tab == 3;
                 ScrollView {
                     vertical-scrollbar-policy: as-needed;
                     tb4 := VerticalLayout {
                         padding: 12px;
+                        // Room for the vertical scrollbar, which a ScrollView draws inside
+                        // its own bounds - over the right-hand edge of whatever is there.
+                        //
+                        // A constant, not a test for whether the bar is showing: that test
+                        // reads viewport-height, padding feeds height, and height feeds
+                        // viewport-height. Slint calls that a binding loop.
+                        padding-right: 28px;
                         spacing: 10px;
 
                         Labelled {
@@ -573,12 +678,20 @@ export component PreferencesDialog inherits Window {
                 }
             }
 
-            Tab {
-                title: L.s(L.revision, "web_interface");
+            Rectangle {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                visible: root.current-tab == 4;
                 ScrollView {
                     vertical-scrollbar-policy: as-needed;
                     tb5 := VerticalLayout {
                         padding: 12px;
+                        // Room for the vertical scrollbar, which a ScrollView draws inside
+                        // its own bounds - over the right-hand edge of whatever is there.
+                        //
+                        // A constant, not a test for whether the bar is showing: that test
+                        // reads viewport-height, padding feeds height, and height feeds
+                        // viewport-height. Slint calls that a binding loop.
+                        padding-right: 28px;
                         spacing: 10px;
 
                         CheckBox {
@@ -837,12 +950,20 @@ export component PreferencesDialog inherits Window {
                 }
             }
 
-            Tab {
-                title: L.s(L.revision, "plugins");
+            Rectangle {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                visible: root.current-tab == 5;
                 ScrollView {
                     vertical-scrollbar-policy: as-needed;
                     tb7 := VerticalLayout {
                         padding: 12px;
+                        // Room for the vertical scrollbar, which a ScrollView draws inside
+                        // its own bounds - over the right-hand edge of whatever is there.
+                        //
+                        // A constant, not a test for whether the bar is showing: that test
+                        // reads viewport-height, padding feeds height, and height feeds
+                        // viewport-height. Slint calls that a binding loop.
+                        padding-right: 28px;
                         spacing: 10px;
 
                         // The master switch first: the per-plugin boxes below
@@ -952,8 +1073,9 @@ export component PreferencesDialog inherits Window {
                 }
             }
 
-            Tab {
-                title: L.s(L.revision, "labels_and_filters");
+            Rectangle {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                visible: root.current-tab == 6;
                 // Labels left, filters right: two small list-plus-editor panes
                 // rather than a tab each, which would bury one of them.
                 //
@@ -1103,6 +1225,7 @@ export component PreferencesDialog inherits Window {
                 }
             }
         }
+    }
 
         foot := HorizontalLayout {
             spacing: 8px;

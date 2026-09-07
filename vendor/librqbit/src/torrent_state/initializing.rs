@@ -34,6 +34,10 @@ pub struct TorrentStateInitializing {
     pause_requested: AtomicBool,
     check_running: AtomicBool,
     previously_errored: bool,
+    /// The storage was created but never initialized: no file has been opened,
+    /// let alone created. Set for a torrent added paused, and cleared by the
+    /// real initialization that happens when it is started.
+    storage_deferred: bool,
 }
 
 impl TorrentStateInitializing {
@@ -43,6 +47,7 @@ impl TorrentStateInitializing {
         only_files: Option<Vec<usize>>,
         files: FileStorage,
         previously_errored: bool,
+        storage_deferred: bool,
     ) -> Self {
         Self {
             shared,
@@ -53,6 +58,7 @@ impl TorrentStateInitializing {
             pause_requested: AtomicBool::new(false),
             check_running: AtomicBool::new(false),
             previously_errored,
+            storage_deferred,
         }
     }
 
@@ -208,10 +214,29 @@ impl TorrentStateInitializing {
                 .context("error loading have_pieces")?
         };
 
-        let have_pieces = self.validate_fastresume(&*bitv_factory, have_pieces).await;
+        // A deferred storage has no open files, so nothing below may read
+        // from disk: no fast-resume validation, no initial check, and no
+        // setting of file lengths. What was stored last time is taken at face
+        // value; the real check runs when the torrent is started.
+        let have_pieces = if self.storage_deferred {
+            have_pieces.filter(|h| {
+                h.as_bytes().len() == self.metadata.lengths().piece_bitfield_bytes()
+            })
+        } else {
+            self.validate_fastresume(&*bitv_factory, have_pieces).await
+        };
 
         let have_pieces = match have_pieces {
             Some(h) => h,
+            // Nothing stored to go on, and no files to look at. This empty
+            // bitfield is deliberately NOT written out: stored, it would read
+            // as a completed check that found nothing, and the torrent would
+            // re-download data already sitting on disk. It exists only to build
+            // the tracker with, and a real check replaces it on start.
+            None if self.storage_deferred => BF::from_boxed_slice(
+                vec![0u8; self.metadata.lengths().piece_bitfield_bytes()].into_boxed_slice(),
+            )
+            .into_dyn(),
             None => {
                 info!("Doing initial checksum validation, this might take a while...");
                 let have_pieces = self
@@ -263,7 +288,10 @@ impl TorrentStateInitializing {
             SF::new(hns.selected_bytes)
         );
 
-        // Ensure file lengths are correct, and reopen read-only.
+        // Ensure file lengths are correct, and reopen read-only. Skipped for a
+        // deferred storage: setting a length is a write, and this one would
+        // create every file the torrent has.
+        if !self.storage_deferred {
         self.shared
             .spawner
             .block_in_place_with_semaphore(|| {
@@ -297,6 +325,7 @@ impl TorrentStateInitializing {
                 Ok::<_, anyhow::Error>(())
             })
             .await?;
+        }
 
         let paused = TorrentStatePaused {
             shared: self.shared.clone(),
@@ -304,6 +333,7 @@ impl TorrentStateInitializing {
             files: self.files.take()?,
             chunk_tracker,
             streams: Arc::new(Default::default()),
+            storage_deferred: self.storage_deferred,
         };
         Ok(paused)
     }

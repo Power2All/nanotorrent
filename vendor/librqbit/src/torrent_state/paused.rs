@@ -13,6 +13,9 @@ pub struct TorrentStatePaused {
     pub(crate) files: FileStorage,
     pub(crate) chunk_tracker: ChunkTracker,
     pub(crate) streams: Arc<TorrentStreams>,
+    /// Its files have never been opened - see `TorrentStateInitializing`.
+    /// Starting it has to initialize the storage first.
+    pub(crate) storage_deferred: bool,
 }
 
 impl TorrentStatePaused {

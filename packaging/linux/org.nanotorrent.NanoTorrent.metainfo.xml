@@ -87,6 +87,13 @@
   </screenshots>
 
   <releases>
+    <release version="0.3.4" date="2026-09-07">
+      <description>
+        <p>Fixes paused torrents re-creating their files on startup. A torrent whose data had been deleted or moved could come back at 0% with a folder of empty files; nothing is written to disk now until a torrent actually starts.</p>
+        <p>The web interface receives live updates instead of polling, showing a connection indicator that reconnects on its own and the number of connected clients. Its torrent list can be paged and sorted across every page.</p>
+        <p>Preferences is rebuilt to match the main window, with icon tabs that scroll when they do not fit, and now shows the chosen language. The details panel fills as soon as you click, behind a loading overlay. Closing a window now really closes it.</p>
+      </description>
+    </release>
     <release version="0.3.3" date="2026-09-04">
       <description>
         <p>Strict network mode: when a VPN interface or a SOCKS proxy is set, NanoTorrent switches off whatever that cannot cover — DHT, uTP, local peer discovery and UPnP — refuses to start if the interface is missing, and pauses everything if it disappears while running. Binding to an interface now works on Windows.</p>

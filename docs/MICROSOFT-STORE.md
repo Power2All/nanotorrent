@@ -252,7 +252,7 @@ them away. Package first, metadata second, commit last.
 
 ```powershell
 msstore submission get <product> | Out-File -Encoding utf8 sub.json
-.\installer\store-whatsnew.ps1 -SubmissionPath sub.json -OutPath sub.new.json -Version 0.3.2
+.\installer\store-whatsnew.ps1 -SubmissionPath sub.json -OutPath sub.new.json -Version 0.3.4
 ```
 
 It refuses to write anything if a listing's "What's new" does not mention the

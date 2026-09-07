@@ -1,0 +1,91 @@
+================================================================================
+NanoTorrent 0.3.4 - Microsoft Store listing
+Language: Română (România) - Partner Center: Romanian (Romania) (ro-RO)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > ro-RO. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent este un client BitTorrent mic și rapid care nu vă stă în cale.
+
+Este o aplicație nativă scrisă în Rust, nu o pagină web într-o fereastră. Pornește instantaneu și folosește o fracțiune din memoria de care are nevoie un client modern obișnuit.
+
+Fără cont. Fără reclame. Fără telemetrie, fără analiză, fără rapoarte de eroare. Nu se colectează nimic despre dumneavoastră sau despre ce descărcați. NanoTorrent este software cu sursă deschisă sub licența MIT, așa că acest lucru poate fi verificat, nu doar crezut pe cuvânt.
+
+Adăugați torrente din fișiere sau linkuri magnet, urmăriți-le într-o listă pe care o puteți sorta, eticheta și filtra, și deschideți panoul de detalii pentru fișiere, parteneri și trackere. Sunt acceptate DHT, schimbul de parteneri, mai multe niveluri de trackere, trackerele UDP și torrentele private, iar conexiunile pot fi criptate, respingând la cerere tot ce nu este criptat.
+
+Există mai multe moduri de a-l folosi. Fereastra de pe desktop este cel evident. O interfață web opțională, dezactivată implicit și protejată prin parolă, vă permite să comandați un client în execuție din browserul altei mașini. Iar fiecare setare este disponibilă în linia de comandă, ceea ce face NanoTorrent programabil și utilizabil pe o mașină fără ecran.
+
+Puteți crea și propriile torrente, inclusiv BitTorrent v2 și hibride.
+
+Steagurile de țară ale partenerilor provin dintr-o bază de date păstrată pe propriul calculator. Nicio adresă nu este niciodată căutată prin rețea.
+
+Disponibil în 41 de limbi, cu teme deschisă și întunecată care urmează Windows.
+
+NanoTorrent este o portare în Rust a PicoTorrent, de Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versiunea 0.3.4
+
+- Torentele puse pe pauză nu își mai recreează fișierele la pornirea NanoTorrent. Un torent ale cărui date le ștersesei sau le mutasei putea reveni la 0% cu un dosar de fișiere goale.
+- Interfața web primește acum actualizări în direct în loc să le ceară: reacționează instantaneu și consumă mult mai puțin procesor.
+- Un indicator de conexiune arată dacă navigatorul mai are legătură cu NanoTorrent și se reconectează singur.
+- Lista de torente din interfața web poate fi împărțită în pagini și sortată de-a lungul tuturor paginilor.
+- Atât fereastra, cât și interfața web arată câți clienți web sunt conectați.
+- Panoul de detalii se completează imediat ce dai clic pe un torent, în spatele unui strat de încărcare, nu după o secundă.
+- Preferințele au fost refăcute după fereastra principală: file cu pictograme care derulează când nu încap, fereastră mai lată și bare de derulare care nu mai acoperă nimic.
+- Preferințele arată limba pe care ai ales-o, iar fiecare fereastră deschisă schimbă limba când apeși Ok.
+- Închiderea unei ferestre o închide acum cu adevărat, iar meniul Ajutor primește o legătură către documentația API pentru pluginuri.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Aplicație nativă în Rust: pornire rapidă și memorie puțină
+Niciodată reclame, telemetrie sau cont
+Linkuri magnet și fișiere .torrent
+DHT, schimb de parteneri, niveluri de trackere și trackere UDP
+Criptarea conexiunilor (MSE/PE), obligatorie la cerere
+Creare de torrente, inclusiv BitTorrent v2 și hibride
+Suport pentru proxy SOCKS și HTTP
+Interfață web opțională protejată prin parolă
+Linie de comandă completă pentru scripturi și mașini fără ecran
+Etichete și filtre pentru a ține în ordine o listă lungă
+Steagurile partenerilor sunt determinate pe propriul calculator
+Teme deschisă și întunecată care urmează Windows
+Disponibil în 41 de limbi
+Sursă deschisă sub licența MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+client torrent
+link magnet
+p2p
+partajare de fișiere
+manager de descărcări
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent este software cu sursă deschisă, publicat sub licența MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent este software liber cu sursă deschisă, publicat sub licența MIT. Textul integral al licenței și întregul cod sursă sunt disponibile la https://github.com/Power2All/nanotorrent
+
+Software-ul este furnizat „ca atare”, fără nicio garanție, expresă sau implicită. Componentele terților își păstrează propriile licențe, enumerate în depozitul codului sursă.
+
+NanoTorrent este un instrument de transfer de fișiere de uz general. Nu găzduiește, nu indexează, nu furnizează, nu recomandă și nu sprijină niciun conținut. Vă revine responsabilitatea de a vă asigura că utilizarea sa respectă legea din țara dumneavoastră și drepturile deținătorilor de drepturi de autor.
+
+NanoTorrent este dezvoltat preponderent cu asistență din partea inteligenței artificiale, sub supraveghere umană, așa cum se declară în AI-DECLARATION.md din depozitul codului sursă.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

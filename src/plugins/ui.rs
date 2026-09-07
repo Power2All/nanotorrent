@@ -173,8 +173,8 @@ pub fn snapshot(plugin: &str) -> Option<PluginUi> {
 /// Every plugin that has declared a window, in a stable order.
 ///
 /// `(name, title, configurable)`. Used by the web interface, which lists the
-/// same plugins the desktop menu bar offers and renders their surfaces itself
-/// - the surface state lives here, not in the Slint window, so a second
+/// same plugins the desktop menu bar offers and renders their surfaces
+/// itself: the surface state lives here, not in the Slint window, so a second
 /// renderer costs nothing but the drawing.
 pub fn windows() -> Vec<(String, String, bool)> {
     let Ok(reg) = registry().lock() else {

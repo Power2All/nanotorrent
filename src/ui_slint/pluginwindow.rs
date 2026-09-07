@@ -21,8 +21,8 @@ use crate::plugins::ui;
 const PLUGIN_MENU: i32 = 4;
 
 thread_local! {
-    /// Plugin name to its window. Kept alive once opened and hidden rather
-    /// than dropped, like every other dialog here.
+    /// Plugin name to its window, for as long as that window is open. A
+    /// closed one is dropped on the next open - see `open`.
     static OPEN: RefCell<HashMap<String, PluginWindow>> = RefCell::new(HashMap::new());
 
     /// The main window, for the menu bar. Held here rather than threaded
@@ -93,6 +93,25 @@ pub fn open(name: &str) {
         return;
     };
 
+    // A window that is no longer on screen was closed, and its entry is only
+    // still here because nothing had reason to look. Reusing it would re-show
+    // the same window: no fade-in, and whatever the last open left in it. Every
+    // closed one goes, not just this plugin's, since this is the only moment
+    // that sweeps the map.
+    let closed: Vec<String> = OPEN.with(|open| {
+        open.borrow()
+            .iter()
+            .filter(|(_, window)| !window.window().is_visible())
+            .map(|(name, _)| name.clone())
+            .collect()
+    });
+    for name in closed {
+        // Bound rather than dropped inline, so the map is no longer borrowed
+        // when the window is destroyed.
+        let window = OPEN.with(|open| open.borrow_mut().remove(&name));
+        drop(window);
+    }
+
     // Built outside the borrow: `make` wires callbacks, and a callback firing
     // while the map is mutably borrowed would panic.
     let fresh = OPEN.with(|open| !open.borrow().contains_key(name));
@@ -116,10 +135,7 @@ pub fn open(name: &str) {
         // Raise it: choosing it a second time should bring the window
         // forward, not silently do nothing because it is already up.
         window.window().set_minimized(false);
-        // Same treatment every other window gets, and re-done on each open
-        // rather than only at creation: these windows are kept alive between
-        // opens, so one opened on another monitor would otherwise keep that
-        // screen's limit.
+        // Same treatment every other window gets.
         super::clamp_to_screen(window, |w, h| w.set_screen_limit(h));
         true
     });

@@ -1,0 +1,91 @@
+================================================================================
+NanoTorrent 0.3.4 - Microsoft Store listing
+Language: Latviešu (Latvija) - Partner Center: Latvian (Latvia) (lv-LV)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > lv-LV. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent ir mazs un ātrs BitTorrent klients, kas netraucē.
+
+Tā ir Rust valodā rakstīta vietējā lietotne, nevis tīmekļa lapa logā. Tā startē uzreiz un patērē tikai daļu no atmiņas, kāda nepieciešama parastam mūsdienu klientam.
+
+Nav konta. Nav reklāmu. Nav telemetrijas, analītikas vai avārijas ziņojumu. Netiek vākts nekas par jums vai par to, ko lejupielādējat. NanoTorrent ir atvērtā pirmkoda programmatūra ar MIT licenci, tāpēc to var pārbaudīt, nevis vienkārši noticēt.
+
+Pievienojiet torrentus no failiem vai magnētiskajām saitēm, sekojiet tiem sarakstā, kuru var kārtot, marķēt un filtrēt, un atveriet detaļu paneli failiem, dalībniekiem un izsekotājiem. Tiek atbalstīti DHT, dalībnieku apmaiņa, vairāki izsekotāju līmeņi, UDP izsekotāji un privātie torrenti, un savienojumus var šifrēt, pēc vēlēšanās atsakoties no visa nešifrētā.
+
+To var vadīt vairāk nekā vienā veidā. Darbvirsmas logs ir acīmredzamais. Neobligāta tīmekļa saskarne, pēc noklusējuma izslēgta un aizsargāta ar paroli, ļauj vadīt darbojošos klientu no citas ierīces pārlūkprogrammas. Un katrs iestatījums ir pieejams komandrindā, kas padara NanoTorrent skriptējamu un izmantojamu ierīcē bez ekrāna.
+
+Varat arī veidot savus torrentus, tostarp BitTorrent v2 un hibrīdos.
+
+Dalībnieku valstu karogi nāk no datubāzes, kas glabājas jūsu datorā. Neviena adrese nekad netiek meklēta tīklā.
+
+Pieejams 41 valodā, ar gaišu un tumšu motīvu, kas seko Windows.
+
+NanoTorrent ir Viktora Elofsona PicoTorrent pārnesums uz Rust.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versija 0.3.4
+
+- Pauzēti torenti vairs neizveido savus failus, kad NanoTorrent tiek palaists. Torents, kura datus bijāt izdzēsis vai pārvietojis, varēja atgriezties pie 0% ar tukšu failu mapi.
+- Tīmekļa saskarne tagad saņem tiešraides atjauninājumus, nevis tos pieprasa: tā reaģē uzreiz un patērē krietni mazāk procesora.
+- Savienojuma indikators rāda, vai pārlūks joprojām sazinās ar NanoTorrent, un pats atjauno savienojumu.
+- Tīmekļa saskarnes torentu sarakstu var sadalīt lappusēs un kārtot pāri visām lappusēm.
+- Gan logs, gan tīmekļa saskarne rāda, cik tīmekļa klientu ir pieslēgti.
+- Detaļu panelis aizpildās, tiklīdz noklikšķināt uz torenta, aiz ielādes pārklājuma, nevis līdz sekundei vēlāk.
+- Iestatījumi pārbūvēti atbilstoši galvenajam logam: cilnes ar ikonām, kas ritinās, ja neietilpst, platāks logs un ritjoslas, kas vairs neko neaizsedz.
+- Iestatījumi rāda jūsu izvēlēto valodu, un katrs atvērtais logs maina valodu, nospiežot Labi.
+- Loga aizvēršana tagad to patiešām aizver, un Palīdzība ieguvusi saiti uz spraudņu API dokumentāciju.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Vietējā Rust lietotne: ātrs starts un maz atmiņas
+Nekad nekādu reklāmu, telemetrijas vai konta
+Magnētiskās saites un .torrent faili
+DHT, dalībnieku apmaiņa, izsekotāju līmeņi un UDP izsekotāji
+Savienojumu šifrēšana (MSE/PE), pēc vēlēšanās obligāta
+Torrentu veidošana, tostarp BitTorrent v2 un hibrīdie
+SOCKS un HTTP starpniekservera atbalsts
+Neobligāta ar paroli aizsargāta tīmekļa saskarne
+Pilna komandrinda skriptiem un ierīcēm bez ekrāna
+Marķējumi un filtri uztur kārtību garā sarakstā
+Dalībnieku valstu karogi tiek noteikti jūsu datorā
+Gaišs un tumšs motīvs, kas seko Windows
+Pieejams 41 valodā
+Atvērtais pirmkods ar MIT licenci
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrents
+bittorrent
+torrentu klients
+magnētiskā saite
+p2p
+failu koplietošana
+lejupielāžu pārvaldnieks
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+© 2026 Power2All. NanoTorrent ir atvērtā pirmkoda programmatūra ar MIT licenci.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent ir brīva atvērtā pirmkoda programmatūra, kas izdota ar MIT licenci. Pilns licences teksts un viss pirmkods ir pieejams vietnē https://github.com/Power2All/nanotorrent
+
+Programmatūra tiek nodrošināta "tāda, kāda tā ir", bez jebkādas tiešas vai netiešas garantijas. Trešo pušu komponenti saglabā savas licences, kas uzskaitītas pirmkoda krātuvē.
+
+NanoTorrent ir vispārējas nozīmes failu pārsūtīšanas rīks. Tas neizvieto, neindeksē, nepiegādā, neiesaka un neatbalsta nekādu saturu. Jūs esat atbildīgs par to, lai jūsu lietojums atbilstu jūsu valsts likumiem un autortiesību īpašnieku tiesībām.
+
+NanoTorrent tiek izstrādāts galvenokārt ar mākslīgā intelekta palīdzību cilvēka uzraudzībā, kā deklarēts failā AI-DECLARATION.md pirmkoda krātuvē.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

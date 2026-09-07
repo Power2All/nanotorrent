@@ -278,10 +278,10 @@ where
     let mut bitfield = vec![0xFFu8; bitfield_bytes];
     // Spare bits in the last byte MUST be zero, or a strict peer drops us.
     let spare = bitfield_bytes * 8 - torrent.total_pieces as usize;
-    if spare > 0 {
-        if let Some(last) = bitfield.last_mut() {
-            *last = 0xFFu8 << spare;
-        }
+    if spare > 0
+        && let Some(last) = bitfield.last_mut()
+    {
+        *last = 0xFFu8 << spare;
     }
     let n = Message::Bitfield(librqbit::ByteBuf(&bitfield))
         .serialize(&mut out, &Default::default)?;

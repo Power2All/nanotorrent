@@ -562,9 +562,9 @@ impl StreamTransform for MseTransform {
 /// The only honest evidence this client has that its listening port is
 /// reachable from the internet: a peer out there opened a connection TO us and
 /// got as far as the handshake. librqbit exposes no reachability signal, and
-/// nothing here is going to ask a third-party "what is my IP" service about it
-/// - a client that promises no telemetry does not get to make an exception for
-/// its own status bar.
+/// nothing here is going to ask a third-party "what is my IP" service about
+/// it: a client that promises no telemetry does not get to make an exception
+/// for its own status bar.
 ///
 /// Counted at the accept path rather than after a successful handshake: the
 /// connection arriving at all is what proves the port is open. Whether the peer

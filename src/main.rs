@@ -165,6 +165,12 @@ fn main() {
 }
 
 /// Show a startup failure before the UI exists.
+//
+// The early return below is load-bearing on exactly one build - the Windows
+// release one, which is the only configuration where the message box after it
+// is compiled in at all. Every other build ends at that return, which is why
+// clippy calls it needless.
+#[allow(clippy::needless_return)]
 fn fatal_error(msg: &str) {
     // Free, and the right channel whenever anyone is attached to it.
     eprintln!("NanoTorrent could not start: {msg}");

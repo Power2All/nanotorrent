@@ -2586,6 +2586,120 @@ mod tests {
         assert_eq!(count, 5, "only {count} of 5 concurrent adds landed");
     }
 
+    /// A paused torrent must leave the disk alone.
+    ///
+    /// Restoring a session adds every torrent paused and resumes the ones that
+    /// were running, so anything this path touches, it touches for the whole
+    /// list on every start - including torrents whose data the user has since
+    /// deleted or moved to another drive.
+    #[test]
+    fn a_paused_add_creates_no_files() {
+        use librqbit::{AddTorrent, AddTorrentOptions};
+
+        let dir = std::env::temp_dir().join(format!("nt-paused-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let bytes = single_file_torrent(0);
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            let opts = librqbit::SessionOptions {
+                dht: None,
+                persistence: None,
+                listen: None,
+                ..Default::default()
+            };
+            let session = librqbit::Session::new_with_opts(dir.clone(), opts)
+                .await
+                .expect("session");
+            let add = AddTorrentOptions {
+                paused: true,
+                output_folder: Some(dir.to_string_lossy().into_owned()),
+                overwrite: true,
+                ..Default::default()
+            };
+            session
+                .add_torrent(AddTorrent::from_bytes(bytes), Some(add))
+                .await
+                .expect("add");
+            // The initial check runs on a spawned task, so give it its turn.
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        });
+
+        let created = dir.join("file-0.bin").exists();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            !created,
+            "a paused torrent created its files - nothing should be written until it starts"
+        );
+    }
+
+    /// ...and starting it must create them after all.
+    ///
+    /// The other half of the deferral: a torrent whose storage was never
+    /// initialized has to initialize it when it starts, or it would run with no
+    /// files to write into.
+    #[test]
+    fn starting_a_paused_torrent_creates_its_files() {
+        use librqbit::{AddTorrent, AddTorrentOptions, AddTorrentResponse};
+
+        let dir = std::env::temp_dir().join(format!("nt-unpause-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let bytes = single_file_torrent(0);
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let created = rt.block_on(async {
+            let opts = librqbit::SessionOptions {
+                dht: None,
+                persistence: None,
+                listen: None,
+                ..Default::default()
+            };
+            let session = librqbit::Session::new_with_opts(dir.clone(), opts)
+                .await
+                .expect("session");
+            let add = AddTorrentOptions {
+                paused: true,
+                output_folder: Some(dir.to_string_lossy().into_owned()),
+                overwrite: true,
+                ..Default::default()
+            };
+            let handle = match session
+                .add_torrent(AddTorrent::from_bytes(bytes), Some(add))
+                .await
+                .expect("add")
+            {
+                AddTorrentResponse::Added(_, h) => h,
+                _ => panic!("the torrent was not added"),
+            };
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            assert!(
+                !dir.join("file-0.bin").exists(),
+                "the file was created while still paused"
+            );
+
+            session.unpause(&handle).await.expect("unpause");
+            // Initialization and the check it skipped both run on a spawned
+            // task, so give them their turn.
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            dir.join("file-0.bin").exists()
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(created, "starting the torrent did not create its files");
+    }
+
     /// A single-file torrent whose name (and therefore info hash) varies with
     /// `n`, so a batch of them is a batch of genuinely different torrents.
     fn single_file_torrent(n: usize) -> Vec<u8> {
