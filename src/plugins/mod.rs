@@ -616,7 +616,7 @@ fn run(
         build_engine(session.clone(), cfg.clone(), name, perms)
     };
 
-    let mut plugins = load(&engines, &cfg, &enabled_scripts(&dir, &cfg));
+    let mut plugins = load(engines, &cfg, &enabled_scripts(&dir, &cfg));
     tracing::info!("plugin host running with {} plugin(s)", plugins.len());
 
     call_all(&mut plugins, "on_session_start", ());
@@ -640,7 +640,7 @@ fn run(
             Ok(Wake::Reload) => {
                 call_all(&mut plugins, "on_session_stop", ());
                 ui::clear_surfaces();
-                plugins = load(&engines, &cfg, &enabled_scripts(&dir, &cfg));
+                plugins = load(engines, &cfg, &enabled_scripts(&dir, &cfg));
                 tracing::info!("plugins reloaded: {} running", plugins.len());
                 call_all(&mut plugins, "on_session_start", ());
                 // A reload is not a tick. Without this, one landing just

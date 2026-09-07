@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Română (România) - Partner Center: Romanian (Romania) (ro-RO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent este o portare în Rust a PicoTorrent, de Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versiunea 0.3.3
+Versiunea 0.3.4
 
-- Mod de rețea strict: la legarea de un adaptor VPN sau folosirea unui proxy SOCKS, NanoTorrent dezactivează tot ce nu poate trece pe acolo, refuză să pornească dacă adaptorul lipsește și pune pauză tuturor torentelor dacă acesta dispare.
-- Legarea de un adaptor de rețea funcționează acum și pe Windows.
-- Bara de stare arată dacă portul de ascultare poate fi atins și dacă se folosește un proxy sau un adaptor legat.
-- Corecție de securitate: un fișier torrent creat special putea scrie în afara folderului de descărcări pe Windows.
-- Interfața web primește bara de instrumente a aplicației, grafice de viteză, selecție multiplă, coloane redimensionabile și adăugare prin tragere.
-- Extensiile apar acum în interfața web și pot fi pornite și oprite de acolo.
-- Interfața web poate bloca o adresă după autentificări eșuate repetate. Numărul de încercări, perioada și durata blocării sunt setabile.
-- Corectate ferestrele care se puteau deschide mai înalte decât ecranul, fără derulare.
+- Torentele puse pe pauză nu își mai recreează fișierele la pornirea NanoTorrent. Un torent ale cărui date le ștersesei sau le mutasei putea reveni la 0% cu un dosar de fișiere goale.
+- Interfața web primește acum actualizări în direct în loc să le ceară: reacționează instantaneu și consumă mult mai puțin procesor.
+- Un indicator de conexiune arată dacă navigatorul mai are legătură cu NanoTorrent și se reconectează singur.
+- Lista de torente din interfața web poate fi împărțită în pagini și sortată de-a lungul tuturor paginilor.
+- Atât fereastra, cât și interfața web arată câți clienți web sunt conectați.
+- Panoul de detalii se completează imediat ce dai clic pe un torent, în spatele unui strat de încărcare, nu după o secundă.
+- Preferințele au fost refăcute după fereastra principală: file cu pictograme care derulează când nu încap, fereastră mai lată și bare de derulare care nu mai acoperă nimic.
+- Preferințele arată limba pe care ai ales-o, iar fiecare fereastră deschisă schimbă limba când apeși Ok.
+- Închiderea unei ferestre o închide acum cu adevărat, iar meniul Ajutor primește o legătură către documentația API pentru pluginuri.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

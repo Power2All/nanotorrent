@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versi 0.3.3
+Versi 0.3.4
 
-- Mode jaringan ketat: saat Anda mengikat ke adaptor VPN atau memakai proksi SOCKS, NanoTorrent mematikan semua yang tidak bisa melewatinya, menolak mulai jika adaptor tidak ada, dan menjeda semua torrent jika adaptor menghilang.
-- Pengikatan ke adaptor jaringan kini berfungsi di Windows.
-- Bilah status menunjukkan apakah porta Anda dapat dijangkau, dan apakah proksi atau adaptor terikat sedang dipakai.
-- Perbaikan keamanan: berkas torrent yang dibuat khusus dapat menulis di luar folder unduhan Anda di Windows.
-- Antarmuka web mendapat bilah alat desktop, grafik kecepatan, pilihan ganda, kolom yang dapat diubah ukurannya, dan penambahan dengan seret dan lepas.
-- Plugin kini muncul di antarmuka web dan dapat dinyalakan serta dimatikan dari sana.
-- Antarmuka web dapat memblokir alamat setelah berulang kali gagal masuk. Jumlah percobaan, rentang waktu, dan lama blokir dapat diatur.
-- Memperbaiki jendela yang bisa terbuka lebih tinggi dari layar tanpa bisa digulir.
+- Torrent yang dijeda tidak lagi membuat ulang berkasnya saat NanoTorrent dijalankan. Torrent yang datanya Anda hapus atau pindahkan bisa kembali di 0% dengan folder berisi berkas kosong.
+- Antarmuka web kini menerima pembaruan langsung alih-alih memintanya: reaksinya seketika dan pemakaian prosesornya jauh lebih kecil.
+- Indikator koneksi menunjukkan apakah peramban masih terhubung dengan NanoTorrent, dan menyambung kembali sendiri.
+- Daftar torrent di antarmuka web dapat dibagi per halaman dan diurutkan lintas semua halaman.
+- Jendela dan antarmuka web sama-sama menampilkan berapa klien web yang terhubung.
+- Panel rincian terisi begitu Anda mengklik torrent, di balik lapisan pemuatan, bukan hingga satu detik kemudian.
+- Preferensi dibangun ulang agar serasi dengan jendela utama: tab berikon yang menggulir bila tak muat, jendela lebih lebar, dan bilah gulir yang tidak lagi menutupi apa pun.
+- Preferensi menampilkan bahasa yang Anda pilih, dan setiap jendela terbuka berganti bahasa saat Anda menekan Ok.
+- Menutup jendela kini benar-benar menutupnya, dan menu Bantuan mendapat tautan ke dokumentasi API plugin.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

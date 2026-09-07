@@ -665,25 +665,19 @@ fn parse_xml(text: &str) -> Option<Dynamic> {
             }
             Ok(Event::Text(e)) => {
                 // Literal: anything escaped arrived as a GeneralRef instead.
-                if let Ok(raw) = e.decode() {
-                    append_text(&mut stack, raw.as_ref());
-                }
+                append_text(&mut stack, &e);
             }
             // `&amp;`, `&#38;`, `&#x26;`. An entity nobody defined is put back
             // as it was written rather than dropped - a title with a stray
             // ampersand should look wrong, not look shorter.
             Ok(Event::GeneralRef(e)) => {
-                if let Ok(name) = e.decode() {
-                    append_text(&mut stack, &resolve_entity(name.as_ref()));
-                }
+                append_text(&mut stack, &resolve_entity(&e));
             }
             // CDATA is where feeds put the description, so dropping it would
             // make this useless for the exact job it exists for. Its content
             // is literal by definition, so it is decoded but not unescaped.
             Ok(Event::CData(e)) => {
-                if let Ok(raw) = e.decode() {
-                    append_text(&mut stack, raw.as_ref());
-                }
+                append_text(&mut stack, &e);
             }
             // EOF with the stack non-empty means tags were left unclosed.
             Ok(Event::Eof) => return None,
@@ -741,12 +735,12 @@ fn new_element(e: &quick_xml::events::BytesStart) -> Map {
     let mut map = Map::new();
     map.insert(
         "tag".into(),
-        Dynamic::from(String::from_utf8_lossy(e.local_name().as_ref()).into_owned()),
+        Dynamic::from(e.local_name().as_ref().to_owned()),
     );
 
     let mut attrs = Map::new();
     for attr in e.attributes().flatten() {
-        let key = String::from_utf8_lossy(attr.key.local_name().as_ref()).into_owned();
+        let key = attr.key.local_name().as_ref().to_owned();
         // Implicit 1.0: feeds are 1.0 and the declaration is not read back
         // here, which is the assumption the specification makes anyway.
         let value = attr

@@ -814,6 +814,9 @@ impl TorrentStateLive {
             files: self.files.take()?,
             chunk_tracker,
             streams: self.streams.clone(),
+            // It was live, so its files are open. Resuming it must not
+            // re-initialize the storage.
+            storage_deferred: false,
         })
     }
 

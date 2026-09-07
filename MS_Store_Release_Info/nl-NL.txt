@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Nederlands (Nederland) - Partner Center: Dutch (Netherlands) (nl-NL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent is een Rust-port van PicoTorrent van Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versie 0.3.3
+Versie 0.3.4
 
-- Strenge netwerkmodus: bij binden aan een VPN-adapter of gebruik van een SOCKS-proxy schakelt NanoTorrent alles uit wat er niet doorheen kan, weigert te starten als de adapter ontbreekt, en pauzeert alle torrents als die verdwijnt.
-- Binden aan een netwerkadapter werkt nu ook op Windows.
-- De statusbalk toont of je luisterpoort bereikbaar is en of een proxy of gebonden adapter in gebruik is.
-- Beveiligingsfix: een speciaal gemaakt torrentbestand kon op Windows buiten je downloadmap schrijven.
-- De webinterface krijgt de werkbalk van het venster, snelheidsgrafieken, meervoudige selectie, verstelbare kolommen en toevoegen met slepen.
-- Plug-ins verschijnen nu in de webinterface en kunnen daar aan- en uitgezet worden.
-- De webinterface kan een adres blokkeren na herhaalde mislukte aanmeldingen. Aantal pogingen, tijdvenster en blokkeerduur zijn instelbaar.
-- Vensters die hoger dan het scherm konden openen zonder te kunnen scrollen zijn hersteld.
+- Gepauzeerde torrents maken hun bestanden niet meer opnieuw aan wanneer NanoTorrent start. Een torrent waarvan je de gegevens had verwijderd of verplaatst kon terugkomen op 0% met een map vol lege bestanden.
+- De webinterface krijgt updates nu live in plaats van erom te vragen: hij reageert onmiddellijk en gebruikt veel minder processortijd.
+- Een verbindingsindicator laat zien of de browser nog contact heeft met NanoTorrent, en verbindt vanzelf opnieuw.
+- De torrentlijst in de webinterface kan over pagina's worden verdeeld en over alle pagina's heen worden gesorteerd.
+- Zowel het venster als de webinterface tonen hoeveel webclients verbonden zijn.
+- Het detailpaneel vult zich zodra je op een torrent klikt, achter een laadscherm, in plaats van tot een seconde later.
+- Voorkeuren is herbouwd naar het hoofdvenster: tabbladen met pictogram die schuiven wanneer ze niet passen, een breder venster, en schuifbalken die niets meer overlappen.
+- Voorkeuren toont de taal die je hebt gekozen, en elk open venster wisselt van taal wanneer je op Ok drukt.
+- Een venster sluiten sluit het nu echt, en Help krijgt een koppeling naar de documentatie van de plug-in-API.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

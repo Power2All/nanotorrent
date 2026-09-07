@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Türkçe (Türkiye) - Partner Center: Turkish (Turkey) (tr-TR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent, Viktor Elofsson'ın PicoTorrent uygulamasının Rust'a aktarımıd�
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Sürüm 0.3.3
+Sürüm 0.3.4
 
-- Katı ağ kipi: bir VPN bağdaştırıcısına bağlandığınızda veya SOCKS vekil sunucusu kullandığınızda NanoTorrent oradan geçemeyen her şeyi kapatır, bağdaştırıcı yoksa başlamayı reddeder ve kaybolursa tüm torrentleri duraklatır.
-- Ağ bağdaştırıcısına bağlanma artık Windows'ta da çalışıyor.
-- Durum çubuğu, dinleme bağlantı noktanıza erişilip erişilemediğini ve vekil sunucu ya da bağlı bağdaştırıcı kullanılıp kullanılmadığını gösterir.
-- Güvenlik düzeltmesi: özel hazırlanmış bir torrent dosyası Windows'ta indirme klasörünüzün dışına yazabiliyordu.
-- Web arayüzü masaüstü araç çubuğunu, hız grafiklerini, çoklu seçimi, yeniden boyutlandırılabilir sütunları ve sürükleyip bırakarak eklemeyi kazandı.
-- Eklentiler artık web arayüzünde görünüyor ve oradan açılıp kapatılabiliyor.
-- Web arayüzü tekrarlanan başarısız oturum açmalardan sonra bir adresi engelleyebilir. Deneme sayısı, süre ve engelleme süresi ayarlanabilir.
-- Ekrandan yüksek açılıp kaydırılamayan pencereler düzeltildi.
+- Duraklatılmış torrentler NanoTorrent başlarken dosyalarını artık yeniden oluşturmuyor. Verilerini sildiğiniz ya da taşıdığınız bir torrent, boş dosyalarla dolu bir klasörle %0'a dönebiliyordu.
+- Web arayüzü güncellemeleri istemek yerine artık canlı olarak alıyor: anında tepki veriyor ve çok daha az işlemci zamanı kullanıyor.
+- Bağlantı göstergesi tarayıcının NanoTorrent ile hâlâ bağlantıda olup olmadığını gösterir ve kendiliğinden yeniden bağlanır.
+- Web arayüzündeki torrent listesi sayfalara bölünebilir ve tüm sayfalar boyunca sıralanabilir.
+- Pencere de web arayüzü de kaç web istemcisinin bağlı olduğunu gösterir.
+- Ayrıntılar paneli bir torrente tıkladığınız anda, bir yükleme örtüsünün ardında dolar; bir saniyeye kadar beklemez.
+- Tercihler ana pencereye uyacak biçimde yeniden yapıldı: sığmadığında kayan simgeli sekmeler, daha geniş bir pencere ve artık hiçbir şeyi örtmeyen kaydırma çubukları.
+- Tercihler seçtiğiniz dili gösterir ve Tamam'a bastığınızda açık her pencere dil değiştirir.
+- Bir pencereyi kapatmak artık onu gerçekten kapatıyor ve Yardım menüsüne eklenti API belgelerine bağlantı eklendi.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

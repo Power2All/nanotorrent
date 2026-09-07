@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Dansk (Danmark) - Partner Center: Danish (Denmark) (da-DK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent er en Rust-portering af PicoTorrent af Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.3
+Version 0.3.4
 
-- Streng netværkstilstand: når du binder til en VPN-adapter eller bruger en SOCKS-proxy, slår NanoTorrent alt fra, der ikke kan gå igennem den, nægter at starte, hvis adapteren mangler, og sætter alle torrents på pause, hvis den forsvinder.
-- Binding til en netværksadapter virker nu på Windows.
-- Statuslinjen viser, om din lytteport kan nås, og om en proxy eller en bundet adapter er i brug.
-- Sikkerhedsrettelse: en særligt udformet torrentfil kunne skrive uden for din downloadmappe på Windows.
-- Webgrænsefladen får skrivebordets værktøjslinje, hastighedsdiagrammer, flervalg, justerbare kolonner og tilføjelse ved at trække og slippe.
-- Plugins vises nu i webgrænsefladen og kan slås til og fra derfra.
-- Webgrænsefladen kan blokere en adresse efter gentagne mislykkede logins. Antal forsøg, tidsrum og blokeringens længde kan indstilles.
-- Rettet vinduer, der kunne åbne højere end skærmen uden mulighed for at rulle.
+- Torrents på pause genskaber ikke længere deres filer, når NanoTorrent starter. En torrent, hvis data du havde slettet eller flyttet, kunne komme tilbage på 0 % med en mappe fuld af tomme filer.
+- Webgrænsefladen modtager nu live-opdateringer i stedet for at bede om dem: den reagerer øjeblikkeligt og bruger langt mindre processortid.
+- En forbindelsesindikator viser, om browseren stadig har kontakt med NanoTorrent, og genopretter forbindelsen af sig selv.
+- Torrentlisten i webgrænsefladen kan opdeles i sider og sorteres på tværs af alle sider.
+- Både vinduet og webgrænsefladen viser, hvor mange webklienter der er forbundet.
+- Detaljepanelet fyldes, så snart du klikker på en torrent, bag et indlæsningslag, i stedet for op til et sekund senere.
+- Indstillinger er bygget om, så de passer til hovedvinduet: ikonfaner der ruller, når de ikke kan være der, et bredere vindue og rullepaneler der ikke længere overlapper.
+- Indstillinger viser det sprog, du har valgt, og hvert åbent vindue skifter sprog, når du trykker Ok.
+- At lukke et vindue lukker det nu rigtigt, og Hjælp får et link til dokumentationen for plugin-API'et.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-0.3.3-as verzió
+0.3.4-es verzió
 
-- Szigorú hálózati mód: ha VPN-adapterhez köt vagy SOCKS-proxyt használ, a NanoTorrent kikapcsol mindent, ami nem tud rajta áthaladni, nem indul el, ha az adapter hiányzik, és szünetelteti az összes torrentet, ha eltűnik.
-- A hálózati adapterhez kötés már Windowson is működik.
-- Az állapotsor mutatja, elérhető-e a figyelő port, és használatban van-e proxy vagy kötött adapter.
-- Biztonsági javítás: egy szándékosan elrontott torrentfájl a letöltési mappán kívülre írhatott Windowson.
-- A webes felület megkapta az asztali eszköztárat, a sebességdiagramokat, a többszörös kijelölést, az átméretezhető oszlopokat és a húzással hozzáadást.
-- A bővítmények már a webes felületen is megjelennek, és onnan is be- és kikapcsolhatók.
-- A webes felület letilthat egy címet ismételt sikertelen bejelentkezés után. A kísérletek száma, az időszak és a tiltás hossza beállítható.
-- Javítva: az ablakok a képernyőnél magasabbra nyílhattak, görgetés nélkül.
+- A szüneteltetett torrentek már nem hozzák létre újra a fájljaikat a NanoTorrent indulásakor. Az a torrent, amelynek adatait törölte vagy áthelyezte, 0%-on térhetett vissza, üres fájlok mappájával.
+- A webes felület mostantól élőben kapja a frissítéseket ahelyett, hogy kérné őket: azonnal reagál, és sokkal kevesebb processzoridőt használ.
+- Kapcsolatjelző mutatja, hogy a böngésző még kapcsolatban van-e a NanoTorrenttel, és magától újracsatlakozik.
+- A webes felület torrentlistája lapozható, és minden lapon átívelően rendezhető.
+- Az ablak és a webes felület is mutatja, hány webes ügyfél csatlakozik.
+- A részletek panel azonnal feltöltődik, amint egy torrentre kattint, betöltési réteg mögött, nem pedig akár egy másodperccel később.
+- A beállítások a főablakhoz igazodva épültek újra: ikonos fülek, amelyek gördülnek, ha nem férnek el, szélesebb ablak, és görgetősávok, amelyek már nem takarnak semmit.
+- A beállítások a kiválasztott nyelvet mutatják, és minden nyitott ablak nyelvet vált az Ok megnyomásakor.
+- Az ablak bezárása mostantól valóban bezárja, a Súgó pedig hivatkozást kapott a bővítmény API dokumentációjára.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

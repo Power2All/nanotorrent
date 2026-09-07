@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Lietuvių (Lietuva) - Partner Center: Lithuanian (Lithuania) (lt-LT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent yra Viktoro Elofssono PicoTorrent perkėlimas į Rust kalbą.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versija 0.3.3
+Versija 0.3.4
 
-- Griežtas tinklo režimas: susiejus su VPN adapteriu arba naudojant SOCKS tarpinį serverį, NanoTorrent išjungia viską, kas pro jį negali praeiti, atsisako pasileisti, jei adapterio nėra, ir pristabdo visus torentus, jei jis dingsta.
-- Susiejimas su tinklo adapteriu dabar veikia ir Windows sistemoje.
-- Būsenos juosta rodo, ar jūsų prievadas pasiekiamas ir ar naudojamas tarpinis serveris arba susietas adapteris.
-- Saugumo pataisa: specialiai parengtas torento failas Windows sistemoje galėjo rašyti už atsisiuntimų aplanko ribų.
-- Žiniatinklio sąsaja gavo darbalaukio įrankių juostą, greičio diagramas, kelių elementų žymėjimą, keičiamo pločio stulpelius ir pridėjimą vilkimu.
-- Papildiniai dabar rodomi žiniatinklio sąsajoje ir ten pat įjungiami bei išjungiami.
-- Žiniatinklio sąsaja gali užblokuoti adresą po pakartotinių nesėkmingų prisijungimų. Bandymų skaičius, laikotarpis ir blokavimo trukmė yra nustatomi.
-- Pataisyti langai, kurie galėjo atsidaryti aukštesni už ekraną be galimybės slinkti.
+- Pristabdyti torentai nebekuria savo failų iš naujo paleidžiant NanoTorrent. Torentas, kurio duomenis ištrynėte ar perkėlėte, galėjo grįžti ties 0% su tuščių failų aplanku.
+- Žiniatinklio sąsaja dabar gauna gyvus atnaujinimus, o ne jų prašo: reaguoja akimirksniu ir naudoja gerokai mažiau procesoriaus.
+- Ryšio indikatorius rodo, ar naršyklė vis dar susisiekia su NanoTorrent, ir pati atkuria ryšį.
+- Žiniatinklio sąsajos torentų sąrašą galima skaidyti į puslapius ir rikiuoti per visus puslapius.
+- Ir langas, ir žiniatinklio sąsaja rodo, kiek žiniatinklio klientų prisijungę.
+- Išsamios informacijos skydelis užsipildo vos spustelėjus torentą, už įkėlimo sluoksnio, o ne po sekundės.
+- Nuostatos perdarytos pagal pagrindinį langą: kortelės su piktogramomis, slenkančios kai netelpa, platesnis langas ir slankjuostės, kurios nebedengia turinio.
+- Nuostatos rodo jūsų pasirinktą kalbą, o kiekvienas atviras langas pakeičia kalbą paspaudus Gerai.
+- Lango uždarymas dabar tikrai jį uždaro, o Žinyne atsirado nuoroda į papildinių API dokumentaciją.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

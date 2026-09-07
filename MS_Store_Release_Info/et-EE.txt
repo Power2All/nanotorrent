@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Eesti (Eesti) - Partner Center: Estonian (Estonia) (et-EE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versioon 0.3.3
+Versioon 0.3.4
 
-- Range võrgurežiim: VPN-adapteriga sidumisel või SOCKS-puhverserveri kasutamisel lülitab NanoTorrent välja kõik, mis sealt läbi ei pääse, keeldub käivitumast, kui adapter puudub, ja peatab kõik torrentid, kui see kaob.
-- Võrguadapteriga sidumine töötab nüüd ka Windowsis.
-- Olekuriba näitab, kas teie kuulamisport on kättesaadav ja kas kasutusel on puhverserver või seotud adapter.
-- Turvaparandus: pahatahtlik torrent-fail võis Windowsis kirjutada väljapoole allalaadimiskausta.
-- Veebiliides sai töölaua tööriistariba, kiirusgraafikud, mitmikvaliku, muudetava laiusega veerud ja lohistades lisamise.
-- Pluginad ilmuvad nüüd veebiliidesesse ja neid saab seal sisse ja välja lülitada.
-- Veebiliides võib aadressi pärast korduvaid ebaõnnestunud sisselogimisi blokeerida. Katsete arv, ajavahemik ja blokeeringu pikkus on seadistatavad.
-- Parandatud aknad, mis võisid avaneda ekraanist kõrgemana ilma kerimisvõimaluseta.
+- Peatatud torrentid ei loo NanoTorrenti käivitumisel enam oma faile uuesti. Torrent, mille andmed olid kustutatud või mujale viidud, võis naasta 0% juurde kaustatäie tühjade failidega.
+- Veebiliides saab nüüd elavaid uuendusi, selle asemel et neid küsida: see reageerib kohe ja kulutab tunduvalt vähem protsessoriaega.
+- Ühendusnäidik näitab, kas brauser on veel NanoTorrentiga ühenduses, ja taastab ühenduse ise.
+- Veebiliidese torrentide loendit saab jagada lehtedeks ja sortida üle kõigi lehtede.
+- Nii aken kui ka veebiliides näitavad, mitu veebiklienti on ühendatud.
+- Üksikasjade paneel täitub kohe, kui torrentil klõpsate, laadimiskatte taga, mitte kuni sekund hiljem.
+- Eelistused on ehitatud ümber peaakna järgi: ikoonidega kaardid, mis kerivad, kui nad ei mahu, laiem aken ja kerimisribad, mis enam ei kata sisu.
+- Eelistused näitavad teie valitud keelt ja iga avatud aken vahetab keelt, kui vajutate Ok.
+- Akna sulgemine sulgeb selle nüüd tõesti ja menüüsse Abi lisandus link pluginate API dokumentatsioonile.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

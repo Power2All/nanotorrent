@@ -505,6 +505,59 @@ require-encryption toggles for each.
 
 ## History
 
+**v0.3.4** is about the web interface being live rather than polled, and about
+one bug that had been quietly undoing people's downloads.
+
+**Paused torrents were re-creating their files on every start.** Restoring a
+session adds every torrent paused and then resumes the ones that were running -
+but the storage layer opened, and created where missing, every file of every
+torrent before any of that was decided. For a torrent whose data had been
+deleted or moved to another drive that did real damage: the empty files it had
+just made failed the fast-resume validation, the bitfield was thrown away, a
+full check found nothing, and a finished torrent came back at 0% with a folder
+of empty files where the download used to be. A torrent added paused now gets
+its storage object without its files, and does no disk I/O at all until it
+starts - at which point the files are created and the check that verifies them
+runs, which is where it belonged (engine patch 0016).
+
+**The web interface stopped polling.** It asked for the whole state four times a
+second, and every one of those requests paid for an Argon2 verification of the
+Basic auth header - deliberately slow, about 21ms against 0.8ms for the work
+itself. A stream costs that once, at connect. Server-sent events rather than a
+WebSocket because a browser cannot set headers on a WebSocket handshake, so
+Basic auth does not carry: SSE is an ordinary GET, it reconnects by itself, and
+it needed no new dependency. Measured over twenty seconds: 703ms of processor
+time polling, 188ms streaming, 94ms sitting idle. A **connection indicator**
+shows whether the stream is up, going red and recovering on its own without a
+reload, and both the window and the page now show **how many web clients are
+connected**.
+
+The torrent list there gained **pagination** - 100, 250, 500, a number of your
+own, or all of them - with **sorting that applies across every page** rather
+than only the one on screen.
+
+**Preferences** was rebuilt to match the window it belongs to: the same tab
+strip as the details panel, with an icon on each tab, a strip that scrolls
+sideways when a language's words are too long to fit, a wider window so the
+dropdowns are not cramped, and scrollbars that no longer draw over the tabs or
+the content. It also shows the language you actually chose, which it had not
+been doing, and every open window now re-translates when you press Ok instead
+of only the main one.
+
+**The details panel** fills when you click, not up to a second later. It was
+only ever filled by the refresh tick, so switching torrent left the previous
+one's peers and trackers on screen until the tick came round; switching tab did
+the same. A **loading overlay** covers the panel while it fills, with clicks
+disabled until it is done.
+
+**Windows now close.** Dialogs were hidden and kept, so the second time you
+opened one it appeared instantly, with none of the shell's fade and whatever
+state the last open had left in it. They are dropped when they close, and every
+route out of a dialog goes through the same rule.
+
+Also: **Help > Plugin API documentation** now links straight to the Rhai API
+reference, in all 41 languages.
+
 **v0.3.3** is about not leaking, and about the web interface catching up with
 the window.
 

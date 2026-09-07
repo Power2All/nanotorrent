@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Italiano (Italia) - Partner Center: Italian (Italy) (it-IT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent è un port in Rust di PicoTorrent, di Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versione 0.3.3
+Versione 0.3.4
 
-- Modalità di rete rigorosa: quando ci si vincola a un adattatore VPN o si usa un proxy SOCKS, NanoTorrent disattiva tutto ciò che non può passare di lì, si rifiuta di avviarsi se l'adattatore manca e mette in pausa tutti i torrent se scompare.
-- Il vincolo a un adattatore di rete ora funziona su Windows.
-- La barra di stato mostra se la porta in ascolto è raggiungibile e se è in uso un proxy o un adattatore vincolato.
-- Correzione di sicurezza: un file torrent creato ad arte poteva scrivere fuori dalla cartella dei download su Windows.
-- L'interfaccia web guadagna la barra degli strumenti del desktop, i grafici di velocità, la selezione multipla, colonne ridimensionabili e l'aggiunta per trascinamento.
-- I plugin ora compaiono nell'interfaccia web e possono essere attivati e disattivati da lì.
-- L'interfaccia web può bloccare un indirizzo dopo ripetuti accessi falliti. Numero di tentativi, periodo e durata del blocco sono impostabili.
-- Corrette le finestre che potevano aprirsi più alte dello schermo senza poter scorrere.
+- I torrent in pausa non ricreano più i propri file all'avvio di NanoTorrent. Un torrent i cui dati erano stati cancellati o spostati poteva tornare allo 0% con una cartella di file vuoti.
+- L'interfaccia web riceve ora gli aggiornamenti in diretta invece di richiederli: reagisce all'istante e consuma molto meno processore.
+- Un indicatore di connessione mostra se il browser è ancora in contatto con NanoTorrent, e si riconnette da solo.
+- L'elenco dei torrent nell'interfaccia web può essere impaginato e ordinato su tutte le pagine.
+- Sia la finestra sia l'interfaccia web mostrano quanti client web sono collegati.
+- Il pannello dei dettagli si riempie appena si fa clic su un torrent, dietro un velo di caricamento, invece che fino a un secondo dopo.
+- Le preferenze sono state rifatte sul modello della finestra principale: schede con icona che scorrono quando non entrano, finestra più larga e barre di scorrimento che non si sovrappongono più.
+- Le preferenze mostrano la lingua scelta, e ogni finestra aperta cambia lingua quando si preme Ok.
+- Chiudere una finestra ora la chiude davvero, e il menu Aiuto ottiene un collegamento alla documentazione dell'API dei plugin.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

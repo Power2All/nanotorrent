@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Deutsch (Deutschland) - Partner Center: German (Germany) (de-DE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent ist eine Rust-Portierung von PicoTorrent von Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.3
+Version 0.3.4
 
-- Strenger Netzwerkmodus: Wenn Sie an einen VPN-Adapter binden oder einen SOCKS-Proxy verwenden, schaltet NanoTorrent alles ab, was nicht hindurchgeht, startet nicht, wenn der Adapter fehlt, und pausiert alle Torrents, wenn er verschwindet.
-- Die Bindung an einen Netzwerkadapter funktioniert jetzt auch unter Windows.
-- Die Statusleiste zeigt, ob Ihr Port erreichbar ist und ob ein Proxy oder ein gebundener Adapter verwendet wird.
-- Sicherheitskorrektur: Eine präparierte Torrent-Datei konnte unter Windows außerhalb Ihres Download-Ordners schreiben.
-- Die Weboberfläche erhält die Werkzeugleiste des Fensters, Geschwindigkeitsdiagramme, Mehrfachauswahl, veränderbare Spalten und Hinzufügen per Ziehen und Ablegen.
-- Plugins erscheinen jetzt auch in der Weboberfläche und lassen sich dort ein- und ausschalten.
-- Die Weboberfläche kann eine Adresse nach wiederholten Fehlanmeldungen sperren. Anzahl, Zeitfenster und Sperrdauer sind einstellbar.
-- Fenster, die höher als der Bildschirm öffnen konnten, ohne scrollen zu können, wurden korrigiert.
+- Angehaltene Torrents legen ihre Dateien beim Start von NanoTorrent nicht mehr neu an. Ein Torrent, dessen Daten gelöscht oder verschoben wurden, konnte mit 0 % und einem Ordner leerer Dateien zurückkommen.
+- Die Weboberfläche erhält Aktualisierungen jetzt live, statt sie abzufragen: Sie reagiert sofort und braucht deutlich weniger Rechenzeit.
+- Eine Verbindungsanzeige zeigt, ob der Browser noch Kontakt zu NanoTorrent hat, und verbindet sich von selbst neu.
+- Die Torrentliste der Weboberfläche lässt sich in Seiten aufteilen und über alle Seiten hinweg sortieren.
+- Fenster und Weboberfläche zeigen beide, wie viele Web-Clients verbunden sind.
+- Der Detailbereich füllt sich, sobald Sie einen Torrent anklicken, hinter einer Ladeanzeige, statt erst bis zu eine Sekunde später.
+- Die Einstellungen wurden dem Hauptfenster angeglichen: Registerkarten mit Symbolen, die scrollen, wenn sie nicht passen, ein breiteres Fenster und Bildlaufleisten, die nichts mehr überdecken.
+- Die Einstellungen zeigen die gewählte Sprache, und jedes offene Fenster wechselt die Sprache, sobald Sie auf Ok klicken.
+- Ein Fenster zu schließen schließt es jetzt wirklich, und im Hilfemenü steht ein Link zur Plugin-API-Dokumentation.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

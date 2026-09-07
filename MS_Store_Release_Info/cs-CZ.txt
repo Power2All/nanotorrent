@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Čeština (Česko) - Partner Center: Czech (Czechia) (cs-CZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Verze 0.3.3
+Verze 0.3.4
 
-- Přísný síťový režim: při vázání na adaptér VPN nebo použití proxy SOCKS NanoTorrent vypne vše, co jím nemůže projít, odmítne se spustit, pokud adaptér chybí, a pozastaví všechny torrenty, pokud zmizí.
-- Vázání na síťový adaptér nyní funguje i ve Windows.
-- Stavový řádek ukazuje, zda je naslouchající port dosažitelný a zda se používá proxy nebo vázaný adaptér.
-- Bezpečnostní oprava: speciálně připravený soubor torrent mohl ve Windows zapisovat mimo složku stahování.
-- Webové rozhraní získává panel nástrojů z aplikace, grafy rychlosti, vícenásobný výběr, měnitelné sloupce a přidávání přetažením.
-- Zásuvné moduly se nyní zobrazují ve webovém rozhraní a lze je tam zapínat a vypínat.
-- Webové rozhraní může zablokovat adresu po opakovaných neúspěšných přihlášeních. Počet pokusů, časové okno i délka blokace se nastavují.
-- Opraveno: okna se mohla otevřít vyšší než obrazovka bez možnosti posouvání.
+- Pozastavené torrenty už při spuštění NanoTorrentu znovu nevytvářejí své soubory. Torrent, jehož data jste smazali nebo přesunuli, se mohl vrátit na 0 % se složkou prázdných souborů.
+- Webové rozhraní nyní dostává živé aktualizace, místo aby si o ně žádalo: reaguje okamžitě a spotřebuje mnohem méně výkonu procesoru.
+- Ukazatel spojení říká, zda je prohlížeč stále ve spojení s NanoTorrentem, a sám se znovu připojí.
+- Seznam torrentů ve webovém rozhraní lze stránkovat a řadit napříč všemi stránkami.
+- Okno i webové rozhraní ukazují, kolik webových klientů je připojeno.
+- Panel podrobností se naplní hned po kliknutí na torrent, za vrstvou načítání, místo až o sekundu později.
+- Předvolby byly přestavěny podle hlavního okna: karty s ikonami, které se posouvají, když se nevejdou, širší okno a posuvníky, které se už nepřekrývají.
+- Předvolby ukazují jazyk, který jste zvolili, a každé otevřené okno změní jazyk po stisknutí Ok.
+- Zavření okna je nyní skutečné zavření a v nabídce Nápověda přibyl odkaz na dokumentaci API zásuvných modulů.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -1,0 +1,218 @@
+// The tab strip shared by the details panel and the Preferences dialog.
+//
+// Slint's own TabWidget stretches its tabs across the full width and has no
+// room for an icon, which is why the details panel stopped using it. Preferences
+// now uses the same strip, so the two read as one application rather than two
+// that happen to ship together.
+
+import { Palette, ScrollView } from "std-widgets.slint";
+
+// One tab: an icon (passed as a child), a caption, and an underline when it is
+// the current one.
+export component DetailTab inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback picked();
+
+    // Sized to its content, not to a share of the width.
+    horizontal-stretch: 0;
+    height: 28px;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    background: root.selected ? Palette.background
+        : tab-touch.has-hover ? Palette.alternate-background : transparent;
+
+    // Mixed toward the background rather than a fixed grey: an unselected tab
+    // has to read as available-but-not-current on BOTH palettes, and #8a8a8a
+    // against the light background looked disabled.
+    //
+    // Weighted heavily toward the foreground (0.85, not 0.65) because at the
+    // lower value it still read as disabled: ~#6a6a6a on white and ~#8a8a8a on
+    // near-black. What separates the current tab is the accent icon, the bold
+    // label and the underline - it does not also need the others to be faint.
+    out property <color> muted: Palette.foreground.mix(Palette.background, 0.85);
+    out property <color> ink: root.selected ? Palette.accent-background : root.muted;
+
+    tab-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.picked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 6px;
+        alignment: center;
+        VerticalLayout { alignment: center; @children }
+        Text {
+            text: root.label;
+            font-size: 13px;
+            font-weight: root.selected ? 700 : 400;
+            vertical-alignment: center;
+            color: root.selected ? Palette.foreground : root.muted;
+        }
+    }
+
+    // The selected tab joins the panel below it.
+    if root.selected: Rectangle {
+        y: parent.height - 2px;
+        height: 2px;
+        background: Palette.accent-background;
+    }
+}
+
+// A row of tabs that scrolls sideways when it does not fit.
+//
+// Seven tabs with icons fit an English Preferences window; they do not fit
+// every translation of it, and a tab you cannot reach is a setting you cannot
+// change. Rather than size every window to its longest language, the strip
+// scrolls.
+//
+// The height grows when a scrollbar appears: a ScrollView draws its bar inside
+// its own bounds, and at the fixed height that bar sits exactly on the selected
+// tab's underline. Compared against `visible-width` rather than the parent's
+// width, which would make the height depend on something that depends on it.
+export component TabStrip inherits Rectangle {
+    // The 6px tolerance is the strip's own left padding: without it a row
+    // that fits to the pixel still reports a hair of overflow, and the
+    // window grew to make room for a scrollbar with nothing to scroll.
+    // Losing up to 6px of the last tab's right padding is not losing
+    // anything.
+    out property <bool> scrolls: sv.viewport-width > sv.visible-width + 6px;
+
+    // Room BELOW the tabs for the scrollbar, which a ScrollView draws inside
+    // its own bounds - over whatever is at that edge, and what sits there is
+    // the selected tab's underline.
+    //
+    // The room is empty space under the row, NOT padding on the row: padding
+    // feeds into the layout info that `viewport-width` reads, and Slint
+    // rejected that as a binding loop (bar-room -> padding -> min-width ->
+    // viewport-width -> scrolls -> bar-room).
+    out property <length> bar-room: root.scrolls ? 20px : 0px;
+
+    // min == max, NOT `height`. This sits in a VerticalLayout, and a layout
+    // assigns its children's geometry: an explicit height competes with the
+    // layout instead of constraining it, so the reserved room collapsed and
+    // the scrollbar was drawn straight through the tab captions.
+    min-height: 30px + root.bar-room;
+    max-height: 30px + root.bar-room;
+
+    sv := ScrollView {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        vertical-scrollbar-policy: always-off;
+        viewport-width: inner.preferred-width;
+
+        // Holds the row at the top; whatever is left over is where the bar
+        // draws.
+        VerticalLayout {
+            alignment: start;
+            inner := HorizontalLayout {
+                alignment: start;
+                padding-left: 6px;
+                padding-top: 1px;
+                spacing: 2px;
+                @children
+            }
+        }
+    }
+}
+
+// --- Preferences tab icons --------------------------------------------------
+//
+// One 20x20 viewbox drawn at 16px, matching the details panel's set. Filled
+// polygons rather than strokes: a stroked path at this size renders a
+// different weight on each platform, and these sit next to text that does not.
+
+// Sliders, for General.
+export component GeneralIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 2 4 L 18 4 L 18 6 L 2 6 Z M 2 9 L 18 9 L 18 11 L 2 11 Z M 2 14 L 18 14 L 18 16 L 2 16 Z M 12 2 L 16 2 L 16 8 L 12 8 Z M 5 7 L 9 7 L 9 13 L 5 13 Z M 12 12 L 16 12 L 16 18 L 12 18 Z";
+    }
+}
+
+// An arrow into a tray, for Downloads.
+export component DownloadsIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 8 2 L 12 2 L 12 9 L 16 9 L 10 15 L 4 9 L 8 9 Z M 2 16 L 18 16 L 18 18 L 2 18 Z";
+    }
+}
+
+// Two links of a chain, for Connection.
+export component ConnectionIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 1 6 L 9 6 L 9 9 L 4 9 L 4 11 L 9 11 L 9 14 L 1 14 Z M 11 6 L 19 6 L 19 14 L 11 14 L 11 11 L 16 11 L 16 9 L 11 9 Z";
+    }
+}
+
+// A stack of servers, for Proxy - the same shape the status bar uses.
+export component ProxyTabIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 2 2 L 18 2 L 18 6 L 2 6 Z M 2 8 L 18 8 L 18 12 L 2 12 Z M 2 14 L 18 14 L 18 18 L 2 18 Z";
+    }
+}
+
+// A screen on a stand, for the web interface.
+export component WebTabIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 1 3 L 19 3 L 19 14 L 1 14 Z M 3 5 L 3 12 L 17 12 L 17 5 Z M 7 16 L 13 16 L 13 18 L 7 18 Z";
+    }
+}
+
+// A piece that interlocks, for Plugins.
+export component PluginsIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 3 3 L 12 3 L 12 6 L 16 6 L 16 11 L 12 11 L 12 17 L 3 17 Z";
+    }
+}
+
+// A funnel, for Labels and filters.
+export component LabelsIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 2 3 L 18 3 L 12 10 L 12 17 L 8 15 L 8 10 Z";
+    }
+}

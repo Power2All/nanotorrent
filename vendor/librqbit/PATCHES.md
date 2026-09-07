@@ -700,3 +700,32 @@ against pristine.
 
 Long term these should be submitted upstream as PRs so this folder can be
 deleted again. 0006 and 0007 are ordinary bug fixes and should go first.
+
+## 0016 - files are not created until a torrent starts
+
+`Session::add_torrent` called `storage_factory.create_and_init` for every
+torrent, and `init` opens - creating where missing - every file the torrent
+has. That ran whether or not the torrent was being added paused.
+
+Restoring a session adds the whole list paused and resumes whatever was
+running, so this fired for every torrent on every start. For a torrent whose
+data had been deleted or moved to another drive it did real damage: the empty
+files it had just made failed the fast-resume validation, the bitfield was
+thrown away, a full check found nothing, and a completed torrent came back at
+0% with a directory of empty files where its download used to be.
+
+A torrent added paused now gets `create` without `init`: the storage object
+exists, no file is touched. `TorrentStateInitializing` carries a
+`storage_deferred` flag through to `TorrentStatePaused`, and while it is set
+the initial check does no disk I/O at all - no fast-resume validation, no
+checksum pass, no setting of file lengths. The stored bitfield is taken at face
+value, which is what makes a paused torrent still show its progress.
+
+Starting such a torrent routes back through `Initializing` with a real
+`create_and_init`, so the files are created and the check that was skipped runs
+then - which is where it belongs, and which keeps a torrent from seeding data
+it has not verified. A torrent paused from the live state is not deferred: its
+files are already open, and resuming must not re-check them.
+
+Covered by `a_paused_add_creates_no_files` and
+`starting_a_paused_torrent_creates_its_files` in `src/bittorrent/session.rs`.

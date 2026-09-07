@@ -406,6 +406,51 @@ tbody tr { cursor: default; }
 #drop span {
   border: 2px dashed #fff8; border-radius: 12px; padding: 2rem 3rem; background: #0006;
 }
+
+/* Connection indicator. The web interface is the one surface that can lose
+   contact with the client it is showing, and a page full of numbers that
+   quietly stopped updating looks exactly like one that is up to date. */
+.link { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
+.link .dot {
+  width: .6rem; height: .6rem; border-radius: 50%;
+  background: var(--muted); flex: none;
+}
+.link.ok   .dot { background: var(--ok); }
+.link.down .dot { background: var(--danger); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .link.down .dot { animation: none; } }
+
+/* Sortable headers. The arrow is part of the caption rather than a separate
+   element, so a column can never be too narrow to show which way it is sorted
+   while still showing its name. */
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--accent); }
+th .arrow { opacity: .75; font-size: .8em; }
+
+/* Pager. Sits under the table, outside the scrolling box, so it stays put on a
+   narrow window where the table scrolls sideways. */
+.pager {
+  display: flex; align-items: center; gap: .6rem;
+  /* One row. These are six small controls that read as a unit, and wrapping
+     put the label above its own dropdown. On a window too narrow even for
+     that, the row scrolls rather than folding. */
+  flex-wrap: nowrap; overflow-x: auto;
+  padding: .6rem .2rem 0;
+  color: var(--muted); font-size: .85rem;
+}
+/* The label holds its caption and its select side by side. Without this it is
+   a shrinkable flex item, and the first thing it gives up is the line between
+   the two. */
+.pager label {
+  display: inline-flex; align-items: center; gap: .4rem;
+  flex: none; white-space: nowrap;
+}
+/* Nothing in the row shrinks except the spacer. */
+.pager select, .pager button, .pager span { flex: none; }
+.pager span { white-space: nowrap; }
+.pager select { height: var(--control-h); }
+.pager button { padding: .35rem .6rem; }
+.pager .grow { flex: 1 1 auto; min-width: 0; }
 </style>
 
 <header>
@@ -414,6 +459,7 @@ tbody tr { cursor: default; }
   <span class="stat">&uarr; <b id="ul">0 B/s</b></span>
   <span class="stat">DHT <b id="dht">-</b></span>
   <span class="stat"><b id="count">0</b> torrents</span>
+  <span class="stat link" id="link" title="{{connecting}}"><span class="dot"></span><b id="clients"></b></span>
   <select id="theme" title="{{theme}}" aria-label="{{theme}}">
     <option value="auto">{{theme_system}}</option>
     <option value="light">{{light_theme}}</option>
@@ -476,6 +522,18 @@ tbody tr { cursor: default; }
       <tbody id="rows"></tbody>
     </table>
   </div>
+  <div class="pager" id="pager" hidden>
+    <label>{{per_page}}
+      <select id="page-size"></select>
+    </label>
+    <button type="button" id="page-first" title="1">&laquo;</button>
+    <button type="button" id="page-prev">&lsaquo;</button>
+    <span id="page-where"></span>
+    <button type="button" id="page-next">&rsaquo;</button>
+    <button type="button" id="page-last">&raquo;</button>
+    <span class="grow"></span>
+    <span id="page-total"></span>
+  </div>
   <div class="empty" id="empty" hidden>{{no_torrents_yet}}</div>
 </main>
 
@@ -648,10 +706,14 @@ async function act(fn) {
   catch (e) { toast(e.message); }
 }
 
-function renderRows(list) {
+function renderRows(all) {
   const body = $("rows");
   body.textContent = "";
-  $("empty").hidden = list.length > 0;
+  $("empty").hidden = all.length > 0;
+
+  // Sort the whole set, then take the page: sorting after slicing would only
+  // order the rows that happened to be on screen.
+  const list = pageOf(sortAll(all));
 
   for (const t of list) {
     const row = body.insertRow();
@@ -943,6 +1005,8 @@ function applySnapshot(info, list, errors) {
   paintSelection();
   // The session error queue drains on read, so anything here is new.
   for (const e of errors) toast(e);
+  // A snapshot arriving IS the proof of contact - no separate heartbeat.
+  setLink("ok", info.clients);
 }
 
 async function refresh() {
@@ -957,6 +1021,7 @@ async function refresh() {
   } catch (e) {
     // Only complain once per outage, or a closed laptop lid produces a wall
     // of identical toasts.
+    setLink("down");
     if (failures++ === 0) toast(T.lost_contact + ": " + e.message);
   }
 }
@@ -982,9 +1047,13 @@ function startStream() {
     }
   };
 
+  // Fired on a dropped connection and on each failed retry. EventSource keeps
+  // trying on its own; this only reflects that it is not connected right now.
   es.onerror = () => {
+    setLink("down");
     if (failures++ === 0) toast(T.lost_contact);
   };
+  es.onopen = () => setLink("ok");
   return es;
 }
 
@@ -1257,16 +1326,18 @@ function applyTheme(value) {
 // and a page that re-polls every two seconds never does, so a screenshot run
 // hangs until it is killed.
 const REFRESH = Number(new URLSearchParams(location.search).get("refresh") ?? 2);
-refresh();
+
 // Stream when the browser can, poll when it cannot. `?refresh=` still forces
-// polling, which is the way back if a proxy in the middle buffers the stream.
+// polling, which is both the way back if a proxy in the middle buffers the
+// stream, and what `?refresh=0` relies on to freeze the page on one snapshot.
 if (window.EventSource && !new URLSearchParams(location.search).has("refresh")) {
-  // No priming poll: the server sends its first frame before it sleeps, so
-  // the stream paints as fast as three requests would have, without making
-  // them.
+  // No priming poll on this path: the server sends its first frame before it
+  // sleeps, so the stream paints as fast as three requests would have without
+  // making them.
   startStream();
-} else if (REFRESH > 0) {
-  setInterval(refresh, REFRESH * 1000);
+} else {
+  refresh();
+  if (REFRESH > 0) setInterval(refresh, REFRESH * 1000);
 }
 
 // --- plugins ---------------------------------------------------------------
@@ -1759,4 +1830,174 @@ loadCharts();
     picker.dispatchEvent(new Event("change"));
   });
 })();
+
+// --- connection indicator ---------------------------------------------------
+//
+// Green when the page is in contact with NanoTorrent, red while it is not.
+// EventSource reconnects by itself - the browser backs off and retries for as
+// long as the tab is open - so this reports that state rather than driving it.
+// The polling fallback has no such machinery, so there the next tick is the
+// retry and the dot follows whether it worked.
+function setLink(state, clients) {
+  const el = $("link");
+  el.className = "stat link " + state;
+  el.title = state === "ok" ? T.connected : (state === "down" ? T.reconnecting : T.connecting);
+  // The viewer count is only known while connected, and a stale one would
+  // claim an audience that may have gone.
+  $("clients").textContent = state === "ok" && clients > 0 ? String(clients) : "";
+}
+
+// --- sorting and paging -----------------------------------------------------
+//
+// Both happen here rather than on the server, because the stream already sends
+// every torrent on every tick - the client holds the whole list, so a sort
+// spans all pages by construction rather than by asking for it.
+//
+// Kept in localStorage: this is view state, and which page someone was on is
+// per-device in a way a column width is not.
+const SORTS = {
+  //  column index -> how to order it
+  0: { key: "name",          text: true },
+  1: { key: "size" },
+  2: { key: "progress" },
+  3: { key: "status",        text: true },
+  4: { key: "download_rate" },
+  5: { key: "upload_rate" },
+  6: { key: "peers" },
+  7: { key: "ratio" },
+};
+
+let sortCol = Number(localStorage.getItem("sortCol") ?? 0);
+let sortDir = localStorage.getItem("sortDir") === "desc" ? -1 : 1;
+let pageSize = Number(localStorage.getItem("pageSize") ?? 100);
+let page = 0;
+
+// The status column sorts by what it SAYS, not by the internal state name -
+// otherwise "downloading_paused" files under d and the user sees Paused rows
+// scattered through the Downloading ones.
+const sortValue = (t, s) =>
+  s.key === "status" ? (t.error ? "Error" : STATES[t.state] || t.state) : t[s.key];
+
+function sortAll(list) {
+  const s = SORTS[sortCol];
+  if (!s) return list;
+  const rows = list.slice();
+  rows.sort((a, b) => {
+    const x = sortValue(a, s), y = sortValue(b, s);
+    const cmp = s.text ? String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: "base" })
+                       : (x === y ? 0 : x < y ? -1 : 1);
+    // Ties fall back to the name, so equal rows keep a stable, sensible order
+    // instead of shuffling as the numbers behind them tick.
+    return cmp !== 0 ? cmp * sortDir : String(a.name).localeCompare(String(b.name));
+  });
+  return rows;
+}
+
+function paintHeaders() {
+  document.querySelectorAll("#head th").forEach((th, i) => {
+    const s = SORTS[i];
+    th.classList.toggle("sortable", !!s);
+    const old = th.querySelector(".arrow");
+    if (old) old.remove();
+    if (s && i === sortCol) {
+      const a = document.createElement("span");
+      a.className = "arrow";
+      a.textContent = sortDir === 1 ? " \u25B2" : " \u25BC";
+      th.append(a);
+    }
+    if (s && !th.dataset.wired) {
+      th.dataset.wired = "1";
+      th.addEventListener("click", (ev) => {
+        if (ev.target.closest(".grip")) return;   // that is a resize, not a sort
+        if (sortCol === i) sortDir = -sortDir;
+        else { sortCol = i; sortDir = 1; }
+        localStorage.setItem("sortCol", String(sortCol));
+        localStorage.setItem("sortDir", sortDir === 1 ? "asc" : "desc");
+        page = 0;
+        paintHeaders();
+        renderRows(LAST_TORRENTS);
+      });
+    }
+  });
+}
+
+function buildPageSizes() {
+  const sel = $("page-size");
+  sel.textContent = "";
+  const sizes = [100, 250, 500];
+  // A custom size is kept in the list so it is visible as the current choice
+  // rather than silently in effect.
+  if (pageSize > 0 && !sizes.includes(pageSize)) sizes.push(pageSize);
+  sizes.sort((a, b) => a - b);
+  for (const n of sizes) {
+    const o = document.createElement("option");
+    o.value = String(n);
+    o.textContent = String(n);
+    sel.append(o);
+  }
+  const all = document.createElement("option");
+  all.value = "0";
+  all.textContent = T.all;
+  sel.append(all);
+  const custom = document.createElement("option");
+  custom.value = "custom";
+  custom.textContent = T.custom;
+  sel.append(custom);
+  sel.value = String(pageSize);
+}
+
+$("page-size").addEventListener("change", (e) => {
+  if (e.target.value === "custom") {
+    const n = parseInt(prompt(T.per_page, String(pageSize || 100)), 10);
+    // A bad answer leaves things as they were rather than emptying the table.
+    if (!Number.isFinite(n) || n < 1) { buildPageSizes(); return; }
+    pageSize = n;
+  } else {
+    pageSize = Number(e.target.value);
+  }
+  localStorage.setItem("pageSize", String(pageSize));
+  page = 0;
+  buildPageSizes();
+  renderRows(LAST_TORRENTS);
+});
+
+function pageCount(total) {
+  return pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+}
+
+function gotoPage(n) {
+  page = n;
+  renderRows(LAST_TORRENTS);
+}
+$("page-first").onclick = () => gotoPage(0);
+$("page-prev").onclick = () => gotoPage(Math.max(0, page - 1));
+$("page-next").onclick = () => gotoPage(page + 1);
+$("page-last").onclick = () => gotoPage(pageCount(LAST_TORRENTS.length) - 1);
+
+// Returns the slice to draw, and updates the pager to match.
+function pageOf(sorted) {
+  const total = sorted.length;
+  const pages = pageCount(total);
+  // Clamp: torrents come and go under us, and page 7 of 3 shows nothing at all.
+  if (page >= pages) page = pages - 1;
+  if (page < 0) page = 0;
+
+  const from = pageSize > 0 ? page * pageSize : 0;
+  const slice = pageSize > 0 ? sorted.slice(from, from + pageSize) : sorted;
+
+  // Hidden entirely when everything fits: a pager reading "1 / 1" beneath four
+  // torrents is furniture.
+  $("pager").hidden = total <= 100 && pages === 1 && pageSize === 100;
+  $("page-where").textContent = `${page + 1} / ${pages}`;
+  $("page-total").textContent = total
+    ? `${from + 1}-${from + slice.length} / ${total}`
+    : "";
+  for (const [id, off] of [["page-first", 0], ["page-prev", 0], ["page-next", 1], ["page-last", 1]]) {
+    $(id).disabled = off === 0 ? page === 0 : page >= pages - 1;
+  }
+  return slice;
+}
+
+buildPageSizes();
+paintHeaders();
 </script>

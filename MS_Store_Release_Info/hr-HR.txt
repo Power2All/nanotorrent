@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Hrvatski (Hrvatska) - Partner Center: Croatian (Croatia) (hr-HR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent je prijenos PicoTorrenta Viktora Elofssona na Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Verzija 0.3.3
+Verzija 0.3.4
 
-- Strogi mrežni način: kada se vežete na VPN prilagodnik ili koristite SOCKS proxy, NanoTorrent isključuje sve što kroz njega ne može proći, odbija se pokrenuti ako prilagodnika nema i pauzira sve torrente ako nestane.
-- Vezanje na mrežni prilagodnik sada radi i na Windowsima.
-- Statusna traka pokazuje je li vaš port dostupan i koristi li se proxy ili vezani prilagodnik.
-- Sigurnosni popravak: posebno pripremljena torrent datoteka mogla je pisati izvan vaše mape za preuzimanja na Windowsima.
-- Web sučelje dobiva alatnu traku aplikacije, grafikone brzine, višestruki odabir, stupce promjenjive širine i dodavanje povlačenjem.
-- Dodaci se sada pojavljuju u web sučelju i mogu se ondje uključiti i isključiti.
-- Web sučelje može blokirati adresu nakon ponovljenih neuspjelih prijava. Broj pokušaja, razdoblje i trajanje blokade su postavke.
-- Popravljeni prozori koji su se mogli otvoriti viši od zaslona bez mogućnosti pomicanja.
+- Pauzirani torrenti više ne stvaraju svoje datoteke pri pokretanju NanoTorrenta. Torrent čije ste podatke obrisali ili premjestili mogao se vratiti na 0% s mapom praznih datoteka.
+- Web sučelje sada prima izmjene uživo umjesto da ih traži: reagira odmah i troši znatno manje procesora.
+- Pokazatelj veze pokazuje je li preglednik još u vezi s NanoTorrentom i sam se ponovno povezuje.
+- Popis torrenta u web sučelju može se dijeliti na stranice i razvrstavati kroz sve stranice.
+- I prozor i web sučelje pokazuju koliko je web klijenata povezano.
+- Ploča s pojedinostima puni se čim kliknete torrent, iza sloja učitavanja, umjesto do sekunde kasnije.
+- Postavke su prerađene prema glavnom prozoru: kartice s ikonama koje klize kad ne stanu, širi prozor i klizači koji više ne prekrivaju sadržaj.
+- Postavke pokazuju jezik koji ste odabrali, a svaki otvoreni prozor mijenja jezik kad pritisnete U redu.
+- Zatvaranje prozora sada ga doista zatvara, a Pomoć dobiva poveznicu na dokumentaciju API-ja dodataka.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

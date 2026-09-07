@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: English (United States) (en-US)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent is a Rust port of PicoTorrent by Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.3
+Version 0.3.4
 
-- Strict network mode: when you bind to a VPN adapter or use a SOCKS proxy, NanoTorrent switches off everything that cannot go through it, refuses to start if the adapter is missing, and pauses every torrent if it disappears.
-- Binding to a network adapter now works on Windows.
-- The status bar shows whether your listening port can be reached, and whether a proxy or a bound adapter is in use.
-- Security fix: a specially crafted torrent file could write outside your download folder on Windows.
-- The web interface gains the desktop toolbar, speed charts, multiple selection, resizable columns and drag-and-drop adding.
-- Plugins now appear in the web interface and can be switched on and off there.
-- The web interface can block an address after repeated failed logins. How many attempts, over how long, and how long the block lasts are all yours to set.
-- Fixed windows that could open taller than the screen with no way to scroll.
+- Paused torrents no longer re-create their files when NanoTorrent starts. A torrent whose data you had deleted or moved could come back at 0% with a folder of empty files.
+- The web interface now receives live updates instead of asking for them: it reacts instantly and uses far less processor time.
+- A connection indicator shows whether the browser is still in touch with NanoTorrent, and reconnects by itself.
+- The torrent list in the web interface can be paged, and sorted across every page.
+- Both the window and the web interface show how many web clients are connected.
+- The details panel fills as soon as you click a torrent, behind a loading overlay, instead of up to a second later.
+- Preferences is rebuilt to match the main window: icon tabs that scroll when they do not fit, a wider window, and scrollbars that no longer overlap.
+- Preferences shows the language you chose, and every open window changes language when you press Ok.
+- Closing a window now really closes it, and Help gains a link to the plugin API documentation.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

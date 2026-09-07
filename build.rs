@@ -293,6 +293,11 @@ fn verify_librqbit_patches() {
              Windows user who sets one cannot start the app at all)",
         ),
         (
+            "vendor/librqbit/src/torrent_state/paused.rs",
+            "storage_deferred",
+            "patches/0016-defer-paused-storage.patch (without it every restored \n             torrent re-creates its files on startup, and one whose data has \n             been deleted or moved fails its check against them and loses \n             its progress)",
+        ),
+        (
             "vendor/librqbit/src/session.rs",
             "pub async fn add_synthetic_peer",
             "patches/0011-synthetic-peer.patch (WebSeed hangs off this)",

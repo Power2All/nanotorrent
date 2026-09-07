@@ -433,6 +433,26 @@ impl ManagedTorrent {
                     if start_paused {
                         return Ok(());
                     }
+                    // Added paused, so its files were never opened. Now that it
+                    // is actually starting, initialize the storage - which is
+                    // what creates them - and run the check that was skipped,
+                    // by going back through Initializing.
+                    if matches!(&g.state, ManagedTorrentState::Paused(p) if p.storage_deferred) {
+                        let metadata = t.metadata.load_full().context("no metadata")?;
+                        let initializing = Arc::new(TorrentStateInitializing::new(
+                            t.shared.clone(),
+                            metadata.clone(),
+                            g.only_files.clone(),
+                            t.shared
+                                .storage_factory
+                                .create_and_init(t.shared(), &metadata)?,
+                            false,
+                            false,
+                        ));
+                        g.state = ManagedTorrentState::Initializing(initializing);
+                        t.state_change_notify.notify_waiters();
+                        return _start(t, peer_rx, start_paused, session, Some(g), token);
+                    }
                     let paused = g.state.take().assert_paused();
                     let (tx, rx) = tokio::sync::oneshot::channel();
                     let live = TorrentStateLive::new(paused, tx, token.clone())?;
@@ -455,6 +475,7 @@ impl ManagedTorrent {
                             .storage_factory
                             .create_and_init(t.shared(), &metadata)?,
                         true,
+                        false,
                     ));
                     g.state = ManagedTorrentState::Initializing(initializing.clone());
                     t.state_change_notify.notify_waiters();

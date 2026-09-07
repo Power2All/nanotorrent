@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Latviešu (Latvija) - Partner Center: Latvian (Latvia) (lv-LV)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent ir Viktora Elofsona PicoTorrent pārnesums uz Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versija 0.3.3
+Versija 0.3.4
 
-- Stingrs tīkla režīms: piesaistoties VPN adapterim vai izmantojot SOCKS starpniekserveri, NanoTorrent izslēdz visu, kas caur to nevar iet, atsakās startēt, ja adaptera nav, un aptur visus torrentus, ja tas pazūd.
-- Piesaiste tīkla adapterim tagad darbojas arī operētājsistēmā Windows.
-- Statusa josla rāda, vai jūsu ports ir sasniedzams un vai tiek izmantots starpniekserveris vai piesaistīts adapteris.
-- Drošības labojums: īpaši sagatavots torrent fails operētājsistēmā Windows varēja rakstīt ārpus lejupielāžu mapes.
-- Tīmekļa saskarne ieguva darbvirsmas rīkjoslu, ātruma diagrammas, vairāku atlasi, maināma platuma kolonnas un pievienošanu ar vilkšanu.
-- Spraudņi tagad parādās tīmekļa saskarnē, un tos tur var ieslēgt un izslēgt.
-- Tīmekļa saskarne var bloķēt adresi pēc atkārtotiem neveiksmīgiem pieteikšanās mēģinājumiem. Mēģinājumu skaits, periods un bloķēšanas ilgums ir iestatāmi.
-- Novērsti logi, kas varēja atvērties augstāki par ekrānu bez iespējas ritināt.
+- Pauzēti torenti vairs neizveido savus failus, kad NanoTorrent tiek palaists. Torents, kura datus bijāt izdzēsis vai pārvietojis, varēja atgriezties pie 0% ar tukšu failu mapi.
+- Tīmekļa saskarne tagad saņem tiešraides atjauninājumus, nevis tos pieprasa: tā reaģē uzreiz un patērē krietni mazāk procesora.
+- Savienojuma indikators rāda, vai pārlūks joprojām sazinās ar NanoTorrent, un pats atjauno savienojumu.
+- Tīmekļa saskarnes torentu sarakstu var sadalīt lappusēs un kārtot pāri visām lappusēm.
+- Gan logs, gan tīmekļa saskarne rāda, cik tīmekļa klientu ir pieslēgti.
+- Detaļu panelis aizpildās, tiklīdz noklikšķināt uz torenta, aiz ielādes pārklājuma, nevis līdz sekundei vēlāk.
+- Iestatījumi pārbūvēti atbilstoši galvenajam logam: cilnes ar ikonām, kas ritinās, ja neietilpst, platāks logs un ritjoslas, kas vairs neko neaizsedz.
+- Iestatījumi rāda jūsu izvēlēto valodu, un katrs atvērtais logs maina valodu, nospiežot Labi.
+- Loga aizvēršana tagad to patiešām aizver, un Palīdzība ieguvusi saiti uz spraudņu API dokumentāciju.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

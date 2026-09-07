@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versio 0.3.3
+Versio 0.3.4
 
-- Tiukka verkkotila: kun sidot VPN-sovittimeen tai käytät SOCKS-välityspalvelinta, NanoTorrent poistaa käytöstä kaiken, mikä ei kulje sen kautta, kieltäytyy käynnistymästä jos sovitin puuttuu, ja keskeyttää kaikki torrentit jos se katoaa.
-- Verkkosovittimeen sitominen toimii nyt myös Windowsissa.
-- Tilarivi näyttää, onko kuunteluporttiisi pääsy ja onko välityspalvelin tai sidottu sovitin käytössä.
-- Tietoturvakorjaus: erityisesti muotoiltu torrent-tiedosto saattoi kirjoittaa latauskansion ulkopuolelle Windowsissa.
-- Verkkokäyttöliittymä saa työpöydän työkalurivin, nopeuskaaviot, monivalinnan, koon muuttamisen sarakkeille ja lisäämisen vetämällä.
-- Laajennukset näkyvät nyt verkkokäyttöliittymässä ja ne voi kytkeä siellä päälle ja pois.
-- Verkkokäyttöliittymä voi estää osoitteen toistuvien epäonnistuneiden kirjautumisten jälkeen. Yritysten määrä, aikaikkuna ja eston kesto ovat asetuksia.
-- Korjattu ikkunat, jotka saattoivat avautua näyttöä korkeampina ilman vieritystä.
+- Pysäytetyt torrentit eivät enää luo tiedostojaan uudelleen NanoTorrentin käynnistyessä. Torrent, jonka tiedot oli poistettu tai siirretty, saattoi palata nollaan prosenttiin kansiollisen tyhjiä tiedostoja kanssa.
+- Verkkokäyttöliittymä saa nyt päivitykset suorana sen sijaan, että se pyytäisi niitä: se reagoi välittömästi ja kuluttaa huomattavasti vähemmän suoritinaikaa.
+- Yhteysilmaisin kertoo, onko selain yhä yhteydessä NanoTorrentiin, ja yhdistää itse uudelleen.
+- Verkkokäyttöliittymän torrent-luettelon voi jakaa sivuiksi ja järjestää kaikkien sivujen yli.
+- Sekä ikkuna että verkkokäyttöliittymä näyttävät, montako verkkoasiakasta on yhteydessä.
+- Tietopaneeli täyttyy heti kun napsautat torrenttia, latauspeitteen takana, eikä vasta sekuntia myöhemmin.
+- Asetukset on rakennettu uudelleen pääikkunan mukaisiksi: kuvakevälilehdet, jotka vierivät kun ne eivät mahdu, leveämpi ikkuna ja vierityspalkit, jotka eivät enää peitä mitään.
+- Asetukset näyttävät valitsemasi kielen, ja jokainen avoin ikkuna vaihtaa kieltä kun painat Ok.
+- Ikkunan sulkeminen sulkee sen nyt oikeasti, ja Ohje-valikkoon tuli linkki liitännäisten API-dokumentaatioon.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

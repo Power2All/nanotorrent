@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Português (Brasil) - Partner Center: Portuguese (Brazil) (pt-BR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ O NanoTorrent é uma adaptação em Rust do PicoTorrent, de Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versão 0.3.3
+Versão 0.3.4
 
-- Modo de rede estrito: ao vincular a um adaptador VPN ou usar um proxy SOCKS, o NanoTorrent desliga tudo o que não pode passar por ali, recusa iniciar se o adaptador estiver ausente e pausa todos os torrents se ele desaparecer.
-- A vinculação a um adaptador de rede agora funciona no Windows.
-- A barra de status mostra se sua porta de escuta pode ser alcançada e se um proxy ou adaptador vinculado está em uso.
-- Correção de segurança: um arquivo torrent malicioso podia gravar fora da sua pasta de downloads no Windows.
-- A interface web ganha a barra de ferramentas do aplicativo, gráficos de velocidade, seleção múltipla, colunas redimensionáveis e adição arrastando.
-- Os plugins agora aparecem na interface web e podem ser ligados e desligados por lá.
-- A interface web pode bloquear um endereço após repetidas falhas de login. Quantidade de tentativas, período e duração do bloqueio são configuráveis.
-- Corrigidas janelas que podiam abrir mais altas que a tela sem possibilidade de rolagem.
+- Torrents pausados não recriam mais seus arquivos quando o NanoTorrent inicia. Um torrent cujos dados você havia apagado ou movido podia voltar a 0% com uma pasta de arquivos vazios.
+- A interface web agora recebe atualizações ao vivo em vez de pedi-las: reage instantaneamente e usa bem menos processador.
+- Um indicador de conexão mostra se o navegador ainda está em contato com o NanoTorrent, e reconecta sozinho.
+- A lista de torrents na interface web pode ser paginada e ordenada em todas as páginas.
+- Tanto a janela quanto a interface web mostram quantos clientes web estão conectados.
+- O painel de detalhes é preenchido assim que você clica em um torrent, atrás de uma camada de carregamento, em vez de até um segundo depois.
+- As preferências foram refeitas conforme a janela principal: abas com ícone que rolam quando não cabem, janela mais larga e barras de rolagem que não se sobrepõem mais.
+- As preferências mostram o idioma escolhido, e cada janela aberta muda de idioma ao pressionar Ok.
+- Fechar uma janela agora realmente a fecha, e a Ajuda ganha um link para a documentação da API de plugins.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -88,6 +88,11 @@ struct Ui {
     /// The rows behind what is on screen, so a callback can map an index to a
     /// torrent without asking the session again.
     rows: RefCell<Vec<TorrentStatus>>,
+
+    /// The torrent the details panel is currently filled from, so a refresh
+    /// tick can tell "same torrent, new numbers" from "a different torrent was
+    /// selected" - only the second needs the loading veil.
+    detail_hash: RefCell<Option<String>>,
     /// One minute of `(down, up)` samples for the toolbar chart, oldest
     /// first. Filled by the same one-second tick that refreshes the list,
     /// so the chart costs no timer of its own.
@@ -287,6 +292,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         console_filter: RefCell::new(None),
         active_label: RefCell::new(None),
         rows: RefCell::new(Vec::new()),
+        detail_hash: RefCell::new(None),
         rates: RefCell::new(std::collections::VecDeque::with_capacity(SPARK_SAMPLES)),
         ipc: ctx.ipc,
         // Subscribed before the first refresh tick, so a torrent that finishes
@@ -1073,21 +1079,40 @@ fn dismiss<T: slint::ComponentHandle>(ui: &Rc<Ui>, dialog: &T) {
 }
 
 /// Is this dialog on screen? `Option::None` covers "never opened".
-/// Is this dialog on screen? Also claims ownership of it while it is, which
-/// is what makes closing it hand activation back to the main window.
+///
+/// Claims ownership of it while it is, which is what makes closing it hand
+/// activation back to the main window - and drops it once it is not, which is
+/// what makes closing it mean closed.
+///
+/// Dialogs used to be hidden and kept, so the second open re-showed the same
+/// window. That skipped the shell's open animation, so a reopened dialog
+/// appeared instantly where a new one fades in, and it carried whatever state
+/// the last open had left in it. Dropping it here rather than at each close
+/// site covers every route out of a dialog - Ok, Cancel, Escape, the X - with
+/// one rule, and the 100ms tick this runs on lands well after the close
+/// animation has started, so nothing is cut short.
 fn dialog_visible<T: slint::ComponentHandle>(
     slot: &RefCell<Option<T>>,
     owner: &MainWindow,
 ) -> bool {
-    let slot = slot.borrow();
-    let Some(dialog) = slot.as_ref() else {
-        return false;
-    };
-    if !dialog.window().is_visible() {
-        return false;
+    {
+        let borrowed = slot.borrow();
+        let Some(dialog) = borrowed.as_ref() else {
+            return false;
+        };
+        // A minimised dialog is still visible in this sense - see
+        // `poll_minimize_to_tray`, which relies on the same thing - so this
+        // does not destroy a window the user only put away for a moment.
+        if dialog.window().is_visible() {
+            modal::own(dialog, owner);
+            return true;
+        }
     }
-    modal::own(dialog, owner);
-    true
+    // Taken out before dropping: destroying the component can run code that
+    // reaches back into this slot, and it must not still be borrowed then.
+    let closed = slot.borrow_mut().take();
+    drop(closed);
+    false
 }
 
 /// True while any dialog is up, which is when the main window is blocked.
@@ -1321,6 +1346,19 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             .get_string("network.bind_interface")
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty());
+        // Browsers watching through the web interface. Read every tick rather
+        // than pushed: the web server is rebuilt whenever its settings change,
+        // and a push would have to survive that.
+        let clients = crate::webui::connected_clients();
+        window.set_web_clients(clients as i32);
+        if clients > 0 {
+            window.set_web_clients_tip(
+                format!("{}: {clients}", tr.i18n("web_clients"))
+                    .as_str()
+                    .into(),
+            );
+        }
+
         window.set_bound_active(bound.is_some());
         if let Some(name) = bound {
             // The watchdog runs from here because this is the only periodic
@@ -1419,13 +1457,66 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     // Details follow the first selected row, matching the Win32 panel.
     if let Some(first) = rows.iter().find(|r| selected.contains(&r.info_hash)) {
         set_details(window, first, &ui.tr.borrow());
-        refresh_detail_tab(window, ui, &first.info_hash);
+
+        // A click has usually switched the panel already; this catches the
+        // cases that do not go through one, such as the selected torrent
+        // being replaced by a filter change.
+        if switch_details(window, ui, &first.info_hash) {
+            refresh_detail_tab(window, ui, &first.info_hash);
+        }
     } else if selected.is_empty() {
         clear_details(window, &ui.tr.borrow());
-        clear_detail_tabs(window);
+        forget_details(window, ui);
     }
 
     *ui.rows.borrow_mut() = rows;
+}
+
+/// Point the details panel at `hash`, and say whether it was already there.
+///
+/// Returns `true` when nothing changed, so a caller that refreshes on a timer
+/// can go straight on to re-reading the numbers for the torrent already shown.
+///
+/// Called from the click path and the tab strip as well as the refresh tick.
+/// It used to be the tick alone, which meant a switch left the previous
+/// torrent's peers and trackers on screen for up to a second - the delay that
+/// looked like a slow load and was really nothing happening yet.
+fn switch_details(window: &MainWindow, ui: &Rc<Ui>, hash: &str) -> bool {
+    if ui.detail_hash.borrow().as_deref() == Some(hash) {
+        return true;
+    }
+    *ui.detail_hash.borrow_mut() = Some(hash.to_string());
+
+    // The previous torrent's files and peers are not this one's, and leaving
+    // them up would show the wrong rows until the new ones arrived.
+    clear_detail_tabs(window);
+    window.set_details_loading(true);
+
+    // Deferred by one turn of the event loop. `refresh_detail_tab` reads the
+    // torrent's files, peers and trackers on this thread, so calling it here
+    // would block before anything was painted - the veil would go up and come
+    // down inside a frame that was never drawn.
+    let weak = window.as_weak();
+    let ui = ui.clone();
+    let hash = hash.to_string();
+    slint::Timer::single_shot(std::time::Duration::ZERO, move || {
+        let Some(window) = weak.upgrade() else { return };
+        // Something may have moved on while this was waiting; whatever did
+        // raised its own veil and owns it now.
+        if ui.detail_hash.borrow().as_deref() != Some(hash.as_str()) {
+            return;
+        }
+        refresh_detail_tab(&window, &ui, &hash);
+        window.set_details_loading(false);
+    });
+    false
+}
+
+/// Forget which torrent the panel was showing, and empty it.
+fn forget_details(window: &MainWindow, ui: &Rc<Ui>) {
+    clear_detail_tabs(window);
+    *ui.detail_hash.borrow_mut() = None;
+    window.set_details_loading(false);
 }
 
 /// Fill in whichever detail tab is on screen.
@@ -1784,6 +1875,20 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
         });
     }
 
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        // Only the visible tab is filled, so the one just revealed is empty
+        // until something fills it. That used to be the next refresh tick,
+        // which is why clicking Peers or Trackers sat blank for up to a
+        // second before the rows appeared.
+        window.on_tab_changed(move || {
+            let (Some(window), Some(hash)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
+                return;
+            };
+            refresh_detail_tab(&window, &u, &hash);
+        });
+    }
+
     window.on_row_pressed(move |index, ctrl, shift| {
         let index = index.max(0) as usize;
         let hashes: Vec<String> = u
@@ -1891,8 +1996,10 @@ fn repaint_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>
         .find(|r| selected.contains(&r.info_hash))
     {
         set_details(window, first, &ui.tr.borrow());
+        switch_details(window, ui, &first.info_hash);
     } else {
         clear_details(window, &ui.tr.borrow());
+        forget_details(window, ui);
     }
 
     // Ask for a frame explicitly. Mutating the model marks it dirty, but the
@@ -2076,6 +2183,11 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
             "docs" => {
                 if let Err(err) = open::that(WEBSITE) {
                     tracing::error!("cannot open {WEBSITE}: {err}");
+                }
+            }
+            "plugin-docs" => {
+                if let Err(err) = open::that(PLUGIN_DOCS) {
+                    tracing::error!("cannot open {PLUGIN_DOCS}: {err}");
                 }
             }
             "exit" => {
@@ -2569,6 +2681,21 @@ fn show_next_pending(ui: &Rc<Ui>) {
 const THEMES: [&str; 3] = ["system", "light", "dark"];
 const CLOSE_ACTIONS: [&str; 3] = ["ask", "minimize", "exit"];
 
+/// Bump one component's `L.revision`, which re-evaluates every caption bound
+/// through `L.s(L.revision, ...)` in it.
+///
+/// The companion to `wire_translations`, and needed for the same reason:
+/// globals are per top-level component, so each window carries its own
+/// `revision` and re-translates only when its own is bumped.
+fn bump_translations<T>(component: &T)
+where
+    T: slint::ComponentHandle,
+    for<'a> L<'a>: slint::Global<'a, T>,
+{
+    let l = component.global::<L>();
+    l.set_revision(l.get_revision().wrapping_add(1));
+}
+
 /// Reload the translator and repaint every caption in the new language.
 ///
 /// The alternative the Win32 build uses is to ask for a restart
@@ -2576,10 +2703,10 @@ const CLOSE_ACTIONS: [&str; 3] = ["ask", "minimize", "exit"];
 /// property: every `L.s(L.revision, ...)` binding reads `revision`, so bumping
 /// it re-evaluates all of them.
 ///
-/// Only the main window is refreshed. Dialogs build their captions when they
-/// open, so the next open is already in the new language - including the
-/// Preferences dialog that triggered this, which is why its own labels stay in
-/// the old language until it is closed and reopened.
+/// Every live window is refreshed, not only the main one. Dialogs are hidden
+/// rather than dropped when dismissed, so a dialog that had already been
+/// opened once kept its old captions for the rest of the run - the Preferences
+/// window that triggered the change most visibly of all.
 fn apply_language(window: &MainWindow, ui: &Rc<Ui>) {
     let locale = ui
         .cfg
@@ -2603,11 +2730,42 @@ fn apply_language(window: &MainWindow, ui: &Rc<Ui>) {
     cols.set_titles(ModelRc::new(VecModel::from(titles)));
     cols.set_total(total);
 
-    let bump = |l: L<'_>| l.set_revision(l.get_revision().wrapping_add(1));
-    bump(window.global::<L>());
-    // The tray menu has its own globals, so it needs its own bump.
+    bump_translations(window);
+
+    // Every window carries its own `L`, and a stale one never re-translates.
+    // A dialog is dropped once closed, so the next open is already in the new
+    // language; this is for the ones still on screen when the change lands,
+    // and for the tray menu, which lives as long as the app does.
+    macro_rules! bump_open {
+        ($($slot:expr),* $(,)?) => {
+            $(if let Some(c) = $slot.borrow().as_ref() { bump_translations(c); })*
+        };
+    }
+    // The tray is not a ComponentHandle - it reaches its global directly.
     if let Some(tray) = ui.tray.borrow().as_ref() {
-        bump(tray.global::<L>());
+        let l = tray.global::<L>();
+        l.set_revision(l.get_revision().wrapping_add(1));
+    }
+
+    bump_open!(
+        ui.prefs_dialog,
+        ui.magnet_dialog,
+        ui.about_dialog,
+        ui.cli_help_dialog,
+        ui.update_dialog,
+        ui.create_dialog,
+        ui.torrent_dialog,
+        ui.close_prompt,
+        ui.remove_dialog,
+    );
+
+    // Preferences also holds lists whose labels are built in Rust rather than
+    // bound through `L` - the theme, close-action, proxy-type and TLS-mode
+    // dropdowns - and a revision bump does not reach those. Reloading is safe
+    // here: this runs only when the stored locale actually changed, which
+    // happens after Ok has already written the values away.
+    if let Some(d) = ui.prefs_dialog.borrow().as_ref() {
+        load_preferences(d, ui);
     }
 }
 
@@ -3120,9 +3278,6 @@ where
     });
 }
 
-/// Open the Preferences dialog, building it on first use and re-showing the
-/// same window - with every tab reloaded - after that.
-
 /// Rebuild the Plugins list from disk.
 ///
 /// Separate from `wire_plugins` because a callback may call this, and
@@ -3218,7 +3373,7 @@ fn wire_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
             // Asks the plugin rather than opening its window: what
             // "configure" means is the plugin's decision, and one without a
             // window might do something else entirely.
-            pluginwindow::configure(&row.name.to_string());
+            pluginwindow::configure(row.name.as_ref());
         });
     }
 
@@ -3252,6 +3407,11 @@ fn save_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
     crate::plugins::reload(ui.session.clone(), ui.cfg.clone(), ui.env.clone());
 }
 
+/// Open the Preferences dialog, built fresh each time.
+///
+/// There is no kept window to re-show: a dialog is dropped when it closes, so
+/// every open starts from the stored settings rather than from whatever the
+/// last one was left holding.
 fn open_preferences(ui: &Rc<Ui>) {
     if let Some(existing) = ui.prefs_dialog.borrow().as_ref() {
         // Reload rather than just re-showing: the dialog is kept alive between
@@ -3385,8 +3545,11 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
         .iter()
         .position(|l| l.locale.eq_ignore_ascii_case(&current))
         .unwrap_or(0);
-    d.set_language_index(index as i32);
+    // Model FIRST, then the index. Assigning a ComboBox's model resets its
+    // current-index, so setting the index first left every language showing
+    // English - entry 0 - however well the locale had been matched above.
     d.set_languages(ModelRc::new(VecModel::from(langs)));
+    d.set_language_index(index as i32);
 
     d.set_themes(ModelRc::new(VecModel::from(
         ["theme_system", "theme_light", "theme_dark"]
@@ -3768,6 +3931,11 @@ mod tests {
 
 /// The project's own site, shown in About and opened when it is clicked.
 const WEBSITE: &str = "https://www.nanotorrent.org";
+
+/// What a plugin author needs: the Rhai API the host exposes. Linked from Help
+/// rather than only from the site, because the people who want it are the ones
+/// already looking at the Plugins tab.
+const PLUGIN_DOCS: &str = "https://www.nanotorrent.org/plugins.html";
 
 /// Who wrote it, and where to find them - the second link in About.
 const DEVELOPER: &str = "Power2All";

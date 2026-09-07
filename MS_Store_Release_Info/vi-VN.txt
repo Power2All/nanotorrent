@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Tiếng Việt (Việt Nam) - Partner Center: Vietnamese (Vietnam) (vi-VN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent là bản chuyển sang Rust của PicoTorrent do Viktor Elofsson vi
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Phiên bản 0.3.3
+Phiên bản 0.3.4
 
-- Chế độ mạng nghiêm ngặt: khi gắn với bộ điều hợp VPN hoặc dùng proxy SOCKS, NanoTorrent tắt mọi thứ không đi qua được, từ chối khởi động nếu thiếu bộ điều hợp, và tạm dừng mọi torrent nếu nó biến mất.
-- Việc gắn với bộ điều hợp mạng nay đã hoạt động trên Windows.
-- Thanh trạng thái cho biết cổng lắng nghe có thể truy cập được không, và có đang dùng proxy hay bộ điều hợp đã gắn hay không.
-- Sửa lỗi bảo mật: một tệp torrent được tạo có chủ đích có thể ghi ra ngoài thư mục tải xuống trên Windows.
-- Giao diện web có thêm thanh công cụ của ứng dụng, biểu đồ tốc độ, chọn nhiều mục, cột đổi được độ rộng và thêm bằng cách kéo thả.
-- Phần mở rộng nay xuất hiện trong giao diện web và có thể bật tắt tại đó.
-- Giao diện web có thể chặn một địa chỉ sau nhiều lần đăng nhập thất bại. Số lần, khoảng thời gian và thời lượng chặn đều đặt được.
-- Đã sửa các cửa sổ có thể mở cao hơn màn hình mà không cuộn được.
+- Torrent đang tạm dừng không còn tạo lại tệp của mình khi NanoTorrent khởi động. Một torrent mà bạn đã xóa hoặc chuyển dữ liệu đi có thể quay về 0% cùng một thư mục toàn tệp rỗng.
+- Giao diện web nay nhận cập nhật trực tiếp thay vì phải hỏi: nó phản hồi tức thì và dùng ít thời gian xử lý hơn nhiều.
+- Đèn báo kết nối cho biết trình duyệt còn liên lạc được với NanoTorrent hay không, và tự kết nối lại.
+- Danh sách torrent trong giao diện web có thể chia trang và sắp xếp xuyên suốt mọi trang.
+- Cả cửa sổ lẫn giao diện web đều hiển thị số máy khách web đang kết nối.
+- Bảng chi tiết được lấp đầy ngay khi bạn nhấp vào một torrent, phía sau lớp phủ tải, thay vì đến một giây sau.
+- Tùy chọn được dựng lại cho khớp với cửa sổ chính: thẻ có biểu tượng tự cuộn khi không vừa, cửa sổ rộng hơn, và thanh cuộn không còn che nội dung.
+- Tùy chọn hiển thị ngôn ngữ bạn đã chọn, và mọi cửa sổ đang mở đổi ngôn ngữ khi bạn nhấn Ok.
+- Đóng một cửa sổ nay thực sự đóng nó, và menu Trợ giúp có thêm liên kết tới tài liệu API plugin.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

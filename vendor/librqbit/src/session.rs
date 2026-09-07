@@ -1553,13 +1553,27 @@ impl Session {
                 client_name_and_version: self.client_name_and_version.clone(),
             });
 
+            // A torrent added paused gets its storage object but not its
+            // files: `init` opens and creates every one of them. Restoring a
+            // session adds the whole list paused and resumes what was running,
+            // so without this every start re-made the files of every torrent -
+            // including ones whose data had been deleted or moved to another
+            // drive, which then failed their check against the empty files that
+            // had just been made for them and lost their progress.
+            let storage = self.spawner.block_in_place(|| {
+                if opts.paused {
+                    minfo.storage_factory.create(&minfo, &metadata)
+                } else {
+                    minfo.storage_factory.create_and_init(&minfo, &metadata)
+                }
+            })?;
             let initializing = Arc::new(TorrentStateInitializing::new(
                 minfo.clone(),
                 metadata.clone(),
                 only_files.clone(),
-                self.spawner
-                    .block_in_place(|| minfo.storage_factory.create_and_init(&minfo, &metadata))?,
+                storage,
                 false,
+                opts.paused,
             ));
             let handle = Arc::new(ManagedTorrent {
                 locked: RwLock::new(ManagedTorrentLocked {

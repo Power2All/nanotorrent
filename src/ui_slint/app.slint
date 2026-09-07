@@ -12,6 +12,7 @@
 // The layout this was matched against is captured in docs/ui-baseline/.
 
 import { Clip, L } from "globals.slint";
+import { DetailTab, TabStrip } from "tabs.slint";
 export { Clip, L }
 
 import { PreferencesDialog } from "preferences.slint";
@@ -25,7 +26,7 @@ import { PluginWindow, PluginRowItem, PluginButton } from "plugin.slint";
 export { PreferencesDialog, AboutDialog, CliHelpDialog, UpdateDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
 export { PluginWindow, PluginRowItem, PluginButton }
 
-import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette } from "std-widgets.slint";
+import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette, Spinner } from "std-widgets.slint";
 
 // Re-exported so a single slint_build::compile pass generates it alongside the
 // window: SystemTrayIcon cannot live inside a Window, but it can share a module.
@@ -102,6 +103,10 @@ export global Cols {
     in-out property <[length]> w;
     in property <[string]> titles;
     in-out property <length> total;
+    // Kept clear at the right of the list for the ListView's vertical
+    // scrollbar, which is drawn inside the list rather than beside it - so
+    // without this it sits on top of the last column's values.
+    out property <length> bar-room: 16px;
 }
 
 // The detail tabs' columns, one set each. Separate from `Cols` because they
@@ -247,6 +252,11 @@ component MenuRow inherits Rectangle {
     // 24px, near the ~22px Windows uses. 30px looked padded out next to a
     // 13px font and made the panel taller than its content needed.
     height: 24px;
+    // What a menu panel measures itself against. Without it a row reports no
+    // width at all - the label below is given an explicit one, so it has no
+    // natural size left to report - and a panel sized to its rows came out at
+    // whatever its own fallback was, eliding the longest caption.
+    preferred-width: caption.preferred-width + (root.checkable ? 42px : 24px);
     background: root.enabled && touch.has-hover ? Palette.accent-background : transparent;
     touch := TouchArea {
         enabled: root.enabled;
@@ -263,7 +273,7 @@ component MenuRow inherits Rectangle {
         font-size: 13px;
         color: touch.has-hover ? Palette.accent-foreground : Palette.foreground;
     }
-    Text {
+    caption := Text {
         text: root.label;
         x: root.checkable ? 30px : 12px;
         width: parent.width - (root.checkable ? 42px : 24px);
@@ -599,57 +609,7 @@ component TrackersIcon inherits Rectangle {
     Rectangle { x: 6.75px; y: 6.75px; width: 2.5px; height: 2.5px; border-radius: 1.25px; background: root.ink; }
 }
 
-component DetailTab inherits Rectangle {
-    in property <string> label;
-    in property <bool> selected;
-    callback picked();
 
-    // Sized to its content, not to a share of the width.
-    horizontal-stretch: 0;
-    height: 28px;
-    border-top-left-radius: 5px;
-    border-top-right-radius: 5px;
-    background: root.selected ? Palette.background
-        : tab-touch.has-hover ? Palette.alternate-background : transparent;
-
-    // Mixed toward the background rather than a fixed grey: an unselected tab
-    // has to read as available-but-not-current on BOTH palettes, and #8a8a8a
-    // against the light background looked disabled.
-    //
-    // Weighted heavily toward the foreground (0.85, not 0.65) because at the
-    // lower value it still read as disabled: ~#6a6a6a on white and ~#8a8a8a on
-    // near-black. What separates the current tab is the accent icon, the bold
-    // label and the underline - it does not also need the others to be faint.
-    out property <color> muted: Palette.foreground.mix(Palette.background, 0.85);
-    out property <color> ink: root.selected ? Palette.accent-background : root.muted;
-
-    tab-touch := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.picked(); }
-    }
-
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 12px;
-        spacing: 6px;
-        alignment: center;
-        VerticalLayout { alignment: center; @children }
-        Text {
-            text: root.label;
-            font-size: 13px;
-            font-weight: root.selected ? 700 : 400;
-            vertical-alignment: center;
-            color: root.selected ? Palette.foreground : root.muted;
-        }
-    }
-
-    // The selected tab joins the panel below it.
-    if root.selected: Rectangle {
-        y: parent.height - 2px;
-        height: 2px;
-        background: Palette.accent-background;
-    }
-}
 
 component VDivider inherits Rectangle {
     /// Absolute x of the press, and of each subsequent move.
@@ -959,6 +919,19 @@ component ProxyIcon inherits Rectangle {
     }
 }
 
+// A screen with a base, for "someone is watching through the web interface".
+component WebIcon inherits Rectangle {
+    in property <color> ink;
+    width: 13px;
+    height: 13px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 1 3 L 19 3 L 19 14 L 1 14 Z M 3 5 L 3 12 L 17 12 L 17 5 Z M 7 16 L 13 16 L 13 18 L 7 18 Z";
+    }
+}
+
 // A link in a chain, for "bound to one interface".
 component BoundIcon inherits Rectangle {
     in property <color> ink;
@@ -1020,6 +993,13 @@ export component MainWindow inherits Window {
     in property <bool> bound-active;
     /// The bound interface has gone missing and everything is paused.
     in property <bool> bound-lost;
+    /// Raised while a newly selected torrent's details are read, and
+    /// lowered when they are on screen.
+    in property <bool> details-loading;
+    /// Browsers watching through the web interface. Zero hides the indicator:
+    /// the bar reports what is happening, not what is switched on.
+    in property <int> web-clients;
+    in property <string> web-clients-tip;
     in property <string> bound-tip;
 
     // Details of the selected torrent.
@@ -1049,6 +1029,10 @@ export component MainWindow inherits Window {
     // the widget lives inside an `if`, and ids declared in a conditional are
     // not in scope out here.
     in-out property <int> current-tab;
+
+    /// A detail tab was clicked. Rust fills the list it just revealed;
+    /// without this the tab stayed empty until the next refresh tick.
+    callback tab-changed();
 
     // Splitter position - the Win32 frame keeps the same thing in
     // MainWindow::details_height.
@@ -1557,15 +1541,25 @@ export component MainWindow inherits Window {
         // --- torrent list ---------------------------------------------------
         scroll := ScrollView {
             vertical-stretch: 1;
-            viewport-width: Cols.total;
+            viewport-width: Cols.total + Cols.bar-room;
             // The ListView inside owns vertical scrolling; two of them fight.
             vertical-scrollbar-policy: always-off;
 
             VerticalLayout {
+                // Room for the horizontal scrollbar, which a ScrollView draws
+                // INSIDE its own bounds rather than below them. Without it the
+                // bar sits on top of the last row, and the final torrent in a
+                // full list is half a line of text under a grey slab.
+                //
+                // Only when there is something to scroll to: reserving it
+                // unconditionally would leave a gap under every list narrow
+                // enough to fit.
+                padding-bottom: Cols.total > scroll.visible-width ? 18px : 0px;
                 header := Rectangle {
                     height: 28px;
                     background: Palette.alternate-background;
                     HorizontalLayout {
+                        alignment: start;
                         // A Rectangle with an explicit width, with the
                         // TouchArea inside it - exactly what `Cell` does for
                         // the rows below, and for the same reason. A TouchArea
@@ -1684,6 +1678,7 @@ export component MainWindow inherits Window {
                         }
 
                         HorizontalLayout {
+                            alignment: start;
                             Cell { w: Cols.w[0]; text: row.name; fg: row.selected ? Palette.selection-foreground : Palette.foreground; }
                             Cell { w: Cols.w[1]; text: row.queue; align: right; }
                             Cell { w: Cols.w[2]; text: row.size; align: right; }
@@ -1790,7 +1785,10 @@ export component MainWindow inherits Window {
         }
 
         // --- details panel ---------------------------------------------------
-        if root.show-details: VerticalLayout {
+        // A Rectangle wrapping the layout, so the loading veil below can be
+        // laid over the whole panel. A layout would place the veil as another
+        // row instead of on top of what it is covering.
+        if root.show-details: Rectangle {
             // Was a TabWidget. Replaced because that widget stretches its tabs
             // over the full width and has no room for an icon; `current-tab`
             // was already an in-out property, so only the chrome changed.
@@ -1802,6 +1800,12 @@ export component MainWindow inherits Window {
             min-height: root.details-height;
             max-height: root.details-height;
 
+            VerticalLayout {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+
             Rectangle {
                 height: 29px;
                 background: Palette.alternate-background;
@@ -1811,33 +1815,31 @@ export component MainWindow inherits Window {
                     height: 1px;
                     background: Palette.border;
                 }
-                HorizontalLayout {
-                    alignment: start;
-                    padding-left: 6px;
-                    padding-top: 1px;
-                    spacing: 2px;
+                // Scrolls when the four captions do not fit - a narrow
+                // window, or a language with longer words for them.
+                TabStrip {
                     DetailTab {
                         label: L.s(L.revision, "overview");
                         selected: root.current-tab == 0;
-                        picked => { root.current-tab = 0; }
+                        picked => { root.current-tab = 0; root.tab-changed(); }
                         OverviewIcon { ink: parent.ink; }
                     }
                     DetailTab {
                         label: L.s(L.revision, "files");
                         selected: root.current-tab == 1;
-                        picked => { root.current-tab = 1; }
+                        picked => { root.current-tab = 1; root.tab-changed(); }
                         FilesIcon { ink: parent.ink; }
                     }
                     DetailTab {
                         label: L.s(L.revision, "peers");
                         selected: root.current-tab == 2;
-                        picked => { root.current-tab = 2; }
+                        picked => { root.current-tab = 2; root.tab-changed(); }
                         PeersIcon { ink: parent.ink; }
                     }
                     DetailTab {
                         label: L.s(L.revision, "trackers");
                         selected: root.current-tab == 3;
-                        picked => { root.current-tab = 3; }
+                        picked => { root.current-tab = 3; root.tab-changed(); }
                         TrackersIcon { ink: parent.ink; }
                     }
                 }
@@ -1951,7 +1953,7 @@ export component MainWindow inherits Window {
                 // far ones would simply be unreachable. The ListView owns
                 // vertical scrolling - two of them fight.
                 ScrollView {
-                    viewport-width: DCols.files-total;
+                    viewport-width: DCols.files-total + Cols.bar-room;
                     vertical-scrollbar-policy: always-off;
                     VerticalLayout {
                         padding: 0px;
@@ -2040,7 +2042,7 @@ export component MainWindow inherits Window {
             if root.current-tab == 2: VerticalLayout {
                 vertical-stretch: 1;
                 ScrollView {
-                    viewport-width: DCols.peers-total;
+                    viewport-width: DCols.peers-total + Cols.bar-room;
                     vertical-scrollbar-policy: always-off;
                     VerticalLayout {
                         padding: 0px;
@@ -2132,7 +2134,7 @@ export component MainWindow inherits Window {
             if root.current-tab == 3: VerticalLayout {
                 vertical-stretch: 1;
                 ScrollView {
-                    viewport-width: DCols.trackers-total;
+                    viewport-width: DCols.trackers-total + Cols.bar-room;
                     vertical-scrollbar-policy: always-off;
                     VerticalLayout {
                         padding: 0px;
@@ -2205,6 +2207,38 @@ export component MainWindow inherits Window {
                     }
                 }
             }
+            }
+
+            // Shown while the details for a newly selected torrent are being
+            // read. That read blocks the UI thread, so this is raised one turn
+            // of the event loop BEFORE it starts - otherwise nothing would be
+            // painted until the work that made it necessary had finished.
+            //
+            // The fade is what stops it flickering: a torrent whose details
+            // arrive in a few milliseconds never gets far enough into the
+            // animation to be seen, so only a slow load shows anything.
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                background: #00000099;
+                opacity: root.details-loading ? 1.0 : 0.0;
+                animate opacity { duration: 180ms; easing: ease-out; }
+
+                // Swallows clicks while it is up: a half-filled file list is
+                // not something to be picking rows out of. Disabled when it is
+                // not loading, so an invisible veil never eats a click.
+                TouchArea { enabled: root.details-loading; }
+
+                Spinner {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: 32px;
+                    height: 32px;
+                    indeterminate: true;
+                }
+            }
         }
 
         // --- status bar ------------------------------------------------------
@@ -2262,6 +2296,11 @@ export component MainWindow inherits Window {
                     value: "";
                     tip: root.proxy-tip;
                     ProxyIcon { ink: #2ea043; }
+                }
+                if root.web-clients > 0: StatusItem {
+                    value: root.web-clients;
+                    tip: root.web-clients-tip;
+                    WebIcon { ink: #2ea043; }
                 }
                 if root.bound-active: StatusItem {
                     value: "";
@@ -2486,7 +2525,11 @@ export component MainWindow inherits Window {
     if root.open-menu == 3: Rectangle {
         x: help-title.x;
         y: menu-bar.height;
-        width: 220px;
+        // Sized to the captions rather than fixed: the longest of these is a
+        // translation away from not fitting, and a menu row that runs off the
+        // panel is a link nobody can read. Width only, so this cannot feed
+        // back into the height the way a wrapping caption would.
+        width: max(220px, help-layout.preferred-width);
         height: help-layout.min-height;
         background: Palette.alternate-background;
         border-color: Palette.border;
@@ -2495,6 +2538,7 @@ export component MainWindow inherits Window {
         help-layout := VerticalLayout {
                 padding: 4px;
                 MenuRow { label: L.s(L.revision, "documentation"); activated => { root.action("docs"); root.open-menu = 0; } }
+                MenuRow { label: L.s(L.revision, "plugin_api_documentation"); activated => { root.action("plugin-docs"); root.open-menu = 0; } }
                 MenuRow { label: L.s(L.revision, "command_line_help"); activated => { root.action("cli-help"); root.open-menu = 0; } }
                 MenuRow { label: L.s(L.revision, "amp_check_for_update"); activated => { root.action("check-update"); root.open-menu = 0; } }
                 MenuRow { label: L.s(L.revision, "amp_about"); activated => { root.action("about"); root.open-menu = 0; } }

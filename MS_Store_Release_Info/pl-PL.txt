@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Polski (Polska) - Partner Center: Polish (Poland) (pl-PL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent to port PicoTorrenta autorstwa Viktora Elofssona na język Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Wersja 0.3.3
+Wersja 0.3.4
 
-- Ścisły tryb sieciowy: po powiązaniu z kartą VPN lub użyciu proxy SOCKS NanoTorrent wyłącza wszystko, co nie może przez nie przejść, odmawia uruchomienia, gdy karty brak, i wstrzymuje wszystkie torrenty, gdy zniknie.
-- Powiązanie z kartą sieciową działa teraz również w systemie Windows.
-- Pasek stanu pokazuje, czy port nasłuchu jest osiągalny oraz czy używane jest proxy lub powiązana karta.
-- Poprawka bezpieczeństwa: spreparowany plik torrent mógł w systemie Windows zapisywać poza folderem pobierania.
-- Interfejs webowy zyskuje pasek narzędzi z aplikacji, wykresy prędkości, zaznaczanie wielu pozycji, kolumny o zmiennej szerokości i dodawanie przeciągnięciem.
-- Wtyczki pojawiają się teraz w interfejsie webowym i można je tam włączać oraz wyłączać.
-- Interfejs webowy może zablokować adres po wielu nieudanych logowaniach. Liczba prób, okres i czas blokady są ustawiane.
-- Naprawiono okna, które mogły otwierać się wyższe niż ekran bez możliwości przewijania.
+- Wstrzymane torrenty nie tworzą już ponownie swoich plików przy uruchamianiu NanoTorrenta. Torrent, którego dane usunięto lub przeniesiono, mógł wrócić na 0% z folderem pustych plików.
+- Interfejs sieciowy otrzymuje teraz aktualizacje na żywo zamiast o nie prosić: reaguje natychmiast i zużywa znacznie mniej procesora.
+- Wskaźnik połączenia pokazuje, czy przeglądarka wciąż ma kontakt z NanoTorrentem, i sam łączy się ponownie.
+- Listę torrentów w interfejsie sieciowym można dzielić na strony i sortować w poprzek wszystkich stron.
+- Zarówno okno, jak i interfejs sieciowy pokazują, ilu klientów sieciowych jest połączonych.
+- Panel szczegółów wypełnia się od razu po kliknięciu torrenta, za warstwą ładowania, a nie nawet sekundę później.
+- Preferencje przebudowano na wzór głównego okna: karty z ikonami przewijane, gdy się nie mieszczą, szersze okno i paski przewijania, które niczego już nie zasłaniają.
+- Preferencje pokazują wybrany przez ciebie język, a każde otwarte okno zmienia język po naciśnięciu Ok.
+- Zamknięcie okna naprawdę je teraz zamyka, a menu Pomoc zyskało odnośnik do dokumentacji API wtyczek.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

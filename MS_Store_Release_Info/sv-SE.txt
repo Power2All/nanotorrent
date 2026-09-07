@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.3 - Microsoft Store listing
+NanoTorrent 0.3.4 - Microsoft Store listing
 Language: Svenska (Sverige) - Partner Center: Swedish (Sweden) (sv-SE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,16 +29,17 @@ NanoTorrent är en Rust-portning av PicoTorrent av Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.3
+Version 0.3.4
 
-- Strikt nätverksläge: när du binder till ett VPN-kort eller använder en SOCKS-proxy stänger NanoTorrent av allt som inte kan gå genom det, vägrar starta om kortet saknas och pausar alla torrenter om det försvinner.
-- Bindning till ett nätverkskort fungerar nu på Windows.
-- Statusraden visar om din lyssnarport går att nå och om en proxy eller ett bundet nätverkskort används.
-- Säkerhetsfix: en särskilt utformad torrentfil kunde skriva utanför din nedladdningsmapp på Windows.
-- Webbgränssnittet får skrivbordets verktygsfält, hastighetsdiagram, flerval, kolumner med justerbar bredd och tillägg genom att dra och släppa.
-- Insticksmoduler visas nu i webbgränssnittet och kan slås på och av därifrån.
-- Webbgränssnittet kan blockera en adress efter upprepade misslyckade inloggningar. Antal försök, tidsfönster och blockeringens längd kan ställas in.
-- Rättade fönster som kunde öppnas högre än skärmen utan möjlighet att rulla.
+- Pausade torrenter återskapar inte längre sina filer när NanoTorrent startar. En torrent vars data du hade raderat eller flyttat kunde komma tillbaka på 0 % med en mapp full av tomma filer.
+- Webbgränssnittet tar nu emot uppdateringar direkt i stället för att be om dem: det reagerar omedelbart och drar avsevärt mindre processortid.
+- En anslutningsindikator visar om webbläsaren fortfarande har kontakt med NanoTorrent, och återansluter av sig själv.
+- Torrentlistan i webbgränssnittet kan delas upp i sidor och sorteras över alla sidor.
+- Både fönstret och webbgränssnittet visar hur många webbklienter som är anslutna.
+- Detaljpanelen fylls så snart du klickar på en torrent, bakom ett inläsningslager, i stället för upp till en sekund senare.
+- Inställningar har byggts om efter huvudfönstret: ikonflikar som rullar när de inte får plats, ett bredare fönster och rullningslister som inte längre täcker något.
+- Inställningar visar språket du valde, och varje öppet fönster byter språk när du trycker på Ok.
+- Att stänga ett fönster stänger det nu på riktigt, och Hjälp får en länk till dokumentationen för plugin-API:et.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

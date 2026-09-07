@@ -272,6 +272,8 @@ struct SessionInfo {
     download_rate: i64,
     upload_rate: i64,
     torrents: usize,
+    /// Browsers holding an event stream open, this one included.
+    clients: usize,
 }
 
 #[derive(Serialize)]
@@ -491,11 +493,49 @@ async fn h_session(state: web::Data<AppState>) -> actix_web::Result<impl Respond
             download_rate: down,
             upload_rate: up,
             torrents: st.session.torrents(&HashMap::new()).len(),
+            clients: connected_clients(),
         }
     })
     .await?;
 
     Ok(web::Json(info))
+}
+
+/// Browsers currently holding an event stream open.
+///
+/// One stream is one viewer, which makes this the honest count of who is
+/// watching - better than counting requests, which cannot tell a browser that
+/// is still there from one that closed its tab an hour ago.
+///
+/// A global rather than something threaded through AppState: the desktop
+/// window wants to read it, and it has no handle on the web server - the
+/// server is rebuilt whenever the web settings change, and this outlives that.
+static WEB_CLIENTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// How many browsers are watching right now.
+pub fn connected_clients() -> usize {
+    WEB_CLIENTS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Counts one viewer for as long as it is alive.
+///
+/// A guard rather than a decrement at the end of the loop: the loop can end by
+/// break, by the channel closing, or by the task being dropped when the server
+/// restarts, and only a Drop covers all three. Getting this wrong leaks a
+/// viewer that never disconnects, and the count only ever climbs.
+struct Viewer;
+
+impl Viewer {
+    fn new() -> Self {
+        WEB_CLIENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Viewer
+    }
+}
+
+impl Drop for Viewer {
+    fn drop(&mut self) {
+        WEB_CLIENTS.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// How often a connected browser is sent a fresh snapshot.
@@ -542,6 +582,7 @@ fn snapshot(state: &AppState) -> serde_json::Value {
             download_rate: down,
             upload_rate: up,
             torrents: rows.len(),
+            clients: connected_clients(),
         },
         "torrents": rows,
         "errors": errors,
@@ -575,6 +616,8 @@ async fn h_events(state: web::Data<AppState>) -> impl Responder {
         futures::channel::mpsc::channel::<Result<web::Bytes, actix_web::Error>>(4);
 
     actix_web::rt::spawn(async move {
+        // Dropped when this task ends, however it ends.
+        let _viewer = Viewer::new();
         loop {
             let st = state.clone();
             let Ok(payload) = web::block(move || snapshot(&st)).await else {
