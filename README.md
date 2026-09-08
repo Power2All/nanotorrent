@@ -43,7 +43,7 @@ here is drawn by Slint, so it is the same window on Windows, Linux and macOS.
 | <img src="images/04-preferences.webp" alt="Preferences"> | <img src="images/07-web-preferences.webp" alt="The web interface's Preferences drawer"> |
 | **Preferences.** Six tabs, applied live on OK - the session is rebuilt rather than requiring a restart. | **The same settings, remotely.** The web interface's drawer is generated from the command line's settings registry, so all three surfaces share one list and one validator. |
 | <img src="images/05-web-interface-dark.webp" alt="The web interface, dark"> | <img src="images/06-web-interface-light.webp" alt="The web interface, light"> |
-| **Web interface.** An authenticated HTTPS remote: add, watch, pause, resume, remove, set a location. | **It follows the theme too**, and renders in the configured language. |
+| **Web interface.** An authenticated HTTPS remote: add, watch, pause, resume, remove, set a location, order the queue, and a per-torrent panel for files, trackers, tags and share limits. | **It follows the theme too**, and renders in the configured language. |
 
 <sub>The torrents shown are Linux distribution images, used as sample data.</sub>
 
@@ -75,8 +75,13 @@ icon, run it once with `--appimage-integrate`, or use the `.deb`/`.rpm`.
 
 ## Building
 
-Requires Rust 1.85+ (edition 2024). No C++ dependencies, and no OpenSSL — the
-librqbit `rust-tls` feature keeps libssl out of the tree entirely.
+Requires Rust 1.85+ (edition 2024), a C compiler and **cmake**. The last two
+are for `aws-lc-sys`, which librqbit hashes pieces with, and for the bundled
+SQLite — not for anything this project writes.
+
+There is no OpenSSL and no Perl. Database encryption is pure Rust
+(XChaCha20-Poly1305 over the whole settings file, see `src/core/dbkey.rs`), and
+TLS is rustls throughout.
 
 ```
 cargo build --release
@@ -237,7 +242,17 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **Torrent creation** — BitTorrent v1, v2 and hybrid (BEP 52), with tracker /
   comment / private options.
 - **Web interface** — an optional authenticated HTTPS remote: session and
-  torrent listings, add / pause / resume / recheck / remove / move / set location / label, a
+  torrent listings, add / pause / resume / recheck / remove / move / set
+  location / label, **queue order** (top / up / down / bottom, on a multiple
+  selection, in the order that keeps it together) and the **alternative speed
+  limits** switch, latched in the toolbar the way the desktop's turtle is and
+  read back from the server so a schedule turning them on lights it too. A
+  **per-torrent panel** behind each row's Details button carries the file list
+  with its priorities (skip / normal / high / maximum), the Trackers tab as
+  data — tiers, DHT/LSD/PeX status with their real peer counts, and add / edit
+  by URL / remove — this torrent's tags, its own ratio and seeding-time limits
+  (with "use the global setting" and "no limit" kept distinct, as the nullable
+  columns keep them), and Force reannounce. There is also a
   **Preferences drawer** behind the hamburger (every setting the desktop dialog
   offers, grouped the same way, rendered from `GET /api/settings` and written
   through `POST /api/settings`; **Save changes** writes them, calls
@@ -284,6 +299,50 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **Labels** — colors, save paths, per-torrent assignment, filtering,
   auto-apply. Both labels and filters are managed from Preferences ▸ Labels and
   filters, with the filter expression validated as you type.
+- **Tags** — many per torrent, where a label is one. Assigned from the torrent's
+  context menu and managed in Preferences; a torrent can be in several at once,
+  which is the whole reason they exist beside labels.
+- **Queue order** — move a torrent, or a whole selection, to the top, up, down
+  or to the bottom, from the toolbar or the context menu. A multiple selection
+  keeps its own order: moving each row to the top in turn would reverse them,
+  so the list is walked backwards for Top and forwards for Bottom.
+- **File priorities** — skip, normal, high or maximum, per file, from the Files
+  tab. Skip is in the same scale rather than beside it, because that is what
+  the engine already understands: a file at skip is left out of the download,
+  which is the include toggle the tab has always had.
+- **Share limits** — stop seeding at a ratio, after a number of minutes, or
+  whichever comes first, then pause the torrent or remove it (with or without
+  its files). Global in Preferences ▸ Queue and seeding, and overridable per
+  torrent from its context menu, where "use the global setting" and "no limit"
+  are kept apart rather than collapsed into one empty box.
+
+  Off by default, deliberately: the inherited `libtorrent.share_ratio_limit`
+  defaults to 200 (ratio 2.00, stored in hundredths), so without its own switch
+  every upgraded profile would silently have started pausing torrents.
+- **Alternative speed limits** — a second pair of rate limits and a switch,
+  thrown by hand from the toolbar turtle or on a schedule (from, to, and which
+  days). Kept separate from the main limits so turning them off restores
+  exactly what was configured before, with no numbers to remember.
+- **Watched folder** — a directory scanned for `.torrent` files, which are
+  added and then renamed aside rather than deleted: the file is yours, and a
+  scanner that eats its input is one wrong path away from clearing a folder
+  somebody was keeping.
+- **Incomplete folder** — download to one place, move to the save path on
+  completion. Distinct from "move completed downloads", which moves *out* of
+  the save path afterwards; this one keeps partial files off the destination
+  disk entirely.
+- **Tracker editing** — add, edit or remove a torrent's announce URLs from the
+  Trackers tab, in announce **tiers**, editing the URL in place. The changes go
+  to the settings database rather than into the `.torrent`: the announce list
+  sits outside the info dict, so replacing it changes nothing about the
+  torrent's identity. Rows for torrents that are no longer in the list are
+  cleaned up at startup.
+- **Database encryption** — XChaCha20-Poly1305 over the whole settings file,
+  with the key in DPAPI on Windows and a 0600 file elsewhere, so there is no
+  password to type. Turned on and off from Preferences ▸ Database or the
+  command line, and any change made outside NanoTorrent is detected rather than
+  silently accepted. Also **export and import** of your settings, labels and
+  filters as JSON — passwords and plugin grants deliberately left out.
 - **Command line** — **every** preference the dialog offers is also settable
   without it: `--list-settings` prints all of them with their current values,
   units and accepted ranges, `--get NAME` reads one and `--set NAME VALUE`
@@ -370,7 +429,23 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   delete them — so there is something to read before there is something
   running: one that only watches, and an **RSS reader** that uses every
   subsystem there is, keeping your feeds in one list and the selected feed's
-  torrents in another, under an RSS menu it adds to the menu bar. Each example
+  torrents in another, under an RSS menu it adds to the menu bar.
+
+  The reader's auto-downloader is a complete one: must contain and must not
+  contain with `|` alternatives, an optional regular-expression mode, an
+  **episode filter** (`1x25-` for episode 25 onward, `1x1-10` for a range,
+  `2x` for a season), a **smart episode filter** that takes each episode once
+  however often it is re-uploaded, "ignore later matches for N days", a label,
+  a save path, add-paused, and a list of feeds the rule applies to. Its
+  Settings hold the four that belong to the reader as a whole: how often to
+  check, how many articles to keep per feed, whether the downloader runs at
+  all, and whether a REPACK or PROPER may replace an episode already taken.
+
+  All of it is a **form**, drawn by the host from a description the script
+  gives it (`ui_form`) — so the rule editor is a dialog rather than a line of
+  punctuation, and it looks the same in the desktop window and the web
+  interface. That primitive is part of the plugin API, not something the RSS
+  reader has to itself. Each example
   is offered once by name rather than only into a folder that does not exist
   yet, so an upgrade brings a newly added one to a profile that already has the
   folder. Scripts get the same reach over the session as an authenticated web
@@ -428,7 +503,8 @@ Verified against the vendored librqbit 9.0.1 sources rather than assumed.
 | [12](https://www.bittorrent.org/beps/bep_0012.html) | Multitracker metadata | **Full** | Tiers are announced to and shown per-tier in the Trackers tab. |
 | [14](https://www.bittorrent.org/beps/bep_0014.html) | Local service discovery | **Full** | Preferences ▸ Connection, on by default. Finds peers on the same network without a tracker or the DHT. |
 | [15](https://www.bittorrent.org/beps/bep_0015.html) | UDP tracker protocol | **Full** | |
-| [19](https://www.bittorrent.org/beps/bep_0019.html) | WebSeed (HTTP/FTP seeding) | **Partial** | `url-list` (GetRight style) is read and each seed becomes a synthetic peer served by HTTP range requests, so pieces are hash-verified like any other. One request per *piece*, not per 16 KiB chunk, and a failed fetch retries rather than killing the seed — both learned from a live test. FTP is not spoken, and BEP 17 `httpseeds` is a different protocol that is not implemented. |
+| [17](https://www.bittorrent.org/beps/bep_0017.html) | HTTP seeding (Hoffman style) | **Yes** | `httpseeds` is read, and each URL becomes a synthetic peer like BEP 19's. Piece-oriented rather than file-oriented: one request names the info hash and a piece index, and the body is that piece. Rare in the wild, and free once the peer-shaped shell for BEP 19 exists. |
+| [19](https://www.bittorrent.org/beps/bep_0019.html) | WebSeed (HTTP/FTP seeding) | **Partial** | `url-list` (GetRight style) is read and each seed becomes a synthetic peer served by HTTP range requests, so pieces are hash-verified like any other. One request per *piece*, not per 16 KiB chunk, and a failed fetch retries rather than killing the seed — both learned from a live test. FTP is not spoken: it is in no BEP and no client speaks it. |
 | [20](https://www.bittorrent.org/beps/bep_0020.html) | Peer ID conventions | **Full** | Azureus-style `-NT-`, or fully random in anonymous mode. |
 | [21](https://www.bittorrent.org/beps/bep_0021.html) | Extension for partial seeds | **Full** | `upload_only` is set when we connect with everything already downloaded, and two upload-only ends disconnect instead of holding a connection with nothing to trade. |
 | [23](https://www.bittorrent.org/beps/bep_0023.html) | Compact peer lists | **Full** | |
@@ -444,24 +520,43 @@ require-encryption toggles for each.
 
 ## Known differences / not yet ported
 
-- **WebSeed is a synthetic peer, not a parallel download path** (see
-  `vendor/librqbit/PATCHES.md`, patch 0011), so its pieces are hash-checked like
-  any other and a stale or wrong web seed is discarded the way a bad peer is. A
-  server that ignores `Range` and answers `200` with the whole file is refused
-  rather than downloaded. Neither FTP nor BEP 17 `httpseeds` is spoken.
-- librqbit does not attribute peer counts to a discovery source, so the
-  DHT/LSD/PeX rows in the Trackers tab are status-only — no seeds/leeches
-  numbers there. The same tab shows announce stats keyed by a torrent's primary
-  info hash, so for a hybrid those numbers are its v1 swarm's; the second
-  announce happens and finds peers, it just is not counted in that column.
-- **v2 seeding is incomplete.** Reading is done — v2-only `.torrent` files and
-  v2-only magnets both download and seed, and hybrids announce in both swarms
-  (see the BEP table above and the v0.3.0 notes below) — but NanoTorrent does
-  not answer an incoming `hash request`, so it cannot bootstrap someone else's
-  v2 magnet, and it does not set the v2 handshake bit on outgoing connections,
-  since advertising support it cannot honour would be worse than staying quiet.
-  How the rest is built, and what librqbit 9.0.1 does and does not ship for
-  BEP 52, is in `vendor/librqbit/PATCHES.md`, patches 0008 and 0009.
+- **Piece selection is sequential-ish by design.** librqbit asks for pieces in
+  file-priority order, taking the first and last piece of each file before the
+  rest (`file_info.rs::iter_piece_priorities`).
+
+  That means the two boxes people go looking for — "download in sequential
+  order" and "download first and last pieces first" — describe what
+  NanoTorrent already does, always, and a toggle for either would be a checkbox
+  that changes nothing.
+
+  Rarest-first now runs on top of that ordering (patch 0019): the rarest piece
+  a peer can actually serve wins, compared only within a file's priority rank,
+  with iteration order as the tiebreak. So priorities still decide which file
+  gets attention, and the first/last-piece behaviour survives wherever rarity
+  does not discriminate — which is most of the time in a healthy swarm.
+- **Announce stats for a hybrid are its v1 swarm's**, because the Trackers tab
+  keys them by the torrent's primary info hash. The second announce happens and
+  finds peers; it is just not counted in that column. The DHT/LSD/PeX rows
+  beside it do now carry real seeds/leeches numbers, attributed per source.
+- **v2 seeding works for the session a torrent was added in.** A torrent added
+  from a `.torrent` serves its piece layers, so someone else can bootstrap a v2
+  magnet from us, and the v2 handshake bit goes on for exactly those torrents.
+
+  What remains is one root cause and two symptoms. The engine's v2 seams —
+  the identity override, the piece verifier and now the hash provider — are all
+  add-time options that session persistence does not carry, so after a restart
+  a restored torrent has none of them and serves nothing until it is re-added
+  from its `.torrent`. Separately, leaf-layer (16 KiB) hash requests are
+  rejected rather than computed from the data, and a v2-only magnet's layers
+  are held by the resolver rather than installed as a provider, so a magnet
+  cannot be served even before a restart. `vendor/librqbit/PATCHES.md` (patches
+  0008, 0009 and 0019) has the detail.
+
+  None of the v2 work has crossed a real network. The wire format matches
+  libtorrent's byte for byte, the merkle arithmetic is checked both directions,
+  and the serving path is checked by feeding its answers back through the same
+  verification a receiving client applies — but a live v2 swarm to test against
+  has yet to present itself.
 
   One quirk worth knowing: librqbit reads only a magnet's `xt` key, so a hybrid
   link that puts its v1 hash in `xt.1` looks v2-only to it. `v2::normalise_magnet`
@@ -473,35 +568,45 @@ require-encryption toggles for each.
   `a_real_v2_magnet_resolves_against_the_live_swarm` therefore fails for want of
   a seed rather than for want of code; `who_has_this_infohash` tells those two
   apart before you go looking for a bug.
-- On **macOS**, local service discovery trips Local Network Privacy: the system
-  asks for permission on first launch, because LSD sends multicast and LSD is on
-  by default. The bundle carries an `NSLocalNetworkUsageDescription` so the
-  dialog says why. Declining disables LSD and nothing else.
-- **Desktop notifications need the platform to provide one.** Windows and
-  macOS always can; on Linux they go to the D-Bus notification daemon, so a
-  session without one (a headless box, a bare WM) logs a warning and shows
-  nothing. The notification's icon is looked up by the same name the `.desktop`
-  entry uses, which means an install that never ran
-  `packaging/linux/install-desktop-entry.sh` gets the generic glyph - the same
-  cause as the Wayland window icon below. On macOS the notification is
-  attributed to the `.app` bundle, so a binary run straight out of
-  `target/release` may show under a different name.
-- Windows will not let an app force-set the **magnet** protocol default when
-  another client registered it system-wide (anti-hijacking); the associations
-  button registers NanoTorrent and opens Settings ▸ Default apps so you can
-  confirm it.
-- On **Wayland** the window icon comes from the installed `.desktop` entry
-  (there is no protocol for a client to set one), so a binary run straight from
-  `target/release` shows a generic icon until
-  `packaging/linux/install-desktop-entry.sh` has been run. The packages do this
-  for you.
 - The **translations are machine-assisted**. They started as PicoTorrent's
   original files, which stopped well short of covering this port, and the gaps
   were filled in during development rather than by native speakers. Any
   inherited string still naming the old product is renamed on load — except
   the credit in About, which is meant to say PicoTorrent. Corrections are
-  welcome: the failure mode here is a wrong word in a language none of us
-  reads, not a missing one.
+  welcome, and the easiest way to send one is a
+  [GitHub issue](https://github.com/Power2All/nanotorrent/issues) — the locale,
+  the key or the English text, and what it should say. The failure mode here is
+  a wrong word in a language none of us reads, not a missing one, so a report
+  from someone who reads it is worth more than any amount of re-checking from
+  this end.
+
+## Platform notes
+
+Not shortcomings, and nothing here is waiting on work — this is what the three
+operating systems do, and an app that behaved otherwise would be the surprising
+one. Collected so nobody has to file them twice.
+
+- On **macOS**, local service discovery trips Local Network Privacy: the system
+  asks for permission on first launch, because LSD sends multicast and LSD is on
+  by default. The bundle carries an `NSLocalNetworkUsageDescription` so the
+  dialog says why. Declining disables LSD and nothing else.
+- **Desktop notifications need the platform to provide one.** Windows and macOS
+  always can; on Linux they go to the D-Bus notification daemon, so a session
+  without one (a headless box, a bare WM) logs a warning and shows nothing.
+  There is no way for a client to supply the daemon it is talking to. On macOS
+  the notification is attributed to the `.app` bundle, so a binary run straight
+  out of `target/release` may show under a different name.
+- **Windows will not let an app force-set the `magnet` protocol default** when
+  another client registered it system-wide. That is anti-hijacking, and it
+  applies to every application equally; the associations button registers
+  NanoTorrent and opens Settings ▸ Default apps so you can confirm it.
+- On **Wayland** the window icon comes from the installed `.desktop` entry, so a
+  binary run straight from `target/release` shows a generic icon until
+  `packaging/linux/install-desktop-entry.sh` has been run. The packages do this
+  for you. There is now an `xdg-toplevel-icon-v1` protocol for setting one
+  directly, but winit 0.30 does not implement it — its Wayland
+  `set_window_icon` is an empty function — so nothing below Slint can use it
+  yet.
 
 ## History
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Română (România) - Partner Center: Romanian (Romania) (ro-RO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent este o portare în Rust a PicoTorrent, de Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versiunea 0.3.4
+Versiunea 0.3.5
 
-- Torentele puse pe pauză nu își mai recreează fișierele la pornirea NanoTorrent. Un torent ale cărui date le ștersesei sau le mutasei putea reveni la 0% cu un dosar de fișiere goale.
-- Interfața web primește acum actualizări în direct în loc să le ceară: reacționează instantaneu și consumă mult mai puțin procesor.
-- Un indicator de conexiune arată dacă navigatorul mai are legătură cu NanoTorrent și se reconectează singur.
-- Lista de torente din interfața web poate fi împărțită în pagini și sortată de-a lungul tuturor paginilor.
-- Atât fereastra, cât și interfața web arată câți clienți web sunt conectați.
-- Panoul de detalii se completează imediat ce dai clic pe un torent, în spatele unui strat de încărcare, nu după o secundă.
-- Preferințele au fost refăcute după fereastra principală: file cu pictograme care derulează când nu încap, fereastră mai lată și bare de derulare care nu mai acoperă nimic.
-- Preferințele arată limba pe care ai ales-o, iar fiecare fereastră deschisă schimbă limba când apeși Ok.
-- Închiderea unei ferestre o închide acum cu adevărat, iar meniul Ajutor primește o legătură către documentația API pentru pluginuri.
+- Limite de partajare: opriți seedingul la un raport, după un timp stabilit sau la primul dintre ele, apoi puneți torrentul pe pauză ori eliminați-l.
+- Limite de viteză alternative, după un program sau comutate manual din bara de instrumente.
+- Ordinea în coadă din bara de instrumente, priorități pe fișier și etichete.
+- Un dosar supravegheat care adaugă orice fișier .torrent pus în el.
+- Adăugarea, editarea și eliminarea trackerelor unui torrent, pe niveluri de anunțare.
+- Baza de date cu setări poate fi criptată, fără parolă de tastat, iar setările pot fi exportate și importate ca JSON.
+- Interfața web capătă ordinea în coadă, comutatorul de viteză și un panou per torrent pentru fișiere, trackere, etichete și limite.
+- Piesele pe care le au puțini parteneri sunt cerute primele, iar torrentele BitTorrent v2 pot fi acum partajate altora.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -4,6 +4,29 @@ use std::path::Path;
 
 /// Mimics Win32 StrFormatByteSize64 which PicoTorrent used via
 /// Utils::toHumanFileSize.
+/// Percent-encode for a URL: everything outside the unreserved set becomes
+/// `%XX`.
+///
+/// `also_safe` names bytes to leave alone on top of the unreserved set - a
+/// path wants `/` kept, a query parameter does not. Empty is the strict form.
+///
+/// Hand-rolled rather than pulled in: this escapes tracker parameters, magnet
+/// fields, web-seed paths and BEP 17 info hashes, which is a handful of call
+/// sites and no edge cases beyond "escape everything that is not unreserved".
+pub fn percent_encode(bytes: &[u8], also_safe: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len());
+    for b in bytes {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*b as char)
+            }
+            _ if also_safe.contains(b) => out.push(*b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 pub fn to_human_file_size(bytes: i64) -> String {
     const UNITS: [&str; 7] = ["bytes", "KB", "MB", "GB", "TB", "PB", "EB"];
 

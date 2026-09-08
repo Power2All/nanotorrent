@@ -42,7 +42,7 @@ use std::sync::Arc;
 use slint::{Model, ModelRc, SharedString, VecModel};
 
 use crate::AppContext;
-use crate::bittorrent::session::{AddParams, AddTorrentSource, Session};
+use crate::bittorrent::session::{self, AddParams, AddTorrentSource, QueueMove, Session};
 use crate::bittorrent::torrentstatus::{State, TorrentStatus};
 use crate::core::utils;
 use crate::ui::format;
@@ -69,6 +69,10 @@ mod pluginwindow;
 struct Ui {
     session: Arc<Session>,
     cfg: Arc<crate::core::configuration::Configuration>,
+    /// The same connection `cfg` reads through. Held for the one thing that
+    /// needs the database itself rather than a setting in it: turning
+    /// encryption on and off from the Database tab.
+    db: Arc<crate::core::database::Database>,
     /// Swapped in place when the language changes, so every later lookup
     /// sees the new one. A plain Translator would have to be cloned into each
     /// closure, freezing the language those closures were built with.
@@ -124,6 +128,8 @@ struct Ui {
     env: Arc<crate::core::environment::Environment>,
     torrent_dialog: RefCell<Option<AddTorrentDialog>>,
     close_prompt: RefCell<Option<ClosePromptDialog>>,
+    /// The one-time "shall I encrypt the database?" question.
+    db_prompt: RefCell<Option<DbPromptDialog>>,
     remove_dialog: RefCell<Option<RemoveDialog>>,
     /// The .torrent currently in the Add dialog, and any queued behind it.
     /// argv can name several, and only one dialog is shown at a time.
@@ -284,6 +290,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     let ui = Rc::new(Ui {
         session: ctx.session.clone(),
         cfg: ctx.cfg.clone(),
+        db: ctx.db.clone(),
         tr: RefCell::new(ctx.translator.clone()),
         selected: RefCell::new(HashSet::new()),
         anchor: RefCell::new(0),
@@ -316,6 +323,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         web: RefCell::new(ctx.web.clone()),
         blocked: std::cell::Cell::new(false),
         close_prompt: RefCell::new(None),
+        db_prompt: RefCell::new(None),
         remove_dialog: RefCell::new(None),
     });
 
@@ -338,6 +346,21 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     // Every visible string in the markup is `L.s("key")`. Wired before the
     // window is shown so the first paint is already translated.
     wire_translations(&window, &ui);
+    // Only offered when there is a PicoTorrent database to import from, which
+    // is why this is a label rather than a fixed row: empty hides it. Read
+    // once at startup - somebody who installs PicoTorrent while NanoTorrent is
+    // running is not a case worth a filesystem watcher.
+    window.set_import_label(match ui.env.get_picotorrent_db_path() {
+        Some(_) => ui.tr.borrow().i18n1("import_from_app", "PicoTorrent").into(),
+        None => SharedString::new(),
+    });
+
+    // A plugin's window is created on demand, long after this, so it cannot be
+    // wired here - it is given the lookup to use when it makes one.
+    pluginwindow::set_translator({
+        let u = ui.clone();
+        Rc::new(move |key: &str| ui_string(&u.tr.borrow(), key))
+    });
 
     // Clicking any value in the detail tabs copies it. Reached through a
     // global so the cells do not each need wiring where they are used.
@@ -437,6 +460,16 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     window
         .show()
         .map_err(|e| anyhow::anyhow!("failed to show the Slint window: {e}"))?;
+
+    // The one-time encryption question, asked only when there is something to
+    // ask about: a database that is still plain, and nobody having answered
+    // yet. Delayed so it arrives over a drawn window rather than an empty one.
+    if !ui.cfg.get_bool("database.encryption_prompted") && !ui.db.is_encrypted() {
+        let u = ui.clone();
+        slint::Timer::single_shot(std::time::Duration::from_millis(600), move || {
+            open_db_prompt(&u);
+        });
+    }
 
     // Open a dialog straight away, for screenshotting one without driving the
     // menus. Dialog layout is the one thing here that neither the compiler nor
@@ -664,7 +697,7 @@ const DETAIL_COLUMNS: [&[(&str, f32)]; 3] = [
         ("name", 260.0),
         ("size", 110.0),
         ("progress", 110.0),
-        ("included", 90.0),
+        ("priority", 90.0),
     ],
     &[
         ("address", 190.0),
@@ -1129,6 +1162,7 @@ fn any_dialog_open(ui: &Rc<Ui>, owner: &MainWindow) -> bool {
         dialog_visible(&ui.create_dialog, owner),
         dialog_visible(&ui.torrent_dialog, owner),
         dialog_visible(&ui.close_prompt, owner),
+        dialog_visible(&ui.db_prompt, owner),
     ];
     open.iter().any(|open| *open)
 }
@@ -1217,6 +1251,13 @@ fn handle_params(ui: &Rc<Ui>, args: &[String]) {
 /// Pull the session's current state into the model.
 fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     drain_notifications(window, ui);
+
+    // Read rather than remembered: the schedule turns these on by itself, and
+    // the toolbar button has to show what is actually in force.
+    window.set_alt_speed_on(crate::bittorrent::limits::alt_speed_active(
+        &ui.cfg,
+        chrono::Local::now(),
+    ));
 
     // The web interface can change the language too, and it writes the setting
     // rather than calling in here. This costs one string compare a second and
@@ -1490,6 +1531,10 @@ fn switch_details(window: &MainWindow, ui: &Rc<Ui>, hash: &str) -> bool {
     // The previous torrent's files and peers are not this one's, and leaving
     // them up would show the wrong rows until the new ones arrived.
     clear_detail_tabs(window);
+    // A row index means nothing once the list underneath it changes - and an
+    // editor left open on it would be editing the wrong torrent's tracker.
+    window.set_tracker_selected(-1);
+    window.set_tracker_editing_row(-1);
     window.set_details_loading(true);
 
     // Deferred by one turn of the event loop. `refresh_detail_tab` reads the
@@ -1645,20 +1690,44 @@ fn file_tree<'a>(paths: impl Iterator<Item = &'a str>) -> Vec<(Option<usize>, us
 
 /// Trackers.
 fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
+    // Not while a tracker URL is being edited. This runs on the one-second
+    // tick, and rebuilding the model replaces the row - taking the text field
+    // and the caret with it, so the edit could never be finished.
+    if window.get_current_tab() == 3 && window.get_tracker_editing_row() >= 0 {
+        return;
+    }
+
     match window.get_current_tab() {
         1 => {
             let files = ui.session.files(hash);
+            // One read for the whole list rather than one per row.
+            let stored = ui.session.file_priorities(hash);
+            let tr = ui.tr.borrow();
             let rows: Vec<FileEntryRow> = file_tree(files.iter().map(|f| f.name.as_str()))
                 .into_iter()
                 .map(|(index, depth, name)| match index {
-                    Some(index) => FileEntryRow {
-                        index: index as i32,
-                        depth: depth as i32,
-                        name: name.into(),
-                        size: utils::to_human_file_size(files[index].length as i64).into(),
-                        progress: files[index].progress,
-                        included: files[index].included,
-                    },
+                    Some(index) => {
+                        // A file left out of the download is at Skip whatever
+                        // the priority table says - the include toggle and the
+                        // priority are two views of one setting.
+                        let level = match files[index].included {
+                            false => session::PRIORITY_SKIP,
+                            true => stored
+                                .get(&index)
+                                .copied()
+                                .unwrap_or(session::PRIORITY_NORMAL),
+                        };
+                        FileEntryRow {
+                            index: index as i32,
+                            depth: depth as i32,
+                            name: name.into(),
+                            size: utils::to_human_file_size(files[index].length as i64).into(),
+                            progress: files[index].progress,
+                            included: files[index].included,
+                            priority: level as i32,
+                            priority_name: ui_string(&tr, priority_key(level)),
+                        }
+                    }
                     None => FileEntryRow {
                         index: -1,
                         depth: depth as i32,
@@ -1666,9 +1735,12 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                         size: SharedString::new(),
                         progress: 0.0,
                         included: true,
+                        priority: -1,
+                        priority_name: SharedString::new(),
                     },
                 })
                 .collect();
+            drop(tr);
             window.set_detail_files(ModelRc::new(VecModel::from(rows)));
         }
         2 => {
@@ -1693,6 +1765,7 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
             window.set_detail_peers(ModelRc::new(VecModel::from(rows)));
         }
         3 => {
+            let tr2 = ui.tr.borrow();
             let rows: Vec<TrackerEntryRow> = ui
                 .session
                 .tracker_rows(hash, &ui.tr.borrow())
@@ -1714,6 +1787,31 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                 })
                 .collect();
             window.set_detail_trackers(ModelRc::new(VecModel::from(rows)));
+
+            // Tier names, ending in "New tier" - so choosing the last entry is
+            // how a tier gets added, and there is no separate button for it.
+            let count = ui.session.tracker_tier_count(hash);
+            let names: Vec<SharedString> = (0..count)
+                .map(|i| SharedString::from(format!("{} #{i}", ui_string(&tr2, "tier"))))
+                .chain(std::iter::once(ui_string(&tr2, "new_tier")))
+                .collect();
+            // "New tier" is the last entry and the default: adding to an
+            // existing tier is the deliberate choice, and joining a tier by
+            // accident changes the announce order of trackers that were
+            // already there.
+            //
+            // A pick made by hand survives the one-second redraw, which is why
+            // this compares the length rather than resetting outright - but a
+            // change in the number of tiers has moved what every index means,
+            // so it goes back to the default.
+            let last = names.len() as i32 - 1;
+            let unchanged = window.get_tracker_tier_names().row_count() == names.len();
+            let picked = match unchanged {
+                true => window.get_tracker_tier_index().clamp(0, last),
+                false => last,
+            };
+            window.set_tracker_tier_names(ModelRc::new(VecModel::from(names)));
+            window.set_tracker_tier_index(picked);
         }
         // Overview needs nothing beyond what set_details already wrote.
         _ => {}
@@ -1832,8 +1930,9 @@ fn clear_details(window: &MainWindow, tr: &Translator) {
 
 /// Click, ctrl-click and shift-click, over a selection the model owns.
 ///
-/// `StandardTableView` has no multi-select at all, so there is nothing to
-/// delegate to - see spike/slint-list/README.md.
+/// `StandardTableView` has no multi-select at all - it tracks one current row
+/// and offers no way to extend a selection - so there is nothing to delegate
+/// to and the whole thing is done here.
 fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     let (w, u, m) = (window.as_weak(), ui.clone(), model.clone());
     {
@@ -1885,6 +1984,102 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             let (Some(window), Some(hash)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
                 return;
             };
+            refresh_detail_tab(&window, &u, &hash);
+        });
+    }
+    {
+        // Clicking a file's priority steps it to the next level and redraws.
+        // The redraw is immediate rather than waiting for the one-second tick:
+        // a cell that does not change when clicked reads as a dead control.
+        let w = window.as_weak();
+        window.on_edit_tracker(move || {
+            let Some(window) = w.upgrade() else { return };
+            // Turn the selected row into a text field. The row index is what
+            // the markup keys off, and the text lives beside it because the
+            // row model is rebuilt every second.
+            window.set_tracker_edit_text(window.get_tracker_target());
+            window.set_tracker_editing_row(window.get_tracker_selected());
+        });
+    }
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        window.on_commit_tracker_edit(move || {
+            let (Some(window), Some(hash)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
+                return;
+            };
+            let from = window.get_tracker_target().to_string();
+            let to = window.get_tracker_edit_text().to_string();
+            // Closed first, so the row goes back to being a row whether or not
+            // the new URL was accepted - leaving the field open on a rejected
+            // edit would look like the click did nothing.
+            window.set_tracker_editing_row(-1);
+            if to.trim() == from {
+                return;
+            }
+            match u.session.edit_tracker(&hash, &from, &to) {
+                true => show_toast(&window, &u.tr.borrow().i18n("edit_tracker")),
+                false => show_error_toast(&window, &u.tr.borrow().i18n("tracker_url_invalid")),
+            }
+        });
+    }
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        window.on_remove_tracker(move || {
+            let (Some(window), Some(hash)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
+                return;
+            };
+            u.session
+                .remove_tracker(&hash, window.get_tracker_target().as_str());
+            // Whatever was being edited is gone with the row.
+            window.set_tracker_editing_row(-1);
+        });
+    }
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        window.on_add_tracker(move || {
+            let (Some(window), Some(hash)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
+                return;
+            };
+            let url = window.get_new_tracker().to_string();
+            // The picker's last entry is "new tier", and its index is one past
+            // the last real tier - which is exactly what `add_tracker` reads as
+            // "make a new one", so no special case is needed here.
+            let tier = window.get_tracker_tier_index().max(0) as usize;
+            match u.session.add_tracker(&hash, url.trim(), tier) {
+                true => {
+                    window.set_new_tracker(SharedString::new());
+                    // The torrent is being re-added, so the list it is about to
+                    // redraw from is briefly the old one. The one-second tick
+                    // picks the new tracker up.
+                    show_toast(&window, &u.tr.borrow().i18n("add_tracker"));
+                }
+                // Refused by the scheme check, which is the only way this
+                // fails without touching the disk.
+                false => show_error_toast(&window, &u.tr.borrow().i18n("tracker_url_invalid")),
+            }
+        });
+    }
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        window.on_cycle_file_priority(move |index| {
+            let (Some(window), Some(hash)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
+                return;
+            };
+            let index = index.max(0) as usize;
+            let now = u
+                .session
+                .file_priorities(&hash)
+                .get(&index)
+                .copied()
+                .unwrap_or(session::PRIORITY_NORMAL);
+            // Skip -> Normal -> High -> Maximum -> Skip. Wrapping rather than
+            // stopping at either end, or there would be no way back with one
+            // control.
+            let next = match now {
+                session::PRIORITY_MAX => session::PRIORITY_SKIP,
+                level => level + 1,
+            };
+            u.session.set_file_priority(&hash, index, next);
             refresh_detail_tab(&window, &u, &hash);
         });
     }
@@ -1952,10 +2147,51 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
                 .map(SharedString::from)
                 .collect::<Vec<_>>();
             window.set_ctx_label_names(ModelRc::new(VecModel::from(names)));
-            // Both submenus start closed, or one left open stays open on the
+
+            // Tags, and which of them the selection already carries. Ticked
+            // only when EVERY selected torrent has it: a mixed selection reads
+            // as unticked, and one click then puts the tag on all of them,
+            // which is the useful direction.
+            let tags = u.cfg.get_tags();
+            let selected = u.targets();
+            let on: Vec<bool> = tags
+                .iter()
+                .map(|tag| {
+                    !selected.is_empty()
+                        && selected
+                            .iter()
+                            .all(|hash| u.cfg.tags_for(hash).iter().any(|t| t.id == tag.id))
+                })
+                .collect();
+            window.set_ctx_tag_names(ModelRc::new(VecModel::from(
+                tags.into_iter()
+                    .map(|t| SharedString::from(t.name))
+                    .collect::<Vec<_>>(),
+            )));
+            window.set_ctx_tag_on(ModelRc::new(VecModel::from(on)));
+
+            // Every submenu starts closed, or one left open stays open on the
             // next torrent.
             window.set_ctx_labels_open(false);
             window.set_ctx_queue_open(false);
+            window.set_ctx_tags_open(false);
+            window.set_ctx_ratio_open(false);
+            window.set_ctx_seed_time_open(false);
+            window.set_ctx_ratio_choices(ModelRc::new(VecModel::from(
+                std::iter::once(ui_string(&u.tr.borrow(), "share_ratio_global"))
+                    .chain(std::iter::once(ui_string(&u.tr.borrow(), "share_ratio_none")))
+                    .chain(RATIO_PRESETS.iter().map(|r| SharedString::from(format!("{r:.1}"))))
+                    .collect::<Vec<_>>(),
+            )));
+            window.set_ctx_seed_time_choices(ModelRc::new(VecModel::from(
+                std::iter::once(ui_string(&u.tr.borrow(), "share_ratio_global"))
+                    .chain(std::iter::once(ui_string(&u.tr.borrow(), "share_ratio_none")))
+                    .chain(SEED_TIME_PRESETS.iter().map(|m| SharedString::from(match m {
+                        m if m % 60 == 0 => format!("{}h", m / 60),
+                        m => format!("{m}m"),
+                    })))
+                    .collect::<Vec<_>>(),
+            )));
         }
 
         // Grey out whichever of Pause/Resume does not apply, judged by the
@@ -2104,8 +2340,46 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
             "pause" => targets.iter().for_each(|h| u.session.pause(h)),
             "resume" => targets.iter().for_each(|h| u.session.resume(h)),
             "recheck" => targets.iter().for_each(|h| u.session.recheck(h)),
-            "queue-up" => targets.iter().for_each(|h| u.session.queue_move(h, true)),
-            "queue-down" => targets.iter().for_each(|h| u.session.queue_move(h, false)),
+            "queue-top" => move_in_queue(&u, &targets, QueueMove::Top),
+            "queue-up" => move_in_queue(&u, &targets, QueueMove::Up),
+            "queue-down" => move_in_queue(&u, &targets, QueueMove::Down),
+            "queue-bottom" => move_in_queue(&u, &targets, QueueMove::Bottom),
+            "reannounce" => targets.iter().for_each(|h| u.session.reannounce(h)),
+            // One-shot import of every torrent from an existing PicoTorrent
+            // install. The row is only drawn when the database is there, so
+            // this cannot normally miss - but it is read again rather than
+            // remembered, because the row was drawn at startup and the file
+            // may have gone since.
+            "import-pico" => {
+                let Some(window) = w.upgrade() else { return };
+                let tr = u.tr.borrow();
+                let Some(path) = u.env.get_picotorrent_db_path() else {
+                    show_error_toast(&window, &tr.i18n("nothing_to_add"));
+                    return;
+                };
+                match u.session.import_from_picotorrent(&path) {
+                    Err(err) => show_error_toast(&window, &err.to_string()),
+                    Ok((0, 0)) => show_toast(&window, &tr.i18n("nothing_to_add")),
+                    Ok((0, _)) => {
+                        show_toast(&window, &tr.i18n("all_torrents_already_in_session"))
+                    }
+                    Ok((added, skipped)) => {
+                        let mut text = tr.i18n1("torrents_added", &added.to_string());
+                        if skipped > 0 {
+                            text.push(' ');
+                            text.push_str(&tr.i18n("some_torrents_already_in_session"));
+                        }
+                        show_toast(&window, &text);
+                    }
+                }
+            }
+            // The manual switch only. The schedule can also have the limits on,
+            // and this must not silently turn that off - the scheduler will put
+            // them straight back and the button would look broken.
+            "alt-speed" => {
+                let on = !u.cfg.get_bool("speed.alt_enabled");
+                u.cfg.set("speed.alt_enabled", &on);
+            }
             "remove" => targets.iter().for_each(|h| u.session.remove(h, false)),
             "remove-files" => targets.iter().for_each(|h| u.session.remove(h, true)),
             "copy-hash" => {
@@ -2746,6 +3020,13 @@ fn apply_language(window: &MainWindow, ui: &Rc<Ui>) {
         let l = tray.global::<L>();
         l.set_revision(l.get_revision().wrapping_add(1));
     }
+
+    // Plugin windows are held by their own module, keyed by plugin name, so
+    // they are not in the list below. Re-handing it the lookup bumps them.
+    pluginwindow::set_translator({
+        let u = ui.clone();
+        Rc::new(move |key: &str| ui_string(&u.tr.borrow(), key))
+    });
 
     bump_open!(
         ui.prefs_dialog,
@@ -3494,6 +3775,49 @@ fn open_preferences(ui: &Rc<Ui>) {
             }
         });
     }
+    // The three folder pickers added with the transfer settings. One closure
+    // shape each, differing only in which property they fill - kept explicit
+    // rather than generic, because a macro here would be longer than the three.
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_browse_incomplete(move || {
+            if let Some(dir) = pick_folder(&u, "incomplete_path")
+                && let Some(d) = weak.upgrade()
+            {
+                d.set_incomplete_path(dir.into());
+            }
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_browse_move_completed(move || {
+            if let Some(dir) = pick_folder(&u, "move_completed_path")
+                && let Some(d) = weak.upgrade()
+            {
+                d.set_move_completed_path(dir.into());
+            }
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_browse_watch(move || {
+            if let Some(dir) = pick_folder(&u, "watch_path")
+                && let Some(d) = weak.upgrade()
+            {
+                d.set_watch_path(dir.into());
+            }
+        });
+    }
+    {
+        // A `for` over a model cannot write back through the loop variable, so
+        // the checkbox reports and this puts the answer in the model.
+        let weak = dialog.as_weak();
+        dialog.on_schedule_day_toggled(move |day, on| {
+            if let Some(d) = weak.upgrade() {
+                d.get_schedule_days().set_row_data(day as usize, on);
+            }
+        });
+    }
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_browse_ipfilter(move || {
@@ -3503,6 +3827,84 @@ fn open_preferences(ui: &Rc<Ui>) {
                 && let Some(d) = weak.upgrade()
             {
                 d.set_ipfilter_path(file.to_string_lossy().as_ref().into());
+            }
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_set_db_encryption(move |on| {
+            let Some(d) = weak.upgrade() else { return };
+            d.set_db_error(set_db_encryption(&u, on).unwrap_or_default().into());
+            show_db_state(&d, &u);
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_export_settings(move || {
+            let Some(d) = weak.upgrade() else { return };
+            let Some(target) = rfd::FileDialog::new()
+                .set_title(u.tr.borrow().i18n("export_settings"))
+                .set_file_name("nanotorrent-settings.json")
+                .add_filter("JSON", &["json"])
+                .save_file()
+            else {
+                return;
+            };
+            let done = crate::core::dbexport::export(&u.db)
+                .and_then(|json| Ok(std::fs::write(&target, json)?));
+            show_db_note(&d, &u, done.map(|()| u.tr.borrow().i18n("settings_exported")));
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_import_settings(move || {
+            let Some(d) = weak.upgrade() else { return };
+            let Some(source) = rfd::FileDialog::new()
+                .set_title(u.tr.borrow().i18n("import_settings"))
+                .add_filter("JSON", &["json"])
+                .pick_file()
+            else {
+                return;
+            };
+            let done = std::fs::read_to_string(&source)
+                .map_err(anyhow::Error::from)
+                .and_then(|json| crate::core::dbexport::import(&u.db, &json))
+                .map(|report| report.summary());
+            // Re-read BEFORE reporting: the dialog is showing what was just
+            // overwritten, and Ok would write those stale values straight back
+            // over the import. `load_preferences` also clears the note, which
+            // is why the report goes in afterwards.
+            if done.is_ok() {
+                load_preferences(&d, &u);
+                wire_rules(&d, &u);
+                wire_web(&d, &u);
+                wire_plugins(&d, &u);
+            }
+            show_db_note(&d, &u, done);
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_add_tag(move || {
+            let Some(d) = weak.upgrade() else { return };
+            // `ensure_tag` trims and refuses a blank, and gives back the
+            // existing tag when the name is already taken - so typing one twice
+            // is not an error and does not make a second.
+            if u.cfg.ensure_tag(&d.get_new_tag()).is_some() {
+                d.set_new_tag(SharedString::new());
+                show_tags(&d, &u);
+            }
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_delete_tag(move || {
+            let Some(d) = weak.upgrade() else { return };
+            let index = d.get_tag_index();
+            if let Some(tag) = u.cfg.get_tags().get(index.max(0) as usize) {
+                // Takes it off every torrent too - see `delete_tag`.
+                u.cfg.delete_tag(tag.id);
+                show_tags(&d, &u);
             }
         });
     }
@@ -3661,6 +4063,277 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     d.set_proxy_hostnames(cfg.get_bool("libtorrent.proxy_hostnames"));
     d.set_proxy_peers(cfg.get_bool("libtorrent.proxy_peers"));
     d.set_proxy_trackers(cfg.get_bool("libtorrent.proxy_trackers"));
+
+    // Downloads: the two staging folders and the watched one.
+    d.set_incomplete_enabled(cfg.get_bool("downloads.incomplete_enabled"));
+    d.set_incomplete_path(cfg.get_string("downloads.incomplete_path").unwrap_or_default().into());
+    d.set_move_completed(cfg.get_bool("move_completed_downloads"));
+    d.set_move_completed_path(
+        cfg.get_string("move_completed_downloads_path").unwrap_or_default().into(),
+    );
+    d.set_watch_enabled(cfg.get_bool("watch.enabled"));
+    d.set_watch_path(cfg.get_string("watch.path").unwrap_or_default().into());
+    d.set_watch_start(cfg.get_bool("watch.start"));
+    // "None" first, so index 0 is always the no-label choice and the rest line
+    // up with `get_labels()`.
+    let labels = cfg.get_labels();
+    d.set_watch_label_names(ModelRc::new(VecModel::from(
+        std::iter::once(ui_string(&ui.tr.borrow(), "none"))
+            .chain(labels.iter().map(|l| SharedString::from(l.name.clone())))
+            .collect::<Vec<_>>(),
+    )));
+    let want = cfg.get_int("watch.label_id").unwrap_or(-1);
+    d.set_watch_label_index(
+        labels
+            .iter()
+            .position(|l| i64::from(l.id) == want)
+            .map_or(0, |at| at as i32 + 1),
+    );
+
+    // Speed.
+    d.set_alt_enabled(cfg.get_bool("speed.alt_enabled"));
+    d.set_alt_download_limit(cfg.get_int("speed.alt_download_rate").unwrap_or(0).to_string().into());
+    d.set_alt_upload_limit(cfg.get_int("speed.alt_upload_rate").unwrap_or(0).to_string().into());
+    d.set_schedule_enabled(cfg.get_bool("speed.schedule_enabled"));
+    d.set_schedule_from(clock(cfg.get_int("speed.schedule_from").unwrap_or(480)).into());
+    d.set_schedule_to(clock(cfg.get_int("speed.schedule_to").unwrap_or(1320)).into());
+    d.set_weekday_names(ModelRc::new(VecModel::from(
+        (0..7)
+            .map(|day| ui_string(&ui.tr.borrow(), &format!("weekday_{day}")))
+            .collect::<Vec<_>>(),
+    )));
+    let mask = cfg.get_int("speed.schedule_days").unwrap_or(127);
+    d.set_schedule_days(ModelRc::new(VecModel::from(
+        (0..7).map(|day| mask & (1 << day) != 0).collect::<Vec<bool>>(),
+    )));
+
+    // Queue and seeding. The ratio is stored in hundredths and shown as a
+    // ratio, which is the whole reason it goes through a string here.
+    d.set_share_limits_enabled(cfg.get_bool("queue.share_limit_enabled"));
+    d.set_share_ratio_limit(
+        format!("{:.2}", cfg.get_int("libtorrent.share_ratio_limit").unwrap_or(0) as f64 / 100.0)
+            .into(),
+    );
+    d.set_seed_time_limit(cfg.get_int("queue.seed_time_limit").unwrap_or(-1).to_string().into());
+    d.set_share_actions(ModelRc::new(VecModel::from(
+        ["share_action_pause", "share_action_remove", "share_action_remove_data"]
+            .iter()
+            .map(|key| ui_string(&ui.tr.borrow(), key))
+            .collect::<Vec<_>>(),
+    )));
+    d.set_share_action_index(match cfg.get_string("queue.share_limit_action").as_deref() {
+        Some("remove") => 1,
+        Some("remove_with_data") => 2,
+        _ => 0,
+    });
+
+    show_tags(d, ui);
+
+    d.set_db_error(SharedString::new());
+    d.set_db_note(SharedString::new());
+    show_db_state(d, ui);
+}
+
+/// Refill the tag picker, keeping the selection in range.
+fn show_tags(d: &PreferencesDialog, ui: &Rc<Ui>) {
+    let names: Vec<SharedString> = ui
+        .cfg
+        .get_tags()
+        .into_iter()
+        .map(|t| t.name.into())
+        .collect();
+    // Clamped rather than reset: deleting the last tag would otherwise leave
+    // the box pointing past the end of the list.
+    let index = d.get_tag_index().min(names.len() as i32 - 1);
+    d.set_tag_names(ModelRc::new(VecModel::from(names)));
+    d.set_tag_index(index);
+}
+
+/// Turn database encryption on or off. Returns why it failed, or `None`.
+///
+/// Shared by the Database tab and the one-time prompt, so both leave the key
+/// file and the database in the same agreed state - the ordering that matters
+/// lives in [`crate::core::database::Database::set_encryption`].
+///
+/// This blocks the UI thread while the file is rewritten. It is a settings
+/// database - kilobytes - and doing it on a worker would mean every other
+/// reader waiting on the same mutex anyway, just without a frozen frame to
+/// show for it.
+fn set_db_encryption(ui: &Rc<Ui>, on: bool) -> Option<String> {
+    match ui.db.set_encryption(&ui.env, on) {
+        Ok(_) => None,
+        Err(err) => {
+            tracing::error!("the database conversion failed: {err:#}");
+            Some(format!(
+                "{}: {err:#}",
+                ui.tr.borrow().i18n("database_failed")
+            ))
+        }
+    }
+}
+
+/// The ratios the context menu offers. Not settings: they are the values
+/// people pick, and a menu with nowhere to type has to choose some.
+const RATIO_PRESETS: [f64; 4] = [1.0, 2.0, 3.0, 5.0];
+
+/// The seeding times the context menu offers, in minutes. Formatted with the
+/// same bare h/m suffixes the ETA column uses, so nothing new needs
+/// translating.
+const SEED_TIME_PRESETS: [i64; 4] = [30, 60, 360, 1440];
+
+/// The locale key for a priority level.
+fn priority_key(level: i64) -> &'static str {
+    match level {
+        session::PRIORITY_SKIP => "priority_skip",
+        session::PRIORITY_HIGH => "priority_high",
+        session::PRIORITY_MAX => "priority_max",
+        _ => "priority_normal",
+    }
+}
+
+/// Move every selected torrent in the queue.
+///
+/// Top and Bottom are applied in the order that keeps a multiple selection
+/// together: moving each in turn to the top would reverse them, so the list is
+/// walked backwards for Top and forwards for Bottom.
+fn move_in_queue(ui: &Rc<Ui>, targets: &[String], to: QueueMove) {
+    let ordered: Vec<&String> = match to {
+        QueueMove::Top => targets.iter().rev().collect(),
+        _ => targets.iter().collect(),
+    };
+    for hash in ordered {
+        ui.session.move_in_queue(hash, to);
+    }
+}
+
+/// Ask for a folder, titled with a locale key.
+fn pick_folder(ui: &Rc<Ui>, title_key: &str) -> Option<String> {
+    rfd::FileDialog::new()
+        .set_title(ui.tr.borrow().i18n(title_key))
+        .pick_folder()
+        .map(|dir| dir.to_string_lossy().into_owned())
+}
+
+/// Minutes past midnight as "HH:MM", for the schedule fields.
+fn clock(minutes: i64) -> String {
+    let minutes = minutes.clamp(0, 24 * 60 - 1);
+    format!("{:02}:{:02}", minutes / 60, minutes % 60)
+}
+
+/// The reverse. Anything that is not a time leaves the setting alone, which is
+/// what `None` means to the caller - a half-typed "1" must not be read as
+/// one minute past midnight and saved.
+fn minutes_past_midnight(text: &str) -> Option<i64> {
+    let (hours, minutes) = text.trim().split_once(':')?;
+    let hours: i64 = hours.trim().parse().ok()?;
+    let minutes: i64 = minutes.trim().parse().ok()?;
+    if !(0..24).contains(&hours) || !(0..60).contains(&minutes) {
+        return None;
+    }
+    Some(hours * 60 + minutes)
+}
+
+/// Write back the Downloads, Speed and Queue tabs.
+///
+/// Split out of `save_preferences` because it is a page of its own and that
+/// function was already long. Every value here goes through the same rule as
+/// the rest of the dialog: unparseable input leaves the stored setting alone
+/// rather than writing a zero over it.
+fn save_transfer(d: &PreferencesDialog, cfg: &crate::core::configuration::Configuration) {
+    cfg.set("downloads.incomplete_enabled", &d.get_incomplete_enabled());
+    cfg.set("downloads.incomplete_path", &d.get_incomplete_path().to_string());
+    cfg.set("move_completed_downloads", &d.get_move_completed());
+    cfg.set(
+        "move_completed_downloads_path",
+        &d.get_move_completed_path().to_string(),
+    );
+    cfg.set("watch.enabled", &d.get_watch_enabled());
+    cfg.set("watch.path", &d.get_watch_path().to_string());
+    cfg.set("watch.start", &d.get_watch_start());
+    // Index 0 is "none"; everything after it indexes `get_labels()`.
+    let picked = d.get_watch_label_index();
+    cfg.set(
+        "watch.label_id",
+        &match picked >= 1 {
+            true => cfg
+                .get_labels()
+                .get(picked as usize - 1)
+                .map_or(-1, |l| i64::from(l.id)),
+            false => -1,
+        },
+    );
+
+    cfg.set("speed.alt_enabled", &d.get_alt_enabled());
+    if let Ok(kb) = d.get_alt_download_limit().trim().parse::<i64>() {
+        cfg.set("speed.alt_download_rate", &kb.max(0));
+    }
+    if let Ok(kb) = d.get_alt_upload_limit().trim().parse::<i64>() {
+        cfg.set("speed.alt_upload_rate", &kb.max(0));
+    }
+    cfg.set("speed.schedule_enabled", &d.get_schedule_enabled());
+    if let Some(from) = minutes_past_midnight(&d.get_schedule_from()) {
+        cfg.set("speed.schedule_from", &from);
+    }
+    if let Some(to) = minutes_past_midnight(&d.get_schedule_to()) {
+        cfg.set("speed.schedule_to", &to);
+    }
+    // Seven checkboxes back into the bitmask the setting stores.
+    let mask = d
+        .get_schedule_days()
+        .iter()
+        .enumerate()
+        .filter(|(_, on)| *on)
+        .fold(0i64, |mask, (day, _)| mask | (1 << day));
+    cfg.set("speed.schedule_days", &mask);
+
+    cfg.set("queue.share_limit_enabled", &d.get_share_limits_enabled());
+    // Shown as a ratio, stored in hundredths - see the migration.
+    if let Ok(ratio) = d.get_share_ratio_limit().trim().parse::<f64>()
+        && ratio.is_finite()
+        && ratio >= 0.0
+    {
+        cfg.set("libtorrent.share_ratio_limit", &((ratio * 100.0).round() as i64));
+    }
+    if let Ok(minutes) = d.get_seed_time_limit().trim().parse::<i64>() {
+        cfg.set("queue.seed_time_limit", &minutes);
+    }
+    cfg.set(
+        "queue.share_limit_action",
+        &match d.get_share_action_index() {
+            1 => "remove",
+            2 => "remove_with_data",
+            _ => "pause",
+        },
+    );
+}
+
+/// Report what an export or import did, in the tab that asked for it.
+fn show_db_note(d: &PreferencesDialog, ui: &Rc<Ui>, outcome: anyhow::Result<String>) {
+    let (text, bad) = match outcome {
+        Ok(text) => (text, false),
+        Err(err) => {
+            tracing::error!("settings transfer failed: {err:#}");
+            (format!("{}: {err:#}", ui.tr.borrow().i18n("transfer_failed")), true)
+        }
+    };
+    d.set_db_note(text.into());
+    d.set_db_note_bad(bad);
+}
+
+/// The Database tab's read-only half: whether the file is encrypted, and where
+/// its key lives.
+///
+/// Read from the file system rather than from a setting - see
+/// [`crate::core::database::Database::open`] for why there could not be a
+/// setting - so it is also what confirms a conversion actually happened.
+fn show_db_state(d: &PreferencesDialog, ui: &Rc<Ui>) {
+    d.set_db_encrypted(ui.db.is_encrypted());
+    d.set_db_key_path(
+        crate::core::dbkey::key_path(&ui.env)
+            .to_string_lossy()
+            .as_ref()
+            .into(),
+    );
 }
 
 /// Write every Preferences tab back.
@@ -3673,6 +4346,7 @@ fn save_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
 
     save_web(d, ui);
     save_plugins(d, ui);
+    save_transfer(d, cfg);
 
     if let Some(lang) = ui.tr.borrow()
         .languages()
@@ -4048,6 +4722,43 @@ fn poll_update(ui: &Rc<Ui>) {
         }
         None => show_toast(&window, &ui.tr.borrow().i18n("no_update_available")),
     }
+}
+
+/// The one-time "shall I encrypt the settings database?" question.
+///
+/// Either answer records `database.encryption_prompted`, so it is asked once
+/// per profile and never again; Preferences > Database is where it changes
+/// afterwards. Recorded even when the conversion then fails - being asked the
+/// same question on every start would be the worse outcome of the two.
+fn open_db_prompt(ui: &Rc<Ui>) {
+    let dialog = match DbPromptDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the database prompt: {err}");
+            return;
+        }
+    };
+
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_chosen(move |encrypt| {
+            u.cfg.set("database.encryption_prompted", &true);
+            if encrypt
+                && let Some(err) = set_db_encryption(&u, true)
+                && let Some(window) = u.main.borrow().as_ref().and_then(|w| w.upgrade())
+            {
+                show_error_toast(&window, &err);
+            }
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+        });
+    }
+
+    wire_dialog_close(&dialog, ui);
+    let _ = dialog.show();
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
+    *ui.db_prompt.borrow_mut() = Some(dialog);
 }
 
 /// The "a new version is available" window.
@@ -4517,6 +5228,84 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
 
     // Assigning a label from the context menu. Index 0 is "None", which
     // clears it - the same shape the filter and label menus use.
+    {
+        let (u, m3, w3) = (ui.clone(), model.clone(), window.as_weak());
+        window.on_set_torrent_ratio(move |index| {
+            // 0 is "follow the global setting", which is NULL in the column -
+            // not 0, which would mean "stop immediately".
+            let limit = match index {
+                0 => None,
+                1 => Some(0.0),
+                other => RATIO_PRESETS.get(other as usize - 2).copied(),
+            };
+            for hash in u.targets() {
+                u.session.set_ratio_limit(&hash, limit);
+            }
+            if let Some(window) = w3.upgrade() {
+                refresh(&window, &u, &m3);
+            }
+        });
+    }
+
+    {
+        let (u, m3, w3) = (ui.clone(), model.clone(), window.as_weak());
+        window.on_set_torrent_seed_time(move |index| {
+            // Same shape as the ratio above: 0 is NULL (follow the global),
+            // 1 is 0 minutes (stop as soon as it finishes).
+            let limit = match index {
+                0 => None,
+                1 => Some(0),
+                other => SEED_TIME_PRESETS.get(other as usize - 2).copied(),
+            };
+            for hash in u.targets() {
+                u.session.set_seed_time_limit(&hash, limit);
+            }
+            if let Some(window) = w3.upgrade() {
+                refresh(&window, &u, &m3);
+            }
+        });
+    }
+
+    {
+        // Toggling a tag leaves the menu open, so several can be set in one go
+        // - which means this has to update the ticks itself rather than waiting
+        // for the menu to be reopened.
+        let (u, w3) = (ui.clone(), window.as_weak());
+        window.on_toggle_tag(move |index| {
+            let Some(window) = w3.upgrade() else { return };
+            let tags = u.cfg.get_tags();
+            let Some(tag) = tags.get(index.max(0) as usize) else {
+                return;
+            };
+            let selected = u.targets();
+            // The click means "make them all agree", and the direction is the
+            // opposite of what the tick currently shows.
+            let all_have = !selected.is_empty()
+                && selected
+                    .iter()
+                    .all(|hash| u.cfg.tags_for(hash).iter().any(|t| t.id == tag.id));
+            for hash in &selected {
+                match all_have {
+                    true => u.cfg.remove_tag(hash, tag.id),
+                    false => u.cfg.add_tag(hash, tag.id),
+                }
+            }
+            let on: Vec<bool> = tags
+                .iter()
+                .map(|t| match t.id == tag.id {
+                    true => !all_have,
+                    false => {
+                        !selected.is_empty()
+                            && selected
+                                .iter()
+                                .all(|hash| u.cfg.tags_for(hash).iter().any(|x| x.id == t.id))
+                    }
+                })
+                .collect();
+            window.set_ctx_tag_on(ModelRc::new(VecModel::from(on)));
+        });
+    }
+
     {
         let (u, m3, w3) = (ui.clone(), model.clone(), window.as_weak());
         window.on_assign_label(move |index| {

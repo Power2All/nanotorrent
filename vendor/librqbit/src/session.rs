@@ -39,7 +39,7 @@ use crate::{
         ManagedTorrentHandle, ManagedTorrentLocked, ManagedTorrentOptions, ManagedTorrentState,
         TorrentMetadata, TorrentStateLive, initializing::TorrentStateInitializing,
     },
-    type_aliases::{BoxAsyncReadVectored, BoxAsyncWrite, PeerStream},
+    type_aliases::{BoxAsyncReadVectored, BoxAsyncWrite, PeerSource, PeerStream},
     vectored_traits::AsyncReadVectoredIntoCompat,
 };
 use anyhow::{Context, bail};
@@ -305,6 +305,11 @@ pub struct AddTorrentOptions {
     #[serde(skip)]
     pub piece_verifier: Option<Arc<dyn crate::piece_verify::PieceVerifier>>,
 
+    /// NanoTorrent: answers BEP 52 `hash request` messages from peers, and by
+    /// its presence turns on the v2 handshake bit for this torrent.
+    #[serde(skip)]
+    pub hash_provider: Option<Arc<dyn crate::piece_verify::HashProvider>>,
+
     /// NanoTorrent seam: the info hash this torrent is known by on the wire,
     /// when that is not the hash of the bytes handed in. BEP 52 identifies a
     /// v2-only torrent by its SHA-256 info hash truncated to 20 bytes.
@@ -336,6 +341,21 @@ pub struct AddTorrentOptions {
 
     // Custom trackers
     pub trackers: Option<Vec<String>>,
+
+    /// NanoTorrent: treat `trackers` as the WHOLE list rather than as
+    /// additions to the .torrent's own.
+    ///
+    /// Without this a tracker baked into the file can never be taken away, so
+    /// "remove tracker" is a button that cannot work and "edit" leaves the old
+    /// URL behind beside the new one. The announce list is not part of the info
+    /// dict, so replacing it changes nothing about the torrent's identity.
+    pub replace_trackers: bool,
+
+    /// NanoTorrent: the tier grouping to go with `trackers`, when the caller
+    /// has one. Announce order is per-tier (BEP 12), so a caller that owns the
+    /// list has to be able to say how it is grouped - otherwise editing a
+    /// torrent silently flattens the fallback order the file asked for.
+    pub tracker_tiers: Option<Vec<Vec<String>>>,
 }
 
 pub struct ListOnlyResponse {
@@ -1294,12 +1314,17 @@ impl Session {
                         })
                         .collect::<Vec<_>>();
                     if let Some(custom_trackers) = opts.trackers.clone() {
-                        trackers.extend(custom_trackers);
+                        // NanoTorrent: replace rather than extend, when asked.
+                        if opts.replace_trackers {
+                            trackers = custom_trackers;
+                        } else {
+                            trackers.extend(custom_trackers);
+                        }
                     }
 
                     // NanoTorrent addition: preserve the announce tiers - their
                     // order is lost once flattened into `trackers`.
-                    let tiers: Vec<Vec<url::Url>> = torrent
+                    let mut tiers: Vec<Vec<url::Url>> = torrent
                         .meta
                         .announce_list
                         .iter()
@@ -1311,10 +1336,80 @@ impl Session {
                         })
                         .filter(|t: &Vec<url::Url>| !t.is_empty())
                         .collect();
-                    if !tiers.is_empty()
-                        && let Ok(mut m) = self.tracker_tiers.lock()
-                    {
-                        m.insert(torrent.meta.info_hash, tiers);
+
+                    // NanoTorrent: trackers added by hand go into `trackers`
+                    // above, but the tier map is built from the .torrent's own
+                    // announce-list - so one added by hand was announced to and
+                    // never shown, because the Trackers tab lists tiers. Give
+                    // them a tier of their own, which is where they belong
+                    // anyway: they are not part of any tier the file declared.
+                    if let Some(custom) = opts.trackers.as_ref() {
+                        let listed: Vec<url::Url> = custom
+                            .iter()
+                            .filter_map(|t| url::Url::parse(t).ok())
+                            .collect();
+                        if let Some(given) = opts.tracker_tiers.as_ref() {
+                            // The caller supplied the grouping outright.
+                            tiers = given
+                                .iter()
+                                .map(|tier| {
+                                    tier.iter()
+                                        .filter_map(|t| url::Url::parse(t).ok())
+                                        .collect::<Vec<_>>()
+                                })
+                                .filter(|t: &Vec<url::Url>| !t.is_empty())
+                                .collect();
+                        } else if opts.replace_trackers {
+                            // The caller owns the list, but the FILE owns the
+                            // tier grouping - so keep the tiers it declared,
+                            // minus whatever is no longer in the list. Throwing
+                            // them away and using one flat tier would lose the
+                            // fallback order on every restored torrent, not
+                            // just the edited ones.
+                            let keep: std::collections::HashSet<&url::Url> =
+                                listed.iter().collect();
+                            tiers = tiers
+                                .into_iter()
+                                .map(|tier| {
+                                    tier.into_iter().filter(|u| keep.contains(u)).collect()
+                                })
+                                .filter(|t: &Vec<url::Url>| !t.is_empty())
+                                .collect();
+
+                            // Whatever the file never mentioned goes in a tier
+                            // of its own, after the ones it did.
+                            let placed: std::collections::HashSet<url::Url> =
+                                tiers.iter().flatten().cloned().collect();
+                            let added: Vec<url::Url> = listed
+                                .into_iter()
+                                .filter(|u| !placed.contains(u))
+                                .collect();
+                            if !added.is_empty() {
+                                tiers.push(added);
+                            }
+                        } else {
+                            let extra: Vec<url::Url> = listed
+                                .into_iter()
+                                .filter(|u| !tiers.iter().any(|tier| tier.contains(u)))
+                                .collect();
+                            if !extra.is_empty() {
+                                tiers.push(extra);
+                            }
+                        }
+                    }
+
+                    if let Ok(mut m) = self.tracker_tiers.lock() {
+                        match tiers.is_empty() {
+                            // An empty list is meaningful when the caller
+                            // replaced it: the tab must stop showing the old
+                            // tiers rather than keeping a stale copy.
+                            true => {
+                                m.remove(&torrent.meta.info_hash);
+                            }
+                            false => {
+                                m.insert(torrent.meta.info_hash, tiers);
+                            }
+                        }
                     }
 
                     InternalAddResult {
@@ -1446,7 +1541,14 @@ impl Session {
 
                     // Add back seen_peers into the peer stream, as we consumed some peers
                     // while resolving the magnet.
-                    seen_peers = resolved_magnet.seen_peers.clone();
+                    //
+                    // `ListOnlyResponse` reports bare addresses, so the source is
+                    // dropped for that caller and kept for the stream.
+                    seen_peers = resolved_magnet
+                        .seen_peers
+                        .iter()
+                        .map(|(addr, _)| *addr)
+                        .collect();
                     let peer_rx = Some(
                         merge_streams(
                             resolved_magnet.peer_rx,
@@ -1544,6 +1646,7 @@ impl Session {
                     disable_pex: self.disable_pex,
                     anonymize: self.anonymize,
                     piece_verifier: opts.piece_verifier.clone(),
+                    hash_provider: opts.hash_provider.clone(),
                     #[cfg(feature = "disable-upload")]
                     _disable_upload: self._disable_upload,
                 },
@@ -1787,11 +1890,17 @@ impl Session {
         initial_peers: Vec<SocketAddr>,
         is_private: bool,
     ) -> Option<PeerStream> {
+        // NanoTorrent: each producer is tagged as it is created. After the
+        // merge below there is no way to tell them apart, which is why this is
+        // done here and not once at the end.
         let dht_rx = if is_private {
             None
         } else {
             self.dht.as_ref().map(|dht| {
-                dht.get_peers(info_hash, if announce { self.announce_port } else { None })
+                futures::StreamExt::map(
+                    dht.get_peers(info_hash, if announce { self.announce_port } else { None }),
+                    |addr| (addr, crate::type_aliases::PeerSource::Dht),
+                )
             })
         };
 
@@ -1799,7 +1908,10 @@ impl Session {
             None
         } else {
             self.lsd.as_ref().map(|lsd| {
-                lsd.announce(info_hash, if announce { self.announce_port } else { None })
+                futures::StreamExt::map(
+                    lsd.announce(info_hash, if announce { self.announce_port } else { None }),
+                    |addr| (addr, crate::type_aliases::PeerSource::Lsd),
+                )
             })
         };
 
@@ -1842,12 +1954,17 @@ impl Session {
             self.reqwest_client.clone(),
             self.udp_tracker_client.clone(),
             tracker_stats,
-        );
+        )
+        .map(|s| futures::StreamExt::map(s, |addr| (addr, crate::type_aliases::PeerSource::Tracker)));
 
         let initial_peers_rx = if initial_peers.is_empty() {
             None
         } else {
-            Some(futures::stream::iter(initial_peers))
+            Some(futures::stream::iter(
+                initial_peers
+                    .into_iter()
+                    .map(|addr| (addr, crate::type_aliases::PeerSource::Initial)),
+            ))
         };
         merge_two_optional_streams(
             merge_two_optional_streams(
@@ -1992,7 +2109,9 @@ impl Session {
 pub(crate) struct ResolveMagnetResult {
     pub metadata: TorrentMetadata,
     pub peer_rx: PeerStream,
-    pub seen_peers: Vec<SocketAddr>,
+    // NanoTorrent: tagged, so peers consumed during resolution keep the source
+    // that found them when they are put back on the stream below.
+    pub seen_peers: Vec<(SocketAddr, PeerSource)>,
 }
 
 fn remove_files_and_dirs(infos: &FileInfos, files: &dyn TorrentStorage) {

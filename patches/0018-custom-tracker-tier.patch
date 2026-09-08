@@ -1,0 +1,150 @@
+diff --git a/src/session.rs b/src/session.rs
+index 000ca80..a62497f 100644
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -336,6 +336,15 @@ pub struct AddTorrentOptions {
+ 
+     // Custom trackers
+     pub trackers: Option<Vec<String>>,
++
++    /// NanoTorrent: treat `trackers` as the WHOLE list rather than as
++    /// additions to the .torrent's own.
++    ///
++    /// Without this a tracker baked into the file can never be taken away, so
++    /// "remove tracker" is a button that cannot work and "edit" leaves the old
++    /// URL behind beside the new one. The announce list is not part of the info
++    /// dict, so replacing it changes nothing about the torrent's identity.
++    pub replace_trackers: bool,
+ }
+ 
+ pub struct ListOnlyResponse {
+@@ -1294,12 +1303,17 @@ impl Session {
+                         })
+                         .collect::<Vec<_>>();
+                     if let Some(custom_trackers) = opts.trackers.clone() {
+-                        trackers.extend(custom_trackers);
++                        // NanoTorrent: replace rather than extend, when asked.
++                        if opts.replace_trackers {
++                            trackers = custom_trackers;
++                        } else {
++                            trackers.extend(custom_trackers);
++                        }
+                     }
+ 
+                     // NanoTorrent addition: preserve the announce tiers - their
+                     // order is lost once flattened into `trackers`.
+-                    let tiers: Vec<Vec<url::Url>> = torrent
++                    let mut tiers: Vec<Vec<url::Url>> = torrent
+                         .meta
+                         .announce_list
+                         .iter()
+@@ -1311,10 +1325,69 @@ impl Session {
+                         })
+                         .filter(|t: &Vec<url::Url>| !t.is_empty())
+                         .collect();
+-                    if !tiers.is_empty()
+-                        && let Ok(mut m) = self.tracker_tiers.lock()
+-                    {
+-                        m.insert(torrent.meta.info_hash, tiers);
++
++                    // NanoTorrent: trackers added by hand go into `trackers`
++                    // above, but the tier map is built from the .torrent's own
++                    // announce-list - so one added by hand was announced to and
++                    // never shown, because the Trackers tab lists tiers. Give
++                    // them a tier of their own, which is where they belong
++                    // anyway: they are not part of any tier the file declared.
++                    if let Some(custom) = opts.trackers.as_ref() {
++                        let listed: Vec<url::Url> = custom
++                            .iter()
++                            .filter_map(|t| url::Url::parse(t).ok())
++                            .collect();
++                        if opts.replace_trackers {
++                            // The caller owns the list, but the FILE owns the
++                            // tier grouping - so keep the tiers it declared,
++                            // minus whatever is no longer in the list. Throwing
++                            // them away and using one flat tier would lose the
++                            // fallback order on every restored torrent, not
++                            // just the edited ones.
++                            let keep: std::collections::HashSet<&url::Url> =
++                                listed.iter().collect();
++                            tiers = tiers
++                                .into_iter()
++                                .map(|tier| {
++                                    tier.into_iter().filter(|u| keep.contains(u)).collect()
++                                })
++                                .filter(|t: &Vec<url::Url>| !t.is_empty())
++                                .collect();
++
++                            // Whatever the file never mentioned goes in a tier
++                            // of its own, after the ones it did.
++                            let placed: std::collections::HashSet<url::Url> =
++                                tiers.iter().flatten().cloned().collect();
++                            let added: Vec<url::Url> = listed
++                                .into_iter()
++                                .filter(|u| !placed.contains(u))
++                                .collect();
++                            if !added.is_empty() {
++                                tiers.push(added);
++                            }
++                        } else {
++                            let extra: Vec<url::Url> = listed
++                                .into_iter()
++                                .filter(|u| !tiers.iter().any(|tier| tier.contains(u)))
++                                .collect();
++                            if !extra.is_empty() {
++                                tiers.push(extra);
++                            }
++                        }
++                    }
++
++                    if let Ok(mut m) = self.tracker_tiers.lock() {
++                        match tiers.is_empty() {
++                            // An empty list is meaningful when the caller
++                            // replaced it: the tab must stop showing the old
++                            // tiers rather than keeping a stale copy.
++                            true => {
++                                m.remove(&torrent.meta.info_hash);
++                            }
++                            false => {
++                                m.insert(torrent.meta.info_hash, tiers);
++                            }
++                        }
+                     }
+ 
+                     InternalAddResult {
+diff --git a/src/session_persistence/mod.rs b/src/session_persistence/mod.rs
+index c5b11d5..24bcae6 100644
+--- a/src/session_persistence/mod.rs
++++ b/src/session_persistence/mod.rs
+@@ -37,6 +37,18 @@ impl SerializedTorrent {
+         &self.info_hash
+     }
+     pub fn into_add_torrent(self) -> anyhow::Result<(AddTorrent<'static>, AddTorrentOptions)> {
++        // NanoTorrent: the stored tracker list is what the torrent was
++        // announcing to when the session was saved, which is the file's own
++        // trackers PLUS any added by hand. Only the magnet branch below used
++        // it, so a torrent restored from its .torrent bytes came back with the
++        // added ones silently missing - they were saved, and then dropped on
++        // the way back in.
++        //
++        // Handing them over as custom trackers restores them. The file's own
++        // are in this list too and so arrive twice, which costs nothing:
++        // `ManagedTorrentShared::trackers` is a HashSet.
++        let restored: Vec<String> = self.trackers.iter().cloned().collect();
++
+         let add_torrent = if !self.torrent_bytes.is_empty() {
+             AddTorrent::TorrentFileBytes(self.torrent_bytes)
+         } else {
+@@ -59,6 +71,12 @@ impl SerializedTorrent {
+             ),
+             only_files: self.only_files,
+             overwrite: true,
++            trackers: Some(restored),
++            // The stored list is the whole announce list as it stood when the
++            // session was saved - including a removal the user made. Extending
++            // the file's own list instead would put a removed tracker back on
++            // every start.
++            replace_trackers: true,
+             ..Default::default()
+         };
+ 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Lietuvių (Lietuva) - Partner Center: Lithuanian (Lithuania) (lt-LT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent yra Viktoro Elofssono PicoTorrent perkėlimas į Rust kalbą.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versija 0.3.4
+Versija 0.3.5
 
-- Pristabdyti torentai nebekuria savo failų iš naujo paleidžiant NanoTorrent. Torentas, kurio duomenis ištrynėte ar perkėlėte, galėjo grįžti ties 0% su tuščių failų aplanku.
-- Žiniatinklio sąsaja dabar gauna gyvus atnaujinimus, o ne jų prašo: reaguoja akimirksniu ir naudoja gerokai mažiau procesoriaus.
-- Ryšio indikatorius rodo, ar naršyklė vis dar susisiekia su NanoTorrent, ir pati atkuria ryšį.
-- Žiniatinklio sąsajos torentų sąrašą galima skaidyti į puslapius ir rikiuoti per visus puslapius.
-- Ir langas, ir žiniatinklio sąsaja rodo, kiek žiniatinklio klientų prisijungę.
-- Išsamios informacijos skydelis užsipildo vos spustelėjus torentą, už įkėlimo sluoksnio, o ne po sekundės.
-- Nuostatos perdarytos pagal pagrindinį langą: kortelės su piktogramomis, slenkančios kai netelpa, platesnis langas ir slankjuostės, kurios nebedengia turinio.
-- Nuostatos rodo jūsų pasirinktą kalbą, o kiekvienas atviras langas pakeičia kalbą paspaudus Gerai.
-- Lango uždarymas dabar tikrai jį uždaro, o Žinyne atsirado nuoroda į papildinių API dokumentaciją.
+- Dalijimosi ribos: nustoti skleisti pasiekus santykį, po nustatyto laiko arba kas įvyks pirmiau, o paskui pristabdyti ar pašalinti torentą.
+- Alternatyvios greičio ribos — pagal tvarkaraštį arba perjungiamos ranka iš įrankių juostos.
+- Eilės tvarka iš įrankių juostos, atskirų failų prioritetai ir žymos.
+- Stebimas aplankas, įtraukiantis kiekvieną į jį įdėtą .torrent failą.
+- Torento sekiklių pridėjimas, redagavimas ir šalinimas pagal skelbimo lygius.
+- Nustatymų duomenų bazę galima užšifruoti be slaptažodžio, kurį reikėtų vesti, o nustatymus eksportuoti ir importuoti JSON formatu.
+- Žiniatinklio sąsaja gauna eilės tvarką, greičio jungiklį ir kiekvieno torento skydelį failams, sekikliams, žymoms ir riboms.
+- Dalys, kurių turi nedaug siuntėjų, prašomos pirmiausia, o BitTorrent v2 torentus dabar galima skleisti kitiems.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

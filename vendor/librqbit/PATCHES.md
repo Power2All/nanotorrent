@@ -574,24 +574,114 @@ The regression test lives in the app (`src/core/netguard.rs`, `path_escape`)
 rather than here, because a vendored crate's own tests cannot run - it is not a
 workspace member and cargo refuses to test it for want of dev-dependencies.
 
+## 0019 - swarm participation and v2 seeding
+
+Three changes that all answer the same question - what NanoTorrent gives back
+to a swarm rather than takes from it - which is why they are one patch. Each
+has its own marker in `build.rs`, so a re-vendor that drops the patch is caught
+whichever of the three you go looking for.
+
+### Peer source attribution
+
+`Session::make_peer_rx` merges the DHT, LSD, tracker and initial-peer streams
+into one `PeerStream`, and every producer yields a bare `SocketAddr` - so by
+the time a peer is added there is no way to say what found it. `PeerStream`
+now carries `(SocketAddr, PeerSource)`, each producer tags its own items at
+the point of creation, and the tag is stored on the `Peer`.
+
+`TorrentStateLive::peer_counts_by_source` reports connected peers per source,
+and how many of them are seeds. That is what fills the seeds/leeches columns
+on the DHT/LSD/PeX rows of the Trackers tab, which were status-only before.
+
+`dht_utils::read_metainfo_from_peer_receiver` had to change with it: its `seen`
+set became a map, so peers consumed while resolving a magnet keep the source
+that found them when they are handed back to the live stream. Without that,
+every peer a magnet found during resolution would be filed as "initial" -
+which is exactly the case where knowing it was the DHT matters most.
+
+### Answering BEP 52 hash requests
+
+`HashProvider` is the mirror of `MetadataInterceptor`: that one ASKS for hashes
+when resolving a v2 magnet, this one ANSWERS when a peer asks us. An incoming
+`hash request` used to fall into the unsupported-message branch and be ignored,
+which leaves the asking peer waiting for a reply that never comes - the one
+outcome BEP 52 rules out. It is now answered from the provider, or rejected
+with a `hash reject` when we hold no layers for that file.
+
+`WriterRequest::Hashes` carries the answer as owned bytes, because `Hashes`
+borrows its buffer and `WriterRequest::Message` is `Message<'static>` - the
+same reason `UtMetadata` is its own variant.
+
+Installing a provider is also what sets the v2 handshake bit, through
+`PeerConnectionHandler::advertises_v2`. The bit is a promise to answer, so a
+torrent with nothing to serve does not make it: NanoTorrent skips files that
+fit in a single piece, since their `pieces root` IS their only piece hash and
+no peer needs to ask.
+
+The hashes themselves come from the app (`src/bittorrent/v2.rs`, `V2Hashes`),
+because for a torrent added from a `.torrent` the piece layers travel OUTSIDE
+the info dict and only whoever parsed the file has them. Requests below the
+piece layer are refused rather than guessed: those hashes are not in the file
+at all, and could only be produced by re-hashing the data.
+
+### Rarest-first piece selection
+
+The picker took the first candidate in iteration order - file priority, then
+first piece, last piece, then the middle. That is a good order for streaming
+and a poor one for the swarm: every peer makes the same choice, so the rare
+pieces stay rare and a torrent with few seeds can lose its last copy.
+
+`pick_rarest` chooses the rarest piece the peer can actually serve, within the
+most wanted file that still has one. Rarity is compared only within a file
+rank, so priorities still decide which file gets attention, and ties keep the
+earlier candidate, so the first/last-piece behaviour survives wherever rarity
+does not discriminate - which is most of the time in a healthy swarm.
+
+Availability is a count of connected peers per piece, rebuilt on a two-second
+timer rather than incremented from `bitfield`, `have`, `have all`, `have none`
+and every disconnect path. Five call sites are five chances to leak a count,
+and a leaked count never heals; a rebuild cannot drift. Staleness costs
+nothing here - this orders a choice between pieces we are going to download
+anyway, and is never a correctness input.
+
+`pick_rarest` is public and generic over the piece type so the rule can be
+tested from the app, where tests actually run - see the note under 0015 about
+why a vendored crate's own tests cannot. The cross-check there compares it
+against an exhaustive search over 200 generated queues.
+
 ## What is still missing for v2
 
-Downloading is complete, for `.torrent` files and magnets alike. What is left
-is all on the **seeding** side:
+Downloading is complete, for `.torrent` files and magnets alike. Seeding now
+answers hash requests (patch 0019 above). What is left:
 
-- Nothing answers an incoming `hash request`. We parse and ignore it, where a
-  `hash reject` would at least be polite - and serving real hashes would let us
-  bootstrap someone else's v2 magnet instead of only consuming other people's.
-  This is the natural next step: the layers are already in hand for any torrent
-  added from a `.torrent`, so it is mostly a matter of answering.
-- The v2 handshake bit is never set on outgoing connections, because
-  advertising support we cannot honour would be worse than staying quiet. It
-  should go on at the same time as the above, not before.
+- **Leaf-layer hash requests are rejected.** A `.torrent` carries the piece
+  layer, not the 16 KiB block layer, so those hashes could only be produced by
+  reading and hashing the data itself. No client asks for them in the case
+  that matters - resolving a v2 magnet wants the piece layer - but a client
+  that did would get a `hash reject` rather than an answer.
+- **The seams are add-time only, so nothing v2 survives a restart.**
+  `override_info_hash`, `override_info_bytes`, `piece_verifier` and the new
+  `hash_provider` are all `#[serde(skip)]` on `AddTorrentOptions`, and
+  `session_persistence` neither stores nor restores any of them - it re-adds a
+  torrent from its own record, which has no idea the seams existed. A torrent
+  added in this session serves hashes; the same torrent after a restart does
+  not, until it is re-added from its `.torrent`.
+
+  That is not new with this patch - it is how every v2 seam has always worked -
+  but serving hashes is the first feature where the consequence is visible to
+  other people rather than only to us. Fixing it means teaching persistence to
+  carry the v2 identity, which is a larger job than this patch and touches the
+  restore path for every torrent.
+- **A v2-only magnet cannot be seeded from scratch even within a session.**
+  Resolving one gets the piece layer from peers, but that layer lives in the
+  `V2Magnet` interceptor and is never installed as a `hash_provider`, so we can
+  verify with it but not serve it.
 
 Also worth knowing: none of the v2 work has been tested against a real v2
 swarm, only against torrents NanoTorrent builds itself. The wire format matches
-libtorrent's byte for byte and the merkle arithmetic is checked both
-directions, but no byte has crossed a network.
+libtorrent's byte for byte, the merkle arithmetic is checked both directions,
+and the serving path is checked by feeding its answers back through the same
+verification a receiving client applies - but no byte has crossed a network.
 
 ## Retired patches
 
@@ -729,3 +819,62 @@ files are already open, and resuming must not re-check them.
 
 Covered by `a_paused_add_creates_no_files` and
 `starting_a_paused_torrent_creates_its_files` in `src/bittorrent/session.rs`.
+
+## 0017 - a settable file priority ordering
+
+`TorrentStateLive` decides which file to ask for next from a list of file
+indices, most wanted first. Upstream builds that list once, sorting by
+filename, with a `TODO: make it configurable` on the line above it. This is
+that TODO.
+
+`ManagedTorrent::set_file_priorities` hands a new ordering to a live torrent.
+Anything the caller leaves out keeps its own place behind what was named, so
+the result is always a complete permutation - the picker walks the list
+assuming every file is on it exactly once, and a short list would otherwise
+mean files it never reached.
+
+Live torrents only, and silent for the rest: a paused torrent is asking for
+nothing, so it has no queue to reorder, and it takes the ordering up when it
+goes live.
+
+This is the "High / Maximum" half of per-file priority. The "Skip" half needs
+no patch - it is `update_only_files`, which upstream already exposes and which
+the Files tab has always used for its include toggle.
+
+## 0018 - a tier for trackers added by hand
+
+`AddTorrentOptions::trackers` extends the flat announce list, and patch 0005
+separately records the announce TIERS so the Trackers tab can group by them.
+Those two never met: a tracker added by hand joined the flat list - it was
+announced to, correctly - but the tab lists tiers, so it was invisible. The
+setting worked and looked like it had done nothing, which is the worst of both.
+
+Custom trackers now get a tier of their own, appended after the ones the
+.torrent declared. That is also where they belong: they are not part of any
+tier the file specified, and putting them in one would misrepresent the
+fallback order the file asked for.
+
+Found by adding a tracker in the UI and watching the list not change, with the
+row present in `torrent_tracker` and the re-add visible in the log.
+
+The same patch fixes the other half, found the same way: restarting made an
+added tracker disappear again. `SerializedTorrent::into_add_torrent` used the
+stored tracker list ONLY when rebuilding a magnet - a torrent restored from its
+.torrent bytes threw it away, so every start forgot the additions. It is now
+handed over as custom trackers in both branches. The file's own trackers are in
+that list too and therefore arrive twice, which costs nothing:
+`ManagedTorrentShared::trackers` is a HashSet.
+
+A third change, from the same round of testing: `AddTorrentOptions` gained
+`replace_trackers`. Without it `trackers` only ever EXTENDS the file's announce
+list, so a tracker baked into the .torrent could never be taken away - "remove
+tracker" was a button that could not work, and "edit" would have left the old
+URL beside the new one. The announce list is not part of the info dict, so
+replacing it changes nothing about the torrent's identity.
+
+Under `replace_trackers` the FILE still owns the tier grouping: the tiers it
+declared are kept, minus anything no longer in the list, and whatever it never
+mentioned goes in a tier of its own after them. Collapsing to one flat tier
+would have lost the fallback order on every restored torrent rather than only
+on edited ones - which matters because the restore path sets this flag too, so
+that a removal survives a restart.

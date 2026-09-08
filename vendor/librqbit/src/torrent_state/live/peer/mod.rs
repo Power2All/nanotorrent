@@ -30,6 +30,8 @@ pub(crate) struct Peer {
     state: PeerState,
     pub stats: stats::atomic::PeerStats,
     pub outgoing_address: Option<SocketAddr>,
+    /// NanoTorrent addition: which discovery source produced this address.
+    pub source: crate::type_aliases::PeerSource,
 }
 
 impl Peer {
@@ -49,14 +51,20 @@ impl Peer {
             state,
             stats: Default::default(),
             outgoing_address: None,
+            // It found us, so no discovery source can claim it.
+            source: crate::type_aliases::PeerSource::Incoming,
         }
     }
 
-    pub fn new_with_outgoing_address(addr: SocketAddr) -> Self {
+    pub fn new_with_outgoing_address(
+        addr: SocketAddr,
+        source: crate::type_aliases::PeerSource,
+    ) -> Self {
         Self {
             addr,
             outgoing_address: Some(addr),
             stats: Default::default(),
+            source,
             state: Default::default(),
         }
     }

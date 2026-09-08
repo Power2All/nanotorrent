@@ -1,0 +1,1024 @@
+diff --git a/src/chunk_tracker.rs b/src/chunk_tracker.rs
+--- a/src/chunk_tracker.rs
++++ b/src/chunk_tracker.rs
+@@ -233,19 +233,30 @@
+         hns
+     }
+ 
+-    pub(crate) fn iter_queued_pieces<'a>(
++    /// Queued pieces, each paired with the RANK of the file that yielded it -
++    /// its position in `file_priorities`, so 0 is the most wanted file.
++    ///
++    /// NanoTorrent addition. The rank was previously implicit in the iteration
++    /// order, which was enough while that order was the whole selection
++    /// strategy. Rarest-first reorders within a rank and must not reorder
++    /// across one, so the caller now needs to see it.
++    ///
++    /// The rank is non-decreasing over the iteration, which is what lets the
++    /// picker stop early instead of draining the whole queue.
++    pub(crate) fn iter_queued_pieces_ranked<'a>(
+         &'a self,
+         file_priorities: &'a FilePriorities,
+         file_infos: &'a FileInfos,
+-    ) -> impl Iterator<Item = ValidPieceIndex> + 'a {
++    ) -> impl Iterator<Item = (usize, ValidPieceIndex)> + 'a {
+         file_priorities
+             .iter()
+-            .filter_map(|p| Some((*p, file_infos.get(*p)?)))
+-            .filter(|(id, f)| self.per_file_bytes[*id] != f.len)
+-            .flat_map(|(_id, f)| f.iter_piece_priorities())
+-            .filter(|id| self.queue_pieces[*id])
+-            .filter_map(|id| id.try_into().ok())
+-            .filter_map(|id| self.lengths.validate_piece_index(id))
++            .enumerate()
++            .filter_map(|(rank, p)| Some((rank, *p, file_infos.get(*p)?)))
++            .filter(|(_rank, id, f)| self.per_file_bytes[*id] != f.len)
++            .flat_map(|(rank, _id, f)| f.iter_piece_priorities().map(move |i| (rank, i)))
++            .filter(|(_rank, id)| self.queue_pieces[*id])
++            .filter_map(|(rank, id)| Some((rank, id.try_into().ok()?)))
++            .filter_map(|(rank, id)| Some((rank, self.lengths.validate_piece_index(id)?)))
+     }
+ 
+     pub(crate) fn is_piece_have(&self, id: ValidPieceIndex) -> bool {
+diff --git a/src/dht_utils.rs b/src/dht_utils.rs
+--- a/src/dht_utils.rs
++++ b/src/dht_utils.rs
+@@ -1,4 +1,4 @@
+-use std::{collections::HashSet, net::SocketAddr, sync::Arc};
++use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+ 
+ use anyhow::Context;
+ use buffers::ByteBufOwned;
+@@ -8,7 +8,7 @@
+ 
+ use crate::{
+     peer_connection::PeerConnectionOptions, peer_info_reader, spawn_utils::BlockingSpawner,
+-    stream_connect::StreamConnector,
++    stream_connect::StreamConnector, type_aliases::PeerSource,
+ };
+ use librqbit_core::hash_id::Id20;
+ 
+@@ -19,15 +19,18 @@
+         info: TorrentMetaV1Info<ByteBufOwned>,
+         info_bytes: ByteBufOwned,
+         rx: Rx,
+-        seen: HashSet<SocketAddr>,
++        // NanoTorrent: a map rather than a set, so a magnet's early peers keep
++        // the source that found them instead of all becoming "initial" when
++        // they are handed back to the live stream.
++        seen: HashMap<SocketAddr, PeerSource>,
+     },
+     ChannelClosed {
+         #[allow(dead_code)]
+-        seen: HashSet<SocketAddr>,
++        seen: HashMap<SocketAddr, PeerSource>,
+     },
+ }
+ 
+-pub async fn read_metainfo_from_peer_receiver<A: Stream<Item = SocketAddr> + Unpin>(
++pub async fn read_metainfo_from_peer_receiver<A: Stream<Item = (SocketAddr, PeerSource)> + Unpin>(
+     peer_id: Id20,
+     info_hash: Id20,
+     initial_addrs: Vec<SocketAddr>,
+@@ -38,7 +41,7 @@
+     // NanoTorrent seam, see MetadataInterceptor.
+     interceptor: Option<Arc<dyn crate::piece_verify::MetadataInterceptor>>,
+ ) -> ReadMetainfoResult<A> {
+-    let mut seen = HashSet::<SocketAddr>::new();
++    let mut seen = HashMap::<SocketAddr, PeerSource>::new();
+     let mut addrs = addrs_stream;
+ 
+     let semaphore = tokio::sync::Semaphore::new(128);
+@@ -73,7 +76,7 @@
+     let mut unordered = FuturesUnordered::new();
+ 
+     for a in initial_addrs {
+-        seen.insert(a);
++        seen.insert(a, PeerSource::Initial);
+         unordered.push(read_info_guarded(a));
+     }
+ 
+@@ -97,8 +100,8 @@
+ 
+             next_addr = addrs.next(), if !addrs_completed => {
+                 match next_addr {
+-                    Some(addr) => {
+-                        if seen.insert(addr) {
++                    Some((addr, source)) => {
++                        if seen.insert(addr, source).is_none() {
+                             unordered.push(read_info_guarded(addr));
+                         }
+                         continue;
+diff --git a/src/http_api/handlers/torrents.rs b/src/http_api/handlers/torrents.rs
+--- a/src/http_api/handlers/torrents.rs
++++ b/src/http_api/handlers/torrents.rs
+@@ -341,7 +341,7 @@
+ 
+     let mut count = 0;
+     for addr in addrs {
+-        if live.add_peer_if_not_seen(addr)? {
++        if live.add_peer_if_not_seen(addr, crate::type_aliases::PeerSource::Manual)? {
+             count += 1;
+         }
+     }
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -97,7 +97,7 @@
+     SUPPORTED_SCHEMES, Session, SessionOptions, SessionPersistenceConfig,
+ };
+ pub use librqbit_core::hash_id::Id20;
+-pub use piece_verify::{MetadataInterceptor, PieceHasher, PieceVerifier};
++pub use piece_verify::{HashProvider, MetadataInterceptor, PieceHasher, PieceVerifier};
+ pub use stream_connect::{
+     BoxAsyncRead, ConnectionOptions, IncomingStreamTransform, StreamTransform,
+ };
+@@ -106,7 +106,8 @@
+     TorrentStatsState,
+ };
+ pub use tracker_comms::TrackerStat;
+-pub use type_aliases::{BoxAsyncWrite, FileInfos};
++pub use piece_tracker::pick_rarest;
++pub use type_aliases::{BoxAsyncWrite, FileInfos, PeerSource};
+ 
+ pub use buffers::*;
+ pub use clone_to_owned::CloneToOwned;
+diff --git a/src/peer_connection.rs b/src/peer_connection.rs
+--- a/src/peer_connection.rs
++++ b/src/peer_connection.rs
+@@ -35,6 +35,15 @@
+ 
+ pub trait PeerConnectionHandler {
+     fn on_connected(&self, _connection_time: Duration) {}
++    /// NanoTorrent (BEP 52): advertise v2 in the handshake?
++    ///
++    /// The bit is a promise to answer `hash request`, so it is set per torrent
++    /// and only when something is installed that can - see
++    /// [`crate::piece_verify::HashProvider`]. Advertising it otherwise would
++    /// leave peers asking us for hashes we would only ever reject.
++    fn advertises_v2(&self) -> bool {
++        false
++    }
+     fn should_send_bitfield(&self) -> bool;
+     fn serialize_bitfield_message_to_buf(&self, buf: &mut [u8]) -> anyhow::Result<usize>;
+     fn on_handshake(&self, handshake: Handshake, ckind: ConnectionKind) -> anyhow::Result<()>;
+@@ -60,6 +69,11 @@
+ #[derive(Debug)]
+ pub enum WriterRequest {
+     Message(Message<'static>),
++    /// NanoTorrent (BEP 52): a `hashes` answer. Owned rather than a
++    /// `Message<'static>` because the payload is built per request and
++    /// `Hashes` borrows its buffer - the same reason UtMetadata below is its
++    /// own variant.
++    Hashes(peer_binary_protocol::HashRequest, Vec<u8>),
+     UtMetadata(UtMetadata<ByteBufOwned>),
+     UtPex(UtPex<ByteBufOwned>),
+     ReadChunkRequest(ChunkInfo),
+@@ -170,7 +184,10 @@
+         );
+ 
+         let mut write_buf = Box::new([0u8; MAX_MSG_LEN]);
+-        let handshake = Handshake::new(self.info_hash, self.peer_id);
++        let mut handshake = Handshake::new(self.info_hash, self.peer_id);
++        if self.handler.advertises_v2() {
++            handshake.set_supports_v2();
++        }
+         let hlen = handshake.serialize_unchecked_len(&mut *write_buf);
+         with_timeout(
+             "writing handshake",
+@@ -228,7 +245,10 @@
+             self.handler.on_connected(now.elapsed());
+ 
+             let mut write_buf = Box::new([0u8; MAX_MSG_LEN]);
+-            let handshake = Handshake::new(self.info_hash, self.peer_id);
++            let mut handshake = Handshake::new(self.info_hash, self.peer_id);
++            if self.handler.advertises_v2() {
++                handshake.set_supports_v2();
++            }
+             let hsz = handshake.serialize_unchecked_len(&mut *write_buf);
+             with_timeout(
+                 "writing",
+@@ -386,6 +406,13 @@
+ 
+                 let len = match req {
+                     WriterRequest::Message(msg) => msg.serialize(&mut *write_buf, ext_msg_ids)?,
++                    WriterRequest::Hashes(request, hashes) => Message::Hashes(
++                        peer_binary_protocol::Hashes {
++                            request,
++                            hashes: hashes.as_slice().into(),
++                        },
++                    )
++                    .serialize(&mut *write_buf, ext_msg_ids)?,
+                     WriterRequest::UtMetadata(utm) => {
+                         Message::Extended(ExtendedMessage::UtMetadata(utm.as_borrowed()))
+                             .serialize(&mut *write_buf, ext_msg_ids)?
+diff --git a/src/piece_tracker.rs b/src/piece_tracker.rs
+--- a/src/piece_tracker.rs
++++ b/src/piece_tracker.rs
+@@ -46,11 +46,56 @@
+ }
+ 
+ /// Parameters for acquiring a piece.
+-pub struct AcquireRequest<'a, I, P, S>
++/// The rarest candidate a peer can serve, within the most wanted file that
++/// still has one. NanoTorrent addition.
++///
++/// `candidates` yields `(rank, piece)` with `rank` non-decreasing - the file's
++/// position in the priority order. Rarity is compared only WITHIN a rank, so
++/// priorities still decide which file gets attention; ties keep the earlier
++/// candidate, so the caller's existing order (first piece, last piece, then
++/// the middle) survives wherever rarity does not discriminate - which is most
++/// of the time in a healthy swarm.
++///
++/// Generic over the piece type so the rule can be tested without building an
++/// engine around it; the engine passes `ValidPieceIndex`.
++///
++/// An `availability` that always answers 0 reproduces the previous behaviour
++/// exactly: everything ties, and the first candidate wins.
++pub fn pick_rarest<T: Copy>(
++    candidates: impl Iterator<Item = (usize, T)>,
++    has: impl Fn(T) -> bool,
++    availability: impl Fn(T) -> u32,
++) -> Option<T> {
++    let mut best: Option<(u32, T)> = None;
++    let mut best_rank = usize::MAX;
++    for (rank, piece) in candidates {
++        // Ranks ascend, so nothing after the first candidate's rank can beat
++        // it. This is what keeps the scan short on a big torrent.
++        if best.is_some() && rank > best_rank {
++            break;
++        }
++        if !has(piece) {
++            continue;
++        }
++        let count = availability(piece);
++        if best.is_none_or(|(a, _)| count < a) {
++            best = Some((count, piece));
++            best_rank = rank;
++            // Nothing is rarer than a piece exactly one peer has.
++            if count <= 1 {
++                break;
++            }
++        }
++    }
++    best.map(|(_, piece)| piece)
++}
++
++pub struct AcquireRequest<'a, I, P, S, A>
+ where
+     I: Iterator<Item = ValidPieceIndex>,
+     P: Fn(ValidPieceIndex) -> bool,
+     S: Fn(ValidPieceIndex) -> bool,
++    A: Fn(ValidPieceIndex) -> u32,
+ {
+     /// The peer requesting a piece.
+     pub peer: PeerHandle,
+@@ -66,6 +111,10 @@
+     pub peer_has_piece: P,
+     /// Returns true if the piece can be stolen (e.g., not locked for writing).
+     pub can_steal: S,
++    /// NanoTorrent: how many connected peers hold this piece, for
++    /// rarest-first. Higher is commoner. A source that always answers 0 makes
++    /// selection behave exactly as it did before this existed.
++    pub availability: A,
+ }
+ 
+ /// Coordinates piece download state.
+@@ -120,11 +169,15 @@
+     ///
+     /// If `Stolen` is returned, the caller MUST call `peers.on_steal()` to notify
+     /// the old peer and update counters.
+-    pub fn acquire_piece<I, P, S>(&mut self, mut req: AcquireRequest<I, P, S>) -> AcquireResult
++    pub fn acquire_piece<I, P, S, A>(
++        &mut self,
++        mut req: AcquireRequest<I, P, S, A>,
++    ) -> AcquireResult
+     where
+         I: Iterator<Item = ValidPieceIndex>,
+         P: Fn(ValidPieceIndex) -> bool,
+         S: Fn(ValidPieceIndex) -> bool,
++        A: Fn(ValidPieceIndex) -> u32,
+     {
+         // 1. Try steal with 10x threshold (very slow peer)
+         if let Some(result) = self.try_steal(&req, 10.0) {
+@@ -142,17 +195,26 @@
+             }
+         }
+ 
+-        // Then check naturally ordered queued pieces
+-        // Note: iter_queued_pieces only returns pieces in queue_pieces (not in-flight)
+-        let queued: Vec<_> = self
+-            .chunks
+-            .iter_queued_pieces(req.file_priorities, req.file_infos)
+-            .collect();
+-
+-        for piece in queued {
+-            if (req.peer_has_piece)(piece) {
+-                return self.reserve_piece(piece, req.peer);
+-            }
++        // Then the queued pieces: the rarest this peer can give us, within the
++        // most wanted file that still has one.
++        //
++        // NanoTorrent addition. Before this the first candidate in iteration
++        // order won, which is file priority then first/last/middle - a fine
++        // order for streaming and a poor one for the swarm, because every peer
++        // makes the same choice and the rare pieces stay rare. Rarity is
++        // compared only within one file rank, so priorities still decide which
++        // file gets attention; iteration order still breaks ties, so the
++        // first/last-piece behaviour survives wherever rarity does not
++        // discriminate (a healthy swarm, where everything is equally common).
++        //
++        let picked = pick_rarest(
++            self.chunks
++                .iter_queued_pieces_ranked(req.file_priorities, req.file_infos),
++            &req.peer_has_piece,
++            &req.availability,
++        );
++        if let Some(piece) = picked {
++            return self.reserve_piece(piece, req.peer);
+         }
+ 
+         // 3. Try steal with 3x threshold (moderately slow peer)
+@@ -177,15 +239,16 @@
+     }
+ 
+     /// Try to steal a piece from a slower peer.
+-    fn try_steal<I, P, S>(
++    fn try_steal<I, P, S, A>(
+         &mut self,
+-        req: &AcquireRequest<I, P, S>,
++        req: &AcquireRequest<I, P, S, A>,
+         threshold: f64,
+     ) -> Option<AcquireResult>
+     where
+         I: Iterator<Item = ValidPieceIndex>,
+         P: Fn(ValidPieceIndex) -> bool,
+         S: Fn(ValidPieceIndex) -> bool,
++        A: Fn(ValidPieceIndex) -> u32,
+     {
+         let my_avg = req.peer_avg_time?;
+         let min_elapsed = Duration::from_secs_f64(my_avg.as_secs_f64() * threshold);
+@@ -412,6 +475,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true, // Peer has all pieces
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+ 
+         // Should reserve piece 0 (first in queue)
+@@ -445,6 +509,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |p| p.get() >= 2,
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+ 
+         match result {
+@@ -473,6 +538,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+ 
+         let piece = match result {
+@@ -506,6 +572,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+ 
+         let piece = match result {
+@@ -534,6 +601,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |p| p == piece, // Only has the failed piece
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+ 
+         match result2 {
+@@ -563,6 +631,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         }) {
+             AcquireResult::Reserved(p) => p,
+             _ => panic!("Expected Reserved"),
+@@ -575,6 +644,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         }) {
+             AcquireResult::Reserved(p) => p,
+             _ => panic!("Expected Reserved"),
+@@ -589,6 +659,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         }) {
+             AcquireResult::Reserved(p) => p,
+             _ => panic!("Expected Reserved"),
+@@ -628,6 +699,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+         tracker.acquire_piece(AcquireRequest {
+             peer: peer(1),
+@@ -637,6 +709,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+ 
+         assert_eq!(tracker.inflight_count(), 2);
+@@ -654,6 +727,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+ 
+         // Should get piece 0 again (was requeued)
+@@ -692,6 +766,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+ 
+         // Should get piece 3 (first priority piece)
+@@ -718,6 +793,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| false, // Peer has nothing
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+ 
+         match result {
+@@ -766,6 +842,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         }) {
+             AcquireResult::Reserved(p) => {
+                 assert_eq!(p.get(), 0);
+@@ -782,6 +859,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |_| true,
+             can_steal: |_| true,
++            availability: |_| 0,
+         }) {
+             AcquireResult::Reserved(p) => {
+                 assert_eq!(p.get(), 4);
+@@ -804,6 +882,7 @@
+             file_infos: &file_infos,
+             peer_has_piece: |p| p.get() == 4, // Peer B only has piece 4
+             can_steal: |_| true,
++            availability: |_| 0,
+         });
+ 
+         // Should steal piece 4 (which peer B has), NOT piece 0 (which peer B doesn't have)
+diff --git a/src/piece_verify.rs b/src/piece_verify.rs
+--- a/src/piece_verify.rs
++++ b/src/piece_verify.rs
+@@ -45,6 +45,30 @@
+     fn substitute_info(&self, info_bytes: &[u8]) -> anyhow::Result<Vec<u8>>;
+ }
+ 
++/// Answers BEP 52 `hash request` messages for one torrent.
++///
++/// The other half of [`MetadataInterceptor`]: that one ASKS for hashes when
++/// resolving a v2 magnet, this one ANSWERS when a peer asks us. Separate
++/// traits because they are needed at different times and by different
++/// torrents - a torrent added from a `.torrent` never asks, and only a torrent
++/// whose layers we hold can answer.
++///
++/// Installing one is also what makes the engine advertise v2 in its
++/// handshake: the bit says "I can serve these", so it must not be set by a
++/// torrent that has nothing to serve.
++pub trait HashProvider: Send + Sync + std::fmt::Debug {
++    /// The hashes satisfying `request`, base layer first and then the proof
++    /// layers, or `None` to reject it.
++    ///
++    /// Returning `None` is normal and not an error: it is the honest answer
++    /// for a file we do not have the layers for, and the caller turns it into
++    /// a `hash reject`, which is what the BEP asks for.
++    fn hashes_for(
++        &self,
++        request: &peer_binary_protocol::HashRequest,
++    ) -> Option<Vec<[u8; 32]>>;
++}
++
+ /// Accumulates one piece's bytes and answers whether they are correct.
+ ///
+ /// The engine feeds the piece in order and in arbitrary-sized slices. An
+diff --git a/src/session.rs b/src/session.rs
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -39,7 +39,7 @@
+         ManagedTorrentHandle, ManagedTorrentLocked, ManagedTorrentOptions, ManagedTorrentState,
+         TorrentMetadata, TorrentStateLive, initializing::TorrentStateInitializing,
+     },
+-    type_aliases::{BoxAsyncReadVectored, BoxAsyncWrite, PeerStream},
++    type_aliases::{BoxAsyncReadVectored, BoxAsyncWrite, PeerSource, PeerStream},
+     vectored_traits::AsyncReadVectoredIntoCompat,
+ };
+ use anyhow::{Context, bail};
+@@ -305,6 +305,11 @@
+     #[serde(skip)]
+     pub piece_verifier: Option<Arc<dyn crate::piece_verify::PieceVerifier>>,
+ 
++    /// NanoTorrent: answers BEP 52 `hash request` messages from peers, and by
++    /// its presence turns on the v2 handshake bit for this torrent.
++    #[serde(skip)]
++    pub hash_provider: Option<Arc<dyn crate::piece_verify::HashProvider>>,
++
+     /// NanoTorrent seam: the info hash this torrent is known by on the wire,
+     /// when that is not the hash of the bytes handed in. BEP 52 identifies a
+     /// v2-only torrent by its SHA-256 info hash truncated to 20 bytes.
+@@ -345,6 +350,12 @@
+     /// URL behind beside the new one. The announce list is not part of the info
+     /// dict, so replacing it changes nothing about the torrent's identity.
+     pub replace_trackers: bool,
++
++    /// NanoTorrent: the tier grouping to go with `trackers`, when the caller
++    /// has one. Announce order is per-tier (BEP 12), so a caller that owns the
++    /// list has to be able to say how it is grouped - otherwise editing a
++    /// torrent silently flattens the fallback order the file asked for.
++    pub tracker_tiers: Option<Vec<Vec<String>>>,
+ }
+ 
+ pub struct ListOnlyResponse {
+@@ -1337,7 +1348,18 @@
+                             .iter()
+                             .filter_map(|t| url::Url::parse(t).ok())
+                             .collect();
+-                        if opts.replace_trackers {
++                        if let Some(given) = opts.tracker_tiers.as_ref() {
++                            // The caller supplied the grouping outright.
++                            tiers = given
++                                .iter()
++                                .map(|tier| {
++                                    tier.iter()
++                                        .filter_map(|t| url::Url::parse(t).ok())
++                                        .collect::<Vec<_>>()
++                                })
++                                .filter(|t: &Vec<url::Url>| !t.is_empty())
++                                .collect();
++                        } else if opts.replace_trackers {
+                             // The caller owns the list, but the FILE owns the
+                             // tier grouping - so keep the tiers it declared,
+                             // minus whatever is no longer in the list. Throwing
+@@ -1519,7 +1541,14 @@
+ 
+                     // Add back seen_peers into the peer stream, as we consumed some peers
+                     // while resolving the magnet.
+-                    seen_peers = resolved_magnet.seen_peers.clone();
++                    //
++                    // `ListOnlyResponse` reports bare addresses, so the source is
++                    // dropped for that caller and kept for the stream.
++                    seen_peers = resolved_magnet
++                        .seen_peers
++                        .iter()
++                        .map(|(addr, _)| *addr)
++                        .collect();
+                     let peer_rx = Some(
+                         merge_streams(
+                             resolved_magnet.peer_rx,
+@@ -1617,6 +1646,7 @@
+                     disable_pex: self.disable_pex,
+                     anonymize: self.anonymize,
+                     piece_verifier: opts.piece_verifier.clone(),
++                    hash_provider: opts.hash_provider.clone(),
+                     #[cfg(feature = "disable-upload")]
+                     _disable_upload: self._disable_upload,
+                 },
+@@ -1860,11 +1890,17 @@
+         initial_peers: Vec<SocketAddr>,
+         is_private: bool,
+     ) -> Option<PeerStream> {
++        // NanoTorrent: each producer is tagged as it is created. After the
++        // merge below there is no way to tell them apart, which is why this is
++        // done here and not once at the end.
+         let dht_rx = if is_private {
+             None
+         } else {
+             self.dht.as_ref().map(|dht| {
+-                dht.get_peers(info_hash, if announce { self.announce_port } else { None })
++                futures::StreamExt::map(
++                    dht.get_peers(info_hash, if announce { self.announce_port } else { None }),
++                    |addr| (addr, crate::type_aliases::PeerSource::Dht),
++                )
+             })
+         };
+ 
+@@ -1872,7 +1908,10 @@
+             None
+         } else {
+             self.lsd.as_ref().map(|lsd| {
+-                lsd.announce(info_hash, if announce { self.announce_port } else { None })
++                futures::StreamExt::map(
++                    lsd.announce(info_hash, if announce { self.announce_port } else { None }),
++                    |addr| (addr, crate::type_aliases::PeerSource::Lsd),
++                )
+             })
+         };
+ 
+@@ -1915,12 +1954,17 @@
+             self.reqwest_client.clone(),
+             self.udp_tracker_client.clone(),
+             tracker_stats,
+-        );
++        )
++        .map(|s| futures::StreamExt::map(s, |addr| (addr, crate::type_aliases::PeerSource::Tracker)));
+ 
+         let initial_peers_rx = if initial_peers.is_empty() {
+             None
+         } else {
+-            Some(futures::stream::iter(initial_peers))
++            Some(futures::stream::iter(
++                initial_peers
++                    .into_iter()
++                    .map(|addr| (addr, crate::type_aliases::PeerSource::Initial)),
++            ))
+         };
+         merge_two_optional_streams(
+             merge_two_optional_streams(
+@@ -2065,7 +2109,9 @@
+ pub(crate) struct ResolveMagnetResult {
+     pub metadata: TorrentMetadata,
+     pub peer_rx: PeerStream,
+-    pub seen_peers: Vec<SocketAddr>,
++    // NanoTorrent: tagged, so peers consumed during resolution keep the source
++    // that found them when they are put back on the stream below.
++    pub seen_peers: Vec<(SocketAddr, PeerSource)>,
+ }
+ 
+ fn remove_files_and_dirs(infos: &FileInfos, files: &dyn TorrentStorage) {
+diff --git a/src/torrent_state/live/mod.rs b/src/torrent_state/live/mod.rs
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -214,6 +214,22 @@
+         ChunkInfo,
+     )>,
+     ratelimits: Limits,
++
++    /// NanoTorrent: how many connected peers hold each piece, by piece index.
++    ///
++    /// Recomputed on a timer rather than kept as running counters incremented
++    /// from `bitfield`, `have`, `have all`, `have none` and every disconnect
++    /// path. Those five places are five chances to leak a count, and a leaked
++    /// count never heals - whereas this is rebuilt from scratch every couple
++    /// of seconds and cannot drift at all.
++    ///
++    /// Being a little stale costs nothing: this orders a choice between pieces
++    /// we are going to download anyway. It is never a correctness input.
++    ///
++    /// ponytail: O(peers x pieces) rebuild every 2s. Fine to five figures of
++    /// pieces; if that ever bites, make it incremental and add a periodic
++    /// rebuild to correct the drift.
++    availability: RwLock<Vec<u32>>,
+ }
+ 
+ impl TorrentStateLive {
+@@ -231,6 +247,70 @@
+             .collect()
+     }
+ 
++    /// NanoTorrent addition: connected peers grouped by what found them, as
++    /// (source, connected, of which seeds).
++    ///
++    /// Counted from the live peer map on each call rather than kept as running
++    /// totals: a peer can disconnect without anything decrementing a counter,
++    /// and a stale count that only ever grows is worse than none. The map is a
++    /// few hundred entries at most and this is read about once a second.
++    ///
++    /// A seed is a peer whose bitfield is complete. `total_pieces` is passed in
++    /// because the peer bitfield is padded up to a byte, so counting ones is
++    /// only meaningful against the real piece count.
++    pub fn peer_counts_by_source(
++        &self,
++        total_pieces: u64,
++    ) -> Vec<(crate::type_aliases::PeerSource, u32, u32)> {
++        let mut counts: Vec<(crate::type_aliases::PeerSource, u32, u32)> = Vec::new();
++        for entry in self.peers.states.iter() {
++            let peer = entry.value();
++            let PeerState::Live(live) = peer.get_state() else {
++                continue;
++            };
++            let seed = live.bitfield.count_ones() as u64 >= total_pieces;
++            match counts.iter_mut().find(|(s, _, _)| *s == peer.source) {
++                Some(row) => {
++                    row.1 += 1;
++                    row.2 += u32::from(seed);
++                }
++                None => counts.push((peer.source, 1, u32::from(seed))),
++            }
++        }
++        counts
++    }
++
++    /// Rebuild [`Self::availability`] from the connected peers' bitfields.
++    ///
++    /// A seed contributes to every piece; that is the point, since a swarm
++    /// with a seed in it has no rare pieces and the ordering should fall back
++    /// to what it was.
++    fn refresh_availability(&self) {
++        let mut counts = vec![0u32; self.lengths.total_pieces() as usize];
++        for entry in self.peers.states.iter() {
++            let PeerState::Live(live) = entry.value().get_state() else {
++                continue;
++            };
++            for piece in live.bitfield.iter_ones() {
++                if let Some(slot) = counts.get_mut(piece) {
++                    *slot += 1;
++                }
++            }
++        }
++        *self.availability.write() = counts;
++    }
++
++    /// How many connected peers hold `piece`. 0 when nothing is known yet,
++    /// which makes every piece look equally rare and the ordering fall back to
++    /// the file-priority order it had before.
++    pub fn piece_availability(&self, piece: ValidPieceIndex) -> u32 {
++        self.availability
++            .read()
++            .get(piece.get() as usize)
++            .copied()
++            .unwrap_or(0)
++    }
++
+     pub(crate) fn new(
+         paused: TorrentStatePaused,
+         fatal_errors_tx: tokio::sync::oneshot::Sender<anyhow::Error>,
+@@ -309,6 +389,7 @@
+                 .collect(),
+             ratelimit_upload_tx,
+             ratelimits,
++            availability: RwLock::new(vec![0; lengths.total_pieces() as usize]),
+         });
+ 
+         state.spawn(
+@@ -352,6 +433,24 @@
+             format!("[{}]upload_scheduler", state.shared.id),
+             state.clone().task_upload_scheduler(ratelimit_upload_rx),
+         );
++
++        // NanoTorrent: keeps the rarest-first ordering fed. See `availability`.
++        state.spawn(
++            debug_span!(parent: state.shared.span.clone(), "availability"),
++            format!("[{}]availability", state.shared.id),
++            {
++                let state = Arc::downgrade(&state);
++                async move {
++                    loop {
++                        match state.upgrade() {
++                            Some(state) => state.refresh_availability(),
++                            None => return Ok(()),
++                        }
++                        tokio::time::sleep(Duration::from_secs(2)).await;
++                    }
++                }
++            },
++        );
+         Ok(state)
+     }
+ 
+@@ -738,8 +837,12 @@
+         let _ = self.have_broadcast_tx.send(index);
+     }
+ 
+-    pub(crate) fn add_peer_if_not_seen(&self, addr: SocketAddr) -> crate::Result<bool> {
+-        match self.peers.add_if_not_seen(addr) {
++    pub(crate) fn add_peer_if_not_seen(
++        &self,
++        addr: SocketAddr,
++        source: crate::type_aliases::PeerSource,
++    ) -> crate::Result<bool> {
++        match self.peers.add_if_not_seen(addr, source) {
+             Some(handle) => handle,
+             None => return Ok(false),
+         };
+@@ -1111,6 +1214,10 @@
+             .fetch_add(connection_time.as_millis() as u64, Ordering::Relaxed);
+     }
+ 
++    fn advertises_v2(&self) -> bool {
++        self.state.shared.options.hash_provider.is_some()
++    }
++
+     async fn on_received_message(&self, message: Message<'_>) -> anyhow::Result<()> {
+         // The first message must be "bitfield", but if it's not sent,
+         // assume the bitfield is all zeroes and was sent.
+@@ -1152,6 +1259,11 @@
+             Message::Cancel(_) => {
+                 trace!("received \"cancel\", but we don't process it yet")
+             }
++            // BEP 52. NanoTorrent addition: answer if we hold the layers for
++            // the file being asked about, and reject politely if not. An
++            // ignored request leaves the asking peer waiting for a reply that
++            // never comes, which is the one outcome the BEP rules out.
++            Message::HashRequest(request) => self.on_hash_request(request)?,
+             Message::Extended(ExtendedMessage::UtMetadata(UtMetadata::Request(
+                 metadata_piece_id,
+             ))) => {
+@@ -1546,6 +1658,7 @@
+                             .try_write()
+                             .is_some()
+                     },
++                    availability: |p| self.state.piece_availability(p),
+                 });
+ 
+                 match result {
+@@ -1672,6 +1785,37 @@
+         self.on_bitfield_notify.notify_waiters();
+     }
+ 
++    /// Answer a BEP 52 `hash request`, or reject it.
++    ///
++    /// The hashes themselves come from the embedder: the engine has no merkle
++    /// tree of its own, and for a torrent added from a `.torrent` the layers
++    /// travel outside the info dict, so only whoever parsed the file has them.
++    fn on_hash_request(
++        &self,
++        request: peer_binary_protocol::HashRequest,
++    ) -> anyhow::Result<()> {
++        let answer = self
++            .state
++            .shared
++            .options
++            .hash_provider
++            .as_ref()
++            .and_then(|p| p.hashes_for(&request));
++
++        let message = match answer {
++            Some(hashes) if !hashes.is_empty() => {
++                let mut flat = Vec::with_capacity(hashes.len() * 32);
++                for h in &hashes {
++                    flat.extend_from_slice(h);
++                }
++                WriterRequest::Hashes(request, flat)
++            }
++            _ => WriterRequest::Message(Message::HashReject(request)),
++        };
++        self.tx.send(message).ok();
++        Ok(())
++    }
++
+     /// BEP 6 `reject request`: this peer will not serve that chunk. Put the
+     /// piece back in the queue instead of waiting for it to time out.
+     fn on_reject_request(&self, request: Request) {
+@@ -2160,7 +2304,7 @@
+             .chain(msg.added_peers())
+             .for_each(|peer| {
+                 self.state
+-                    .add_peer_if_not_seen(peer.addr)
++                    .add_peer_if_not_seen(peer.addr, crate::type_aliases::PeerSource::Pex)
+                     .map_err(|error| {
+                         warn!(
+                             id = self.state.shared.id,
+diff --git a/src/torrent_state/live/peer/mod.rs b/src/torrent_state/live/peer/mod.rs
+--- a/src/torrent_state/live/peer/mod.rs
++++ b/src/torrent_state/live/peer/mod.rs
+@@ -30,6 +30,8 @@
+     state: PeerState,
+     pub stats: stats::atomic::PeerStats,
+     pub outgoing_address: Option<SocketAddr>,
++    /// NanoTorrent addition: which discovery source produced this address.
++    pub source: crate::type_aliases::PeerSource,
+ }
+ 
+ impl Peer {
+@@ -49,14 +51,20 @@
+             state,
+             stats: Default::default(),
+             outgoing_address: None,
++            // It found us, so no discovery source can claim it.
++            source: crate::type_aliases::PeerSource::Incoming,
+         }
+     }
+ 
+-    pub fn new_with_outgoing_address(addr: SocketAddr) -> Self {
++    pub fn new_with_outgoing_address(
++        addr: SocketAddr,
++        source: crate::type_aliases::PeerSource,
++    ) -> Self {
+         Self {
+             addr,
+             outgoing_address: Some(addr),
+             stats: Default::default(),
++            source,
+             state: Default::default(),
+         }
+     }
+diff --git a/src/torrent_state/live/peers/mod.rs b/src/torrent_state/live/peers/mod.rs
+--- a/src/torrent_state/live/peers/mod.rs
++++ b/src/torrent_state/live/peers/mod.rs
+@@ -38,12 +38,16 @@
+         self.stats.snapshot()
+     }
+ 
+-    pub fn add_if_not_seen(&self, addr: SocketAddr) -> Option<PeerHandle> {
++    pub fn add_if_not_seen(
++        &self,
++        addr: SocketAddr,
++        source: crate::type_aliases::PeerSource,
++    ) -> Option<PeerHandle> {
+         use dashmap::mapref::entry::Entry;
+         match self.states.entry(addr) {
+             Entry::Occupied(_) => None,
+             Entry::Vacant(vac) => {
+-                vac.insert(Peer::new_with_outgoing_address(addr));
++                vac.insert(Peer::new_with_outgoing_address(addr, source));
+                 atomic_inc(&self.stats.queued);
+                 atomic_inc(&self.session_stats.queued);
+ 
+diff --git a/src/torrent_state/mod.rs b/src/torrent_state/mod.rs
+--- a/src/torrent_state/mod.rs
++++ b/src/torrent_state/mod.rs
+@@ -123,6 +123,8 @@
+     pub anonymize: bool,
+     // NanoTorrent: per-torrent piece verification override (BEP 52).
+     pub piece_verifier: Option<Arc<dyn crate::piece_verify::PieceVerifier>>,
++    /// NanoTorrent: see [`crate::piece_verify::HashProvider`].
++    pub hash_provider: Option<Arc<dyn crate::piece_verify::HashProvider>>,
+     #[cfg(feature = "disable-upload")]
+     pub _disable_upload: bool,
+ }
+@@ -746,13 +748,13 @@
+ 
+                 loop {
+                     match timeout(Duration::from_secs(5), peer_rx.next()).await {
+-                        Ok(Some(peer)) => {
+-                            trace!(?peer, "received peer");
++                        Ok(Some((peer, source))) => {
++                            trace!(?peer, ?source, "received peer");
+                             let live = match live.upgrade() {
+                                 Some(live) => live,
+                                 None => return Ok(()),
+                             };
+-                            live.add_peer_if_not_seen(peer)?;
++                            live.add_peer_if_not_seen(peer, source)?;
+                         }
+                         Ok(None) => {
+                             debug!("peer_rx closed, closing peer adder");
+diff --git a/src/type_aliases.rs b/src/type_aliases.rs
+--- a/src/type_aliases.rs
++++ b/src/type_aliases.rs
+@@ -11,7 +11,46 @@
+ pub type BF = bitvec::boxed::BitBox<u8, bitvec::order::Msb0>;
+ 
+ pub type PeerHandle = SocketAddr;
+-pub type PeerStream = BoxStream<'static, SocketAddr>;
++
++/// NanoTorrent addition: where a peer address came from.
++///
++/// The discovery streams are merged into one before anybody reads them, so
++/// without carrying this the answer to "how many peers did the DHT actually
++/// find" is gone by the time a peer is added. Travels with the address rather
++/// than being looked up later because after the merge there is nothing left to
++/// look it up in.
++#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
++pub enum PeerSource {
++    Dht,
++    Tracker,
++    /// Local service discovery.
++    Lsd,
++    /// Peer exchange (BEP 11).
++    Pex,
++    /// Named when the torrent was added, or restored with it.
++    Initial,
++    /// The peer connected to us; we never discovered it.
++    Incoming,
++    /// Added by hand through the API.
++    Manual,
++}
++
++impl PeerSource {
++    /// Stable identifiers, for a caller that has to name these outside Rust.
++    pub fn as_str(&self) -> &'static str {
++        match self {
++            PeerSource::Dht => "dht",
++            PeerSource::Tracker => "tracker",
++            PeerSource::Lsd => "lsd",
++            PeerSource::Pex => "pex",
++            PeerSource::Initial => "initial",
++            PeerSource::Incoming => "incoming",
++            PeerSource::Manual => "manual",
++        }
++    }
++}
++
++pub type PeerStream = BoxStream<'static, (SocketAddr, PeerSource)>;
+ pub type FileInfos = Vec<FileInfo>;
+ pub(crate) type FileStorage = Box<dyn TorrentStorage>;
+ pub(crate) type FilePriorities = Vec<usize>;

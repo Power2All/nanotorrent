@@ -819,8 +819,34 @@ fn deliver_ui(plugins: &mut [Plugin], event: ui::UiEvent) {
         ui::UiEvent::Group { plugin, id } => (plugin, "on_ui_group", vec![id]),
         ui::UiEvent::Button { plugin, id, input } => (plugin, "on_ui_button", vec![id, input]),
         ui::UiEvent::Menu { plugin, id } => (plugin, "on_ui_menu", vec![id]),
+        ui::UiEvent::FormCancelled { plugin, id } => (plugin, "on_ui_form_cancel", vec![id]),
         ui::UiEvent::Configure { plugin } => (plugin, "on_ui_configure", Vec::new()),
         ui::UiEvent::Opened { plugin } => (plugin, "on_ui_open", Vec::new()),
+        // The one event whose payload is not a list of strings, so it is
+        // called here rather than falling through to the shared path below.
+        ui::UiEvent::Form { plugin, id, values } => {
+            let Some(target) = plugins.iter_mut().find(|p| p.name == plugin) else {
+                return;
+            };
+            if !target.handles("on_ui_form", 2) {
+                return;
+            }
+            let map: rhai::Map = values
+                .into_iter()
+                .map(|(k, v)| (k.into(), rhai::Dynamic::from(v)))
+                .collect();
+            let result = target.engine.call_fn::<rhai::Dynamic>(
+                &mut target.scope,
+                &target.ast,
+                "on_ui_form",
+                (id, map),
+            );
+            if let Err(err) = result {
+                tracing::error!("plugin {}: on_ui_form failed: {err}", target.name);
+                ui::report_failure(&target.name, "on_ui_form", &err.to_string());
+            }
+            return;
+        }
     };
 
     let Some(plugin) = plugins.iter_mut().find(|p| p.name == name) else {

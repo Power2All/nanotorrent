@@ -14,7 +14,7 @@
      file manager.
 
    port 8443 is the conventional unprivileged HTTPS alternate, and avoids the
-   ports the other clients grabbed (8080 qBittorrent, 9091 Transmission). */
+   ports the other clients grabbed (8080 and 9091 are both taken). */
 INSERT INTO setting (key, value, default_value) VALUES
 ('webui.enabled',        NULL, 'false'),
 ('webui.bind_address',   NULL, '"127.0.0.1"'),

@@ -25,7 +25,7 @@ use sha1::{Digest, Sha1};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 
 /// The 768-bit MSE Diffie-Hellman prime (`P`), generator `G = 2`. This is the
-/// fixed prime from the MSE spec, shared by libtorrent/Vuze/qBittorrent.
+/// fixed prime from the MSE spec, shared by every client that speaks it.
 const P_HEX: &str = "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1\
 29024E088A67CC74020BBEA63B139B22514A08798E3404DD\
 EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245\

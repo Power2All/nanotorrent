@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Svenska (Sverige) - Partner Center: Swedish (Sweden) (sv-SE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent är en Rust-portning av PicoTorrent av Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.4
+Version 0.3.5
 
-- Pausade torrenter återskapar inte längre sina filer när NanoTorrent startar. En torrent vars data du hade raderat eller flyttat kunde komma tillbaka på 0 % med en mapp full av tomma filer.
-- Webbgränssnittet tar nu emot uppdateringar direkt i stället för att be om dem: det reagerar omedelbart och drar avsevärt mindre processortid.
-- En anslutningsindikator visar om webbläsaren fortfarande har kontakt med NanoTorrent, och återansluter av sig själv.
-- Torrentlistan i webbgränssnittet kan delas upp i sidor och sorteras över alla sidor.
-- Både fönstret och webbgränssnittet visar hur många webbklienter som är anslutna.
-- Detaljpanelen fylls så snart du klickar på en torrent, bakom ett inläsningslager, i stället för upp till en sekund senare.
-- Inställningar har byggts om efter huvudfönstret: ikonflikar som rullar när de inte får plats, ett bredare fönster och rullningslister som inte längre täcker något.
-- Inställningar visar språket du valde, och varje öppet fönster byter språk när du trycker på Ok.
-- Att stänga ett fönster stänger det nu på riktigt, och Hjälp får en länk till dokumentationen för plugin-API:et.
+- Delningsgränser: sluta seeda vid ett förhållande, efter en angiven tid eller det som inträffar först, och pausa eller ta bort torrenten därefter.
+- Alternativa hastighetsgränser, enligt schema eller växlade för hand från verktygsfältet.
+- Köordning från verktygsfältet, prioriteter per fil och taggar.
+- En bevakad mapp som lägger till varje .torrent som placeras i den.
+- Lägg till, ändra och ta bort en torrents trackers, i annonseringsnivåer.
+- Inställningsdatabasen kan krypteras, utan lösenord att skriva, och dina inställningar exporteras och importeras som JSON.
+- Webbgränssnittet får köordning, hastighetsbrytaren och en panel per torrent för filer, trackers, taggar och gränser.
+- Delar som få peers har efterfrågas först, och BitTorrent v2-torrenter kan nu seedas till andra.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

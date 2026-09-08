@@ -31,6 +31,18 @@ impl Server {
     }
 }
 
+/// Is a NanoTorrent already running?
+///
+/// Tested by taking the single-instance port for an instant and giving it
+/// straight back, so unlike [`init`] it forwards nothing and claims nothing.
+///
+/// A hint rather than a lock: the answer can go stale the moment it is
+/// returned. That is enough to refuse "do not do this while the application is
+/// open" and not enough to build anything else on.
+pub fn another_instance_running() -> bool {
+    TcpListener::bind(IPC_ADDR).is_err()
+}
+
 /// Claim the single-instance role, or hand `args` to whoever already has it.
 ///
 /// Binding the port IS the lock: whichever process gets it is primary, and the

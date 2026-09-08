@@ -21,12 +21,14 @@ import { UpdateDialog } from "update.slint";
 import { AboutDialog } from "about.slint";
 import { CreateTorrentDialog } from "create.slint";
 import { ClosePromptDialog } from "closeprompt.slint";
+import { DbPromptDialog } from "dbprompt.slint";
 import { RemoveDialog } from "remove.slint";
 import { PluginWindow, PluginRowItem, PluginButton } from "plugin.slint";
 export { PreferencesDialog, AboutDialog, CliHelpDialog, UpdateDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
+export { DbPromptDialog }
 export { PluginWindow, PluginRowItem, PluginButton }
 
-import { ScrollView, ListView, Button, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette, Spinner } from "std-widgets.slint";
+import { ScrollView, ListView, Button, ComboBox, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette, Spinner } from "std-widgets.slint";
 
 // Re-exported so a single slint_build::compile pass generates it alongside the
 // window: SystemTrayIcon cannot live inside a Window, but it can share a module.
@@ -42,6 +44,13 @@ export struct FileEntryRow {
     size: string,
     progress: float,
     included: bool,
+    /// 0 skip, 1 normal, 2 high, 3 maximum. -1 on a folder row, which has no
+    /// priority of its own - its files each carry one.
+    priority: int,
+    /// That level as a word, translated in Rust. Kept beside the number rather
+    /// than derived here: the markup would need a computed locale key, which is
+    /// exactly what the string check cannot see through.
+    priority-name: string,
 }
 
 export struct PeerEntryRow {
@@ -136,10 +145,17 @@ component DCell inherits Rectangle {
     in property <string> text;
     in property <TextHorizontalAlignment> align: left;
     in property <bool> bold;
+    /// Drawn faded, for a value that is switched off rather than absent.
+    in property <bool> dim;
     in property <length> indent: 0px;
     width: root.w;
     Text {
         text: root.text;
+        // Mixed toward the background rather than a fixed grey, so it reads as
+        // faded on both palettes - the same trick the tab strip uses.
+        color: root.dim
+            ? Palette.foreground.mix(Palette.background, 0.45)
+            : Palette.foreground;
         x: 6px + root.indent;
         width: parent.width - 12px - root.indent;
         height: parent.height;
@@ -387,11 +403,15 @@ component DataText inherits Rectangle {
 // Colours are chosen to read on both palettes rather than taken from Palette:
 // these are the "traffic light" set (add / remove / start / stop), and their
 // meaning IS the colour. They sit on both backgrounds because they are all
-// mid-saturation - the same reason qBittorrent's toolbar works in both themes.
+// mid-saturation, which is what lets one toolbar work on both themes.
 component IconButton inherits Rectangle {
     in property <color> tint;
     in property <bool> enabled: true;
     in property <string> tip;
+    /// Latched on, for a button that is a switch rather than an action. Drawn
+    /// held down, because an icon-only toggle with no state showing is
+    /// indistinguishable from one that did nothing.
+    in property <bool> active;
     callback activated();
 
     width: 34px;
@@ -400,6 +420,7 @@ component IconButton inherits Rectangle {
     // Hover is the only affordance an icon-only button has, so it has to be
     // visible without being loud.
     background: !root.enabled ? transparent
+        : root.active ? Palette.accent-background.mix(Palette.background, 0.35)
         : touch.has-hover ? Palette.alternate-background : transparent;
 
     // Greyed rather than hidden: a disabled button still says the action
@@ -530,8 +551,57 @@ component StopIcon inherits Rectangle {
     }
 }
 
+// The queue moves. One component for all four buttons rather than four
+// glyphs: the shapes differ by a mirror and a line, and spelling that out
+// four times is four places to get the geometry wrong.
+component QueueArrowIcon inherits Rectangle {
+    in property <color> ink;
+    in property <bool> down;
+    /// All the way, rather than one place: draws the bar the arrow stops at.
+    in property <bool> end;
+    width: 20px;
+    height: 20px;
+    if root.end: Rectangle {
+        x: 4px; y: root.down ? 17.5px : 1px; width: 12px; height: 2px;
+        background: root.ink;
+    }
+    Path {
+        width: 20px;
+        height: 20px;
+        viewbox-width: 20;
+        viewbox-height: 20;
+        fill: root.ink;
+        commands: root.down ? "M 4 9 L 16 9 L 10 16 Z" : "M 4 11 L 16 11 L 10 4 Z";
+    }
+    // The shaft, so it reads as a move and not as a caret.
+    Rectangle {
+        x: 9px; y: root.down ? 4px : 11px; width: 2px; height: 5px;
+        background: root.ink;
+    }
+}
+
 // A cog, for "preferences". A straight-line polygon: see the note on
 // IconButton about not depending on SVG arc support.
+// A turtle, for the alternative (slower) limits - the same joke every client
+// makes, and the reason the button reads as "slow down" without a label.
+// Straight lines only, for the reason IconButton gives.
+component TurtleIcon inherits Rectangle {
+    in property <color> ink;
+    width: 20px;
+    height: 20px;
+    Path {
+        x: 1px;
+        y: 1px;
+        width: 18px;
+        height: 18px;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: root.ink;
+        // Shell, then head, then two feet.
+        commands: "M 4 14 L 7 8 L 15 8 L 18 14 Z M 18 11 L 22 10 L 22 13 L 18 13 Z M 5 15 L 8 15 L 8 18 L 5 18 Z M 14 15 L 17 15 L 17 18 L 14 18 Z";
+    }
+}
+
 component GearIcon inherits Rectangle {
     in property <color> ink;
     width: 20px;
@@ -1032,7 +1102,34 @@ export component MainWindow inherits Window {
 
     /// A detail tab was clicked. Rust fills the list it just revealed;
     /// without this the tab stayed empty until the next refresh tick.
+    /// Whether the alternative speed limits are in force, for the toolbar
+    /// button's pressed state. Includes the schedule having switched them on,
+    /// so the button shows what is true rather than only what was clicked.
+    in property <bool> alt-speed-on;
+
     callback tab-changed();
+    /// A file's priority cell was clicked in the details Files tab: step that
+    /// file to the next level.
+    callback cycle-file-priority(int);
+    /// The tracker typed into the Trackers tab, and the button that adds it.
+    in-out property <string> new-tracker;
+    callback add-tracker();
+    /// The tracker the row menu was opened on, and whether it can be changed.
+    in-out property <string> tracker-target;
+    /// Which tracker row is highlighted, or -1. Reset when the torrent changes,
+    /// or a stale index would highlight an unrelated row in the next list.
+    in-out property <int> tracker-selected: -1;
+    /// The row index being edited in place, or -1. The text lives beside it
+    /// rather than in the row model, which is rebuilt every second.
+    in-out property <int> tracker-editing-row: -1;
+    in-out property <string> tracker-edit-text;
+    /// Tier names for the picker, ending in "New tier". Built in Rust so the
+    /// last entry is translated and the numbers are not.
+    in property <[string]> tracker-tier-names;
+    in-out property <int> tracker-tier-index;
+    callback edit-tracker();
+    callback remove-tracker();
+    callback commit-tracker-edit();
 
     // Splitter position - the Win32 frame keeps the same thing in
     // MainWindow::details_height.
@@ -1098,6 +1195,42 @@ export component MainWindow inherits Window {
         }
     }
 
+    // The tracker row menu. A second popup rather than more rows on the
+    // torrent one: it acts on a tracker, not on the selected torrents, and
+    // sharing would mean guessing which the user meant.
+    tracker-popup := PopupWindow {
+        x: root.menu-x;
+        y: root.menu-y;
+        // The size goes on the POPUP, not on the Rectangle inside it. A
+        // PopupWindow left to size itself comes out empty: the child still
+        // draws - children are not clipped to it - so the menu appeared
+        // perfectly and hit-tested against nothing. No hover, no clicks, and
+        // nothing to see wrong in a screenshot.
+        width: tracker-menu.preferred-width;
+        height: tracker-menu.preferred-height;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Palette.background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 6px;
+            width: 100%;
+            height: 100%;
+            tracker-menu := VerticalLayout {
+                padding: 4px;
+                spacing: 0px;
+                MenuRow {
+                    label: L.s(L.revision, "edit_tracker");
+                    activated => { root.edit-tracker(); tracker-popup.close(); }
+                }
+                MenuRow {
+                    label: L.s(L.revision, "remove_tracker");
+                    activated => { root.remove-tracker(); tracker-popup.close(); }
+                }
+            }
+        }
+    }
+
     ctx-popup := PopupWindow {
         x: root.menu-x;
         y: root.menu-y;
@@ -1140,6 +1273,13 @@ export component MainWindow inherits Window {
                     activated => { root.action("resume"); ctx-popup.close(); }
                 }
                 MenuRow { label: L.s(L.revision, "force_recheck"); activated => { root.action("recheck"); ctx-popup.close(); } }
+                // Only meaningful while a torrent is actually announcing, which
+                // is the same condition that lets it be paused.
+                MenuRow {
+                    label: L.s(L.revision, "force_reannounce");
+                    enabled: root.ctx-can-pause;
+                    activated => { root.action("reannounce"); ctx-popup.close(); }
+                }
                 MenuSep { }
                 MenuRow { label: L.s(L.revision, "move"); activated => { root.action("move"); ctx-popup.close(); } }
                 MenuRow { label: L.s(L.revision, "set_location"); activated => { root.action("set-location"); ctx-popup.close(); } }
@@ -1157,14 +1297,61 @@ export component MainWindow inherits Window {
                         activated => { root.assign-label(i); ctx-popup.close(); }
                     }
                 }
+                // Tags, unlike labels, are many per torrent - so these toggle
+                // rather than replace, and the menu stays open so several can
+                // be set in one go.
+                MenuRow {
+                    label: L.s(L.revision, "tags") + "  " + (root.ctx-tags-open ? "-" : "+");
+                    activated => { root.ctx-tags-open = !root.ctx-tags-open; }
+                }
+                if root.ctx-tags-open: VerticalLayout {
+                    for name[i] in root.ctx-tag-names: MenuRow {
+                        // A tick rather than a checkbox: MenuRow draws a label,
+                        // and a mixed selection reads as unticked, which the
+                        // click then corrects for every torrent at once.
+                        label: (root.ctx-tag-on[i] ? "  ✓ " : "     ") + name;
+                        activated => { root.toggle-tag(i); }
+                    }
+                    if root.ctx-tag-names.length == 0: MenuRow {
+                        label: "    " + L.s(L.revision, "no_tags_yet");
+                        enabled: false;
+                    }
+                }
+                // A torrent's own ratio limit, overriding the global one.
+                // Presets rather than a number field: a popup menu has nowhere
+                // to type, and these are the values people actually pick.
+                MenuRow {
+                    label: L.s(L.revision, "share_ratio_limit") + "  " + (root.ctx-ratio-open ? "-" : "+");
+                    activated => { root.ctx-ratio-open = !root.ctx-ratio-open; }
+                }
+                if root.ctx-ratio-open: VerticalLayout {
+                    for choice[i] in root.ctx-ratio-choices: MenuRow {
+                        label: "    " + choice;
+                        activated => { root.set-torrent-ratio(i); ctx-popup.close(); }
+                    }
+                }
+                // The other half of the same limit: seed for this long, then
+                // do whatever the share-limit action says.
+                MenuRow {
+                    label: L.s(L.revision, "seed_time_limit") + "  " + (root.ctx-seed-time-open ? "-" : "+");
+                    activated => { root.ctx-seed-time-open = !root.ctx-seed-time-open; }
+                }
+                if root.ctx-seed-time-open: VerticalLayout {
+                    for choice[i] in root.ctx-seed-time-choices: MenuRow {
+                        label: "    " + choice;
+                        activated => { root.set-torrent-seed-time(i); ctx-popup.close(); }
+                    }
+                }
                 MenuSep { }
                 MenuRow {
                     label: L.s(L.revision, "queue_position_menu") + "  " + (root.ctx-queue-open ? "-" : "+");
                     activated => { root.ctx-queue-open = !root.ctx-queue-open; }
                 }
                 if root.ctx-queue-open: VerticalLayout {
+                    MenuRow { label: "    " + L.s(L.revision, "queue_top"); activated => { root.action("queue-top"); ctx-popup.close(); } }
                     MenuRow { label: "    " + L.s(L.revision, "up"); activated => { root.action("queue-up"); ctx-popup.close(); } }
                     MenuRow { label: "    " + L.s(L.revision, "down"); activated => { root.action("queue-down"); ctx-popup.close(); } }
+                    MenuRow { label: "    " + L.s(L.revision, "queue_bottom"); activated => { root.action("queue-bottom"); ctx-popup.close(); } }
                 }
                 MenuSep { }
                 MenuRow { label: L.s(L.revision, "remove_torrent"); activated => { root.action("remove"); ctx-popup.close(); } }
@@ -1217,9 +1404,26 @@ export component MainWindow inherits Window {
     in property <bool> ctx-can-resume: true;
     /// Label names for the assign submenu, "None" first to clear one.
     in property <[string]> ctx-label-names;
+    /// Every tag, and whether the selection already carries it. Two models
+    /// rather than one of structs: the names come from the database and the
+    /// ticks from the selection, and they are rebuilt at different moments.
+    in property <[string]> ctx-tag-names;
+    in property <[bool]> ctx-tag-on;
+    in-out property <bool> ctx-tags-open;
+    in-out property <bool> ctx-ratio-open;
+    /// "Use the global setting", "No limit", then a few ratios. Built in Rust
+    /// so the first two are translated and the numbers are not.
+    in property <[string]> ctx-ratio-choices;
+    in-out property <bool> ctx-seed-time-open;
+    /// The same two entries, then a few durations.
+    in property <[string]> ctx-seed-time-choices;
     in-out property <bool> filters-open;
     in-out property <bool> labels-open;
     in-out property <bool> theme-open;
+    /// "Import from PicoTorrent...", or empty when no PicoTorrent database is
+    /// on this machine - in which case the row is not drawn at all. Built in
+    /// Rust: the string takes the application name as an argument.
+    in property <string> import-label;
     /// Which menu-bar dropdown is open: 0 none, 1 File, 2 View, 3 Help.
     in-out property <int> open-menu;
     changed open-menu => {
@@ -1232,6 +1436,11 @@ export component MainWindow inherits Window {
     in-out property <bool> ctx-labels-open;
     in-out property <bool> ctx-queue-open;
     callback assign-label(int);
+    /// A tag row was clicked: put it on the selection, or take it off.
+    callback toggle-tag(int);
+    /// A ratio preset was picked for the selected torrents.
+    callback set-torrent-ratio(int);
+    callback set-torrent-seed-time(int);
     // Fired before the context menu opens so the Rust side can make the
     // right-clicked row the selection, exactly as the Win32 list does.
     callback context-menu(int);
@@ -1483,6 +1692,54 @@ export component MainWindow inherits Window {
                         x: 4px; y: 7px; width: 1px; height: 16px;
                         background: Palette.border;
                     }
+                }
+
+                // The queue moves, in queue order left to right. Neutral rather
+                // than coloured: they are the same action four ways, and four
+                // traffic-light colours would say they were four things.
+                IconButton {
+                    tint: Palette.foreground;
+                    enabled: root.selected-count > 0;
+                    tip: L.s(L.revision, "queue_top");
+                    activated => { root.action("queue-top"); }
+                    QueueArrowIcon { ink: parent.ink; end: true; }
+                }
+                IconButton {
+                    tint: Palette.foreground;
+                    enabled: root.selected-count > 0;
+                    tip: L.s(L.revision, "up");
+                    activated => { root.action("queue-up"); }
+                    QueueArrowIcon { ink: parent.ink; }
+                }
+                IconButton {
+                    tint: Palette.foreground;
+                    enabled: root.selected-count > 0;
+                    tip: L.s(L.revision, "down");
+                    activated => { root.action("queue-down"); }
+                    QueueArrowIcon { ink: parent.ink; down: true; }
+                }
+                IconButton {
+                    tint: Palette.foreground;
+                    enabled: root.selected-count > 0;
+                    tip: L.s(L.revision, "queue_bottom");
+                    activated => { root.action("queue-bottom"); }
+                    QueueArrowIcon { ink: parent.ink; down: true; end: true; }
+                }
+
+                Rectangle {
+                    width: 9px;
+                    Rectangle {
+                        x: 4px; y: 7px; width: 1px; height: 16px;
+                        background: Palette.border;
+                    }
+                }
+
+                IconButton {
+                    tint: #3fa34d;
+                    active: root.alt-speed-on;
+                    tip: L.s(L.revision, "alt_speed_now");
+                    activated => { root.action("alt-speed"); }
+                    TurtleIcon { ink: parent.ink; }
                 }
 
                 IconButton {
@@ -2027,9 +2284,30 @@ export component MainWindow inherits Window {
                                                     ? "100 %"
                                                     : floor(f.progress * 1000) / 10 + " %");
                                         }
-                                        DCell {
-                                            w: DCols.files[3];
-                                            text: f.index < 0 ? "" : (f.included ? L.s(L.revision, "yes") : L.s(L.revision, "no"));
+                                        // Clicking steps through the four
+                                        // levels. A combo box per row would be
+                                        // the obvious control and the wrong one
+                                        // here: this list is virtualised and
+                                        // rebuilt every second, and a popup
+                                        // inside it would close under the user.
+                                        Rectangle {
+                                            width: DCols.files[3];
+                                            background: prio-touch.has-hover && f.index >= 0
+                                                ? Palette.alternate-background
+                                                : transparent;
+                                            prio-touch := TouchArea {
+                                                enabled: f.index >= 0;
+                                                mouse-cursor: pointer;
+                                                clicked => { root.cycle-file-priority(f.index); }
+                                            }
+                                            DCell {
+                                                w: DCols.files[3];
+                                                text: f.index < 0 ? "" : f.priority-name;
+                                                // Skipped files read as struck
+                                                // through would be nicer; dim is
+                                                // what a Text can do here.
+                                                dim: f.priority == 0;
+                                            }
                                         }
                                     }
                                 }
@@ -2133,6 +2411,35 @@ export component MainWindow inherits Window {
 
             if root.current-tab == 3: VerticalLayout {
                 vertical-stretch: 1;
+
+                // Adding a tracker to this torrent. Only added ones can be
+                // taken away again - the engine's custom-tracker option extends
+                // a torrent's own announce list rather than replacing it, so a
+                // tracker that came inside the .torrent stays. See
+                // Session::add_tracker.
+                HorizontalLayout {
+                    padding: 6px;
+                    spacing: 8px;
+                    LineEdit {
+                        text <=> root.new-tracker;
+                        placeholder-text: L.s(L.revision, "tracker_url");
+                        horizontal-stretch: 1;
+                        accepted => { root.add-tracker(); }
+                    }
+                    // Which announce tier it joins. The last entry is "a new
+                    // tier", so adding one needs no separate button.
+                    ComboBox {
+                        model: root.tracker-tier-names;
+                        current-index <=> root.tracker-tier-index;
+                        width: 150px;
+                    }
+                    Button {
+                        text: L.s(L.revision, "add_tracker");
+                        enabled: root.new-tracker != "";
+                        clicked => { root.add-tracker(); }
+                    }
+                }
+
                 ScrollView {
                     viewport-width: DCols.trackers-total + Cols.bar-room;
                     vertical-scrollbar-policy: always-off;
@@ -2184,13 +2491,89 @@ export component MainWindow inherits Window {
                             ListView {
                                 for t[i] in root.detail-trackers: Rectangle {
                                     height: 22px;
-                                    background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                                    // Selected wins over the zebra stripe, the
+                                    // same order the torrent list uses.
+                                    background: i == root.tracker-selected
+                                        ? Palette.selection-background
+                                        : (mod(i, 2) == 0 ? transparent : Palette.alternate-background);
+
+                                    // Tier headings and the DHT/LSD/PeX rows
+                                    // are not trackers, so they get no menu -
+                                    // and nothing to select either.
+                                    if t.indented: tr-ta := TouchArea {
+                                        pointer-event(e) => {
+                                            if (e.kind != PointerEventKind.down) {
+                                                return;
+                                            }
+                                            // Whichever button, the menu and
+                                            // the editor act on the row that is
+                                            // visibly highlighted.
+                                            root.tracker-target = t.url;
+
+                                            if (e.button == PointerEventButton.right) {
+                                                root.tracker-selected = i;
+                                                root.menu-x = tr-ta.absolute-position.x + tr-ta.mouse-x;
+                                                root.menu-y = tr-ta.absolute-position.y + tr-ta.mouse-y;
+                                                tracker-popup.show();
+                                            } else if (root.tracker-selected == i
+                                                       && root.tracker-editing-row != i) {
+                                                // A second click on the row
+                                                // that is already selected
+                                                // starts editing, the way a
+                                                // file manager renames. The
+                                                // first click only selects, so
+                                                // this is never a surprise on
+                                                // the way to picking a row.
+                                                root.tracker-edit-text = t.url;
+                                                root.tracker-editing-row = i;
+                                            } else {
+                                                root.tracker-selected = i;
+                                                // Clicking a different row
+                                                // abandons an edit in progress
+                                                // rather than leaving a field
+                                                // open on a row nobody is
+                                                // looking at.
+                                                root.tracker-editing-row = -1;
+                                            }
+                                        }
+                                    }
+
                                     HorizontalLayout {
                                         // Tracker rows sit under their tier
                                         // heading, as the Win32 list indents
                                         // them - now an indent inside the URL
                                         // cell rather than the row's padding.
-                                        DCell {
+                                        // Edited in place, the way every
+                                        // other client does it - the field
+                                        // replaces the cell rather than the
+                                        // row being retyped somewhere else.
+                                        if root.tracker-editing-row == i: Rectangle {
+                                            width: DCols.trackers[0];
+                                            tracker-edit := LineEdit {
+                                                x: 18px;
+                                                width: parent.width - 24px;
+                                                height: parent.height;
+                                                text: root.tracker-edit-text;
+                                                // Focused the moment it exists,
+                                                // so the URL can be corrected
+                                                // without clicking into the
+                                                // field that just appeared.
+                                                init => { tracker-edit.focus(); }
+                                                edited(s) => { root.tracker-edit-text = s; }
+                                                // Enter commits, Escape gives
+                                                // up - the two keys anyone
+                                                // tries without being told.
+                                                accepted => { root.commit-tracker-edit(); }
+                                                key-pressed(e) => {
+                                                    if (e.text == Key.Escape) {
+                                                        root.tracker-editing-row = -1;
+                                                        return EventResult.accept;
+                                                    }
+                                                    return EventResult.reject;
+                                                }
+                                            }
+                                        }
+                                        if root.tracker-editing-row != i: DCell {
                                             w: DCols.trackers[0];
                                             text: t.url;
                                             indent: t.indented ? 18px : 0px;
@@ -2396,6 +2779,14 @@ export component MainWindow inherits Window {
                 MenuRow { label: L.s(L.revision, "amp_add_torrent"); activated => { root.action("add-torrent"); root.open-menu = 0; } }
                 MenuRow { label: L.s(L.revision, "add_magnet_link_s"); activated => { root.action("add-magnet"); root.open-menu = 0; } }
                 MenuRow { label: L.s(L.revision, "create_torrent"); activated => { root.action("create"); root.open-menu = 0; } }
+                // Only when there is something to import from. The label is
+                // built in Rust because its string takes the application name
+                // as an argument, and `L.s` passes none.
+                if root.import-label != "": MenuSep { }
+                if root.import-label != "": MenuRow {
+                    label: root.import-label;
+                    activated => { root.action("import-pico"); root.open-menu = 0; }
+                }
                 MenuSep { }
                 MenuRow { label: L.s(L.revision, "amp_exit"); activated => { root.action("exit"); root.open-menu = 0; } }
         }

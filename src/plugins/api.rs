@@ -224,12 +224,49 @@ pub fn register(
     {
         let (handle, s, c) = (session.handle(), session.clone(), http.clone());
         engine.register_fn("add_torrent_url", move |url: &str| -> bool {
-            add_url(&handle, &c, &s, url, None)
+            add_url(&handle, &c, &s, url, AddOptions::default())
         });
 
-        let (handle, s, c) = (session.handle(), session.clone(), http);
+        let (handle, s, c) = (session.handle(), session.clone(), http.clone());
         engine.register_fn("add_torrent_url", move |url: &str, save_path: &str| -> bool {
-            add_url(&handle, &c, &s, url, Some(save_path.to_string()))
+            add_url(
+                &handle,
+                &c,
+                &s,
+                url,
+                AddOptions {
+                    save_path: Some(save_path.to_string()),
+                    ..Default::default()
+                },
+            )
+        });
+
+        // The third form takes a map, so a script can say `paused` and
+        // `label` without also having to say `save_path`.
+        let (handle, s, c) = (session.handle(), session.clone(), http);
+        engine.register_fn("add_torrent_url", move |url: &str, opts: Map| -> bool {
+            let text = |key: &str| match field(&opts, key) {
+                v if v.is_empty() => None,
+                v => Some(v),
+            };
+            add_url(
+                &handle,
+                &c,
+                &s,
+                url,
+                AddOptions {
+                    save_path: text("save_path"),
+                    // A checkbox arrives as "1" or "", so non-empty is the
+                    // rule - but "0" and "false" are read as off too, because
+                    // a script that sends either plainly means off and the
+                    // literal reading would be the opposite.
+                    paused: matches!(
+                        field(&opts, "paused").as_str(),
+                        v if !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false")
+                    ),
+                    label: text("label"),
+                },
+            )
         });
     }
 
@@ -347,6 +384,59 @@ pub fn register(
             });
         });
 
+        // A form, in place of the lists, for the settings a single text field
+        // cannot carry. Passing an empty array closes it - so a plugin needs
+        // one call to open one and one to put it away, and the window never
+        // has to guess which it meant.
+        let plugin = name.to_owned();
+        engine.register_fn(
+            "ui_form",
+            move |form_id: &str, title: &str, fields: Array| {
+                let form_id = form_id.to_owned();
+                let title = title.to_owned();
+                let fields: Vec<super::ui::Field> = fields
+                    .into_iter()
+                    .filter_map(|f| f.try_cast::<Map>())
+                    .map(|f| super::ui::Field {
+                        id: field(&f, "id"),
+                        label: field(&f, "label"),
+                        kind: match field(&f, "kind").as_str() {
+                            "" => String::from("text"),
+                            other => other.to_owned(),
+                        },
+                        value: field(&f, "value"),
+                        // Newline-separated rather than an array: `field`
+                        // already returns a string, and a choice list written
+                        // as one string is easier to build in a script than an
+                        // array of arrays.
+                        options: field(&f, "options")
+                            .lines()
+                            .map(str::to_owned)
+                            .filter(|o| !o.is_empty())
+                            .collect(),
+                        hint: field(&f, "hint"),
+                    })
+                    .collect();
+                super::ui::update(&plugin, move |ui| {
+                    // An empty field list is the close, whatever id came with
+                    // it: a form with no controls is not a form.
+                    let closing = fields.is_empty();
+                    ui.form_id = if closing { String::new() } else { form_id };
+                    ui.form_title = if closing { String::new() } else { title };
+                    ui.fields = fields;
+                });
+            },
+        );
+
+        let plugin = name.to_owned();
+        engine.register_fn("ui_form_close", move || {
+            super::ui::update(&plugin, move |ui| {
+                ui.form_id = String::new();
+                ui.form_title = String::new();
+                ui.fields = Vec::new();
+            });
+        });
+
         // "This needs setting up before it will do anything useful", which is
         // what puts a Configure button on the plugin's row in Preferences.
         // Not inferred from having a window: plenty of useful windows are
@@ -356,6 +446,16 @@ pub fn register(
             super::ui::update(&plugin, move |ui| ui.configurable = needed);
         });
     }
+
+    // Seconds since the Unix epoch. No permission: a clock reveals nothing a
+    // script could not already infer from how often it is ticked, and without
+    // one "ignore this rule for a week" cannot be written at all.
+    engine.register_fn("now", || -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
+    });
 
     // ---- making sense of what came back --------------------------------
     // No permission: this is arithmetic on a string the plugin already holds.
@@ -367,6 +467,8 @@ pub fn register(
             .map(|v| json_to_dynamic(&v))
             .unwrap_or(Dynamic::UNIT)
     });
+
+    register_regex(engine);
 
     engine.register_fn("parse_xml", |text: &str| -> Dynamic {
         parse_xml(text).unwrap_or(Dynamic::UNIT)
@@ -383,6 +485,105 @@ pub fn register(
 /// A row that is not a map is dropped; a row missing a field gets an empty
 /// one. Neither is worth throwing over - a blank line is a mistake the plugin
 /// author can see, where an aborted handler is not.
+/// The compiled form of a pattern, from a small cache.
+///
+/// Cached because the obvious way to use these is inside a loop over a feed's
+/// items, which would otherwise recompile the same pattern for every row.
+///
+/// `size_limit` bounds the compiled program: the default is generous, and a
+/// plugin has no business building a megabyte of automaton. `dot_matches_new_line`
+/// stays off, so `.` means what someone writing a rule against a one-line title
+/// expects.
+///
+/// ponytail: a plain map with a cap and a clear-when-full, not an LRU. The
+/// working set here is a handful of patterns from one plugin's rules; anything
+/// cleverer would be more code than the thing it manages.
+fn compiled(pattern: &str) -> Option<std::sync::Arc<regex::Regex>> {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    /// Beyond this many distinct patterns the cache is emptied rather than
+    /// grown. A plugin cycling through hundreds of one-off patterns gets
+    /// correctness and a recompile, which is the right trade for the rare case.
+    const CACHE_MAX: usize = 64;
+    /// 64 KiB of compiled program is far more than a feed rule needs.
+    const SIZE_LIMIT: usize = 64 * 1024;
+
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<Arc<regex::Regex>>>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+
+    if let Some(hit) = cache.get(pattern) {
+        return hit.clone();
+    }
+
+    let built = regex::RegexBuilder::new(pattern)
+        .size_limit(SIZE_LIMIT)
+        .build();
+    let entry = match built {
+        Ok(re) => Some(Arc::new(re)),
+        Err(err) => {
+            // Once per distinct pattern, not once per call: this sits in a loop.
+            tracing::warn!("plugin regex {pattern:?} did not compile: {err}");
+            None
+        }
+    };
+
+    if cache.len() >= CACHE_MAX {
+        cache.clear();
+    }
+    cache.insert(pattern.to_owned(), entry.clone());
+    entry
+}
+
+/// The regular-expression functions, on their own.
+///
+/// Separate from [`register`] because they need nothing it provides - no
+/// session, no permissions, no HTTP client - which is also what lets the
+/// tests put them on a bare engine.
+fn register_regex(engine: &mut Engine) {
+    // Regular expressions. No permission either, for the same reason: it is
+    // arithmetic on a string, with no way out to anything.
+    //
+    // Safe to hand a pattern nobody vetted because of which engine this is. The
+    // `regex` crate compiles to an automaton with no backtracking, so matching
+    // is linear in the length of the subject and a pattern like `(a+)+$` -
+    // which hangs a PCRE-style engine for the rest of the afternoon - simply
+    // runs. That plus a size limit on the compiled program is what makes this
+    // a reasonable thing to expose to a script.
+    //
+    // A pattern that will not compile logs once and reports "no match", rather
+    // than throwing: a plugin author gets the reason in the log, and a running
+    // feed rule does not take the plugin down with it.
+    engine.register_fn("regex_match", |pattern: &str, text: &str| -> bool {
+        compiled(pattern).is_some_and(|re| re.is_match(text))
+    });
+
+    // The matched text, or "" when there is none. Distinguishing "no match"
+    // from "matched empty" is not worth a second return value here; a pattern
+    // that can match empty is a pattern with nothing to extract.
+    engine.register_fn("regex_find", |pattern: &str, text: &str| -> String {
+        compiled(pattern)
+            .and_then(|re| re.find(text).map(|m| m.as_str().to_owned()))
+            .unwrap_or_default()
+    });
+
+    // Capture groups, in order, with group 0 (the whole match) first. An
+    // unmatched optional group comes back as "" so the positions still line up.
+    engine.register_fn("regex_captures", |pattern: &str, text: &str| -> Array {
+        let Some(re) = compiled(pattern) else {
+            return Array::new();
+        };
+        let Some(found) = re.captures(text) else {
+            return Array::new();
+        };
+        found
+            .iter()
+            .map(|group| Dynamic::from(group.map_or(String::new(), |m| m.as_str().to_owned())))
+            .collect()
+    });
+}
+
 fn list(rows: Array) -> Vec<super::ui::Row> {
     rows.into_iter()
         .filter_map(|r| r.try_cast::<Map>())
@@ -552,18 +753,44 @@ fn fetch_bytes(
 
 /// Add whatever a feed pointed at: a magnet link as-is, anything else fetched
 /// first and added as torrent bytes.
+/// What a script may say about a torrent it is adding.
+///
+/// A struct rather than four more `add_torrent_url` overloads: the next option
+/// after these would need eight, and a script naming what it means is easier
+/// to read than one counting arguments.
+#[derive(Default)]
+pub struct AddOptions {
+    pub save_path: Option<String>,
+    /// Added paused. `false` - starting straight away - is the default,
+    /// because that is what "add this torrent" means to everyone who has not
+    /// asked for otherwise.
+    pub paused: bool,
+    /// A label BY NAME. Names rather than ids because a script has no way to
+    /// learn an id. Looked up, never created - a plugin should not be able to
+    /// fill somebody's label list by getting a rule wrong.
+    pub label: Option<String>,
+}
+
 fn add_url(
     handle: &tokio::runtime::Handle,
     client: &reqwest::Client,
     session: &Session,
     url: &str,
-    save_path: Option<String>,
+    opts: AddOptions,
 ) -> bool {
     let params = crate::bittorrent::session::AddParams {
-        save_path,
-        start_torrent: true,
+        save_path: opts.save_path,
+        start_torrent: !opts.paused,
         only_files: None,
-        label_id: None,
+        // Looked up, never created: a rule naming a label that does not
+        // exist gets no label rather than a new one nobody asked for.
+        label_id: opts.label.as_deref().and_then(|name| {
+            let id = session.label_id(name);
+            if id.is_none() {
+                tracing::warn!(target: "plugin", "add_torrent_url: no label named {name:?}");
+            }
+            id
+        }),
     };
 
     if url.trim().to_ascii_lowercase().starts_with("magnet:") {
@@ -797,6 +1024,12 @@ mod tests {
         engine.register_fn("ui_menu", |_: &str, _: Array| {});
         engine.register_fn("ui_groups", |_: Array| {});
         engine.register_fn("ui_configurable", |_: bool| {});
+        engine.register_fn("ui_form", |_: &str, _: &str, _: Array| {});
+        engine.register_fn("ui_form_close", || {});
+        // A fixed clock rather than the real one: a test that reads `now()`
+        // wants an answer, not a different answer every run.
+        engine.register_fn("now", || -> i64 { 1_760_000_000 });
+        engine.register_fn("data_remove", |_: &str| {});
         engine.register_fn("ui_show", || {});
     }
 
@@ -839,6 +1072,777 @@ mod tests {
     </item>
   </channel>
 </rss>"#;
+
+    /// A feed with two items, so a rule has something to reject as well as
+    /// something to accept.
+    const RULES_FEED: &str = r#"<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>Ubuntu 24.04 Desktop amd64</title>
+      <enclosure url="https://example.invalid/wanted.torrent"/>
+    </item>
+    <item>
+      <title>Ubuntu 24.04 Desktop amd64 BETA</title>
+      <enclosure url="https://example.invalid/beta.torrent"/>
+    </item>
+    <item>
+      <title>Fedora 41 Workstation</title>
+      <enclosure url="https://example.invalid/fedora.torrent"/>
+    </item>
+  </channel>
+</rss>"#;
+
+    /// The auto-downloader: rules pick items out of a feed on their own.
+    ///
+    /// This is the part of the plugin with somewhere to go wrong. "must
+    /// contain" has to require every term, "must not contain" has to reject on
+    /// any of them, and an item that has already been taken must not come back
+    /// on the next sweep - which is what the `seen` list is for and what a feed
+    /// re-read would otherwise undo.
+    #[test]
+    fn the_rss_plugin_auto_downloads_what_its_rules_match() {
+        use std::sync::Mutex;
+
+        let store: Arc<Mutex<std::collections::BTreeMap<String, String>>> = Arc::default();
+        let added: Arc<Mutex<Vec<String>>> = Arc::default();
+
+        {
+            let mut db = store.lock().unwrap();
+            db.insert(
+                String::from("feeds"),
+                String::from("https://example.invalid/feed.xml"),
+            );
+            // enabled \t name \t must \t must not \t save path.
+            // "ubuntu,debian" is the comma-as-OR form the plugin documents.
+            db.insert(
+                String::from("rules"),
+                String::from("1\tISOs\tubuntu,debian amd64\tbeta\tD:\\isos"),
+            );
+        }
+
+        let mut engine = rhai::Engine::new();
+        crate::plugins::apply_limits(&mut engine);
+        engine.register_fn("log", |_: &str| {});
+        engine.register_fn("notify", |_: &str, _: &str| {});
+        engine.register_fn("ui_status", |_: &str| {});
+        engine.register_fn("ui_rows", |_: Array| {});
+        register_regex(&mut engine);
+        stub_surfaces(&mut engine);
+
+        let db = store.clone();
+        engine.register_fn("data_get", move |key: &str| -> Dynamic {
+            match db.lock().unwrap().get(key) {
+                Some(value) => Dynamic::from(value.clone()),
+                None => Dynamic::UNIT,
+            }
+        });
+        let db = store.clone();
+        engine.register_fn("data_set", move |key: &str, value: &str| -> bool {
+            db.lock().unwrap().insert(key.to_owned(), value.to_owned());
+            true
+        });
+
+        engine.register_fn("http_get", |_url: &str| -> Map {
+            let mut map = Map::new();
+            map.insert("ok".into(), Dynamic::from(true));
+            map.insert("status".into(), Dynamic::from(200_i64));
+            map.insert("body".into(), Dynamic::from(String::from(RULES_FEED)));
+            map.insert("error".into(), Dynamic::from(String::new()));
+            map
+        });
+        engine.register_fn("parse_xml", |text: &str| -> Dynamic {
+            parse_xml(text).unwrap_or(Dynamic::UNIT)
+        });
+
+        // The options form, because the rule names a save path - that is what
+        // the auto-downloader calls now. The bare form returns false so that a
+        // regression to it shows up as nothing being added rather than as a
+        // download that quietly lost the rule's save path.
+        let sink = added.clone();
+        engine.register_fn("add_torrent_url", move |url: &str, opts: Map| -> bool {
+            assert_eq!(
+                field(&opts, "save_path"),
+                "D:\\isos",
+                "the rule's save path should reach the host"
+            );
+            sink.lock().unwrap().push(url.to_owned());
+            true
+        });
+        engine.register_fn("add_torrent_url", |_url: &str| -> bool { false });
+        engine.register_fn("add_torrent_url", |_url: &str, _save_path: &str| -> bool {
+            false
+        });
+
+        let source = include_str!("../../docs/plugins/rss.rhai");
+        let ast = engine
+            .compile(source)
+            .expect("docs/plugins/rss.rhai must compile");
+        let mut scope = rhai::Scope::new();
+        engine
+            .run_ast_with_scope(&mut scope, &ast)
+            .expect("the top level should run");
+        let _ = engine
+            .call_fn::<Dynamic>(&mut scope, &ast, "on_session_start", ())
+            .expect("on_session_start should not fail");
+
+        let _ = engine
+            .call_fn::<Dynamic>(
+                &mut scope,
+                &ast,
+                "on_ui_menu",
+                (String::from("runrules"),),
+            )
+            .expect("the rules sweep should not fail");
+
+        assert_eq!(
+            added.lock().unwrap().clone(),
+            vec![String::from("https://example.invalid/wanted.torrent")],
+            "the rule should take the plain amd64 item, reject the BETA one on \
+             `must not contain`, and reject Fedora on `must contain`"
+        );
+
+        // Taken once, and not again on the next sweep.
+        let _ = engine
+            .call_fn::<Dynamic>(
+                &mut scope,
+                &ast,
+                "on_ui_menu",
+                (String::from("runrules"),),
+            )
+            .expect("the second sweep should not fail");
+        assert_eq!(
+            added.lock().unwrap().len(),
+            1,
+            "the same item was downloaded twice"
+        );
+        assert!(
+            store.lock().unwrap()["seen"].contains("wanted.torrent"),
+            "the link was not remembered"
+        );
+    }
+
+    /// A rule can use a regular expression instead of words.
+    ///
+    /// The point of the `re:` prefix: "amd64 but not the beta" is easy with
+    /// words, and "S02 only, any episode" is not.
+    #[test]
+    fn an_rss_rule_can_match_with_a_regular_expression() {
+        use std::sync::Mutex;
+
+        let store: Arc<Mutex<std::collections::BTreeMap<String, String>>> = Arc::default();
+        let added: Arc<Mutex<Vec<String>>> = Arc::default();
+        {
+            let mut db = store.lock().unwrap();
+            db.insert(
+                String::from("feeds"),
+                String::from("https://example.invalid/feed.xml"),
+            );
+            // Anchored, so "Ubuntu 24.04 Desktop amd64 BETA" is excluded by the
+            // end-of-string anchor rather than by a must-not-contain term.
+            db.insert(
+                String::from("rules"),
+                String::from(r"1	Exact	re:^Ubuntu \d+\.\d+ Desktop amd64$		"),
+            );
+        }
+
+        let mut engine = rhai::Engine::new();
+        crate::plugins::apply_limits(&mut engine);
+        engine.register_fn("log", |_: &str| {});
+        engine.register_fn("notify", |_: &str, _: &str| {});
+        engine.register_fn("ui_status", |_: &str| {});
+        engine.register_fn("ui_rows", |_: Array| {});
+        register_regex(&mut engine);
+        stub_surfaces(&mut engine);
+
+        let db = store.clone();
+        engine.register_fn("data_get", move |key: &str| -> Dynamic {
+            match db.lock().unwrap().get(key) {
+                Some(value) => Dynamic::from(value.clone()),
+                None => Dynamic::UNIT,
+            }
+        });
+        let db = store.clone();
+        engine.register_fn("data_set", move |key: &str, value: &str| -> bool {
+            db.lock().unwrap().insert(key.to_owned(), value.to_owned());
+            true
+        });
+        engine.register_fn("http_get", |_url: &str| -> Map {
+            let mut map = Map::new();
+            map.insert("ok".into(), Dynamic::from(true));
+            map.insert("status".into(), Dynamic::from(200_i64));
+            map.insert("body".into(), Dynamic::from(String::from(RULES_FEED)));
+            map.insert("error".into(), Dynamic::from(String::new()));
+            map
+        });
+        engine.register_fn("parse_xml", |text: &str| -> Dynamic {
+            parse_xml(text).unwrap_or(Dynamic::UNIT)
+        });
+        let sink = added.clone();
+        engine.register_fn("add_torrent_url", move |url: &str| -> bool {
+            sink.lock().unwrap().push(url.to_owned());
+            true
+        });
+        // The form the auto-downloader uses, so a rule's save path, label and
+        // paused flag have somewhere to go. Same sink: what matters to these
+        // tests is which links were added, not how they were asked for.
+        let sink = added.clone();
+        engine.register_fn("add_torrent_url", move |url: &str, _opts: Map| -> bool {
+            sink.lock().unwrap().push(url.to_owned());
+            true
+        });
+
+        let source = include_str!("../../docs/plugins/rss.rhai");
+        let ast = engine.compile(source).expect("rss.rhai must compile");
+        let mut scope = rhai::Scope::new();
+        engine.run_ast_with_scope(&mut scope, &ast).unwrap();
+        let _ = engine
+            .call_fn::<Dynamic>(&mut scope, &ast, "on_session_start", ())
+            .unwrap();
+        let _ = engine
+            .call_fn::<Dynamic>(&mut scope, &ast, "on_ui_menu", (String::from("runrules"),))
+            .unwrap();
+
+        assert_eq!(
+            added.lock().unwrap().clone(),
+            vec![String::from("https://example.invalid/wanted.torrent")],
+            "the anchored pattern should take only the exact title"
+        );
+    }
+
+    /// A rule that is switched off does nothing, which is the whole point of
+    /// being able to switch one off.
+    #[test]
+    fn a_disabled_rss_rule_downloads_nothing() {
+        use std::sync::Mutex;
+
+        let store: Arc<Mutex<std::collections::BTreeMap<String, String>>> = Arc::default();
+        let added: Arc<Mutex<Vec<String>>> = Arc::default();
+        {
+            let mut db = store.lock().unwrap();
+            db.insert(
+                String::from("feeds"),
+                String::from("https://example.invalid/feed.xml"),
+            );
+            db.insert(String::from("rules"), String::from("0\tISOs\tubuntu\t\t"));
+        }
+
+        let mut engine = rhai::Engine::new();
+        crate::plugins::apply_limits(&mut engine);
+        engine.register_fn("log", |_: &str| {});
+        engine.register_fn("notify", |_: &str, _: &str| {});
+        engine.register_fn("ui_status", |_: &str| {});
+        engine.register_fn("ui_rows", |_: Array| {});
+        register_regex(&mut engine);
+        stub_surfaces(&mut engine);
+
+        let db = store.clone();
+        engine.register_fn("data_get", move |key: &str| -> Dynamic {
+            match db.lock().unwrap().get(key) {
+                Some(value) => Dynamic::from(value.clone()),
+                None => Dynamic::UNIT,
+            }
+        });
+        let db = store.clone();
+        engine.register_fn("data_set", move |key: &str, value: &str| -> bool {
+            db.lock().unwrap().insert(key.to_owned(), value.to_owned());
+            true
+        });
+        engine.register_fn("http_get", |_url: &str| -> Map {
+            let mut map = Map::new();
+            map.insert("ok".into(), Dynamic::from(true));
+            map.insert("status".into(), Dynamic::from(200_i64));
+            map.insert("body".into(), Dynamic::from(String::from(RULES_FEED)));
+            map.insert("error".into(), Dynamic::from(String::new()));
+            map
+        });
+        engine.register_fn("parse_xml", |text: &str| -> Dynamic {
+            parse_xml(text).unwrap_or(Dynamic::UNIT)
+        });
+        let sink = added.clone();
+        engine.register_fn("add_torrent_url", move |url: &str| -> bool {
+            sink.lock().unwrap().push(url.to_owned());
+            true
+        });
+        // The form the auto-downloader uses, so a rule's save path, label and
+        // paused flag have somewhere to go. Same sink: what matters to these
+        // tests is which links were added, not how they were asked for.
+        let sink = added.clone();
+        engine.register_fn("add_torrent_url", move |url: &str, _opts: Map| -> bool {
+            sink.lock().unwrap().push(url.to_owned());
+            true
+        });
+
+        let source = include_str!("../../docs/plugins/rss.rhai");
+        let ast = engine.compile(source).expect("rss.rhai must compile");
+        let mut scope = rhai::Scope::new();
+        engine.run_ast_with_scope(&mut scope, &ast).unwrap();
+        let _ = engine
+            .call_fn::<Dynamic>(&mut scope, &ast, "on_session_start", ())
+            .unwrap();
+        let _ = engine
+            .call_fn::<Dynamic>(&mut scope, &ast, "on_ui_menu", (String::from("runrules"),))
+            .unwrap();
+
+        assert!(
+            added.lock().unwrap().is_empty(),
+            "a disabled rule downloaded something"
+        );
+    }
+
+    /// An engine that can run rss.rhai's pure helpers - the matching, the
+    /// episode arithmetic - without a feed, a store or a window behind it.
+    fn rss_engine() -> (rhai::Engine, rhai::AST) {
+        let mut engine = rhai::Engine::new();
+        crate::plugins::apply_limits(&mut engine);
+        register_regex(&mut engine);
+        stub_surfaces(&mut engine);
+        engine.register_fn("log", |_: &str| {});
+        engine.register_fn("notify", |_: &str, _: &str| {});
+        engine.register_fn("ui_status", |_: &str| {});
+        engine.register_fn("ui_rows", |_: Array| {});
+        engine.register_fn("data_get", |_: &str| -> Dynamic { Dynamic::UNIT });
+        engine.register_fn("data_set", |_: &str, _: &str| -> bool { true });
+        engine.register_fn("http_get", |_: &str| -> Map { Map::new() });
+        engine.register_fn("parse_xml", |_: &str| -> Dynamic { Dynamic::UNIT });
+        engine.register_fn("add_torrent_url", |_: &str| -> bool { true });
+        engine.register_fn("add_torrent_url", |_: &str, _: Map| -> bool { true });
+        let ast = engine
+            .compile(include_str!("../../docs/plugins/rss.rhai"))
+            .expect("rss.rhai must compile");
+        (engine, ast)
+    }
+
+    /// Season and episode, out of the two forms anybody writes them in.
+    #[test]
+    fn rss_reads_an_episode_number_from_a_title() {
+        let (engine, ast) = rss_engine();
+        let mut scope = rhai::Scope::new();
+        engine.run_ast_with_scope(&mut scope, &ast).unwrap();
+
+        let mut ep = |title: &str| -> Option<(i64, i64)> {
+            let out: Dynamic = engine
+                .call_fn(&mut scope, &ast, "episode_of", (String::from(title),))
+                .unwrap();
+            out.try_cast::<Map>().map(|m| {
+                (
+                    m.get("season").unwrap().clone().cast::<i64>(),
+                    m.get("episode").unwrap().clone().cast::<i64>(),
+                )
+            })
+        };
+
+        assert_eq!(ep("Some.Show.S01E02.1080p"), Some((1, 2)));
+        assert_eq!(ep("Some Show s3e14 720p"), Some((3, 14)));
+        assert_eq!(ep("Some Show 2x07 HDTV"), Some((2, 7)));
+        // A resolution is not an episode: "1080p" must not read as 10x80.
+        assert_eq!(ep("Ubuntu 24.04 Desktop amd64"), None);
+        assert_eq!(ep("Some Show 1080p"), None);
+    }
+
+    /// The episode filter syntax, clause by clause.
+    #[test]
+    fn rss_episode_filters_read_every_clause_shape() {
+        let (engine, ast) = rss_engine();
+        let mut scope = rhai::Scope::new();
+        engine.run_ast_with_scope(&mut scope, &ast).unwrap();
+
+        let mut hit = |filter: &str, season: i64, episode: i64| -> bool {
+            let mut ep = Map::new();
+            ep.insert("season".into(), Dynamic::from(season));
+            ep.insert("episode".into(), Dynamic::from(episode));
+            engine
+                .call_fn(&mut scope, &ast, "episode_filter_matches",
+                         (String::from(filter), ep))
+                .unwrap()
+        };
+
+        // "1x25-;" - episode 25 onward, and every later season.
+        assert!(!hit("1x25-;", 1, 24));
+        assert!(hit("1x25-;", 1, 25));
+        assert!(hit("1x25-;", 1, 99));
+        assert!(hit("1x25-;", 2, 1), "later seasons are included");
+
+        // A closed range stays inside its season.
+        assert!(hit("1x1-10;", 1, 1));
+        assert!(hit("1x1-10;", 1, 10));
+        assert!(!hit("1x1-10;", 1, 11));
+        assert!(!hit("1x1-10;", 2, 5));
+
+        // A whole season.
+        assert!(hit("2x;", 2, 1));
+        assert!(hit("2x;", 2, 300));
+        assert!(!hit("2x;", 3, 1));
+
+        // Several clauses, and single episodes.
+        assert!(hit("1x2;1x5;", 1, 2));
+        assert!(hit("1x2;1x5;", 1, 5));
+        assert!(!hit("1x2;1x5;", 1, 3));
+
+        // A filter that parses to nothing cannot reject anything: a typo must
+        // not silently switch a rule off.
+        assert!(hit("nonsense", 4, 4));
+    }
+
+    /// The word form, the regex form, and the guard against a rule that would
+    /// match everything.
+    #[test]
+    fn rss_rule_matching_follows_the_documented_rules() {
+        let (engine, ast) = rss_engine();
+        let mut scope = rhai::Scope::new();
+        engine.run_ast_with_scope(&mut scope, &ast).unwrap();
+
+        let rule = |must: &str, must_not: &str, regex: bool, episodes: &str| -> Map {
+            let mut m = Map::new();
+            m.insert("enabled".into(), Dynamic::from(true));
+            m.insert("name".into(), Dynamic::from(String::from("r")));
+            m.insert("must".into(), Dynamic::from(String::from(must)));
+            m.insert("must_not".into(), Dynamic::from(String::from(must_not)));
+            m.insert("regex".into(), Dynamic::from(regex));
+            m.insert("episodes".into(), Dynamic::from(String::from(episodes)));
+            m
+        };
+        let mut check = |r: Map, title: &str| -> bool {
+            engine
+                .call_fn(&mut scope, &ast, "rule_matches", (r, String::from(title)))
+                .unwrap()
+        };
+
+        // Every term must appear, in any order, ignoring case.
+        assert!(check(rule("ubuntu desktop", "", false, ""), "Ubuntu 24.04 DESKTOP"));
+        assert!(!check(rule("ubuntu desktop", "", false, ""), "Ubuntu 24.04 Server"));
+
+        // Alternatives with "|".
+        assert!(check(rule("ubuntu|debian amd64", "", false, ""), "Debian 12 amd64"));
+        assert!(!check(rule("ubuntu|debian amd64", "", false, ""), "Fedora 40 amd64"));
+
+        // Must-not rejects on any term.
+        assert!(!check(rule("ubuntu", "beta rc", false, ""), "Ubuntu 24.04 beta"));
+        assert!(check(rule("ubuntu", "beta rc", false, ""), "Ubuntu 24.04"));
+
+        // Regex mode treats both fields as patterns.
+        assert!(check(rule(r"^Show S0\dE\d+", "", true, ""), "Show S02E11 1080p"));
+        assert!(!check(rule(r"^Show S0\dE\d+", "", true, ""), "Other S02E11"));
+
+        // A disabled rule matches nothing.
+        let mut off = rule("ubuntu", "", false, "");
+        off.insert("enabled".into(), Dynamic::from(false));
+        assert!(!check(off, "Ubuntu 24.04"));
+
+        // A rule with nothing to match on would take every item in every feed.
+        assert!(!check(rule("", "", false, ""), "anything at all"));
+
+        // An episode filter narrows an otherwise matching rule, and an item
+        // with no episode in its title is not one of a series' episodes.
+        assert!(check(rule("show", "", false, "1x2;"), "Show S01E02 1080p"));
+        assert!(!check(rule("show", "", false, "1x2;"), "Show S01E03 1080p"));
+        assert!(!check(rule("show", "", false, "1x2;"), "Show 1080p"));
+    }
+
+    /// A rule written by the five-field version still loads, and comes back
+    /// with the new fields at their defaults. Somebody's rules survive the
+    /// upgrade or this was not worth shipping.
+    #[test]
+    fn rss_reads_rules_written_by_the_older_format() {
+        let (engine, ast) = rss_engine();
+        let mut scope = rhai::Scope::new();
+        engine.run_ast_with_scope(&mut scope, &ast).unwrap();
+
+        let old = "1\tISOs\tubuntu desktop\tbeta\tD:\\isos";
+        let parsed: Map = engine
+            .call_fn(&mut scope, &ast, "parse_rule", (String::from(old),))
+            .unwrap();
+
+        let text = |k: &str| parsed.get(k).unwrap().clone().cast::<String>();
+        let flag = |k: &str| parsed.get(k).unwrap().clone().cast::<bool>();
+        assert!(flag("enabled"));
+        assert_eq!(text("name"), "ISOs");
+        assert_eq!(text("must"), "ubuntu desktop");
+        assert_eq!(text("must_not"), "beta");
+        assert_eq!(text("save_path"), "D:\\isos");
+        assert!(!flag("regex"), "regex defaults off");
+        assert!(!flag("smart"));
+        assert_eq!(text("episodes"), "");
+        assert_eq!(parsed.get("ignore_days").unwrap().clone().cast::<i64>(), 0);
+
+        // ...and a rule written now round-trips through the line format.
+        let line: String = engine
+            .call_fn(&mut scope, &ast, "rule_line", (parsed.clone(),))
+            .unwrap();
+        let again: Map = engine
+            .call_fn(&mut scope, &ast, "parse_rule", (line,))
+            .unwrap();
+        assert_eq!(
+            again.get("save_path").unwrap().clone().cast::<String>(),
+            "D:\\isos"
+        );
+    }
+
+    /// A number typed into a form is not necessarily a number. Rhai's own
+    /// `parse_int` throws on one that is not, which would abandon the rest of
+    /// the handler - so the plugin checks first.
+    #[test]
+    fn rss_survives_a_number_field_with_letters_in_it() {
+        let (engine, ast) = rss_engine();
+        let mut scope = rhai::Scope::new();
+        engine.run_ast_with_scope(&mut scope, &ast).unwrap();
+
+        let mut to_int = |text: &str, fallback: i64| -> i64 {
+            engine
+                .call_fn(&mut scope, &ast, "to_int", (String::from(text), fallback))
+                .unwrap()
+        };
+        assert_eq!(to_int("42", 7), 42);
+        assert_eq!(to_int("  9 ", 7), 9);
+        assert_eq!(to_int("", 7), 7);
+        assert_eq!(to_int("soon", 7), 7);
+        assert_eq!(to_int("12 days", 7), 7);
+    }
+
+    /// Saving a form is what writes a rule, so this is the path every rule
+    /// now takes. Checked through the store rather than by inspecting the
+    /// script's own variables: what survives a restart is what was written.
+    #[test]
+    fn rss_forms_write_settings_and_rules() {
+        use std::sync::Mutex;
+
+        let store: Arc<Mutex<std::collections::BTreeMap<String, String>>> = Arc::default();
+
+        let mut engine = rhai::Engine::new();
+        crate::plugins::apply_limits(&mut engine);
+        register_regex(&mut engine);
+        stub_surfaces(&mut engine);
+        engine.register_fn("log", |_: &str| {});
+        engine.register_fn("notify", |_: &str, _: &str| {});
+        engine.register_fn("ui_status", |_: &str| {});
+        engine.register_fn("ui_rows", |_: Array| {});
+        engine.register_fn("http_get", |_: &str| -> Map { Map::new() });
+        engine.register_fn("parse_xml", |_: &str| -> Dynamic { Dynamic::UNIT });
+        engine.register_fn("add_torrent_url", |_: &str| -> bool { true });
+        engine.register_fn("add_torrent_url", |_: &str, _: Map| -> bool { true });
+
+        let db = store.clone();
+        engine.register_fn("data_get", move |key: &str| -> Dynamic {
+            match db.lock().unwrap().get(key) {
+                Some(value) => Dynamic::from(value.clone()),
+                None => Dynamic::UNIT,
+            }
+        });
+        let db = store.clone();
+        engine.register_fn("data_set", move |key: &str, value: &str| -> bool {
+            db.lock().unwrap().insert(key.to_owned(), value.to_owned());
+            true
+        });
+        let db = store.clone();
+        engine.register_fn("data_remove", move |key: &str| {
+            db.lock().unwrap().remove(key);
+        });
+
+        let ast = engine
+            .compile(include_str!("../../docs/plugins/rss.rhai"))
+            .expect("rss.rhai must compile");
+        let mut scope = rhai::Scope::new();
+        engine.run_ast_with_scope(&mut scope, &ast).unwrap();
+        let _: Dynamic = engine
+            .call_fn(&mut scope, &ast, "on_session_start", ())
+            .unwrap();
+
+        // --- the settings form ---------------------------------------------
+        let mut values = Map::new();
+        for (k, v) in [
+            ("interval", "30"),
+            ("articles", "12"),
+            ("auto", ""),
+            ("repacks", "1"),
+        ] {
+            values.insert(k.into(), Dynamic::from(String::from(v)));
+        }
+        let _: Dynamic = engine
+            .call_fn(&mut scope, &ast, "on_ui_form", (String::from("settings"), values))
+            .expect("saving the settings form should not fail");
+
+        {
+            let db = store.lock().unwrap();
+            assert_eq!(db.get("set.interval").unwrap(), "30");
+            assert_eq!(db.get("set.articles").unwrap(), "12");
+            // An unticked box is the empty string, which is how "off" is told
+            // apart from "never set" - the latter is absent entirely.
+            assert_eq!(db.get("set.auto").unwrap(), "");
+            assert_eq!(db.get("set.repacks").unwrap(), "1");
+        }
+
+        // --- the rule form -------------------------------------------------
+        let mut values = Map::new();
+        for (k, v) in [
+            ("name", "Shows"),
+            ("enabled", "1"),
+            ("must", "some show"),
+            ("must_not", "cam"),
+            ("regex", ""),
+            ("episodes", "1x2-;"),
+            ("smart", "1"),
+            ("ignore_days", "3"),
+            ("label", "TV"),
+            ("save_path", "D:\\tv"),
+            ("paused", ""),
+            ("feeds", ""),
+        ] {
+            values.insert(k.into(), Dynamic::from(String::from(v)));
+        }
+        let _: Dynamic = engine
+            .call_fn(&mut scope, &ast, "on_ui_form", (String::from("rule"), values))
+            .expect("saving the rule form should not fail");
+
+        let line = store.lock().unwrap().get("rules").cloned().unwrap_or_default();
+        let fields: Vec<&str> = line.split('\t').collect();
+        assert_eq!(fields[0], "1", "enabled");
+        assert_eq!(fields[1], "Shows");
+        assert_eq!(fields[2], "some show");
+        assert_eq!(fields[3], "cam");
+        assert_eq!(fields[4], "D:\\tv");
+        assert_eq!(fields[5], "0", "regex off");
+        assert_eq!(fields[6], "1x2-;");
+        assert_eq!(fields[7], "1", "smart on");
+        assert_eq!(fields[8], "3", "ignore days");
+        assert_eq!(fields[9], "TV");
+        assert_eq!(fields[10], "0", "not paused");
+
+        // A rule with nothing to match on is refused rather than written: it
+        // would take every item in every feed.
+        let mut empty = Map::new();
+        for k in ["name", "enabled", "must", "must_not", "regex", "episodes",
+                  "smart", "ignore_days", "label", "save_path", "paused", "feeds"] {
+            empty.insert(k.into(), Dynamic::from(String::new()));
+        }
+        empty.insert("name".into(), Dynamic::from(String::from("Everything")));
+        let _: Dynamic = engine
+            .call_fn(&mut scope, &ast, "on_ui_form", (String::from("rule"), empty))
+            .expect("a refused form is not an error");
+        let after = store.lock().unwrap().get("rules").cloned().unwrap_or_default();
+        assert!(
+            !after.contains("Everything"),
+            "a rule with no criteria was written anyway"
+        );
+    }
+
+    /// Build an engine with just the regex functions on it.
+    fn regex_engine() -> rhai::Engine {
+        let mut engine = rhai::Engine::new();
+        crate::plugins::apply_limits(&mut engine);
+        register_regex(&mut engine);
+        engine
+    }
+
+    #[test]
+    fn regex_match_answers_yes_and_no() {
+        let engine = regex_engine();
+        assert!(
+            engine
+                .eval::<bool>(r#"regex_match("^Ubuntu \\d+\\.\\d+", "Ubuntu 24.04 Desktop")"#)
+                .unwrap()
+        );
+        assert!(
+            !engine
+                .eval::<bool>(r#"regex_match("^Debian", "Ubuntu 24.04 Desktop")"#)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn regex_find_returns_the_matched_text() {
+        let engine = regex_engine();
+        assert_eq!(
+            engine
+                .eval::<String>(r#"regex_find("\\d+\\.\\d+", "Ubuntu 24.04 Desktop")"#)
+                .unwrap(),
+            "24.04"
+        );
+        // No match is the empty string, not an error.
+        assert_eq!(
+            engine
+                .eval::<String>(r#"regex_find("\\d{9}", "Ubuntu")"#)
+                .unwrap(),
+            ""
+        );
+    }
+
+    /// Groups come back in order with the whole match first, and an optional
+    /// group that did not participate holds "" so the positions still line up.
+    #[test]
+    fn regex_captures_keeps_group_positions() {
+        let engine = regex_engine();
+        let groups = engine
+            .eval::<Array>(r#"regex_captures("(\\d+)x(\\d+)", "Show 2x07 720p")"#)
+            .unwrap();
+        let groups: Vec<String> = groups
+            .into_iter()
+            .map(|g| g.into_string().unwrap())
+            .collect();
+        assert_eq!(groups, vec!["2x07", "2", "07"]);
+
+        let optional = engine
+            .eval::<Array>(r#"regex_captures("(a)(b)?", "a")"#)
+            .unwrap();
+        let optional: Vec<String> = optional
+            .into_iter()
+            .map(|g| g.into_string().unwrap())
+            .collect();
+        assert_eq!(optional, vec!["a", "a", ""]);
+
+        // No match at all is an empty array rather than a row of blanks.
+        assert!(
+            engine
+                .eval::<Array>(r#"regex_captures("(z)", "a")"#)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    /// A pattern that will not compile must not take the plugin down with it.
+    #[test]
+    fn a_broken_pattern_reports_no_match_rather_than_throwing() {
+        let engine = regex_engine();
+        assert!(
+            !engine
+                .eval::<bool>(r#"regex_match("(unclosed", "anything")"#)
+                .unwrap()
+        );
+        assert_eq!(
+            engine
+                .eval::<String>(r#"regex_find("(unclosed", "anything")"#)
+                .unwrap(),
+            ""
+        );
+        assert!(
+            engine
+                .eval::<Array>(r#"regex_captures("(unclosed", "anything")"#)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    /// The reason a plugin can be handed an unvetted pattern at all.
+    ///
+    /// `(a+)+$` against a run of `a` with no trailing `b` is the textbook
+    /// catastrophic-backtracking case: a PCRE-style engine takes exponential
+    /// time and hangs the thread. This one compiles to an automaton with no
+    /// backtracking, so it answers immediately - and the assertion is on the
+    /// clock, because "returns false" alone would also be true of an engine
+    /// that took a week to do it.
+    #[test]
+    fn a_pathological_pattern_does_not_hang() {
+        let engine = regex_engine();
+        let started = std::time::Instant::now();
+        let matched = engine
+            .eval::<bool>(r#"regex_match("(a+)+$", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!")"#)
+            .unwrap();
+        assert!(!matched);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "took {:?}, which means this is not the linear-time engine",
+            started.elapsed()
+        );
+    }
 
     /// The whole reason `parse_xml` exists: a feed reader has to get the title,
     /// the link and the enclosure URL out of an ordinary RSS document.
@@ -1009,6 +2013,14 @@ mod tests {
             sink.lock().unwrap().push(url.to_owned());
             true
         });
+        // The form the auto-downloader uses, so a rule's save path, label and
+        // paused flag have somewhere to go. Same sink: what matters to these
+        // tests is which links were added, not how they were asked for.
+        let sink = added.clone();
+        engine.register_fn("add_torrent_url", move |url: &str, _opts: Map| -> bool {
+            sink.lock().unwrap().push(url.to_owned());
+            true
+        });
 
         let source = include_str!("../../docs/plugins/rss.rhai");
         let ast = engine
@@ -1170,6 +2182,11 @@ mod tests {
 
         let sink = added.clone();
         engine.register_fn("add_torrent_url", move |u: &str| -> bool {
+            sink.lock().unwrap().push(u.to_owned());
+            true
+        });
+        let sink = added.clone();
+        engine.register_fn("add_torrent_url", move |u: &str, _opts: Map| -> bool {
             sink.lock().unwrap().push(u.to_owned());
             true
         });
@@ -1338,6 +2355,11 @@ mod tests {
             sink.lock().unwrap().push(u.to_owned());
             true
         });
+        let sink = added.clone();
+        engine.register_fn("add_torrent_url", move |u: &str, _opts: Map| -> bool {
+            sink.lock().unwrap().push(u.to_owned());
+            true
+        });
 
         let ast = engine
             .compile(include_str!("../../docs/plugins/rss.rhai"))
@@ -1449,6 +2471,9 @@ mod tests {
         assert!(body.len() > 64 * 1024, "the feed must exceed the old ceiling");
 
         let size = body.len();
+        // `serve_once` consumes the body and answers exactly one request, and
+        // the second half of this test needs a second server.
+        let body_again = body.clone();
         let (url, server) = serve_once(body);
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
@@ -1457,6 +2482,11 @@ mod tests {
             .unwrap();
 
         let cfg = Arc::new(test_cfg());
+        // This test is about the string ceiling, not about the plugin's own
+        // "keep N articles per feed" setting - so that is turned off here, or
+        // the list would stop at the default of 50 and prove nothing about
+        // size. The cap gets its own check at the end.
+        store_set(&cfg, &store_key("rss"), "set.articles", "0");
         let rows: Arc<Mutex<Vec<String>>> = Arc::default();
         let status: Arc<Mutex<String>> = Arc::default();
 
@@ -1465,6 +2495,7 @@ mod tests {
         stub_surfaces(&mut engine);
         engine.register_fn("log", |m: &str| println!("plugin: {m}"));
         engine.register_fn("add_torrent_url", |_: &str| -> bool { true });
+        engine.register_fn("add_torrent_url", |_: &str, _opts: Map| -> bool { true });
 
         let sink = status.clone();
         engine.register_fn("ui_status", move |text: &str| {
@@ -1525,6 +2556,15 @@ mod tests {
             "rows carry the magnet, got {:?}",
             listed.first()
         );
+
+        // ...and the limit does cap it when one is asked for. `read_feed`
+        // directly, because that is the function the limit lives in.
+        let (url2, server2) = serve_once(body_again);
+        let capped = engine
+            .call_fn::<rhai::Array>(&mut scope, &ast, "read_feed", (url2, true, 50_i64))
+            .expect("reading with a limit should not fail");
+        server2.join().unwrap();
+        assert_eq!(capped.len(), 50, "the per-feed limit should cap the list");
         assert!(
             status.lock().unwrap().contains("item(s) from"),
             "status was: {}",

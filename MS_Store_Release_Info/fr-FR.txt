@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Français (France) - Partner Center: French (France) (fr-FR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent est un portage en Rust de PicoTorrent, de Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.4
+Version 0.3.5
 
-- Les torrents en pause ne recréent plus leurs fichiers au démarrage de NanoTorrent. Un torrent dont les données avaient été supprimées ou déplacées pouvait revenir à 0 % avec un dossier de fichiers vides.
-- L'interface web reçoit désormais les mises à jour en direct au lieu de les demander : elle réagit instantanément et consomme bien moins de processeur.
-- Un indicateur de connexion montre si le navigateur est toujours en contact avec NanoTorrent, et se reconnecte tout seul.
-- La liste des torrents de l'interface web peut être paginée et triée sur l'ensemble des pages.
-- La fenêtre et l'interface web indiquent toutes deux combien de clients web sont connectés.
-- Le panneau de détails se remplit dès que vous cliquez sur un torrent, derrière un voile de chargement, au lieu d'attendre jusqu'à une seconde.
-- Les préférences ont été refaites à l'image de la fenêtre principale : onglets à icônes qui défilent quand ils ne tiennent pas, fenêtre plus large et barres de défilement qui ne se superposent plus.
-- Les préférences affichent la langue que vous avez choisie, et chaque fenêtre ouverte change de langue quand vous appuyez sur Ok.
-- Fermer une fenêtre la ferme désormais vraiment, et le menu Aide propose un lien vers la documentation de l'API des extensions.
+- Limites de partage : arrêter le partage à un ratio, après une durée définie, ou au premier des deux, puis mettre le torrent en pause ou le supprimer.
+- Limites de vitesse alternatives, selon un horaire ou basculées à la main depuis la barre d'outils.
+- Ordre de la file d'attente depuis la barre d'outils, priorités par fichier et étiquettes.
+- Un dossier surveillé qui ajoute tout fichier .torrent qu'on y dépose.
+- Ajouter, modifier et supprimer les trackers d'un torrent, par niveaux d'annonce.
+- La base de données des réglages peut être chiffrée, sans mot de passe à saisir, et vos réglages exportés et importés en JSON.
+- L'interface web gagne l'ordre de la file, le commutateur de vitesse et un panneau par torrent pour les fichiers, les trackers, les étiquettes et les limites.
+- Les morceaux que peu de pairs possèdent sont demandés en premier, et les torrents BitTorrent v2 peuvent désormais être partagés avec d'autres.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

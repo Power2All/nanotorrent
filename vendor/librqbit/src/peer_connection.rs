@@ -35,6 +35,15 @@ use crate::{
 
 pub trait PeerConnectionHandler {
     fn on_connected(&self, _connection_time: Duration) {}
+    /// NanoTorrent (BEP 52): advertise v2 in the handshake?
+    ///
+    /// The bit is a promise to answer `hash request`, so it is set per torrent
+    /// and only when something is installed that can - see
+    /// [`crate::piece_verify::HashProvider`]. Advertising it otherwise would
+    /// leave peers asking us for hashes we would only ever reject.
+    fn advertises_v2(&self) -> bool {
+        false
+    }
     fn should_send_bitfield(&self) -> bool;
     fn serialize_bitfield_message_to_buf(&self, buf: &mut [u8]) -> anyhow::Result<usize>;
     fn on_handshake(&self, handshake: Handshake, ckind: ConnectionKind) -> anyhow::Result<()>;
@@ -60,6 +69,11 @@ pub trait PeerConnectionHandler {
 #[derive(Debug)]
 pub enum WriterRequest {
     Message(Message<'static>),
+    /// NanoTorrent (BEP 52): a `hashes` answer. Owned rather than a
+    /// `Message<'static>` because the payload is built per request and
+    /// `Hashes` borrows its buffer - the same reason UtMetadata below is its
+    /// own variant.
+    Hashes(peer_binary_protocol::HashRequest, Vec<u8>),
     UtMetadata(UtMetadata<ByteBufOwned>),
     UtPex(UtPex<ByteBufOwned>),
     ReadChunkRequest(ChunkInfo),
@@ -170,7 +184,10 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
         );
 
         let mut write_buf = Box::new([0u8; MAX_MSG_LEN]);
-        let handshake = Handshake::new(self.info_hash, self.peer_id);
+        let mut handshake = Handshake::new(self.info_hash, self.peer_id);
+        if self.handler.advertises_v2() {
+            handshake.set_supports_v2();
+        }
         let hlen = handshake.serialize_unchecked_len(&mut *write_buf);
         with_timeout(
             "writing handshake",
@@ -228,7 +245,10 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
             self.handler.on_connected(now.elapsed());
 
             let mut write_buf = Box::new([0u8; MAX_MSG_LEN]);
-            let handshake = Handshake::new(self.info_hash, self.peer_id);
+            let mut handshake = Handshake::new(self.info_hash, self.peer_id);
+            if self.handler.advertises_v2() {
+                handshake.set_supports_v2();
+            }
             let hsz = handshake.serialize_unchecked_len(&mut *write_buf);
             with_timeout(
                 "writing",
@@ -386,6 +406,13 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
 
                 let len = match req {
                     WriterRequest::Message(msg) => msg.serialize(&mut *write_buf, ext_msg_ids)?,
+                    WriterRequest::Hashes(request, hashes) => Message::Hashes(
+                        peer_binary_protocol::Hashes {
+                            request,
+                            hashes: hashes.as_slice().into(),
+                        },
+                    )
+                    .serialize(&mut *write_buf, ext_msg_ids)?,
                     WriterRequest::UtMetadata(utm) => {
                         Message::Extended(ExtendedMessage::UtMetadata(utm.as_borrowed()))
                             .serialize(&mut *write_buf, ext_msg_ids)?

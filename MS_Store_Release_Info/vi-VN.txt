@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Tiếng Việt (Việt Nam) - Partner Center: Vietnamese (Vietnam) (vi-VN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent là bản chuyển sang Rust của PicoTorrent do Viktor Elofsson vi
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Phiên bản 0.3.4
+Phiên bản 0.3.5
 
-- Torrent đang tạm dừng không còn tạo lại tệp của mình khi NanoTorrent khởi động. Một torrent mà bạn đã xóa hoặc chuyển dữ liệu đi có thể quay về 0% cùng một thư mục toàn tệp rỗng.
-- Giao diện web nay nhận cập nhật trực tiếp thay vì phải hỏi: nó phản hồi tức thì và dùng ít thời gian xử lý hơn nhiều.
-- Đèn báo kết nối cho biết trình duyệt còn liên lạc được với NanoTorrent hay không, và tự kết nối lại.
-- Danh sách torrent trong giao diện web có thể chia trang và sắp xếp xuyên suốt mọi trang.
-- Cả cửa sổ lẫn giao diện web đều hiển thị số máy khách web đang kết nối.
-- Bảng chi tiết được lấp đầy ngay khi bạn nhấp vào một torrent, phía sau lớp phủ tải, thay vì đến một giây sau.
-- Tùy chọn được dựng lại cho khớp với cửa sổ chính: thẻ có biểu tượng tự cuộn khi không vừa, cửa sổ rộng hơn, và thanh cuộn không còn che nội dung.
-- Tùy chọn hiển thị ngôn ngữ bạn đã chọn, và mọi cửa sổ đang mở đổi ngôn ngữ khi bạn nhấn Ok.
-- Đóng một cửa sổ nay thực sự đóng nó, và menu Trợ giúp có thêm liên kết tới tài liệu API plugin.
+- Giới hạn chia sẻ: dừng chia sẻ ở một tỉ lệ, sau một khoảng thời gian đã đặt, hoặc điều nào đến trước, rồi tạm dừng hay gỡ bỏ torrent.
+- Giới hạn tốc độ thay thế, theo lịch hoặc bật tắt bằng tay từ thanh công cụ.
+- Thứ tự hàng đợi từ thanh công cụ, mức ưu tiên cho từng tệp và thẻ.
+- Một thư mục được theo dõi, tự thêm mọi tệp .torrent thả vào đó.
+- Thêm, sửa và gỡ các tracker của một torrent, theo từng bậc thông báo.
+- Cơ sở dữ liệu thiết lập có thể được mã hoá, không cần nhập mật khẩu, và thiết lập của bạn có thể xuất và nhập dưới dạng JSON.
+- Giao diện web có thêm thứ tự hàng đợi, công tắc tốc độ và một bảng riêng cho mỗi torrent gồm tệp, tracker, thẻ và giới hạn.
+- Những phần mà ít máy ngang hàng có sẽ được yêu cầu trước, và torrent BitTorrent v2 giờ đây có thể chia sẻ cho người khác.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

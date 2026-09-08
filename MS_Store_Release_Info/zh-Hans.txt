@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: 简体中文 (中国) - app locale zh-CN - Partner Center: Chinese (Simplified) (zh-Hans)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-版本 0.3.4
+版本 0.3.5
 
-- 暂停的种子在 NanoTorrent 启动时不再重新创建文件。数据已被删除或移走的种子，可能会带着一整个空文件的文件夹回到 0%。
-- 网页界面现在直接接收实时更新，而不是反复询问：反应即时，处理器占用大幅下降。
-- 连接指示灯显示浏览器是否仍与 NanoTorrent 保持联系，并会自行重连。
-- 网页界面的种子列表可以分页，并可跨所有页面排序。
-- 窗口和网页界面都会显示当前连接的网页客户端数量。
-- 详情面板在你点击种子时立即填充，其间显示加载遮罩，不再等待最多一秒。
-- 首选项按主窗口重做：带图标的标签页在放不下时可横向滚动，窗口更宽，滚动条不再遮挡内容。
-- 首选项会显示你选择的语言，按下确定后所有打开的窗口都会切换语言。
-- 关闭窗口现在是真正的关闭，帮助菜单新增了插件 API 文档链接。
+- 分享限制：在达到某个分享率、经过设定时间，或两者中先到者时停止做种，随后暂停或删除该种子。
+- 备用速度限制，可按计划启用，也可从工具栏手动切换。
+- 工具栏中的队列顺序、逐文件优先级，以及标签。
+- 监视文件夹，会自动添加放入其中的任何 .torrent 文件。
+- 按announce层级添加、编辑和删除种子的Tracker。
+- 设置数据库可以加密，无需输入密码，设置也可导出和导入为 JSON。
+- 网页界面新增队列顺序、速度开关，以及每个种子的面板，包含文件、Tracker、标签和限制。
+- 优先请求较少对等端拥有的分块，BitTorrent v2 种子现在也可以向他人做种。
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

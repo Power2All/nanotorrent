@@ -97,7 +97,7 @@ pub use session::{
     SUPPORTED_SCHEMES, Session, SessionOptions, SessionPersistenceConfig,
 };
 pub use librqbit_core::hash_id::Id20;
-pub use piece_verify::{MetadataInterceptor, PieceHasher, PieceVerifier};
+pub use piece_verify::{HashProvider, MetadataInterceptor, PieceHasher, PieceVerifier};
 pub use stream_connect::{
     BoxAsyncRead, ConnectionOptions, IncomingStreamTransform, StreamTransform,
 };
@@ -106,7 +106,8 @@ pub use torrent_state::{
     TorrentStatsState,
 };
 pub use tracker_comms::TrackerStat;
-pub use type_aliases::{BoxAsyncWrite, FileInfos};
+pub use piece_tracker::pick_rarest;
+pub use type_aliases::{BoxAsyncWrite, FileInfos, PeerSource};
 
 pub use buffers::*;
 pub use clone_to_owned::CloneToOwned;

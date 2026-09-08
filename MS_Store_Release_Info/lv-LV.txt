@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Latviešu (Latvija) - Partner Center: Latvian (Latvia) (lv-LV)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent ir Viktora Elofsona PicoTorrent pārnesums uz Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versija 0.3.4
+Versija 0.3.5
 
-- Pauzēti torenti vairs neizveido savus failus, kad NanoTorrent tiek palaists. Torents, kura datus bijāt izdzēsis vai pārvietojis, varēja atgriezties pie 0% ar tukšu failu mapi.
-- Tīmekļa saskarne tagad saņem tiešraides atjauninājumus, nevis tos pieprasa: tā reaģē uzreiz un patērē krietni mazāk procesora.
-- Savienojuma indikators rāda, vai pārlūks joprojām sazinās ar NanoTorrent, un pats atjauno savienojumu.
-- Tīmekļa saskarnes torentu sarakstu var sadalīt lappusēs un kārtot pāri visām lappusēm.
-- Gan logs, gan tīmekļa saskarne rāda, cik tīmekļa klientu ir pieslēgti.
-- Detaļu panelis aizpildās, tiklīdz noklikšķināt uz torenta, aiz ielādes pārklājuma, nevis līdz sekundei vēlāk.
-- Iestatījumi pārbūvēti atbilstoši galvenajam logam: cilnes ar ikonām, kas ritinās, ja neietilpst, platāks logs un ritjoslas, kas vairs neko neaizsedz.
-- Iestatījumi rāda jūsu izvēlēto valodu, un katrs atvērtais logs maina valodu, nospiežot Labi.
-- Loga aizvēršana tagad to patiešām aizver, un Palīdzība ieguvusi saiti uz spraudņu API dokumentāciju.
+- Kopīgošanas ierobežojumi: pārtraukt izplatīšanu pie noteiktas attiecības, pēc noteikta laika vai atkarībā no tā, kas iestājas pirmais, un pēc tam apturēt vai noņemt torrentu.
+- Alternatīvi ātruma ierobežojumi — pēc grafika vai pārslēgti ar roku no rīkjoslas.
+- Rindas secība no rīkjoslas, atsevišķu failu prioritātes un birkas.
+- Novērota mape, kas pievieno katru tajā ievietoto .torrent failu.
+- Torrenta izsekotāju pievienošana, rediģēšana un noņemšana pa paziņošanas līmeņiem.
+- Iestatījumu datubāzi var šifrēt bez paroles, kas jāievada, un iestatījumus eksportēt un importēt JSON formātā.
+- Tīmekļa saskarne iegūst rindas secību, ātruma slēdzi un paneli katram torrentam ar failiem, izsekotājiem, birkām un ierobežojumiem.
+- Daļas, kas ir nedaudziem dalībniekiem, tiek pieprasītas vispirms, un BitTorrent v2 torrentus tagad var izplatīt citiem.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

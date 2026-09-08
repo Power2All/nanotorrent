@@ -24,22 +24,45 @@ const AUMID: &str = "Power2All.NanoTorrent";
 
 // Toast images must be PNG/JPEG (an .ico won't render), so ship a PNG copy of
 // the app icon and drop it on disk for the toast to reference by file path.
-#[cfg(windows)]
+//
+// Linux wants the same file for a different reason: see `download_complete`.
+#[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 const TOAST_ICON_PNG: &[u8] = include_bytes!("../../res/app.png");
 
 /// Stable on-disk path for the toast icon (written once from TOAST_ICON_PNG).
-#[cfg(windows)]
+///
+/// A real directory rather than a temporary one on both platforms: the shell
+/// (Windows) or the notification daemon (Linux) reads this file when it draws
+/// the popup, which can be after this process has gone, so it has to outlive
+/// us.
+///
+/// Windows keeps resolving `%LOCALAPPDATA%` by hand rather than going through
+/// `Environment`, which would answer differently for a portable install and
+/// move a file that the Start Menu shortcut and the `.shortcut_target` marker
+/// beside it are already pointing at.
+#[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 fn icon_path() -> Option<std::path::PathBuf> {
-    let base = std::env::var_os("LOCALAPPDATA")?;
-    Some(
-        std::path::Path::new(&base)
-            .join("NanoTorrent")
-            .join("toast_icon.png"),
-    )
+    #[cfg(windows)]
+    {
+        let base = std::env::var_os("LOCALAPPDATA")?;
+        Some(
+            std::path::Path::new(&base)
+                .join("NanoTorrent")
+                .join("toast_icon.png"),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        Some(
+            crate::core::environment::Environment::create()
+                .get_application_data_path()
+                .join("toast_icon.png"),
+        )
+    }
 }
 
 /// Ensure the toast icon PNG exists on disk; returns its path if available.
-#[cfg(windows)]
+#[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 fn ensure_icon_file() -> Option<std::path::PathBuf> {
     let path = icon_path()?;
     if !path.exists() {
@@ -208,6 +231,20 @@ fn ensure_shortcut() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Which of the two forms of `app_icon` to send: the file if we have it, the
+/// theme name if we do not.
+///
+/// Split out from [`notification_icon`] and compiled everywhere so the choice can be
+/// tested on any platform - the caller around it is Linux-only, and a rule
+/// that only runs on the machine you cannot build on is a rule nobody checks.
+#[cfg_attr(not(all(unix, not(target_os = "macos"))), allow(dead_code))]
+fn icon_hint(file: Option<std::path::PathBuf>, fallback: &str) -> String {
+    match file {
+        Some(path) => path.to_string_lossy().into_owned(),
+        None => String::from(fallback),
+    }
+}
+
 /// Configuration key gating the notification below.
 pub const ENABLED_KEY: &str = "notifications.download_complete";
 
@@ -236,13 +273,31 @@ pub fn download_complete(title: &str, name: &str) {
     }
 }
 
-/// Linux and macOS, both through `notify-rust`.
+/// The icon to hand the notification daemon.
 ///
-/// `icon` and `appname` are no-ops on macOS (it uses the bundle claimed in
-/// [`register`]); on Linux the icon is a name the daemon looks up in the icon
-/// theme, and it is deliberately the same string the `.desktop` entry's `Icon=`
-/// key carries, so an install that has one shows the real icon and one that
-/// does not falls back to the generic glyph rather than showing something wrong.
+/// An absolute path to the PNG, not the icon-theme name: the freedesktop
+/// specification says `app_icon` may be either, and the theme name only
+/// resolves once `packaging/linux/install-desktop-entry.sh` has installed the
+/// `.desktop` entry and the icon beside it. A binary run straight out of
+/// `target/release`, or an AppImage nobody integrated, has neither - and used
+/// to get the generic glyph. The file is written from the copy compiled into
+/// this executable, so it is always there to point at.
+///
+/// Falls back to the theme name if the file cannot be written (a read-only or
+/// full data directory), which is exactly the old behaviour.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn notification_icon() -> String {
+    icon_hint(ensure_icon_file(), IDENTITY)
+}
+
+/// macOS ignores both `icon` and `appname` - it uses the bundle claimed in
+/// [`register`] - so there is nothing to look up.
+#[cfg(target_os = "macos")]
+fn notification_icon() -> String {
+    String::from(IDENTITY)
+}
+
+/// Linux and macOS, both through `notify-rust`.
 ///
 /// The returned handle is dropped straight away. That is not neglect: on Linux
 /// it holds nothing, and on macOS dropping an unused handle is what actually
@@ -251,7 +306,7 @@ pub fn download_complete(title: &str, name: &str) {
 pub fn download_complete(title: &str, name: &str) {
     if let Err(e) = notify_rust::Notification::new()
         .appname("NanoTorrent")
-        .icon(IDENTITY)
+        .icon(&notification_icon())
         .summary(title)
         .body(name)
         .show()
@@ -260,5 +315,27 @@ pub fn download_complete(title: &str, name: &str) {
         // torrent. That is worth saying once per download and no louder: the
         // download itself succeeded.
         tracing::warn!("failed to show desktop notification: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::icon_hint;
+    use std::path::PathBuf;
+
+    /// An absolute path is a legal `app_icon` and is what makes the icon show
+    /// without the `.desktop` entry installed; the theme name is the fallback
+    /// for when the file could not be written at all.
+    #[test]
+    fn the_icon_hint_prefers_the_file_and_falls_back_to_the_name() {
+        let file = PathBuf::from("/home/someone/.local/share/nanotorrent/toast_icon.png");
+        assert_eq!(
+            icon_hint(Some(file.clone()), "org.nanotorrent.NanoTorrent"),
+            file.to_string_lossy()
+        );
+        assert_eq!(
+            icon_hint(None, "org.nanotorrent.NanoTorrent"),
+            "org.nanotorrent.NanoTorrent"
+        );
     }
 }

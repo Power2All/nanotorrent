@@ -21,11 +21,20 @@
 //! matters, because a web seed can be stale or plain wrong and there is no
 //! other check on what it returns.
 //!
-//! # What is deliberately not here
+//! # Both HTTP seeding standards
 //!
-//! - **BEP 17** (`httpseeds`, the "Hoffman" style) is a different protocol
-//!   with its own query-string request format. `url-list` is BEP 19, which is
-//!   what the world actually uses.
+//! - **BEP 19** (`url-list`, "GetRight" style) is what the world uses: the
+//!   files are laid out on the server as they are in the torrent, and a piece
+//!   is assembled from HTTP range requests across them.
+//! - **BEP 17** (`httpseeds`, "Hoffman" style) is the older one. It is
+//!   piece-oriented rather than file-oriented: one request names the info hash
+//!   and a piece index, and the body IS that piece. It is rare, but a torrent
+//!   carrying it costs nothing to support once the peer-shaped shell above
+//!   exists, and a torrent that carries only `httpseeds` had no web seed at
+//!   all before this.
+//!
+//! The difference between them is entirely inside [`ByteSource`]: everything
+//! from the piece cache outwards is shared.
 //! # Two things the first live test changed
 //!
 //! Both were wrong in ways only a real server showed up.
@@ -122,15 +131,9 @@ pub fn file_url(base: &str, torrent_name: &str, file: &SeedFile, multi_file: boo
 /// Deliberately minimal: file names in torrents are arbitrary bytes, and a raw
 /// space or `#` in a URL is either rejected or silently truncates the path.
 fn encode_path(path: &str) -> String {
-    let mut out = String::with_capacity(path.len());
-    for b in path.bytes() {
-        match b {
-            b'/' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => out.push(b as char),
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
+    // `/` stays: this encodes a path, and escaping its separators would ask
+    // the server for one file with slashes in its name.
+    crate::core::utils::percent_encode(path.as_bytes(), b"/")
 }
 
 /// Read `url-list` out of a `.torrent`.
@@ -139,8 +142,16 @@ fn encode_path(path: &str) -> String {
 /// list of them. Absent for magnets, which is why a web seed can only come
 /// from a real torrent file.
 pub fn parse_url_list(torrent_bytes: &[u8]) -> Vec<String> {
+    parse_url_key(torrent_bytes, b"url-list")
+}
+
+/// The shared parser behind `url-list` (BEP 19) and `httpseeds` (BEP 17).
+///
+/// Both keys sit at the top level beside `info` and both are "either a string
+/// or a list of strings", so one parser does for both.
+fn parse_url_key(torrent_bytes: &[u8], key: &[u8]) -> Vec<String> {
     use crate::bittorrent::metainfo::bencode_lookup;
-    let Some(raw) = bencode_lookup(torrent_bytes, b"url-list") else {
+    let Some(raw) = bencode_lookup(torrent_bytes, key) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -184,12 +195,27 @@ fn bencode_str_value(b: &[u8]) -> Option<String> {
 /// Where the bytes come from. A trait so the protocol loop can be tested
 /// without an HTTP server standing behind it.
 pub trait ByteSource: Send + Sync + std::fmt::Debug {
+    /// Bytes from one file, at a file-relative offset. The BEP 19 shape.
     fn fetch(
         &self,
         file: &SeedFile,
         start: u64,
         len: u64,
     ) -> futures::future::BoxFuture<'_, Result<Vec<u8>>>;
+
+    /// A whole piece in one request, for a source that is piece-oriented.
+    ///
+    /// `None` - the default - means "assemble it from [`fetch`] calls across
+    /// the file spans", which is what BEP 19 does. BEP 17 overrides this
+    /// because a piece is the only thing it can ask for: its request names an
+    /// info hash and a piece index, and knows nothing about files.
+    fn fetch_piece(
+        &self,
+        _index: u32,
+        _len: u64,
+    ) -> Option<futures::future::BoxFuture<'_, Result<Vec<u8>>>> {
+        None
+    }
 }
 
 /// How many times one range request is retried before the seed gives up.
@@ -236,6 +262,81 @@ impl ByteSource for HttpSource {
             Ok(body.to_vec())
         })
     }
+}
+
+/// BEP 17: one request per piece, against a single URL.
+///
+/// The query string is the whole protocol - `info_hash` as the raw 20 bytes
+/// percent-encoded exactly as a tracker announce encodes them, and `piece` as
+/// a decimal index. `ranges` exists in the spec for asking for part of a piece
+/// and is deliberately not used: a whole piece is one request either way, and
+/// servers that predate it ignore it.
+#[derive(Debug)]
+pub struct HttpSeedSource {
+    pub client: reqwest::Client,
+    pub base: String,
+    pub info_hash: librqbit::Id20,
+}
+
+impl HttpSeedSource {
+    /// The URL for one piece. Separated out so the query construction can be
+    /// tested without a server.
+    pub fn piece_url(&self, index: u32) -> String {
+        // A `?` may already be there - BEP 17 URLs are often a CGI endpoint
+        // that carries its own parameters.
+        let join = if self.base.contains('?') { '&' } else { '?' };
+        format!(
+            "{}{join}info_hash={}&piece={index}",
+            self.base,
+            crate::core::utils::percent_encode(&self.info_hash.0, b"")
+        )
+    }
+}
+
+impl ByteSource for HttpSeedSource {
+    /// Never called: [`fetch_piece`] answers first, and BEP 17 has no way to
+    /// ask for a file-relative range - its requests are keyed by piece.
+    fn fetch(
+        &self,
+        _file: &SeedFile,
+        _start: u64,
+        _len: u64,
+    ) -> futures::future::BoxFuture<'_, Result<Vec<u8>>> {
+        Box::pin(async move { bail!("BEP 17 seeds are fetched a whole piece at a time") })
+    }
+
+    fn fetch_piece(
+        &self,
+        index: u32,
+        len: u64,
+    ) -> Option<futures::future::BoxFuture<'_, Result<Vec<u8>>>> {
+        let url = self.piece_url(index);
+        Some(Box::pin(async move {
+            let resp = self
+                .client
+                .get(&url)
+                .send()
+                .await
+                .with_context(|| format!("GET {url}"))?;
+            // 200 here, unlike BEP 19: the request is not a range request, so
+            // the whole response IS the piece.
+            if !resp.status().is_success() {
+                bail!("{url} answered {}", resp.status());
+            }
+            let body = resp.bytes().await.context("reading body")?;
+            if body.len() as u64 != len {
+                bail!("{url} returned {} bytes, expected {len}", body.len());
+            }
+            Ok(body.to_vec())
+        }))
+    }
+}
+
+/// Read `httpseeds` out of a `.torrent` - BEP 17's equivalent of `url-list`.
+///
+/// Same shape and the same place in the file, so the same parser does both.
+pub fn parse_http_seeds(torrent_bytes: &[u8]) -> Vec<String> {
+    parse_url_key(torrent_bytes, b"httpseeds")
 }
 
 /// What the responder needs to know about the torrent.
@@ -356,6 +457,30 @@ async fn fetch_with_retry(
     Err(last.unwrap_or_else(|| anyhow::anyhow!("no attempts made")))
 }
 
+async fn fetch_piece_with_retry(
+    source: &Arc<dyn ByteSource>,
+    index: u32,
+    len: u64,
+) -> Result<Vec<u8>> {
+    let mut last = None;
+    for attempt in 0..FETCH_ATTEMPTS {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(250 << attempt)).await;
+        }
+        let Some(fut) = source.fetch_piece(index, len) else {
+            bail!("source stopped offering whole pieces mid-torrent");
+        };
+        match fut.await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                tracing::debug!(attempt, "web seed piece fetch failed: {e:#}");
+                last = Some(e);
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow::anyhow!("no attempts made")))
+}
+
 /// The whole of `index`, from the cache or from the server.
 async fn piece_bytes<'a>(
     torrent: &SeedTorrent,
@@ -372,6 +497,18 @@ async fn piece_bytes<'a>(
         bail!("engine asked for piece {index}, past the end of the torrent");
     }
     let len = torrent.piece_length.min(total - offset);
+
+    // A piece-oriented source answers in one request; retried the same number
+    // of times as a span fetch, for the same reason.
+    if source.fetch_piece(index, len).is_some() {
+        let data = fetch_piece_with_retry(source, index, len).await?;
+        if data.len() as u64 != len {
+            bail!("web seed returned {} bytes for a {len}-byte piece {index}", data.len());
+        }
+        cache.index = Some(index);
+        cache.data = data;
+        return Ok(&cache.data);
+    }
 
     let mut data = Vec::with_capacity(len as usize);
     for span in spans(&torrent.files, offset, len) {
@@ -446,12 +583,13 @@ pub fn spawn_all(
     client: reqwest::Client,
 ) {
     let urls = parse_url_list(torrent_bytes);
-    if urls.is_empty() {
+    let http_seeds = parse_http_seeds(torrent_bytes);
+    if urls.is_empty() && http_seeds.is_empty() {
         return;
     }
 
     let Some(metadata) = handle.metadata.load_full() else {
-        return; // metadata not resolved yet; a magnet has no url-list anyway
+        return; // metadata not resolved yet; a magnet has neither key anyway
     };
     let name = handle.name().unwrap_or_default();
     let files: Vec<SeedFile> = metadata
@@ -483,13 +621,31 @@ pub fn spawn_all(
         files,
     };
 
-    for (i, url) in urls.into_iter().enumerate() {
-        let source: Arc<dyn ByteSource> = Arc::new(HttpSource {
-            client: client.clone(),
-            base: url.clone(),
-            torrent_name: name.clone(),
-            multi_file,
-        });
+    // BEP 19 first, then BEP 17. A torrent carrying both gets a synthetic peer
+    // for each URL of each: they are alternative routes to the same bytes, and
+    // every one of them is hash-checked, so there is no harm in trying all.
+    let sources: Vec<(String, Arc<dyn ByteSource>)> = urls
+        .into_iter()
+        .map(|url| {
+            let s: Arc<dyn ByteSource> = Arc::new(HttpSource {
+                client: client.clone(),
+                base: url.clone(),
+                torrent_name: name.clone(),
+                multi_file,
+            });
+            (url, s)
+        })
+        .chain(http_seeds.into_iter().map(|url| {
+            let s: Arc<dyn ByteSource> = Arc::new(HttpSeedSource {
+                client: client.clone(),
+                base: url.clone(),
+                info_hash: handle.info_hash(),
+            });
+            (url, s)
+        }))
+        .collect();
+
+    for (i, (url, source)) in sources.into_iter().enumerate() {
         let torrent = torrent.clone();
         let session = session.clone();
         let addr = synthetic_addr(i);
@@ -640,6 +796,150 @@ mod tests {
         // Malformed must not panic.
         assert!(parse_url_list(b"d8:url-list").is_empty());
         assert!(parse_url_list(b"junk").is_empty());
+    }
+
+    #[test]
+    fn httpseeds_reads_the_same_shapes_as_url_list() {
+        // BEP 17 keys the list `httpseeds`, otherwise identical.
+        let one = b"d9:httpseeds23:http://example.com/seed4:infod0:0:ee";
+        assert_eq!(parse_http_seeds(one), vec!["http://example.com/seed"]);
+
+        let many = b"d9:httpseedsl18:http://a.example/s19:https://b.example/se4:infod0:0:ee";
+        assert_eq!(
+            parse_http_seeds(many),
+            vec!["http://a.example/s", "https://b.example/s"]
+        );
+
+        // A torrent with only `url-list` has no BEP 17 seeds and vice versa.
+        assert!(parse_http_seeds(b"d8:url-list19:http://example.com/4:infod0:0:ee").is_empty());
+        assert!(parse_url_list(one).is_empty());
+
+        // Malformed must not panic, same as the other key.
+        assert!(parse_http_seeds(b"d9:httpseeds").is_empty());
+    }
+
+    #[test]
+    fn bep17_urls_carry_the_info_hash_and_piece() {
+        // The hash bytes are chosen to cover both halves of the rule: `A` and
+        // `7` are unreserved and stay, 0x00 and 0xFF must be escaped.
+        let mut raw = [0u8; 20];
+        raw[0] = b'A';
+        raw[1] = 0x00;
+        raw[2] = 0xFF;
+        raw[3] = b'7';
+        let source = HttpSeedSource {
+            client: reqwest::Client::new(),
+            base: "http://h/seed.cgi".into(),
+            info_hash: librqbit::Id20::new(raw),
+        };
+        let url = source.piece_url(3);
+        assert!(
+            url.starts_with("http://h/seed.cgi?info_hash=A%00%FF7%00%00%00"),
+            "unexpected encoding: {url}"
+        );
+        assert!(url.ends_with("&piece=3"), "unexpected tail: {url}");
+
+        // A base that already has a query string gets `&`, not a second `?`.
+        let with_query = HttpSeedSource {
+            client: reqwest::Client::new(),
+            base: "http://h/seed.cgi?x=1".into(),
+            info_hash: librqbit::Id20::new(raw),
+        };
+        let url = with_query.piece_url(0);
+        assert_eq!(url.matches('?').count(), 1, "two query separators: {url}");
+        assert!(url.contains("?x=1&info_hash="), "unexpected join: {url}");
+    }
+
+    /// The BEP 17 path through the same protocol loop the GetRight one uses.
+    ///
+    /// The source answers whole pieces and refuses file-relative fetches - so
+    /// if `piece_bytes` ever stopped preferring `fetch_piece`, this fails
+    /// rather than silently falling back.
+    #[tokio::test]
+    async fn the_responder_serves_a_piece_oriented_source() {
+        #[derive(Debug)]
+        struct Pieces {
+            content: Vec<u8>,
+            piece_length: u64,
+        }
+        impl ByteSource for Pieces {
+            fn fetch(
+                &self,
+                _file: &SeedFile,
+                _start: u64,
+                _len: u64,
+            ) -> futures::future::BoxFuture<'_, Result<Vec<u8>>> {
+                Box::pin(async move { bail!("a BEP 17 source must never be asked for a file span") })
+            }
+
+            fn fetch_piece(
+                &self,
+                index: u32,
+                len: u64,
+            ) -> Option<futures::future::BoxFuture<'_, Result<Vec<u8>>>> {
+                let from = index as u64 * self.piece_length;
+                let slice = self.content[from as usize..(from + len) as usize].to_vec();
+                Some(Box::pin(async move { Ok(slice) }))
+            }
+        }
+
+        let content: Vec<u8> = (0..328u32).map(|i| (i * 7) as u8).collect();
+        let torrent = SeedTorrent {
+            info_hash: librqbit::Id20::new([9u8; 20]),
+            peer_id: librqbit::Id20::new([8u8; 20]),
+            piece_length: 256,
+            total_pieces: 2,
+            files: files(),
+        };
+
+        let (ours, mut theirs) = tokio::io::duplex(1 << 16);
+        let source: Arc<dyn ByteSource> = Arc::new(Pieces {
+            content: content.clone(),
+            piece_length: 256,
+        });
+        let t = torrent.clone();
+        let task = tokio::spawn(async move { run(ours, t, source).await });
+
+        let mut buf = vec![0u8; 1024];
+        let hs = Handshake::new(torrent.info_hash, librqbit::Id20::new([1u8; 20]));
+        let n = hs.serialize_unchecked_len(&mut buf);
+        theirs.write_all(&buf[..n]).await.unwrap();
+        let mut their_hs = [0u8; 68];
+        theirs.read_exact(&mut their_hs).await.unwrap();
+
+        // Ask for a chunk that sits in the middle of piece 0, so a wrong piece
+        // index or a wrong offset inside it both show up as wrong bytes.
+        let req = Request { index: 0, begin: 64, length: 32 };
+        let n = Message::Request(req).serialize(&mut buf, &Default::default).unwrap();
+        theirs.write_all(&buf[..n]).await.unwrap();
+
+        let mut acc: Vec<u8> = Vec::new();
+        loop {
+            let n = theirs.read(&mut buf).await.unwrap();
+            assert_ne!(n, 0, "the responder closed before answering");
+            acc.extend_from_slice(&buf[..n]);
+            let mut consumed = 0;
+            let mut answered = false;
+            while let Ok((m, used)) = Message::deserialize(&acc[consumed..], &[]) {
+                consumed += used;
+                if let Message::Piece(p) = m {
+                    assert_eq!(p.index, 0);
+                    assert_eq!(p.begin, 64);
+                    // No public accessor for the block, so read it back out of
+                    // the wire form: index, begin, then the data.
+                    let mut tmp = vec![0u8; p.len() + 8];
+                    let written = p.serialize_unchecked_len(&mut tmp);
+                    assert_eq!(&tmp[8..written], &content[64..96]);
+                    answered = true;
+                }
+            }
+            if answered {
+                break;
+            }
+            acc.drain(..consumed);
+        }
+        drop(theirs);
+        let _ = task.await;
     }
 
     /// End to end against a REAL web seed, through the real engine.

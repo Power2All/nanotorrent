@@ -59,11 +59,6 @@ impl GeoIp {
         });
     }
 
-    /// Country name for a peer address ("ip:port"), if known.
-    pub fn country(&self, addr: &str) -> Option<String> {
-        self.lookup(addr).map(|(_, name)| name)
-    }
-
     /// ISO 3166-1 alpha-2 code and display name, for the flag icon plus its
     /// label. The code is what the flag table is keyed by; either half can be
     /// missing from the database, so both are optional.

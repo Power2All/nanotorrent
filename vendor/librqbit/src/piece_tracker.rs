@@ -46,11 +46,56 @@ pub enum AcquireResult {
 }
 
 /// Parameters for acquiring a piece.
-pub struct AcquireRequest<'a, I, P, S>
+/// The rarest candidate a peer can serve, within the most wanted file that
+/// still has one. NanoTorrent addition.
+///
+/// `candidates` yields `(rank, piece)` with `rank` non-decreasing - the file's
+/// position in the priority order. Rarity is compared only WITHIN a rank, so
+/// priorities still decide which file gets attention; ties keep the earlier
+/// candidate, so the caller's existing order (first piece, last piece, then
+/// the middle) survives wherever rarity does not discriminate - which is most
+/// of the time in a healthy swarm.
+///
+/// Generic over the piece type so the rule can be tested without building an
+/// engine around it; the engine passes `ValidPieceIndex`.
+///
+/// An `availability` that always answers 0 reproduces the previous behaviour
+/// exactly: everything ties, and the first candidate wins.
+pub fn pick_rarest<T: Copy>(
+    candidates: impl Iterator<Item = (usize, T)>,
+    has: impl Fn(T) -> bool,
+    availability: impl Fn(T) -> u32,
+) -> Option<T> {
+    let mut best: Option<(u32, T)> = None;
+    let mut best_rank = usize::MAX;
+    for (rank, piece) in candidates {
+        // Ranks ascend, so nothing after the first candidate's rank can beat
+        // it. This is what keeps the scan short on a big torrent.
+        if best.is_some() && rank > best_rank {
+            break;
+        }
+        if !has(piece) {
+            continue;
+        }
+        let count = availability(piece);
+        if best.is_none_or(|(a, _)| count < a) {
+            best = Some((count, piece));
+            best_rank = rank;
+            // Nothing is rarer than a piece exactly one peer has.
+            if count <= 1 {
+                break;
+            }
+        }
+    }
+    best.map(|(_, piece)| piece)
+}
+
+pub struct AcquireRequest<'a, I, P, S, A>
 where
     I: Iterator<Item = ValidPieceIndex>,
     P: Fn(ValidPieceIndex) -> bool,
     S: Fn(ValidPieceIndex) -> bool,
+    A: Fn(ValidPieceIndex) -> u32,
 {
     /// The peer requesting a piece.
     pub peer: PeerHandle,
@@ -66,6 +111,10 @@ where
     pub peer_has_piece: P,
     /// Returns true if the piece can be stolen (e.g., not locked for writing).
     pub can_steal: S,
+    /// NanoTorrent: how many connected peers hold this piece, for
+    /// rarest-first. Higher is commoner. A source that always answers 0 makes
+    /// selection behave exactly as it did before this existed.
+    pub availability: A,
 }
 
 /// Coordinates piece download state.
@@ -120,11 +169,15 @@ impl PieceTracker {
     ///
     /// If `Stolen` is returned, the caller MUST call `peers.on_steal()` to notify
     /// the old peer and update counters.
-    pub fn acquire_piece<I, P, S>(&mut self, mut req: AcquireRequest<I, P, S>) -> AcquireResult
+    pub fn acquire_piece<I, P, S, A>(
+        &mut self,
+        mut req: AcquireRequest<I, P, S, A>,
+    ) -> AcquireResult
     where
         I: Iterator<Item = ValidPieceIndex>,
         P: Fn(ValidPieceIndex) -> bool,
         S: Fn(ValidPieceIndex) -> bool,
+        A: Fn(ValidPieceIndex) -> u32,
     {
         // 1. Try steal with 10x threshold (very slow peer)
         if let Some(result) = self.try_steal(&req, 10.0) {
@@ -142,17 +195,26 @@ impl PieceTracker {
             }
         }
 
-        // Then check naturally ordered queued pieces
-        // Note: iter_queued_pieces only returns pieces in queue_pieces (not in-flight)
-        let queued: Vec<_> = self
-            .chunks
-            .iter_queued_pieces(req.file_priorities, req.file_infos)
-            .collect();
-
-        for piece in queued {
-            if (req.peer_has_piece)(piece) {
-                return self.reserve_piece(piece, req.peer);
-            }
+        // Then the queued pieces: the rarest this peer can give us, within the
+        // most wanted file that still has one.
+        //
+        // NanoTorrent addition. Before this the first candidate in iteration
+        // order won, which is file priority then first/last/middle - a fine
+        // order for streaming and a poor one for the swarm, because every peer
+        // makes the same choice and the rare pieces stay rare. Rarity is
+        // compared only within one file rank, so priorities still decide which
+        // file gets attention; iteration order still breaks ties, so the
+        // first/last-piece behaviour survives wherever rarity does not
+        // discriminate (a healthy swarm, where everything is equally common).
+        //
+        let picked = pick_rarest(
+            self.chunks
+                .iter_queued_pieces_ranked(req.file_priorities, req.file_infos),
+            &req.peer_has_piece,
+            &req.availability,
+        );
+        if let Some(piece) = picked {
+            return self.reserve_piece(piece, req.peer);
         }
 
         // 3. Try steal with 3x threshold (moderately slow peer)
@@ -177,15 +239,16 @@ impl PieceTracker {
     }
 
     /// Try to steal a piece from a slower peer.
-    fn try_steal<I, P, S>(
+    fn try_steal<I, P, S, A>(
         &mut self,
-        req: &AcquireRequest<I, P, S>,
+        req: &AcquireRequest<I, P, S, A>,
         threshold: f64,
     ) -> Option<AcquireResult>
     where
         I: Iterator<Item = ValidPieceIndex>,
         P: Fn(ValidPieceIndex) -> bool,
         S: Fn(ValidPieceIndex) -> bool,
+        A: Fn(ValidPieceIndex) -> u32,
     {
         let my_avg = req.peer_avg_time?;
         let min_elapsed = Duration::from_secs_f64(my_avg.as_secs_f64() * threshold);
@@ -412,6 +475,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true, // Peer has all pieces
             can_steal: |_| true,
+            availability: |_| 0,
         });
 
         // Should reserve piece 0 (first in queue)
@@ -445,6 +509,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |p| p.get() >= 2,
             can_steal: |_| true,
+            availability: |_| 0,
         });
 
         match result {
@@ -473,6 +538,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         });
 
         let piece = match result {
@@ -506,6 +572,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         });
 
         let piece = match result {
@@ -534,6 +601,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |p| p == piece, // Only has the failed piece
             can_steal: |_| true,
+            availability: |_| 0,
         });
 
         match result2 {
@@ -563,6 +631,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         }) {
             AcquireResult::Reserved(p) => p,
             _ => panic!("Expected Reserved"),
@@ -575,6 +644,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         }) {
             AcquireResult::Reserved(p) => p,
             _ => panic!("Expected Reserved"),
@@ -589,6 +659,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         }) {
             AcquireResult::Reserved(p) => p,
             _ => panic!("Expected Reserved"),
@@ -628,6 +699,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         });
         tracker.acquire_piece(AcquireRequest {
             peer: peer(1),
@@ -637,6 +709,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         });
 
         assert_eq!(tracker.inflight_count(), 2);
@@ -654,6 +727,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         });
 
         // Should get piece 0 again (was requeued)
@@ -692,6 +766,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         });
 
         // Should get piece 3 (first priority piece)
@@ -718,6 +793,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| false, // Peer has nothing
             can_steal: |_| true,
+            availability: |_| 0,
         });
 
         match result {
@@ -766,6 +842,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         }) {
             AcquireResult::Reserved(p) => {
                 assert_eq!(p.get(), 0);
@@ -782,6 +859,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |_| true,
             can_steal: |_| true,
+            availability: |_| 0,
         }) {
             AcquireResult::Reserved(p) => {
                 assert_eq!(p.get(), 4);
@@ -804,6 +882,7 @@ mod tests {
             file_infos: &file_infos,
             peer_has_piece: |p| p.get() == 4, // Peer B only has piece 4
             can_steal: |_| true,
+            availability: |_| 0,
         });
 
         // Should steal piece 4 (which peer B has), NOT piece 0 (which peer B doesn't have)

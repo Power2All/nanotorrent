@@ -35,6 +35,27 @@ pub struct Row {
     pub selected: bool,
 }
 
+/// One control on a plugin's form.
+///
+/// The window offers a single text field, which is enough to add a feed and
+/// nowhere near enough to edit a rule with eight settings on it. A form is the
+/// answer: the plugin describes the controls it wants, the window draws them,
+/// and the values come back in one go.
+#[derive(Clone, Default)]
+pub struct Field {
+    /// The key this field's value arrives under.
+    pub id: String,
+    pub label: String,
+    /// "text", "check", "choice" or "number". Anything else is drawn as text,
+    /// which is the harmless reading of a typo.
+    pub kind: String,
+    pub value: String,
+    /// The entries of a "choice". Ignored by every other kind.
+    pub options: Vec<String>,
+    /// A line of explanation under the control. Empty draws none.
+    pub hint: String,
+}
+
 /// Everything the UI knows about one plugin.
 #[derive(Clone, Default)]
 pub struct PluginUi {
@@ -52,6 +73,15 @@ pub struct PluginUi {
     /// showing the contents OF. Empty means one list, as before.
     pub groups: Vec<Row>,
     pub rows: Vec<Row>,
+
+    // ---- its form ------------------------------------------------------
+    /// Non-empty while a form is open, and handed back with the values so a
+    /// plugin with several forms knows which one was filled in. The form
+    /// replaces the lists rather than sitting beside them: it is a different
+    /// thing to be doing, and half a list behind a form is neither.
+    pub form_id: String,
+    pub form_title: String,
+    pub fields: Vec<Field>,
 
     // ---- its menu ------------------------------------------------------
     /// The dropdown's name in the menu bar. Empty falls back to the plugin's
@@ -82,6 +112,16 @@ pub enum UiEvent {
     Button { plugin: String, id: String, input: String },
     /// An item in the plugin's own menu-bar dropdown.
     Menu { plugin: String, id: String },
+    /// A form was saved. `values` is field id to value; a checkbox is "1" or
+    /// the empty string, so every value is a string and a plugin reads them
+    /// the same way whatever the control was.
+    Form {
+        plugin: String,
+        id: String,
+        values: Vec<(String, String)>,
+    },
+    /// A form was dismissed without saving.
+    FormCancelled { plugin: String, id: String },
     /// Configure, on the plugin's row in Preferences.
     Configure { plugin: String },
     /// Its window was opened. The plugin's chance to fill it before it is

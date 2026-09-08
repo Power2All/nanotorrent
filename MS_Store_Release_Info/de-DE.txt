@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Deutsch (Deutschland) - Partner Center: German (Germany) (de-DE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent ist eine Rust-Portierung von PicoTorrent von Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.4
+Version 0.3.5
 
-- Angehaltene Torrents legen ihre Dateien beim Start von NanoTorrent nicht mehr neu an. Ein Torrent, dessen Daten gelöscht oder verschoben wurden, konnte mit 0 % und einem Ordner leerer Dateien zurückkommen.
-- Die Weboberfläche erhält Aktualisierungen jetzt live, statt sie abzufragen: Sie reagiert sofort und braucht deutlich weniger Rechenzeit.
-- Eine Verbindungsanzeige zeigt, ob der Browser noch Kontakt zu NanoTorrent hat, und verbindet sich von selbst neu.
-- Die Torrentliste der Weboberfläche lässt sich in Seiten aufteilen und über alle Seiten hinweg sortieren.
-- Fenster und Weboberfläche zeigen beide, wie viele Web-Clients verbunden sind.
-- Der Detailbereich füllt sich, sobald Sie einen Torrent anklicken, hinter einer Ladeanzeige, statt erst bis zu eine Sekunde später.
-- Die Einstellungen wurden dem Hauptfenster angeglichen: Registerkarten mit Symbolen, die scrollen, wenn sie nicht passen, ein breiteres Fenster und Bildlaufleisten, die nichts mehr überdecken.
-- Die Einstellungen zeigen die gewählte Sprache, und jedes offene Fenster wechselt die Sprache, sobald Sie auf Ok klicken.
-- Ein Fenster zu schließen schließt es jetzt wirklich, und im Hilfemenü steht ein Link zur Plugin-API-Dokumentation.
+- Freigabegrenzen: Seeden bei einem Verhältnis beenden, nach einer festgelegten Zeit oder je nachdem, was zuerst eintritt, und den Torrent danach pausieren oder entfernen.
+- Alternative Geschwindigkeitsbegrenzungen, nach Zeitplan oder von Hand über die Symbolleiste umgeschaltet.
+- Warteschlangenreihenfolge über die Symbolleiste, Prioritäten je Datei und Tags.
+- Ein überwachter Ordner, der jede dort abgelegte .torrent-Datei hinzufügt.
+- Tracker eines Torrents hinzufügen, bearbeiten und entfernen, in Announce-Ebenen.
+- Die Einstellungsdatenbank kann verschlüsselt werden, ohne Passworteingabe, und Ihre Einstellungen lassen sich als JSON exportieren und importieren.
+- Die Weboberfläche erhält Warteschlangenreihenfolge, den Geschwindigkeitsschalter und ein Panel je Torrent für Dateien, Tracker, Tags und Grenzen.
+- Teile, die nur wenige Peers haben, werden zuerst angefordert, und BitTorrent-v2-Torrents können nun an andere geseedet werden.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

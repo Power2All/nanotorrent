@@ -11,7 +11,46 @@ pub type BS = bitvec::slice::BitSlice<u8, bitvec::order::Msb0>;
 pub type BF = bitvec::boxed::BitBox<u8, bitvec::order::Msb0>;
 
 pub type PeerHandle = SocketAddr;
-pub type PeerStream = BoxStream<'static, SocketAddr>;
+
+/// NanoTorrent addition: where a peer address came from.
+///
+/// The discovery streams are merged into one before anybody reads them, so
+/// without carrying this the answer to "how many peers did the DHT actually
+/// find" is gone by the time a peer is added. Travels with the address rather
+/// than being looked up later because after the merge there is nothing left to
+/// look it up in.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum PeerSource {
+    Dht,
+    Tracker,
+    /// Local service discovery.
+    Lsd,
+    /// Peer exchange (BEP 11).
+    Pex,
+    /// Named when the torrent was added, or restored with it.
+    Initial,
+    /// The peer connected to us; we never discovered it.
+    Incoming,
+    /// Added by hand through the API.
+    Manual,
+}
+
+impl PeerSource {
+    /// Stable identifiers, for a caller that has to name these outside Rust.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PeerSource::Dht => "dht",
+            PeerSource::Tracker => "tracker",
+            PeerSource::Lsd => "lsd",
+            PeerSource::Pex => "pex",
+            PeerSource::Initial => "initial",
+            PeerSource::Incoming => "incoming",
+            PeerSource::Manual => "manual",
+        }
+    }
+}
+
+pub type PeerStream = BoxStream<'static, (SocketAddr, PeerSource)>;
 pub type FileInfos = Vec<FileInfo>;
 pub(crate) type FileStorage = Box<dyn TorrentStorage>;
 pub(crate) type FilePriorities = Vec<usize>;

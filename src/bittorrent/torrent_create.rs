@@ -10,8 +10,8 @@
 //!   the v1 layout aligns each file to a piece boundary.
 //!
 //! Everything is deterministic and unit-tested (merkle vectors, bencode,
-//! structure), but interop against a real v2 client (qBittorrent / libtorrent
-//! 2.x) is the ultimate check - see the tests at the bottom.
+//! structure), but interop against a real v2 client (libtorrent 2.x) is the
+//! ultimate check - see the tests at the bottom.
 
 use std::fs::File;
 use std::io::Read;

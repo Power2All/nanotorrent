@@ -115,6 +115,7 @@ pub fn help_text(tr: &Translator) -> String {
             "\n",
             "{}\n",
             "{}",
+            "\n{}",
         ),
         buildinfo::version(),
         tr.i18n("cli_tagline"),
@@ -122,7 +123,8 @@ pub fn help_text(tr: &Translator) -> String {
         tr.i18n("cli_forwarded_note"),
         cli::usage(tr),
         cli::settings_help(tr),
-        webui::cli::usage(tr)
+        webui::cli::usage(tr),
+        core::dbcli::usage()
     )
 }
 
@@ -266,6 +268,14 @@ fn run() -> anyhow::Result<()> {
         Ok(false) => {}
         Err(err) => usage_error(err),
     }
+
+    // Before the database is opened by anything else: these rewrite the file,
+    // and doing that under a live connection is the one thing they must not do.
+    match core::dbcli::handle(&args) {
+        Ok(true) => return Ok(()),
+        Ok(false) => {}
+        Err(err) => usage_error(err),
+    }
     match cli::handle(&args) {
         Ok(true) => return Ok(()),
         Ok(false) => {}
@@ -360,6 +370,11 @@ fn run() -> anyhow::Result<()> {
     let translator = load_translator(&env, &cfg);
 
     let session = Arc::new(bittorrent::session::Session::new(&env, db.clone(), &cfg)?);
+
+    // The watched folder and moving finished downloads. Started here rather
+    // than inside `Session::new` because it needs the `Arc` - it calls the
+    // session's synchronous API, which cannot run on the session's own runtime.
+    bittorrent::manager::spawn(&session, cfg.clone());
 
     // Fire off the update check in the background.
     let update_slot = Arc::new(Mutex::new(None));

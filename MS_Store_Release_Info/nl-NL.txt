@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Nederlands (Nederland) - Partner Center: Dutch (Netherlands) (nl-NL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent is een Rust-port van PicoTorrent van Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versie 0.3.4
+Versie 0.3.5
 
-- Gepauzeerde torrents maken hun bestanden niet meer opnieuw aan wanneer NanoTorrent start. Een torrent waarvan je de gegevens had verwijderd of verplaatst kon terugkomen op 0% met een map vol lege bestanden.
-- De webinterface krijgt updates nu live in plaats van erom te vragen: hij reageert onmiddellijk en gebruikt veel minder processortijd.
-- Een verbindingsindicator laat zien of de browser nog contact heeft met NanoTorrent, en verbindt vanzelf opnieuw.
-- De torrentlijst in de webinterface kan over pagina's worden verdeeld en over alle pagina's heen worden gesorteerd.
-- Zowel het venster als de webinterface tonen hoeveel webclients verbonden zijn.
-- Het detailpaneel vult zich zodra je op een torrent klikt, achter een laadscherm, in plaats van tot een seconde later.
-- Voorkeuren is herbouwd naar het hoofdvenster: tabbladen met pictogram die schuiven wanneer ze niet passen, een breder venster, en schuifbalken die niets meer overlappen.
-- Voorkeuren toont de taal die je hebt gekozen, en elk open venster wisselt van taal wanneer je op Ok drukt.
-- Een venster sluiten sluit het nu echt, en Help krijgt een koppeling naar de documentatie van de plug-in-API.
+- Deellimieten: stop met seeden bij een verhouding, na een ingestelde tijd, of wat het eerst komt, en pauzeer of verwijder de torrent daarna.
+- Alternatieve snelheidslimieten, volgens een schema of met de hand omgezet vanaf de werkbalk.
+- Wachtrijvolgorde vanaf de werkbalk, prioriteiten per bestand, en labels (tags).
+- Een bewaakte map die elke .torrent toevoegt die erin wordt gezet.
+- Trackers van een torrent toevoegen, bewerken en verwijderen, in announce-niveaus.
+- De instellingendatabase kan versleuteld worden, zonder wachtwoord om in te typen, en je instellingen kunnen als JSON worden geëxporteerd en geïmporteerd.
+- De webinterface krijgt wachtrijvolgorde, de snelheidsschakelaar, en een paneel per torrent voor bestanden, trackers, labels en limieten.
+- Stukken die weinig peers hebben worden als eerste opgevraagd, en BitTorrent v2-torrents kunnen nu aan anderen worden geseed.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

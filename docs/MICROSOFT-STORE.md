@@ -213,16 +213,36 @@ Useful variations:
 | --- | --- |
 | `-DryRun` | Print every step, run none of them |
 | `-Msix <path>` | Submit a package you already built |
+| `-KeepScreenshots` | Leave the listing images alone |
 | `-Yes` | Do not ask before committing |
+| `-ConfigPath <path>` | Read the settings from somewhere else |
 
 The Store ID can live in `STORE_PRODUCT_ID` instead of being retyped, and
 `build-msix.ps1` already reads `STORE_IDENTITY_NAME` and `STORE_PUBLISHER` from
 the environment the same way.
 
+Better, copy `installer/store-settings.local.txt.example` to
+`installer/store-settings.local.txt` and put your three values in it. That file
+is git-ignored, and with it in place the whole submission is one command with
+no arguments:
+
+```powershell
+.\installer\store-submit.ps1 -DryRun    # print every step, touch nothing
+.\installer\store-submit.ps1            # build, upload, write the listings, commit
+```
+
+A parameter beats the environment and the environment beats the file, so a
+one-off submission can still override any of them. None of the three is a
+credential - all are in the manifest of the shipped package - but this
+repository is public and the workflow keeps them as secrets, so they stay out
+of it. The real credentials live wherever `msstore reconfigure` put them.
+
 Nothing about this needs the GitHub secrets: the CLI keeps its own credentials
 on the machine after the first sign-in. The workflow and this script run the
-same sequence and share `store-whatsnew.ps1`, so a listing that submits from
-one submits from the other.
+same sequence and share both `store-whatsnew.ps1` and `store-images.ps1`, so a
+listing that submits from one submits from the other. Pass `-KeepScreenshots`
+to leave the images alone - worth it for a submission that is only a rebuild,
+since replacing them sends seven pictures back through certification.
 
 ### The listings go up with the package
 
@@ -238,6 +258,7 @@ language from `MS_Store_Release_Info/*.txt`, and sends it back:
 msstore publish <msix> -id <product> --noCommit   # package only, stays a draft
 msstore submission get <product>                  # the whole submission, as JSON
 installer\store-whatsnew.ps1 ...                  # rewrite releaseNotes per language
+installer\store-images.ps1 ...                    # rewrite images, and upload them
 msstore submission update <product> <json>        # send it back
 msstore submission publish <product>              # commit for certification
 ```
@@ -252,7 +273,7 @@ them away. Package first, metadata second, commit last.
 
 ```powershell
 msstore submission get <product> | Out-File -Encoding utf8 sub.json
-.\installer\store-whatsnew.ps1 -SubmissionPath sub.json -OutPath sub.new.json -Version 0.3.4
+.\installer\store-whatsnew.ps1 -SubmissionPath sub.json -OutPath sub.new.json -Version 0.3.5
 ```
 
 It refuses to write anything if a listing's "What's new" does not mention the
@@ -260,6 +281,56 @@ version being shipped, which is the mistake the hand-editing invites - the
 listing files carry the version in their text and are easy to forget. It also
 warns about languages live in the Store with no file here, and files with no
 matching Store language, leaving both untouched rather than guessing.
+
+### Screenshots
+
+Listing text is only JSON, so `store-whatsnew.ps1` can do its whole job by
+rewriting a field. **Screenshots are not.** The submission carries only their
+*names*; the bytes have to be inside the ZIP archive uploaded to the
+submission's `fileUploadUrl` — the same archive that carries the
+`.msixupload`. A submission whose JSON names a file that is not in that archive
+fails to commit, with `MissingFiles`.
+
+`msstore` cannot do this. Its submission verbs are `status`, `get`,
+`getListingAssets`, `updateMetadata`, `update`, `poll`, `publish`, `delete` and
+`rollout`; `getListingAssets` *reads* the assets and nothing writes image
+bytes. That is why screenshots were attached by hand, and why two of them went
+stale on every language.
+
+`installer\store-images.ps1` closes it without giving up the CLI:
+
+1. It rewrites every language's `images` array to name the PNGs in `images/`,
+   marking whatever was there before `PendingDelete` — keeping each old entry's
+   `id`, since that is what identifies the one to remove.
+2. It writes those PNGs into a ZIP, under `listing-images/`, laid out exactly
+   as the JSON names them.
+3. With `-Upload`, it reads back the archive `msstore publish` already
+   uploaded, adds the images to it and puts it back, so the package and the
+   screenshots travel together. The SAS the API hands out carries write as well
+   as read, which is what makes amending it possible.
+
+Steps 1 and 2 need nothing but a dump and the PNGs, so — like
+`store-whatsnew.ps1` — the whole thing can be rehearsed on a laptop:
+
+```powershell
+msstore submission get <product> | Out-File -Encoding utf8 sub.json
+.\installer\store-images.ps1 -SubmissionPath sub.json -OutPath sub.new.json -ZipPath shots.zip
+```
+
+Step 3 is the one that needs a live draft: `fileUploadUrl` only exists on a
+pending submission and the SAS is short-lived, so take the dump straight after
+`msstore publish --noCommit` and run with `-Upload` in the same job. Without a
+`fileUploadUrl` the script refuses rather than writing JSON that could not
+commit.
+
+It also checks the images before any of that — PNG, at least 1366×768, under
+50 MB, at most ten — because the alternative is a certification failure days
+later that names the file and nothing else. `.webp` is ignored: the Store does
+not take it, and `images/` holds both.
+
+The same seven screenshots go to every language. If one ever needs its own —
+a localised window — that is when `MS_Store_Release_Info` would grow an image
+list per language and this script would read that instead of the folder.
 
 The Entra application also has to be added under **Partner Center ▸ Account
 settings ▸ User management ▸ Microsoft Entra applications** with the **Manager**

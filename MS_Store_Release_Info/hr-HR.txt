@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Hrvatski (Hrvatska) - Partner Center: Croatian (Croatia) (hr-HR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent je prijenos PicoTorrenta Viktora Elofssona na Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Verzija 0.3.4
+Verzija 0.3.5
 
-- Pauzirani torrenti više ne stvaraju svoje datoteke pri pokretanju NanoTorrenta. Torrent čije ste podatke obrisali ili premjestili mogao se vratiti na 0% s mapom praznih datoteka.
-- Web sučelje sada prima izmjene uživo umjesto da ih traži: reagira odmah i troši znatno manje procesora.
-- Pokazatelj veze pokazuje je li preglednik još u vezi s NanoTorrentom i sam se ponovno povezuje.
-- Popis torrenta u web sučelju može se dijeliti na stranice i razvrstavati kroz sve stranice.
-- I prozor i web sučelje pokazuju koliko je web klijenata povezano.
-- Ploča s pojedinostima puni se čim kliknete torrent, iza sloja učitavanja, umjesto do sekunde kasnije.
-- Postavke su prerađene prema glavnom prozoru: kartice s ikonama koje klize kad ne stanu, širi prozor i klizači koji više ne prekrivaju sadržaj.
-- Postavke pokazuju jezik koji ste odabrali, a svaki otvoreni prozor mijenja jezik kad pritisnete U redu.
-- Zatvaranje prozora sada ga doista zatvara, a Pomoć dobiva poveznicu na dokumentaciju API-ja dodataka.
+- Ograničenja dijeljenja: prestani sijati pri određenom omjeru, nakon zadanog vremena ili što prije nastupi, pa zatim pauziraj ili ukloni torrent.
+- Alternativna ograničenja brzine, prema rasporedu ili ručno prebačena s alatne trake.
+- Redoslijed u redu čekanja s alatne trake, prioriteti po datoteci i oznake.
+- Nadgledana mapa koja dodaje svaku .torrent datoteku stavljenu u nju.
+- Dodavanje, uređivanje i uklanjanje trackera torrenta, po razinama najave.
+- Baza podataka postavki može se šifrirati, bez lozinke koju treba upisivati, a postavke izvoziti i uvoziti kao JSON.
+- Web sučelje dobiva redoslijed u redu čekanja, prekidač brzine i ploču po torrentu za datoteke, trackere, oznake i ograničenja.
+- Dijelovi koje ima malo članova traže se prvi, a BitTorrent v2 torrenti sada se mogu dijeliti drugima.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

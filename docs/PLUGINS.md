@@ -74,7 +74,7 @@ further down, or inside a string, cannot quietly widen the request.
 | `notify` | `notify` |
 | `network` | `http_get`, and `add_torrent_url` together with `add` |
 | `data` | `data_get`, `data_set`, `data_remove`, `data_keys` |
-| `ui` | `ui_window`, `ui_rows`, `ui_buttons`, `ui_input`, `ui_status`, `ui_show` |
+| `ui` | `ui_window`, `ui_rows`, `ui_groups`, `ui_buttons`, `ui_input`, `ui_status`, `ui_form`, `ui_form_close`, `ui_menu`, `ui_configurable`, `ui_show` |
 
 `network` is the one that changes what the others mean. A plugin holding
 `read` and `network` together can send everything it can see to anyone, and
@@ -132,6 +132,8 @@ Define any of these. All are optional; a plugin that defines none does nothing.
 | `on_ui_group(id)` | A row in the upper list was clicked |
 | `on_ui_button(id, input)` | A button was pressed; `input` is the text field |
 | `on_ui_menu(id)` | An item in your menu-bar dropdown was chosen |
+| `on_ui_form(form_id, values)` | A form was saved; `values` is field id to value |
+| `on_ui_form_cancel(form_id)` | A form was dismissed without saving |
 | `on_ui_configure()` | Configure was pressed on your Preferences row |
 
 `on_tick` fires on a wall-clock deadline, so a busy session does not starve it.
@@ -243,6 +245,7 @@ same torrent the same way.
 | `http_get(url)` | `#{ ok, status, body, error }` | `network` |
 | `add_torrent_url(url)` | `bool` — fetches and adds it | `network` + `add` |
 | `add_torrent_url(url, save_path)` | The same, into a folder | `network` + `add` |
+| `add_torrent_url(url, #{ save_path, label, paused })` | The same, with options | `network` + `add` |
 
 Only `http` and `https`; `file://` is refused before the request is made, so
 the network permission cannot be turned into a filesystem read. A response is
@@ -252,6 +255,23 @@ polling the internet on a timer will meet one sooner or later.
 
 `add_torrent_url` takes a magnet link as-is and fetches anything else as a
 `.torrent`, which is what feeds actually contain.
+
+The map form takes any of `save_path`, `label` and `paused`; anything you leave
+out keeps its default, so a plugin that only wants to add something paused does
+not have to name a folder as well. `label` is a label **name** and is looked up,
+never created — a plugin should not be able to fill somebody's label list by
+getting a rule wrong — so a name that does not exist means no label, and says so
+in the log. `paused` is true for any non-empty value except `"0"` and `"false"`,
+which is the same convention a form checkbox follows.
+
+**Telling the time** — no permission
+
+| Function | Returns |
+|---|---|
+| `now()` | Seconds since the Unix epoch |
+
+A clock reveals nothing a script could not already infer from how often it is
+ticked, and without one "ignore this for a week" cannot be written at all.
 
 **Making sense of what came back** — no permission
 
@@ -277,11 +297,46 @@ and CDATA are decoded, and each element's text is trimmed.
 | `ui_status(text)` | One line under the list |
 | `ui_show()` | Put the window on screen now |
 | `ui_menu(title, [#{ id, label }])` | Your own dropdown in the menu bar |
+| `ui_form(form_id, title, [#{ id, label, kind, value, options, hint }])` | A form, in place of the lists |
+| `ui_form_close()` | Put the lists back |
 | `ui_configurable(true)` | Ask for a Configure button in Preferences |
 
 Declaring a window is what lists it in the menu; `ui_show` is separate so a
 plugin can prepare one at load without a window appearing unasked. Clicks come
 back as `on_ui_row` and `on_ui_button`.
+
+### Forms
+
+One text field is enough to add a feed and nowhere near enough to edit a rule
+with a dozen settings on it. `ui_form` describes the controls you want; the
+window draws them and hands the values back in one go.
+
+`kind` is one of:
+
+| `kind` | Control | Value |
+|---|---|---|
+| `text` | A text field | What was typed |
+| `number` | A text field that only takes digits | Still a string — parse it yourself |
+| `check` | A checkbox; `label` goes beside it, not above | `"1"` or `""` |
+| `choice` | A dropdown over `options` | The entry chosen |
+
+`options` is one entry per line and is ignored by every other kind. `hint` draws
+a line of explanation under the control, or nothing when empty.
+
+**Every value arrives as a string**, a checkbox included, so a script reads them
+all the same way. Saving calls `on_ui_form(form_id, values)` with a map of field
+id to value; Cancel calls `on_ui_form_cancel(form_id)`. Neither closes the form
+for you — call `ui_form_close()` when you are ready, which is what lets a
+rejected form stay up with what was typed still in it.
+
+A form REPLACES the lists while it is up, in the window and in the web
+interface alike. That is deliberate: it is a different thing to be doing, and
+half a list behind a form is neither. It also means the redraw a plugin does on
+a timer will not disturb one — the window only re-pushes a form whose fields
+have actually changed, so it cannot wipe out what somebody is typing.
+
+An empty field list closes the form, so `ui_form(id, title, [])` and
+`ui_form_close()` do the same thing.
 
 ### Reaching your plugin
 

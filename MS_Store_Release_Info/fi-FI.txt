@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versio 0.3.4
+Versio 0.3.5
 
-- Pysäytetyt torrentit eivät enää luo tiedostojaan uudelleen NanoTorrentin käynnistyessä. Torrent, jonka tiedot oli poistettu tai siirretty, saattoi palata nollaan prosenttiin kansiollisen tyhjiä tiedostoja kanssa.
-- Verkkokäyttöliittymä saa nyt päivitykset suorana sen sijaan, että se pyytäisi niitä: se reagoi välittömästi ja kuluttaa huomattavasti vähemmän suoritinaikaa.
-- Yhteysilmaisin kertoo, onko selain yhä yhteydessä NanoTorrentiin, ja yhdistää itse uudelleen.
-- Verkkokäyttöliittymän torrent-luettelon voi jakaa sivuiksi ja järjestää kaikkien sivujen yli.
-- Sekä ikkuna että verkkokäyttöliittymä näyttävät, montako verkkoasiakasta on yhteydessä.
-- Tietopaneeli täyttyy heti kun napsautat torrenttia, latauspeitteen takana, eikä vasta sekuntia myöhemmin.
-- Asetukset on rakennettu uudelleen pääikkunan mukaisiksi: kuvakevälilehdet, jotka vierivät kun ne eivät mahdu, leveämpi ikkuna ja vierityspalkit, jotka eivät enää peitä mitään.
-- Asetukset näyttävät valitsemasi kielen, ja jokainen avoin ikkuna vaihtaa kieltä kun painat Ok.
-- Ikkunan sulkeminen sulkee sen nyt oikeasti, ja Ohje-valikkoon tuli linkki liitännäisten API-dokumentaatioon.
+- Jakorajat: lopeta jakaminen tietyllä suhteella, määritetyn ajan jälkeen tai sen mukaan, kumpi täyttyy ensin, ja keskeytä tai poista torrent sen jälkeen.
+- Vaihtoehtoiset nopeusrajat, aikataulun mukaan tai käsin työkalupalkista kytkettynä.
+- Jonon järjestys työkalupalkista, tiedostokohtaiset prioriteetit ja tunnisteet.
+- Valvottu kansio, joka lisää jokaisen siihen pudotetun .torrent-tiedoston.
+- Torrentin seurantapalvelimien lisääminen, muokkaaminen ja poistaminen ilmoitustasoittain.
+- Asetustietokannan voi salata ilman kirjoitettavaa salasanaa, ja asetukset voi viedä ja tuoda JSON-muodossa.
+- Verkkokäyttöliittymä saa jonon järjestyksen, nopeuskytkimen ja torrentkohtaisen paneelin tiedostoille, seurantapalvelimille, tunnisteille ja rajoille.
+- Osia, joita on harvoilla vertaisilla, pyydetään ensin, ja BitTorrent v2 -torrentteja voi nyt jakaa muille.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
