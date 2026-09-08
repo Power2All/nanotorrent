@@ -1,0 +1,65 @@
+// "Shall I encrypt the settings database?" - asked once, the first time a
+// plain database meets a version that can encrypt it.
+//
+// One question, asked once: both answers are recorded, so this never comes
+// back. Preferences > Database is where it can be changed afterwards, which is
+// what the last line of the body says.
+
+import { ScrollView, Button, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
+
+export component DbPromptDialog inherits Window {
+    icon: @image-url("../../res/app.png");
+    title: L.s(L.revision, "database_encryption");
+    // Width is pinned - nothing here reflows horizontally. Height follows the
+    // content, so the window opens exactly fitting whatever the translation
+    // came out as, and only scrolls on a screen too short for it.
+    min-width: 470px;
+    max-width: 470px;
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    min-height: min(body.preferred-height, root.screen-limit);
+    max-height: min(body.preferred-height, root.screen-limit);
+    background: Palette.background;
+
+    /// True to encrypt now. Either way the question is not asked again.
+    callback chosen(bool);
+
+    ScrollView {
+        vertical-scrollbar-policy: as-needed;
+        body := VerticalLayout {
+            padding: 18px;
+            spacing: 14px;
+
+            Text {
+                text: L.s(L.revision, "database_prompt_title");
+                font-size: 16px;
+                font-weight: 700;
+                color: Palette.foreground;
+            }
+
+            Text {
+                text: L.s(L.revision, "database_prompt_body");
+                wrap: word-wrap;
+                vertical-stretch: 1;
+                color: Palette.foreground;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: L.s(L.revision, "database_not_now");
+                    clicked => { root.chosen(false); }
+                }
+                Button {
+                    text: L.s(L.revision, "database_encrypt");
+                    primary: true;
+                    clicked => { root.chosen(true); }
+                }
+            }
+        }
+    }
+}

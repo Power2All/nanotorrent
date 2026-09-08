@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -76,6 +76,10 @@ anyhow = "1.0.104"
 # getrandom into the defaults, so naming features here would only risk
 # switching one off.
 argon2 = "0.6"
+# Sealing the settings database. XChaCha20-Poly1305 for its 24-byte nonce,
+# which is wide enough to choose at random on every write - see core::dbkey.
+# Pure Rust, no build script, no C toolchain behind it.
+chacha20poly1305 = "0.11"
 base64 = "0.23"
 bencode = { version = "9.0.1", package = "librqbit-bencode", default-features = false }
 chrono = "0.4.45"
@@ -85,6 +89,16 @@ num-bigint = "0.5"
 sha1 = "0.11"
 sha2 = "0.11"
 rand = "0.10"
+# Validating tracker addresses. Already in the tree - librqbit parses announce
+# URLs with it - so naming it here compiles nothing new, and a hand-rolled
+# check on a string the announce machinery is about to use would be the wrong
+# place to be clever.
+url = "2.5"
+# Regular expressions for plugin scripts. Already in the tree transitively, so
+# naming it here costs nothing to build - and it is the crate whose automaton
+# has no backtracking, which is what makes it safe to hand a pattern written by
+# whoever wrote the plugin. See core plugins::api.
+regex = "1.13"
 # rust-tls rather than the default default-tls. On Linux the default drags in
 # OpenSSL TWICE: once as native-tls for the tracker/UPnP HTTP client, and once
 # as crypto-hash for librqbit's SHA-1 piece hashing. rust-tls replaces the first
@@ -144,7 +158,13 @@ rfd = { version = "0.17", optional = true, default-features = false, features = 
 # peer and tracker connections - so this adds no crate, only the seam that
 # lets our own requests take the same route.
 reqwest = { version = "0.13.4", features = ["json", "socks"] }
-rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
+# "serialize" and "hooks" are what let the settings database be encrypted
+# without SQLCipher: serialize/deserialize move the whole database between a
+# file and memory, and the commit hook says when it needs writing back. See
+# core::dbkey for why the whole file rather than page-by-page. Both are pure
+# rusqlite features - the alternative, bundled-sqlcipher, drags in OpenSSL and
+# with it a Perl build prerequisite, for one feature.
+rusqlite = { version = "0.40.2", features = ["bundled", "functions", "serialize", "hooks"] }
 # Default features deliberately: that selects aws-lc-rs, which the tree already
 # resolves rustls to. Picking `ring` here would compile a second crypto library.
 rustls = "0.23"
@@ -211,7 +231,7 @@ tauri-winrt-notification = "0.8"
 # NOT tied to any UI feature: core/toast.rs, core/file_assoc.rs, the startup
 # message box in main.rs and ui_slint/modal.rs all need winapi under plain
 # cfg(windows), whether or not a UI is built.
-winapi = { version = "0.3.9", features = ["winuser", "windef", "winreg", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "wtypes", "winerror", "wincon", "processenv", "handleapi"] }
+winapi = { version = "0.3.9", features = ["winuser", "windef", "winreg", "fileapi", "winnt", "objbase", "combaseapi", "shobjidl_core", "objidl", "propidl", "propkey", "propsys", "wtypesbase", "wtypes", "winerror", "wincon", "processenv", "handleapi", "dpapi", "wincrypt", "winbase", "minwindef"] }
 
 # --- Linux packaging -------------------------------------------------------
 # Consumed by `cargo deb` and `cargo generate-rpm` in .github/workflows/release.yml.

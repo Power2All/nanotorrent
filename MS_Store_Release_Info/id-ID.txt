@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versi 0.3.4
+Versi 0.3.5
 
-- Torrent yang dijeda tidak lagi membuat ulang berkasnya saat NanoTorrent dijalankan. Torrent yang datanya Anda hapus atau pindahkan bisa kembali di 0% dengan folder berisi berkas kosong.
-- Antarmuka web kini menerima pembaruan langsung alih-alih memintanya: reaksinya seketika dan pemakaian prosesornya jauh lebih kecil.
-- Indikator koneksi menunjukkan apakah peramban masih terhubung dengan NanoTorrent, dan menyambung kembali sendiri.
-- Daftar torrent di antarmuka web dapat dibagi per halaman dan diurutkan lintas semua halaman.
-- Jendela dan antarmuka web sama-sama menampilkan berapa klien web yang terhubung.
-- Panel rincian terisi begitu Anda mengklik torrent, di balik lapisan pemuatan, bukan hingga satu detik kemudian.
-- Preferensi dibangun ulang agar serasi dengan jendela utama: tab berikon yang menggulir bila tak muat, jendela lebih lebar, dan bilah gulir yang tidak lagi menutupi apa pun.
-- Preferensi menampilkan bahasa yang Anda pilih, dan setiap jendela terbuka berganti bahasa saat Anda menekan Ok.
-- Menutup jendela kini benar-benar menutupnya, dan menu Bantuan mendapat tautan ke dokumentasi API plugin.
+- Batas berbagi: berhenti menyemai pada rasio tertentu, setelah waktu yang ditentukan, atau mana yang lebih dulu, lalu jeda atau hapus torrent tersebut.
+- Batas kecepatan alternatif, menurut jadwal atau dialihkan secara manual dari bilah alat.
+- Urutan antrean dari bilah alat, prioritas per berkas, dan tag.
+- Folder yang dipantau dan menambahkan setiap berkas .torrent yang diletakkan di dalamnya.
+- Menambah, menyunting, dan menghapus pelacak sebuah torrent, dalam tingkatan pengumuman.
+- Basis data pengaturan dapat dienkripsi, tanpa kata sandi yang perlu diketik, dan pengaturan Anda diekspor serta diimpor sebagai JSON.
+- Antarmuka web mendapat urutan antrean, sakelar kecepatan, dan panel per torrent untuk berkas, pelacak, tag, dan batas.
+- Bagian yang dimiliki sedikit rekan diminta lebih dulu, dan torrent BitTorrent v2 kini dapat disemai kepada orang lain.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -64,6 +64,71 @@ struct TorrentMeta {
     info_hashes: Option<(Option<String>, Option<String>)>,
 }
 
+/// Not downloaded at all.
+pub const PRIORITY_SKIP: i64 = 0;
+/// The default, and the level a file with no stored row is at.
+pub const PRIORITY_NORMAL: i64 = 1;
+pub const PRIORITY_HIGH: i64 = 2;
+pub const PRIORITY_MAX: i64 = 3;
+
+/// A priority level as a word, for the log.
+fn priority_name(level: i64) -> &'static str {
+    match level {
+        PRIORITY_SKIP => "skip",
+        PRIORITY_HIGH => "high",
+        PRIORITY_MAX => "maximum",
+        _ => "normal",
+    }
+}
+
+/// File indices in the order the engine should ask for them, most wanted first.
+///
+/// Highest priority first, and within a level the original file order, so a
+/// torrent where nothing has been prioritised comes out exactly as it went in.
+/// Skipped files are still on the list: they have been taken out of
+/// `only_files` already, and leaving them off here would only mean the engine
+/// filling the gap itself.
+///
+/// Stable rather than sorted by name: upstream sorts by filename because many
+/// torrents have a random file order, but once someone has said which files
+/// matter, second-guessing the rest of the order is not this function's job.
+fn priority_order(count: usize, stored: &HashMap<usize, i64>) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..count).collect();
+    let level = |i: &usize| stored.get(i).copied().unwrap_or(PRIORITY_NORMAL);
+    // Descending by level; `sort_by_key` is stable, so equal levels keep the
+    // file order they came in with.
+    order.sort_by_key(|i| std::cmp::Reverse(level(i)));
+    order
+}
+
+/// Where row `at` ends up, in a queue of `len` rows.
+///
+/// Split out because this is the arithmetic worth checking: every one of these
+/// is an off-by-one waiting to happen, and none of them is visible from a test
+/// that has to stand a real session up first.
+///
+/// Moving saturates rather than wrapping - "down" from the last row stays put
+/// instead of jumping to the top, which is what every list in every application
+/// does and what anyone holding the key down expects.
+fn queue_target(at: usize, len: usize, to: QueueMove) -> usize {
+    let last = len.saturating_sub(1);
+    match to {
+        QueueMove::Top => 0,
+        QueueMove::Bottom => last,
+        QueueMove::Up => at.saturating_sub(1),
+        QueueMove::Down => (at + 1).min(last),
+    }
+}
+
+/// Where a torrent should go in the queue.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum QueueMove {
+    Top,
+    Up,
+    Down,
+    Bottom,
+}
+
 pub struct FileEntry {
     pub name: String,
     pub length: u64,
@@ -113,6 +178,20 @@ impl TrackerRow {
             next_announce: None,
         }
     }
+
+    /// Attach live peer counts to a discovery-source row.
+    ///
+    /// `None` leaves the columns empty rather than showing zeros: nothing is
+    /// connected through this source right now, which is not the same claim as
+    /// "this source found a swarm with no seeds in it".
+    fn with_counts(mut self, counts: Option<(u32, u32)>) -> Self {
+        if let Some((seeds, leeches)) = counts {
+            self.seeders = Some(seeds);
+            self.leechers = Some(leeches);
+        }
+        self
+    }
+
     /// A tier heading row in the Trackers tab - a label with no statistics of
     /// its own, grouping the trackers announced together.
     fn tier(label: String) -> Self {
@@ -154,6 +233,106 @@ pub enum SessionEvent {
     TorrentRemoved { hash: String, name: String },
     /// Background work failed where there was no caller to return it to.
     Error(String),
+}
+
+/// Where a new torrent should actually be written.
+///
+/// The incomplete folder keeps partial files off the destination disk until
+/// they are worth having there; [`crate::bittorrent::manager`] moves them on
+/// when the torrent finishes.
+///
+/// Only applied when the caller did not choose a folder. Someone who picked a
+/// save path in the Add dialog said where they want it, and quietly writing
+/// somewhere else - even temporarily - is the kind of surprise that ends with a
+/// full scratch disk and no idea why.
+///
+/// ponytail: no per-torrent record of the intended destination, so a custom
+/// save path simply opts out of the incomplete folder. Storing the intent per
+/// torrent is the upgrade if anyone wants both at once.
+fn incomplete_folder(cfg: &Configuration, params: &AddParams) -> Option<String> {
+    if params.save_path.is_some() || !cfg.get_bool("downloads.incomplete_enabled") {
+        return params.save_path.clone();
+    }
+    cfg.get_string("downloads.incomplete_path")
+        .filter(|p| !p.is_empty())
+        .or_else(|| params.save_path.clone())
+}
+
+/// Per-torrent share limits, keyed by info hash.
+///
+/// Only rows that set at least one of the two are returned, so the common case
+/// (nobody has overridden anything) is an empty map rather than a row per
+/// torrent.
+fn read_share_overrides(db: &Arc<Database>) -> HashMap<String, (Option<f64>, Option<i64>)> {
+    db.with(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT info_hash, ratio_limit, seed_time_limit FROM torrent \
+             WHERE ratio_limit IS NOT NULL OR seed_time_limit IS NOT NULL",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    (r.get::<_, Option<f64>>(1)?, r.get::<_, Option<i64>>(2)?),
+                ))
+            })?
+            .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+        Ok(rows)
+    })
+    .unwrap_or_default()
+}
+
+/// Carry out what a share limit decided.
+///
+/// Pausing is recorded in the database as well as done to the engine: a torrent
+/// stopped for hitting its ratio must stay stopped across a restart, and
+/// librqbit's own persistence is the only other thing that remembers, which the
+/// queue scheduler would happily undo.
+async fn apply_share_action(
+    rq: &Arc<RqbitSession>,
+    db: &Arc<Database>,
+    meta: &Arc<Mutex<HashMap<String, TorrentMeta>>>,
+    events: &EventBus,
+    hash: &str,
+    action: crate::bittorrent::limits::ShareAction,
+) {
+    use crate::bittorrent::limits::ShareAction;
+
+    let Ok(id) = librqbit::api::TorrentIdOrHash::parse(hash) else {
+        return;
+    };
+
+    match action {
+        ShareAction::Pause => {
+            let Some(handle) = rq.get(id) else { return };
+            let name = handle.name().unwrap_or_else(|| hash.to_string());
+            if let Err(err) = rq.pause(&handle).await {
+                report_error(events, format!("Failed to pause {name}: {err:#}"));
+                return;
+            }
+            tracing::info!("{name} reached its share limit and was paused");
+        }
+        ShareAction::Remove { with_data } => {
+            let name = rq
+                .get(id)
+                .and_then(|h| h.name())
+                .unwrap_or_else(|| hash.to_string());
+            if let Err(err) = rq.delete(id, with_data).await {
+                report_error(events, format!("Failed to remove {name}: {err:#}"));
+                return;
+            }
+            meta.lock().unwrap().remove(hash);
+            let _ = db.with(|conn| {
+                conn.execute("delete from torrent_magnet_uri where info_hash = ?1", [hash])?;
+                conn.execute("delete from torrent where info_hash = ?1", [hash])
+            });
+            tracing::info!("{name} reached its share limit and was removed");
+            events.emit(SessionEvent::TorrentRemoved {
+                hash: hash.to_string(),
+                name,
+            });
+        }
+    }
 }
 
 /// Report a background failure: logged once, then handed to every subscriber.
@@ -216,7 +395,6 @@ pub struct Session {
     /// were both undetected and (once the web API started calling `torrents()`)
     /// accumulated forever.
     events: EventBus,
-    ipfilter_active: Arc<std::sync::atomic::AtomicBool>,
     /// Set once the bound interface has gone missing, so the pause happens on
     /// the transition rather than on every tick.
     binding_lost: Arc<std::sync::atomic::AtomicBool>,
@@ -813,15 +991,24 @@ impl Session {
             meta: Arc::new(Mutex::new(HashMap::new())),
             events: EventBus::new(),
             binding_lost: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            ipfilter_active: Arc::new(std::sync::atomic::AtomicBool::new(
-                ipfilter_url(cfg).is_some(),
-            )),
             queue_paused: Arc::new(Mutex::new(std::collections::HashSet::new())),
             session_path: env.get_session_state_path(),
             http,
         };
 
         session.spawn_low_disk_guard(cfg);
+        // Before the metadata is loaded, so nothing is read for a torrent that
+        // is about to be forgotten.
+        {
+            let present: std::collections::HashSet<String> = session
+                .rq()
+                .with_torrents(|torrents| {
+                    torrents
+                        .map(|(_, handle)| handle.info_hash().as_string())
+                        .collect()
+                });
+            session.forget_missing_torrents(&present);
+        }
         session.load_torrent_meta();
         // Heal any duplicate/gapped queue positions persisted before positions
         // were compacted on removal.
@@ -832,6 +1019,8 @@ impl Session {
         // API requests, so on a headless build with nothing connected it never
         // runs, and a download could finish with no event raised at all.
         session.spawn_scan_task();
+        session.spawn_speed_scheduler();
+        session.spawn_share_limit_guard();
 
         // Resume the torrents that were running when the previous session
         // shut down (librqbit persists its shutdown pause).
@@ -898,11 +1087,6 @@ impl Session {
             .map(PathBuf::from)
             .unwrap_or_else(Environment::get_downloads_path);
 
-        self.ipfilter_active.store(
-            ipfilter_url(cfg).is_some(),
-            std::sync::atomic::Ordering::Relaxed,
-        );
-
         let inner_slot = self.inner.clone();
         let api_slot = self.api.clone();
         let events = self.events.clone();
@@ -933,6 +1117,56 @@ impl Session {
 
     /// Load per-torrent metadata from the `torrent` table for torrents
     /// restored by librqbit's session persistence.
+    /// Drop rows for torrents the engine no longer has.
+    ///
+    /// Removing a torrent through the application cascades - `torrent_tracker`,
+    /// `torrent_tag` and `torrent_file_priority` all reference `torrent` with
+    /// ON DELETE CASCADE, and foreign keys are on. This is for the times that
+    /// does not happen: a session folder deleted by hand, a crash between the
+    /// engine's write and ours, a profile copied from elsewhere. Those leave a
+    /// `torrent` row with no torrent, and with it every per-torrent setting
+    /// that hangs off it.
+    ///
+    /// Deleting the `torrent` row is enough - the cascade takes the rest. Run
+    /// once at startup, after the engine has restored its own list, so "the
+    /// engine does not have it" is a fact rather than a race.
+    fn forget_missing_torrents(&self, present: &std::collections::HashSet<String>) {
+        let stale: Vec<String> = self
+            .db
+            .with(|conn| {
+                let mut stmt = conn.prepare("select info_hash from torrent")?;
+                let rows = stmt
+                    .query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(rows)
+            })
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|hash| !present.contains(hash))
+            .collect();
+
+        if stale.is_empty() {
+            return;
+        }
+        tracing::info!(
+            "forgetting {} torrent(s) the engine no longer has",
+            stale.len()
+        );
+        let _ = self.db.with(|conn| {
+            for hash in &stale {
+                // The magnet table has no foreign key to `torrent`, so it is
+                // the one thing the cascade does not reach.
+                conn.execute(
+                    "delete from torrent_magnet_uri where info_hash = ?1",
+                    [hash],
+                )?;
+                conn.execute("delete from torrent where info_hash = ?1", [hash])?;
+            }
+            Ok::<_, rusqlite::Error>(())
+        });
+        self.meta.lock().unwrap().retain(|hash, _| !stale.contains(hash));
+    }
+
     fn load_torrent_meta(&self) {
         /// info_hash, queue position, label, added on, completed on - one row
         /// of the `torrent` table, named because the tuple is unreadable.
@@ -1024,13 +1258,6 @@ impl Session {
             let _ = self.rt.block_on(self.rq().pause(&handle));
         }
         false
-    }
-
-    /// Whether a blocklist was configured for this session (the status bar
-    /// indicator).
-    pub fn ipfilter_active(&self) -> bool {
-        self.ipfilter_active
-            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Force recheck (port of the libtorrent force_recheck): librqbit has no
@@ -1289,76 +1516,6 @@ impl Session {
         }
     }
 
-    /// Manual resume also clears the scheduler's claim on the torrent, so
-    /// it is treated as user-started until the limits say otherwise.
-    pub fn clear_queue_pause(&self, hash: &str) {
-        self.queue_paused.lock().unwrap().remove(hash);
-    }
-
-    /// Move a torrent one step up or down in the queue.
-    pub fn queue_move(&self, hash: &str, up: bool) {
-        let updates: Vec<(String, i64)> = {
-            let mut meta = self.meta.lock().unwrap();
-
-            let mut order: Vec<String> = meta.keys().cloned().collect();
-            order.sort_by_key(|h| meta[h].queue_position);
-
-            let Some(idx) = order.iter().position(|h| h == hash) else {
-                return;
-            };
-            let other = if up {
-                match idx.checked_sub(1) {
-                    Some(i) => i,
-                    None => return,
-                }
-            } else if idx + 1 < order.len() {
-                idx + 1
-            } else {
-                return;
-            };
-
-            order.swap(idx, other);
-
-            // Normalize to contiguous positions (removals leave gaps).
-            for (i, h) in order.iter().enumerate() {
-                if let Some(m) = meta.get_mut(h) {
-                    m.queue_position = i as i64;
-                }
-            }
-
-            order
-                .iter()
-                .enumerate()
-                .map(|(i, h)| (h.clone(), i as i64))
-                .collect()
-        };
-
-        let _ = self.db.with(|conn| {
-            for (hash, pos) in &updates {
-                conn.execute(
-                    "update torrent set queue_position = ?1 where info_hash = ?2",
-                    rusqlite::params![pos, hash],
-                )?;
-            }
-            Ok(())
-        });
-    }
-
-    /// Piece bitfield for the piece progress bar: (bitfield bytes - one bit
-    /// per piece, MSB first - and the total piece count). Uses the
-    /// with_chunk_tracker visibility patch (see vendor/librqbit/PATCHES.md).
-    pub fn piece_map(&self, hash: &str) -> Option<(Vec<u8>, usize)> {
-        let handle = self.find(hash)?;
-        let total = handle.metadata.load_full()?.lengths().total_pieces() as usize;
-        if total == 0 {
-            return None;
-        }
-        let bytes = handle
-            .with_chunk_tracker(|ct| ct.get_have_pieces().as_bytes().to_vec())
-            .ok()?;
-        Some((bytes, total))
-    }
-
     /// Everything needed to forget + re-add a torrent: its metadata bytes,
     /// output folder and paused state.
     fn torrent_readd_info(&self, hash: &str) -> Option<(Vec<u8>, String, bool)> {
@@ -1417,7 +1574,7 @@ impl Session {
         let http = self.http.clone();
         let mut opts = AddTorrentOptions {
             paused: !params.start_torrent,
-            output_folder: params.save_path.clone(),
+            output_folder: incomplete_folder(&Configuration::new(self.db.clone()), &params),
             only_files: params.only_files.clone(),
             overwrite: true,
             ..Default::default()
@@ -1449,9 +1606,13 @@ impl Session {
                         opts.override_info_hash = Some(prepared.wire_hash);
                         opts.override_info_bytes = Some(prepared.info_bytes.into());
                         opts.piece_verifier = Some(prepared.verifier);
+                        // Serving hashes is what lets someone else bootstrap
+                        // this torrent from a v2 magnet, and installing this
+                        // is also what turns on the v2 handshake bit.
+                        opts.hash_provider = prepared.hashes;
                         AddTorrent::from_bytes(prepared.synthetic)
                     }
-                    Ok(V2Prep::Hybrid { secondary }) => {
+                    Ok(V2Prep::Hybrid { secondary, hashes }) => {
                         // Driven as v1, but announced under both hashes so the
                         // v2 half of the swarm can find us too.
                         tracing::info!(
@@ -1459,6 +1620,7 @@ impl Session {
                             secondary.as_string()
                         );
                         opts.secondary_info_hash = Some(secondary);
+                        opts.hash_provider = hashes;
                         AddTorrent::from_bytes(bytes.clone())
                     }
                     Ok(V2Prep::V1Only) => AddTorrent::from_bytes(bytes.clone()),
@@ -1700,6 +1862,194 @@ fn on_torrent_added(
         }
     }
 
+    /// The announce list this torrent should be using.
+    ///
+    /// `torrent_tracker` holds the WHOLE list once a torrent has been edited,
+    /// not just the additions. Empty means nobody has touched it, and the
+    /// .torrent's own list stands.
+    ///
+    /// Taking ownership of the whole list is what makes "remove" possible: the
+    /// announce list is not part of the info dict, so replacing it changes
+    /// nothing about the torrent's identity - see patch 0019.
+    fn effective_tiers(&self, hash: &str, cfg: &Configuration) -> Vec<Vec<String>> {
+        let stored = cfg.tracker_tiers(hash);
+        if !stored.is_empty() {
+            return stored;
+        }
+        // First edit: seed from what the torrent is announcing to now, so a
+        // removal has something to remove FROM. The engine's own tier map is
+        // the source, not the flat set, so the grouping survives the first edit
+        // rather than collapsing the moment anyone touches it.
+        let Some(handle) = self.find(hash) else {
+            return Vec::new();
+        };
+        let tiers: Vec<Vec<String>> = self
+            .rq()
+            .tracker_tiers_snapshot(handle.info_hash())
+            .into_iter()
+            .map(|tier| tier.iter().map(|u| u.to_string()).collect())
+            .collect();
+        if !tiers.is_empty() {
+            return tiers;
+        }
+        // A magnet has no announce-list, so no tiers are known: everything it
+        // has goes in one.
+        match handle
+            .shared()
+            .trackers
+            .iter()
+            .map(|u| u.to_string())
+            .collect::<Vec<_>>()
+        {
+            flat if flat.is_empty() => Vec::new(),
+            flat => vec![flat],
+        }
+    }
+
+    /// Add a tracker to one torrent, and start using it.
+    ///
+    /// The list is stored and the torrent re-added with it. The data is left
+    /// alone - the re-add points at the same folder and librqbit verifies what
+    /// is there, exactly as [`Session::move_storage`] does.
+    /// `tier` is which announce tier to put it in; past the end means a new
+    /// tier of its own, which is how "add a tier" is spelled.
+    pub fn add_tracker(&self, hash: &str, url: &str, tier: usize) -> bool {
+        let cfg = Configuration::new(self.db.clone());
+        let url = url.trim().to_owned();
+        if !cfg.is_tracker_url(&url) {
+            return false;
+        }
+        let mut tiers = self.effective_tiers(hash, &cfg);
+        // A tracker announced from two tiers would be asked twice and counted
+        // twice, so it moves rather than being duplicated.
+        for existing in tiers.iter_mut() {
+            existing.retain(|t| *t != url);
+        }
+        match tiers.get_mut(tier) {
+            Some(existing) => existing.push(url),
+            None => tiers.push(vec![url]),
+        }
+        cfg.set_trackers(hash, &tiers);
+        self.readd_with_trackers(hash, &cfg);
+        true
+    }
+
+    /// Replace one tracker's URL, leaving it in its tier.
+    pub fn edit_tracker(&self, hash: &str, from: &str, to: &str) -> bool {
+        let cfg = Configuration::new(self.db.clone());
+        let to = to.trim().to_owned();
+        if !cfg.is_tracker_url(&to) {
+            return false;
+        }
+        let mut tiers = self.effective_tiers(hash, &cfg);
+        let mut found = false;
+        for tier in tiers.iter_mut() {
+            for url in tier.iter_mut() {
+                if url == from {
+                    *url = to.clone();
+                    found = true;
+                }
+            }
+        }
+        if !found {
+            return false;
+        }
+        cfg.set_trackers(hash, &tiers);
+        self.readd_with_trackers(hash, &cfg);
+        true
+    }
+
+    /// Stop using a tracker, whether it was added by hand or came in the file.
+    pub fn remove_tracker(&self, hash: &str, url: &str) {
+        let cfg = Configuration::new(self.db.clone());
+        let mut tiers = self.effective_tiers(hash, &cfg);
+        for tier in tiers.iter_mut() {
+            tier.retain(|t| t != url);
+        }
+        cfg.set_trackers(hash, &tiers);
+        self.readd_with_trackers(hash, &cfg);
+    }
+
+    /// How many tiers this torrent has, for the "which tier" picker.
+    pub fn tracker_tier_count(&self, hash: &str) -> usize {
+        self.effective_tiers(hash, &Configuration::new(self.db.clone()))
+            .len()
+    }
+
+    /// Re-add a torrent so its stored extra trackers take effect.
+    fn readd_with_trackers(&self, hash: &str, cfg: &Configuration) {
+        let Some((bytes, folder, paused)) = self.torrent_readd_info(hash) else {
+            return;
+        };
+        let Some(handle) = self.find(hash) else {
+            return;
+        };
+        let tiers = cfg.tracker_tiers(hash);
+        let trackers = cfg.extra_trackers(hash);
+
+        let rq = self.rq();
+        let events = self.events.clone();
+        let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
+
+        self.rt.spawn(async move {
+            // false: the files stay exactly where they are. This is a
+            // re-registration, not a removal.
+            if let Err(err) = rq.delete(id, false).await {
+                report_error(&events, format!("Failed to update trackers: {err:#}"));
+                return;
+            }
+            let opts = AddTorrentOptions {
+                paused,
+                output_folder: Some(folder),
+                overwrite: true,
+                trackers: Some(trackers),
+                // The stored list is the whole announce list, not additions to
+                // the file's - which is what lets a tracker be removed at all.
+                replace_trackers: true,
+                // ...and the grouping with it, so the announce order the user
+                // arranged is the one the engine uses.
+                tracker_tiers: Some(tiers),
+                ..Default::default()
+            };
+            if let Err(err) = rq
+                .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
+                .await
+            {
+                report_error(&events, format!("Failed to re-add torrent: {err:#}"));
+            }
+        });
+    }
+
+    /// Announce to every tracker again, now.
+    ///
+    /// The announce is part of building a torrent's peer stream, which happens
+    /// when it goes live - so this stops and starts it, which is what makes the
+    /// announce happen rather than a request sent on the side. librqbit has no
+    /// standalone "announce now", and adding one would mean reaching into the
+    /// tracker loop's timer; this reaches the same place through the front door.
+    ///
+    /// A paused torrent is left alone. It is not announcing, and starting it
+    /// because someone asked for a reannounce would be answering a different
+    /// question - a noisy one, on a torrent they had deliberately stopped.
+    pub fn reannounce(&self, hash: &str) {
+        let Some(handle) = self.find(hash) else {
+            return;
+        };
+        if matches!(handle.stats().state, TorrentStatsState::Paused) {
+            tracing::debug!("not reannouncing {hash}: it is paused");
+            return;
+        }
+
+        if let Err(err) = self.rt.block_on(async {
+            self.rq().pause(&handle).await?;
+            self.rq().unpause(&handle).await
+        }) {
+            self.push_error(format!("Failed to reannounce: {err:#}"));
+            return;
+        }
+        tracing::info!("reannounced {hash}");
+    }
+
     /// Remove a torrent, and its downloaded data when `delete_files`.
     ///
     /// Also clears the app's own row for it - otherwise the next start would
@@ -1729,8 +2079,179 @@ fn on_torrent_added(
         self.normalize_queue_positions();
     }
 
-    /// Compact queue positions to a contiguous 0..N-1 (sorted by current
-    /// position), keeping every "#" unique with no gaps.
+    /// Move a torrent within the queue.
+    ///
+    /// The queue is what `active_limit` and friends work down: position 0 is
+    /// started first and stopped last. Until now it could only be reordered by
+    /// removing and re-adding, which is not a reordering so much as a
+    /// workaround.
+    ///
+    /// Positions are renumbered from scratch afterwards rather than swapped in
+    /// place, so a list that has drifted - two torrents on the same number
+    /// after some earlier removal - comes out consistent instead of preserving
+    /// the drift.
+    pub fn move_in_queue(&self, hash: &str, to: QueueMove) {
+        {
+            let mut meta = self.meta.lock().unwrap();
+            let mut order: Vec<String> = meta.keys().cloned().collect();
+            order.sort_by_key(|h| meta[h].queue_position);
+
+            let Some(at) = order.iter().position(|h| h == hash) else {
+                return;
+            };
+            let target = queue_target(at, order.len(), to);
+            if target == at {
+                return;
+            }
+
+            let moved = order.remove(at);
+            order.insert(target, moved);
+            for (i, h) in order.iter().enumerate() {
+                if let Some(m) = meta.get_mut(h) {
+                    m.queue_position = i as i64;
+                }
+            }
+        }
+        // Writes the new numbers out, and is also what keeps this correct when
+        // the list had duplicates to begin with.
+        self.normalize_queue_positions();
+    }
+
+    /// Set one torrent's own ratio limit, or clear it.
+    ///
+    /// `None` writes NULL, which the share-limit guard reads as "follow the
+    /// global setting" - deliberately distinct from `Some(0.0)`, which is this
+    /// torrent saying it has no limit at all. A single number could not carry
+    /// both meanings, which is why the column is nullable.
+    pub fn set_ratio_limit(&self, hash: &str, limit: Option<f64>) {
+        let _ = self.db.with(|conn| {
+            conn.execute(
+                "update torrent set ratio_limit = ?1 where info_hash = ?2",
+                rusqlite::params![limit, hash],
+            )
+        });
+        tracing::debug!(
+            "{hash} ratio limit -> {}",
+            limit.map_or(String::from("global"), |r| format!("{r:.2}"))
+        );
+    }
+
+    /// One torrent's own share limits, as (ratio, minutes of seeding).
+    ///
+    /// `None` in either means it follows the global setting; `Some(0.0)` /
+    /// `Some(0)` mean this torrent has no limit at all. A caller showing these
+    /// in a form has to keep the two apart - which is why they are read back
+    /// rather than inferred from the global values.
+    pub fn share_overrides(&self, hash: &str) -> (Option<f64>, Option<i64>) {
+        self.db
+            .with(|conn| {
+                conn.query_row(
+                    "select ratio_limit, seed_time_limit from torrent where info_hash = ?1",
+                    [hash],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+            })
+            .unwrap_or((None, None))
+    }
+
+    /// The other half of the same override: minutes of seeding, or `None` to
+    /// follow the global setting. `read_share_overrides` already reads this
+    /// column - until now nothing wrote it.
+    pub fn set_seed_time_limit(&self, hash: &str, limit: Option<i64>) {
+        let _ = self.db.with(|conn| {
+            conn.execute(
+                "update torrent set seed_time_limit = ?1 where info_hash = ?2",
+                rusqlite::params![limit, hash],
+            )
+        });
+        tracing::debug!(
+            "{hash} seed time limit -> {}",
+            limit.map_or(String::from("global"), |m| format!("{m}m"))
+        );
+    }
+
+    /// Read the stored priorities for one torrent, as a map of file index to
+    /// level. Files nobody has touched are absent and count as Normal.
+    pub fn file_priorities(&self, hash: &str) -> HashMap<usize, i64> {
+        self.db
+            .with(|conn| {
+                let mut stmt = conn.prepare(
+                    "select file_index, priority from torrent_file_priority \
+                     where info_hash = ?1",
+                )?;
+                let rows = stmt
+                    .query_map([hash], |r| {
+                        Ok((r.get::<_, i64>(0)? as usize, r.get::<_, i64>(1)?))
+                    })?
+                    .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+                Ok(rows)
+            })
+            .unwrap_or_default()
+    }
+
+    /// Set one file's priority and apply the result to the engine.
+    ///
+    /// Two things come out of the same table. Anything at [`PRIORITY_SKIP`] is
+    /// left out of `only_files`, which is the include toggle the Files tab has
+    /// always had; everything else becomes an ordering, most wanted first,
+    /// which is what patch 0017 added a way to hand over.
+    pub fn set_file_priority(&self, hash: &str, file_index: usize, priority: i64) {
+        let priority = priority.clamp(PRIORITY_SKIP, PRIORITY_MAX);
+        let _ = self.db.with(|conn| {
+            match priority {
+                // Normal is the default, so it is stored by NOT storing it -
+                // a torrent nobody has fiddled with costs no rows at all.
+                PRIORITY_NORMAL => conn.execute(
+                    "delete from torrent_file_priority where info_hash = ?1 and file_index = ?2",
+                    rusqlite::params![hash, file_index as i64],
+                ),
+                _ => conn.execute(
+                    "insert into torrent_file_priority (info_hash, file_index, priority) \
+                     values (?1, ?2, ?3) \
+                     on conflict(info_hash, file_index) do update set priority = ?3",
+                    rusqlite::params![hash, file_index as i64, priority],
+                ),
+            }
+        });
+        tracing::debug!(
+            "{hash} file {file_index} set to {}",
+            priority_name(priority)
+        );
+        self.apply_file_priorities(hash);
+    }
+
+    /// Push the stored priorities into the engine.
+    ///
+    /// Called after a change and again when a torrent starts, because the
+    /// ordering lives in the live state and a torrent that was paused has none.
+    pub fn apply_file_priorities(&self, hash: &str) {
+        let Some(handle) = self.find(hash) else {
+            return;
+        };
+        let Some(metadata) = handle.metadata.load_full() else {
+            // A magnet with no info dictionary yet has no files to order.
+            return;
+        };
+        let count = metadata.file_infos.len();
+        let stored = self.file_priorities(hash);
+
+        // Skipped files come out of the download entirely. Everything else
+        // stays in, whatever its level.
+        let wanted: std::collections::HashSet<usize> = (0..count)
+            .filter(|i| stored.get(i).copied().unwrap_or(PRIORITY_NORMAL) != PRIORITY_SKIP)
+            .collect();
+        if wanted.len() != count
+            && let Err(err) = self
+                .rt
+                .block_on(self.rq().update_only_files(&handle, &wanted))
+        {
+            self.push_error(format!("Failed to apply file selection: {err:#}"));
+            return;
+        }
+
+        handle.set_file_priorities(priority_order(count, &stored));
+    }
+
     fn normalize_queue_positions(&self) {
         let updates: Vec<(String, i64)> = {
             let mut meta = self.meta.lock().unwrap();
@@ -1761,6 +2282,16 @@ fn on_torrent_added(
 
     /// Assign a label, or clear it with `None`. Stored by this app; librqbit
     /// has no concept of labels.
+    /// A label's id from its name, case-insensitively. `None` when no label
+    /// by that name exists - callers decide whether that is worth saying.
+    pub fn label_id(&self, name: &str) -> Option<i32> {
+        Configuration::new(self.db.clone())
+            .get_labels()
+            .into_iter()
+            .find(|l| l.name.eq_ignore_ascii_case(name))
+            .map(|l| l.id)
+    }
+
     pub fn set_label(&self, hash: &str, label_id: Option<i32>) {
         if let Some(meta) = self.meta.lock().unwrap().get_mut(hash) {
             meta.label_id = label_id;
@@ -2037,6 +2568,134 @@ fn on_torrent_added(
     /// ponytail: polls every 30s. A filesystem watch would be prompter but is
     /// three platform implementations for a threshold nobody sits exactly on;
     /// 30s is well inside the time it takes to write a torrent's worth of data.
+    /// Keep the live rate limits in step with the alternative-limits switch
+    /// and the schedule.
+    ///
+    /// librqbit takes new limits on the running session, so this changes speed
+    /// without the rebuild that `apply_settings` does - which matters because a
+    /// schedule flips twice a day and rebuilding would drop every connection
+    /// each time.
+    ///
+    /// Settings are re-read every tick rather than captured at spawn: the
+    /// toolbar toggle writes the setting and expects the effect immediately,
+    /// and a rebuild is exactly what this exists to avoid.
+    fn spawn_speed_scheduler(&self) {
+        let inner = self.inner.clone();
+        let db = self.db.clone();
+
+        self.rt.spawn(async move {
+            let cfg = Configuration::new(db);
+            // What was last pushed into the session, so an unchanged answer
+            // costs one comparison instead of a write per second.
+            let mut applied: Option<(Option<u32>, Option<u32>)> = None;
+
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+                let wanted = crate::bittorrent::limits::current_rates(&cfg, Local::now());
+                if applied == Some(wanted) {
+                    continue;
+                }
+                applied = Some(wanted);
+
+                let (down, up) = wanted;
+                let rq = inner.read().unwrap().clone();
+                rq.ratelimits.set_download_bps(down.and_then(NonZeroU32::new));
+                rq.ratelimits.set_upload_bps(up.and_then(NonZeroU32::new));
+                tracing::info!(
+                    "rate limits now {} down / {} up",
+                    down.map_or(String::from("unlimited"), |b| format!("{} B/s", b)),
+                    up.map_or(String::from("unlimited"), |b| format!("{} B/s", b))
+                );
+            }
+        });
+    }
+
+    /// Stop seeding torrents that have met their share limit.
+    ///
+    /// Every ten seconds rather than every second: a ratio does not move fast
+    /// enough to care, and the action taken can delete files, so the cheaper
+    /// mistake is to act a moment late.
+    ///
+    /// Only torrents that have finished are considered. A torrent still
+    /// downloading can already be over its ratio - a re-added one starts with
+    /// its old upload total - and stopping it before it has the data would be
+    /// the opposite of what the setting asks for.
+    fn spawn_share_limit_guard(&self) {
+        let inner = self.inner.clone();
+        let db = self.db.clone();
+        let meta = self.meta.clone();
+        let events = self.events.clone();
+
+        self.rt.spawn(async move {
+            let cfg = Configuration::new(db.clone());
+
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+                let global = crate::bittorrent::limits::ShareLimits::global(&cfg);
+                // Nothing configured globally is the common case, and reading
+                // every torrent's overrides to discover that would be waste -
+                // but a torrent may still carry its own limit, so this only
+                // skips the work when the table is empty too.
+                let overrides = read_share_overrides(&db);
+                if global.ratio.is_none() && global.seed_minutes.is_none() && overrides.is_empty() {
+                    continue;
+                }
+
+                let rq = inner.read().unwrap().clone();
+                let now = Local::now();
+
+                // Collected before acting: removing a torrent while iterating
+                // the session's own list is asking for trouble.
+                // A cell because `with_torrents` hands out a `Fn`, so the
+                // closure cannot own a mutable borrow of the list it fills.
+                let done: std::cell::RefCell<Vec<(String, crate::bittorrent::limits::ShareAction)>> =
+                    std::cell::RefCell::new(Vec::new());
+                rq.with_torrents(|torrents| {
+                    for (_, handle) in torrents {
+                        let stats = handle.stats();
+                        if !stats.finished
+                            || matches!(stats.state, TorrentStatsState::Paused)
+                        {
+                            continue;
+                        }
+                        let hash = handle.info_hash().as_string();
+
+                        let ratio = match stats.progress_bytes {
+                            0 => 0.0,
+                            downloaded => stats.uploaded_bytes as f64 / downloaded as f64,
+                        };
+                        // Seeding time is measured from completion, which is
+                        // what the column records. A torrent that has never
+                        // completed in this profile has none, and is left alone
+                        // rather than treated as having seeded forever.
+                        let seeded = meta
+                            .lock()
+                            .unwrap()
+                            .get(&hash)
+                            .and_then(|m| m.completed_on)
+                            .map(|at| (now - at).num_minutes());
+
+                        let limits = match overrides.get(&hash) {
+                            Some((ratio_limit, time_limit)) => {
+                                global.with_overrides(*ratio_limit, *time_limit)
+                            }
+                            None => global,
+                        };
+                        if limits.reached(ratio, seeded.unwrap_or(0)) {
+                            done.borrow_mut().push((hash, limits.action));
+                        }
+                    }
+                });
+
+                for (hash, action) in done.into_inner() {
+                    apply_share_action(&rq, &db, &meta, &events, &hash, action).await;
+                }
+            }
+        });
+    }
+
     fn spawn_low_disk_guard(&self, cfg: &Configuration) {
         let enabled = cfg.get_bool("pause_on_low_disk_space");
         if !enabled {
@@ -2316,8 +2975,28 @@ fn on_torrent_added(
 
         let mut rows = Vec::new();
 
-        // Peer-discovery sources. librqbit can't attribute per-torrent peer
-        // counts to a source, so these are status-only - no seeds/leeches.
+        // Connected peers grouped by what found them (patch 0019). A paused
+        // torrent has no live state and therefore no counts, which is right:
+        // the numbers describe connections, and it has none.
+        let total_pieces = handle
+            .metadata
+            .load_full()
+            .map(|m| m.lengths().total_pieces() as u64)
+            .unwrap_or(0);
+        let by_source = match handle.live() {
+            Some(live) if total_pieces > 0 => live.peer_counts_by_source(total_pieces),
+            _ => Vec::new(),
+        };
+        // (seeds, leeches) for one source, or None when nothing is connected
+        // through it.
+        let counts = |want: librqbit::PeerSource| {
+            by_source
+                .iter()
+                .find(|(source, _, _)| *source == want)
+                .map(|(_, connected, seeds)| (*seeds, connected.saturating_sub(*seeds)))
+        };
+
+        // Peer-discovery sources.
         let dht_status = if paused {
             tr.i18n("tracker_paused")
         } else {
@@ -2329,7 +3008,7 @@ fn on_torrent_added(
                 None => tr.i18n("tracker_disabled"),
             }
         };
-        rows.push(TrackerRow::source("DHT", dht_status));
+        rows.push(TrackerRow::source("DHT", dht_status).with_counts(counts(librqbit::PeerSource::Dht)));
         let lsd_on = crate::core::configuration::Configuration::new(self.db.clone())
             .get_bool("libtorrent.enable_lsd");
         let lsd_status = if paused {
@@ -2339,7 +3018,7 @@ fn on_torrent_added(
         } else {
             tr.i18n("tracker_disabled")
         };
-        rows.push(TrackerRow::source("LSD", lsd_status));
+        rows.push(TrackerRow::source("LSD", lsd_status).with_counts(counts(librqbit::PeerSource::Lsd)));
         let pex_on = crate::core::configuration::Configuration::new(self.db.clone())
             .get_bool("libtorrent.enable_pex");
         let pex_status = if paused {
@@ -2349,7 +3028,7 @@ fn on_torrent_added(
         } else {
             tr.i18n("tracker_disabled")
         };
-        rows.push(TrackerRow::source("PeX", pex_status));
+        rows.push(TrackerRow::source("PeX", pex_status).with_counts(counts(librqbit::PeerSource::Pex)));
 
         let stats: std::collections::HashMap<String, librqbit::TrackerStat> =
             rq.tracker_stats_snapshot(info_hash).into_iter().collect();
@@ -2377,7 +3056,7 @@ fn on_torrent_added(
                 let row = if paused {
                     TrackerRow {
                         kind: TrackerRowKind::Tracker,
-                        label: format!("    {url}"),
+                        label: url.to_string(),
                         status: tr.i18n("tracker_paused"),
                         seeders: None,
                         leechers: None,
@@ -2387,7 +3066,7 @@ fn on_torrent_added(
                 } else {
                     TrackerRow {
                         kind: TrackerRowKind::Tracker,
-                        label: format!("    {url}"),
+                        label: url.to_string(),
                         // Engine emits the literal "Working" (translate it);
                         // error strings pass through as-is.
                         status: s
@@ -2415,7 +3094,10 @@ fn on_torrent_added(
 
     /// Magnet URI for a torrent (used by the copy-magnet context menu item).
     pub fn magnet_uri(&self, hash: &str, name: &str) -> String {
-        format!("magnet:?xt=urn:btih:{hash}&dn={}", urlencode(name))
+        format!(
+            "magnet:?xt=urn:btih:{hash}&dn={}",
+            crate::core::utils::percent_encode(name.as_bytes(), b"")
+        )
     }
 
     /// Shut the session down, flushing fast-resume state first.
@@ -2484,26 +3166,89 @@ pub enum AddTorrentSource {
     MagnetUri(String),
 }
 
-/// Percent-encode one query-string value (RFC 3986 unreserved set kept).
-///
-/// Hand-rolled rather than pulled in: this escapes tracker parameters and
-/// magnet fields, which is a handful of call sites and no edge cases beyond
-/// "escape everything that is not unreserved".
-fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
+
+    use super::{QueueMove, queue_target};
+
+    use super::{PRIORITY_HIGH, PRIORITY_MAX, PRIORITY_NORMAL, PRIORITY_SKIP, priority_order};
+    use std::collections::HashMap;
+
+    /// Nothing prioritised must come out exactly as it went in.
+    ///
+    /// Upstream sorts by filename here. Once this function is supplying the
+    /// order, a torrent nobody has touched has to keep its own file order
+    /// rather than being quietly resorted.
+    #[test]
+    fn an_untouched_torrent_keeps_its_file_order() {
+        assert_eq!(priority_order(4, &HashMap::new()), vec![0, 1, 2, 3]);
+    }
+
+    /// Higher levels first; equal levels keep their original order.
+    #[test]
+    fn higher_priority_files_come_first() {
+        let mut stored = HashMap::new();
+        stored.insert(3, PRIORITY_MAX);
+        stored.insert(1, PRIORITY_HIGH);
+        assert_eq!(priority_order(5, &stored), vec![3, 1, 0, 2, 4]);
+    }
+
+    /// A skipped file stays on the list. It has been taken out of `only_files`
+    /// already, and leaving it off here would just make the engine invent a
+    /// place for it.
+    #[test]
+    fn skipped_files_are_still_ordered_last() {
+        let mut stored = HashMap::new();
+        stored.insert(0, PRIORITY_SKIP);
+        stored.insert(2, PRIORITY_MAX);
+
+        let order = priority_order(3, &stored);
+        assert_eq!(order, vec![2, 1, 0]);
+        assert_eq!(order.len(), 3, "a file went missing from the ordering");
+    }
+
+    /// Every file appears exactly once, whatever the levels - the picker walks
+    /// this list assuming it is a complete permutation.
+    #[test]
+    fn the_ordering_is_always_a_permutation() {
+        let mut stored = HashMap::new();
+        stored.insert(0, PRIORITY_MAX);
+        stored.insert(1, PRIORITY_SKIP);
+        stored.insert(2, PRIORITY_NORMAL);
+        // An index past the end of the torrent, which a stale row could be.
+        stored.insert(99, PRIORITY_MAX);
+
+        let mut order = priority_order(4, &stored);
+        order.sort_unstable();
+        assert_eq!(order, vec![0, 1, 2, 3]);
+    }
+
+    /// Reordering saturates at both ends and never wraps.
+    #[test]
+    fn moving_within_the_queue_stops_at_the_ends() {
+        // A five-row queue, moving the middle row.
+        assert_eq!(queue_target(2, 5, QueueMove::Top), 0);
+        assert_eq!(queue_target(2, 5, QueueMove::Up), 1);
+        assert_eq!(queue_target(2, 5, QueueMove::Down), 3);
+        assert_eq!(queue_target(2, 5, QueueMove::Bottom), 4);
+
+        // At the top, up is a no-op rather than an underflow.
+        assert_eq!(queue_target(0, 5, QueueMove::Up), 0);
+        assert_eq!(queue_target(0, 5, QueueMove::Top), 0);
+
+        // At the bottom, down stays put rather than wrapping to the top.
+        assert_eq!(queue_target(4, 5, QueueMove::Down), 4);
+        assert_eq!(queue_target(4, 5, QueueMove::Bottom), 4);
+    }
+
+    /// One row, and none at all: neither may panic on the subtraction.
+    #[test]
+    fn a_short_queue_has_nowhere_to_move() {
+        for to in [QueueMove::Top, QueueMove::Up, QueueMove::Down, QueueMove::Bottom] {
+            assert_eq!(queue_target(0, 1, to), 0, "{to:?} in a one-row queue");
+            assert_eq!(queue_target(0, 0, to), 0, "{to:?} in an empty queue");
+        }
+    }
 
     /// Adding several torrents at once must add all of them.
     ///
@@ -2964,7 +3709,7 @@ mod tests {
         // A hybrid keeps its v1 half - but must also carry the second hash, or
         // it only ever joins half of its swarm.
         match crate::bittorrent::v2::prepare(&build(V::Hybrid)).unwrap() {
-            V2Prep::Hybrid { secondary } => {
+            V2Prep::Hybrid { secondary, .. } => {
                 let meta = crate::bittorrent::v2::parse(&build(V::Hybrid))
                     .unwrap()
                     .unwrap();
@@ -3104,5 +3849,136 @@ mod tests {
             1,
             "the dropped subscriber should have been pruned on emit"
         );
+    }
+}
+
+#[cfg(test)]
+mod rarest_first_tests {
+    use librqbit::pick_rarest;
+
+    /// The queue as the engine yields it: (file rank, piece), rank ascending.
+    fn queue(pieces: &[(usize, u32)]) -> impl Iterator<Item = (usize, u32)> + '_ {
+        pieces.iter().copied()
+    }
+
+    /// The whole point. Everything else here guards a way of getting it wrong.
+    #[test]
+    fn the_rarest_piece_the_peer_can_serve_is_chosen() {
+        let q = [(0, 0u32), (0, 1), (0, 2), (0, 3)];
+        // Piece 2 is held by one peer, the rest by many.
+        let avail = |p: u32| match p {
+            2 => 1,
+            _ => 9,
+        };
+        assert_eq!(pick_rarest(queue(&q), |_| true, avail), Some(2));
+    }
+
+    /// A rare piece the peer does not have is not a candidate.
+    #[test]
+    fn rarity_never_overrides_what_the_peer_actually_has() {
+        let q = [(0, 0u32), (0, 1), (0, 2)];
+        let avail = |p: u32| match p {
+            2 => 1,
+            1 => 4,
+            _ => 9,
+        };
+        // The peer has everything except the rarest.
+        assert_eq!(pick_rarest(queue(&q), |p| p != 2, avail), Some(1));
+        // And when it has nothing, there is no candidate at all.
+        assert_eq!(pick_rarest(queue(&q), |_| false, avail), None);
+    }
+
+    /// File priority outranks rarity: a rare piece in a less wanted file must
+    /// not jump ahead of a common one in a more wanted file. This is the
+    /// property that makes "download this file first" mean anything.
+    #[test]
+    fn file_priority_beats_rarity() {
+        let q = [(0, 0u32), (0, 1), (1, 2), (1, 3)];
+        let avail = |p: u32| match p {
+            3 => 1, // rarest in the whole torrent, but rank 1
+            0 => 8,
+            1 => 5,
+            _ => 7,
+        };
+        // Rank 0 wins outright; within it, the rarer of the two.
+        assert_eq!(pick_rarest(queue(&q), |_| true, avail), Some(1));
+    }
+
+    /// ...but rarity still decides inside the lower rank once the higher one
+    /// has nothing to give.
+    #[test]
+    fn rarity_decides_within_the_first_rank_that_has_a_candidate() {
+        let q = [(0, 0u32), (0, 1), (1, 2), (1, 3)];
+        let avail = |p: u32| match p {
+            3 => 2,
+            2 => 6,
+            _ => 1,
+        };
+        // The peer has nothing from rank 0.
+        assert_eq!(pick_rarest(queue(&q), |p| p >= 2, avail), Some(3));
+    }
+
+    /// Equal rarity keeps the order the engine produced - which is first
+    /// piece, last piece, then the middle. Streaming depends on it, and it is
+    /// the common case: in a healthy swarm every piece is equally available.
+    #[test]
+    fn ties_keep_the_engines_own_order() {
+        // 0..5 comes out of the engine as 0, 4, 1, 2, 3.
+        let q = [(0, 0u32), (0, 4), (0, 1), (0, 2), (0, 3)];
+        assert_eq!(pick_rarest(queue(&q), |_| true, |_| 5), Some(0));
+        // With the first piece unavailable, the last is next - not piece 1.
+        assert_eq!(pick_rarest(queue(&q), |p| p != 0, |_| 5), Some(4));
+    }
+
+    /// No availability data yet - a torrent that has just started, before the
+    /// first refresh - must behave exactly as the engine did before this
+    /// existed: the first candidate in queue order.
+    #[test]
+    fn no_availability_data_reproduces_the_old_order() {
+        let q = [(0, 0u32), (0, 4), (0, 1), (0, 2), (0, 3)];
+        assert_eq!(pick_rarest(queue(&q), |_| true, |_| 0), Some(0));
+        assert_eq!(pick_rarest(queue(&q), |p| p >= 2, |_| 0), Some(4));
+    }
+
+    /// An empty queue is not a panic.
+    #[test]
+    fn an_empty_queue_yields_nothing() {
+        let q: [(usize, u32); 0] = [];
+        assert_eq!(pick_rarest(queue(&q), |_| true, |_| 1), None);
+    }
+
+    /// The early exit must not change the answer.
+    ///
+    /// Scanning stops at the first piece only one peer holds, and stops
+    /// looking at later ranks once any candidate is found. Both are
+    /// optimisations, so both have to agree with an exhaustive search.
+    #[test]
+    fn the_early_exits_agree_with_an_exhaustive_search() {
+        // A deterministic pseudo-random spread, so this covers a lot of shapes
+        // without a dependency on a random generator.
+        for seed in 0..200u32 {
+            let mut q: Vec<(usize, u32)> = Vec::new();
+            for i in 0..12u32 {
+                let rank = ((seed / (i + 1)) % 3) as usize;
+                q.push((rank, i));
+            }
+            // Ranks must ascend, which is what the engine guarantees.
+            q.sort_by_key(|(rank, _)| *rank);
+
+            let avail = |p: u32| ((seed.wrapping_mul(7) + p * 13) % 5) + 1;
+            let has = |p: u32| (seed.wrapping_add(p)) % 4 != 0;
+
+            let got = pick_rarest(q.iter().copied(), has, avail);
+
+            // The exhaustive answer: lowest rank with a candidate, then lowest
+            // availability, then earliest in the queue.
+            let want = q
+                .iter()
+                .copied()
+                .filter(|(_, p)| has(*p))
+                .min_by_key(|(rank, p)| (*rank, avail(*p)))
+                .map(|(_, p)| p);
+            assert_eq!(got, want, "seed {seed} disagreed");
+        }
     }
 }

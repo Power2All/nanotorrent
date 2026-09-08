@@ -11,10 +11,11 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
-use super::{MainWindow, PluginButton, PluginRowItem, PluginWindow};
+use super::{L, MainWindow, PluginButton, PluginField, PluginRowItem, PluginWindow};
 use crate::plugins::ui;
 
 /// `open-menu` in app.slint: 0 none, 1 File, 2 View, 3 Help, 4 a plugin's own.
@@ -29,6 +30,31 @@ thread_local! {
     /// through every caller: Preferences reaches plugins too, and it has no
     /// reason to know about MainWindow in order to do that.
     static MAIN: RefCell<Option<slint::Weak<MainWindow>>> = const { RefCell::new(None) };
+
+    /// How to translate a key for the windows this module creates.
+    ///
+    /// Slint globals are per top-level component, so a plugin window gets its
+    /// own `L` and it starts unwired - every `L.s(...)` in it then returns the
+    /// empty string. `wire_translations` in mod.rs is the fix everywhere else;
+    /// it needs the `Ui`, which does not exist yet when `install` runs, so the
+    /// lookup arrives separately through `set_translator`.
+    static TRANSLATE: RefCell<Option<Lookup>> = const { RefCell::new(None) };
+}
+
+/// A key to its translation, for the windows this module creates.
+pub type Lookup = Rc<dyn Fn(&str) -> SharedString>;
+
+/// Teach this module how to translate. Called once the `Ui` exists.
+pub fn set_translator(lookup: Lookup) {
+    TRANSLATE.with(|slot| *slot.borrow_mut() = Some(lookup));
+    // Any window already open re-reads its captions. There are none at
+    // startup, but changing language calls this again.
+    OPEN.with(|open| {
+        for window in open.borrow().values() {
+            let l = window.global::<L>();
+            l.set_revision(l.get_revision().wrapping_add(1));
+        }
+    });
 }
 
 /// Teach the plugin host how to reach the UI. Called once, after the main
@@ -218,6 +244,17 @@ fn make(name: &str) -> Option<PluginWindow> {
     };
 
     {
+        // The window's own `L`. Without this every caption drawn by the markup
+        // - the empty-list message, and the form's Save and Cancel - comes out
+        // blank, which reads as a theming fault rather than a missing string.
+        let lookup = TRANSLATE.with(|slot| slot.borrow().clone());
+        window.global::<L>().on_s(move |_revision, key| match &lookup {
+            Some(lookup) => lookup(key.as_str()),
+            None => SharedString::new(),
+        });
+    }
+
+    {
         let plugin = name.to_owned();
         window.on_row_activated(move |id| {
             ui::post(ui::UiEvent::Row {
@@ -244,6 +281,44 @@ fn make(name: &str) -> Option<PluginWindow> {
                 plugin: plugin.clone(),
                 id: id.to_string(),
                 input: input.to_string(),
+            });
+        });
+    }
+
+    {
+        // Save reads the model back rather than tracking every keystroke: the
+        // controls write into `fields` as they are edited, so the model IS the
+        // filled-in form by the time this runs.
+        let plugin = name.to_owned();
+        let weak = window.as_weak();
+        window.on_form_saved(move || {
+            let Some(window) = weak.upgrade() else { return };
+            let fields = window.get_fields();
+            let values: Vec<(String, String)> = (0..fields.row_count())
+                .filter_map(|i| fields.row_data(i))
+                .map(|f| (f.id.to_string(), f.value.to_string()))
+                .collect();
+            let id = window.get_form_id().to_string();
+            ui::post(ui::UiEvent::Form {
+                plugin: plugin.clone(),
+                id,
+                values,
+            });
+        });
+    }
+
+    {
+        // Cancel is the plugin's business, not the window's: it is the plugin
+        // that knows what to put back on screen. Its own event rather than a
+        // save with no values, which would be indistinguishable from a form
+        // somebody emptied on purpose.
+        let plugin = name.to_owned();
+        let weak = window.as_weak();
+        window.on_form_cancelled(move || {
+            let Some(window) = weak.upgrade() else { return };
+            ui::post(ui::UiEvent::FormCancelled {
+                plugin: plugin.clone(),
+                id: window.get_form_id().to_string(),
             });
         });
     }
@@ -279,6 +354,49 @@ fn apply(window: &PluginWindow, state: &ui::PluginUi) {
 
     window.set_rows(rows_of(&state.rows));
     window.set_groups(rows_of(&state.groups));
+
+    // Only when the form actually changed. Re-pushing the model on every
+    // refresh would throw away whatever had been typed into it - the plugin
+    // redraws its lists on a timer, and the form is edited in place.
+    let want: Vec<(String, String)> = state
+        .fields
+        .iter()
+        .map(|f| (f.id.clone(), f.value.clone()))
+        .collect();
+    let showing: Vec<(String, String)> = {
+        let fields = window.get_fields();
+        (0..fields.row_count())
+            .filter_map(|i| fields.row_data(i))
+            .map(|f| (f.id.to_string(), f.value.to_string()))
+            .collect()
+    };
+    let same_form = window.get_form_id() == state.form_id.as_str();
+    let same_fields = showing.iter().map(|(id, _)| id).eq(want.iter().map(|(id, _)| id));
+    if !same_form || !same_fields {
+        window.set_form_id(SharedString::from(&state.form_id));
+        window.set_form_title(SharedString::from(&state.form_title));
+        window.set_fields(fields_of(&state.fields));
+    }
+}
+
+fn fields_of(fields: &[ui::Field]) -> ModelRc<PluginField> {
+    let fields: Vec<PluginField> = fields
+        .iter()
+        .map(|f| PluginField {
+            id: SharedString::from(&f.id),
+            label: SharedString::from(&f.label),
+            kind: SharedString::from(&f.kind),
+            value: SharedString::from(&f.value),
+            options: ModelRc::new(VecModel::from(
+                f.options
+                    .iter()
+                    .map(SharedString::from)
+                    .collect::<Vec<_>>(),
+            )),
+            hint: SharedString::from(&f.hint),
+        })
+        .collect();
+    ModelRc::new(VecModel::from(fields))
 }
 
 fn rows_of(rows: &[ui::Row]) -> ModelRc<PluginRowItem> {

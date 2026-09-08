@@ -169,6 +169,21 @@ fn verify_librqbit_patches() {
             "patches/0001-engine-visibility.patch (chunk tracker)",
         ),
         (
+            "vendor/librqbit/src/torrent_state/mod.rs",
+            "pub fn set_file_priorities",
+            "patches/0017-file-priorities.patch",
+        ),
+        (
+            "vendor/librqbit/src/session.rs",
+            "pub replace_trackers: bool",
+            "patches/0018-custom-tracker-tier.patch",
+        ),
+        (
+            "vendor/librqbit/src/session_persistence/mod.rs",
+            "trackers: Some(restored)",
+            "patches/0018-custom-tracker-tier.patch (restore)",
+        ),
+        (
             "vendor/librqbit/src/torrent_state/live/mod.rs",
             "pub fn per_peer_have_pieces",
             "patches/0001-engine-visibility.patch (per-peer have-pieces)",
@@ -301,6 +316,27 @@ fn verify_librqbit_patches() {
             "vendor/librqbit/src/session.rs",
             "pub async fn add_synthetic_peer",
             "patches/0011-synthetic-peer.patch (WebSeed hangs off this)",
+        ),
+        (
+            "vendor/librqbit/src/torrent_state/live/mod.rs",
+            "pub fn peer_counts_by_source",
+            "patches/0019-swarm-and-seeding.patch (peer source attribution - 
+             without it the Trackers tab cannot say which source found 
+             which peers)",
+        ),
+        (
+            "vendor/librqbit/src/piece_verify.rs",
+            "pub trait HashProvider",
+            "patches/0019-swarm-and-seeding.patch (BEP 52 seeding - without it 
+             an incoming `hash request` is ignored rather than answered, 
+             and nobody can bootstrap a v2 magnet from us)",
+        ),
+        (
+            "vendor/librqbit/src/piece_tracker.rs",
+            "pub fn pick_rarest",
+            "patches/0019-swarm-and-seeding.patch (rarest-first - without it 
+             piece selection silently reverts to first-come order, which 
+             no test would catch because downloads still work)",
         ),
         (
             "vendor/librqbit/src/session.rs",

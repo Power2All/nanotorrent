@@ -19,13 +19,17 @@ parity; it is in the history if you need it.
 ## Prerequisites
 
 Both platforms need a Rust toolchain (1.85 or newer - the crate is edition
-2024) and, because `aws-lc-sys` compiles native code for TLS and SHA-1:
+2024) and, because `aws-lc-sys` compiles native code for SHA-1:
 
 - **cmake**
 - a C compiler
 
-No OpenSSL. The librqbit `rust-tls` feature keeps libssl out of the tree
-entirely, so there is no `libssl-dev` to hunt for.
+That is the whole list. There is no OpenSSL and no `libssl-dev` to hunt for:
+TLS is rustls throughout, and the settings database is encrypted in pure Rust
+with XChaCha20-Poly1305 over the whole file rather than with SQLCipher, which
+would have meant linking OpenSSL and building it with Perl for that one
+feature. See `src/core/dbkey.rs` for why sealing the whole file is the right
+shape for a database this size, and what it would take to revisit that.
 
 ### Linux
 

@@ -1,8 +1,6 @@
 /target/
 .idea
 
-# Spike crates build independently of the main workspace.
-/spike/*/target/
 __pycache__/
 
 # Vendored crates are sources and ARE committed - the [patch.crates-io] paths
@@ -18,3 +16,8 @@ __pycache__/
 # Built packages - the installer .exe is ignored by installer/.gitignore; the MSIX is
 # a build output too and is attached to a release rather than committed.
 installer/*.msix
+
+# The Store identity for a local submission. Not credentials - all three values
+# are in the manifest of the package the Store ships - but this repository is
+# public and the workflow keeps them as GitHub secrets, so they stay out of it.
+installer/store-settings.local.txt

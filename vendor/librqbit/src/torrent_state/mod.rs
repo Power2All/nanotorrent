@@ -123,6 +123,8 @@ pub(crate) struct ManagedTorrentOptions {
     pub anonymize: bool,
     // NanoTorrent: per-torrent piece verification override (BEP 52).
     pub piece_verifier: Option<Arc<dyn crate::piece_verify::PieceVerifier>>,
+    /// NanoTorrent: see [`crate::piece_verify::HashProvider`].
+    pub hash_provider: Option<Arc<dyn crate::piece_verify::HashProvider>>,
     #[cfg(feature = "disable-upload")]
     pub _disable_upload: bool,
 }
@@ -651,6 +653,18 @@ impl ManagedTorrent {
         .boxed()
     }
 
+    // NanoTorrent patch 0017: hand a file priority ordering to a live torrent.
+    //
+    // Live only, and deliberately silent otherwise. A paused torrent is asking
+    // for nothing, so it has no queue to reorder; it picks the ordering up when
+    // it goes live, from whatever the caller sets then.
+    pub fn set_file_priorities(&self, order: Vec<usize>) {
+        let g = self.locked.read();
+        if let ManagedTorrentState::Live(l) = &g.state {
+            l.set_file_priorities(order);
+        }
+    }
+
     // Returns true if needed to unpause torrent.
     // This is just implementation detail - it's easier to pause/unpause than to tinker with internals.
     pub(crate) fn update_only_files(&self, only_files: &HashSet<usize>) -> anyhow::Result<()> {
@@ -734,13 +748,13 @@ fn spawn_peer_adder(live: &Arc<TorrentStateLive>, mut peer_rx: PeerStream) {
 
                 loop {
                     match timeout(Duration::from_secs(5), peer_rx.next()).await {
-                        Ok(Some(peer)) => {
-                            trace!(?peer, "received peer");
+                        Ok(Some((peer, source))) => {
+                            trace!(?peer, ?source, "received peer");
                             let live = match live.upgrade() {
                                 Some(live) => live,
                                 None => return Ok(()),
                             };
-                            live.add_peer_if_not_seen(peer)?;
+                            live.add_peer_if_not_seen(peer, source)?;
                         }
                         Ok(None) => {
                             debug!("peer_rx closed, closing peer adder");

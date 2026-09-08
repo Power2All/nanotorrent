@@ -1,5 +1,8 @@
 pub mod configuration;
 pub mod database;
+pub mod dbcli;
+pub mod dbexport;
+pub mod dbkey;
 pub mod environment;
 pub mod file_assoc;
 pub mod geoip;

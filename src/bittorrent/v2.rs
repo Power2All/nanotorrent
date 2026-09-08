@@ -270,6 +270,152 @@ pub fn verify_hashes(
     node == *pieces_root
 }
 
+/// Answering `hash request` - the mirror of [`verify_hashes`].
+///
+/// # What can and cannot be answered
+///
+/// A `.torrent` carries `piece layers`: one hash per piece, per file. That is
+/// the layer a peer resolving a v2 **magnet** asks for, and it is the request
+/// this answers. Requests below it - the 16 KiB leaf layer - are rejected:
+/// those hashes are not in the file at all and could only be produced by
+/// reading and hashing the data itself, which is a different (and much more
+/// expensive) job than serving what we were handed.
+///
+/// Requests ABOVE the piece layer are answered by collapsing the piece layer
+/// upwards, which costs nothing and is exactly what the hashes mean.
+///
+/// Rejecting is a legitimate answer under the BEP, and the caller turns
+/// `None` into a `hash reject` rather than silence.
+#[derive(Debug)]
+pub struct V2Hashes {
+    /// Per file, keyed by its `pieces root` - which is what the request names.
+    files: std::collections::HashMap<[u8; 32], FileLayer>,
+}
+
+/// One file's piece layer, padded out to the shape the merkle tree has.
+#[derive(Debug, Clone)]
+struct FileLayer {
+    /// Piece-layer hashes, padded to a power of two with the padding hash for
+    /// a subtree that deep. The padding is what makes the arithmetic below
+    /// index-safe and is the same padding the root was computed over.
+    padded: Vec<[u8; 32]>,
+    /// Which layer `padded` sits at: `log2(piece_length / 16 KiB)`.
+    piece_layer: u32,
+}
+
+impl V2Hashes {
+    /// Build from a parsed torrent. Files with no `pieces root` (empty ones)
+    /// and files that fit in a single piece are skipped: the latter have no
+    /// piece layer, because their `pieces root` IS their only piece hash and a
+    /// peer needs no request to learn it.
+    pub fn new(meta: &V2Meta) -> Self {
+        let blocks_per_piece = meta.piece_length as usize / BLOCK;
+        let mut files = std::collections::HashMap::new();
+        for (index, file) in meta.files.iter().enumerate() {
+            let Some(root) = file.pieces_root else { continue };
+            let num_blocks = (file.length as usize).div_ceil(BLOCK);
+            if num_blocks <= blocks_per_piece {
+                continue;
+            }
+            let hashes: Vec<[u8; 32]> = meta
+                .layout
+                .pieces
+                .iter()
+                .filter(|p| p.file_index == index)
+                .map(|p| p.hash)
+                .collect();
+            let nodes = next_pow2(num_blocks) / blocks_per_piece;
+            let mut padded = hashes;
+            padded.resize(nodes, zero_hash(log2_exact(blocks_per_piece)));
+            files.insert(
+                root,
+                FileLayer {
+                    padded,
+                    piece_layer: log2_exact(blocks_per_piece),
+                },
+            );
+        }
+        V2Hashes { files }
+    }
+
+    /// True when there is nothing to serve, so nothing should be advertised.
+    pub fn is_empty(&self) -> bool {
+        self.files.is_empty()
+    }
+}
+
+/// The hashes for one request against one file's layer.
+///
+/// Split out from the trait so it can be tested directly against
+/// [`verify_hashes`], which is the only check that matters: whatever this
+/// produces has to walk back up to `pieces_root`.
+fn answer_hash_request(
+    layer: &FileLayer,
+    base_layer: u32,
+    index: u32,
+    length: u32,
+    proof_layers: u32,
+) -> Option<Vec<[u8; 32]>> {
+    // Below the piece layer we hold nothing.
+    if base_layer < layer.piece_layer {
+        return None;
+    }
+    let length = length as usize;
+    let index = index as usize;
+    if length < 2 || !length.is_power_of_two() || !index.is_multiple_of(length) {
+        return None;
+    }
+
+    // Collapse the piece layer up to the requested one. `1 << 0` is the
+    // no-op case where the request is for the piece layer itself.
+    let per_node = 1usize.checked_shl(base_layer - layer.piece_layer)?;
+    if per_node > layer.padded.len() {
+        return None;
+    }
+    let level: Vec<[u8; 32]> = layer
+        .padded
+        .chunks(per_node)
+        .map(merkle_root)
+        .collect();
+
+    let base = level.get(index..index.checked_add(length)?)?;
+    let mut out = base.to_vec();
+
+    // The proof: at each step up, the sibling of the node we are standing on.
+    let mut above: Vec<[u8; 32]> = level.chunks(length).map(merkle_root).collect();
+    let mut pos = index / length;
+    for _ in 0..proof_layers {
+        if above.len() < 2 {
+            // Asked for more ancestors than this tree has. Rejecting beats
+            // padding the answer out with hashes that mean nothing.
+            return None;
+        }
+        out.push(above[pos ^ 1]);
+        above = above
+            .chunks(2)
+            .map(|pair| hash_pair(&pair[0], &pair[1]))
+            .collect();
+        pos /= 2;
+    }
+    Some(out)
+}
+
+impl librqbit::HashProvider for V2Hashes {
+    fn hashes_for(
+        &self,
+        request: &librqbit_peer_protocol::HashRequest,
+    ) -> Option<Vec<[u8; 32]>> {
+        let layer = self.files.get(&request.pieces_root)?;
+        answer_hash_request(
+            layer,
+            request.base_layer,
+            request.index,
+            request.length,
+            request.proof_layers,
+        )
+    }
+}
+
 // --------------------------------------------------------------- bencode ---
 
 /// A borrowed bencode value. Only what BEP 52 needs to be read.
@@ -983,6 +1129,9 @@ pub struct PreparedV2 {
     /// The real info dict, for BEP 9 metadata exchange.
     pub info_bytes: Vec<u8>,
     pub verifier: std::sync::Arc<dyn librqbit::PieceVerifier>,
+    /// Answers `hash request` from peers. `None` when there is nothing to
+    /// serve - every file fits in one piece, so no file has a piece layer.
+    pub hashes: Option<std::sync::Arc<dyn librqbit::HashProvider>>,
     pub files: usize,
     pub pieces: usize,
 }
@@ -995,7 +1144,14 @@ pub enum V2Prep {
     /// interoperable one - but it also has a v2 identity, and BEP 52 expects a
     /// hybrid client to be present in BOTH swarms. Carries the truncated v2
     /// hash to announce alongside the v1 one.
-    Hybrid { secondary: librqbit::Id20 },
+    Hybrid {
+        secondary: librqbit::Id20,
+        /// A hybrid carries `piece layers` too, and is the shape most v2
+        /// torrents in the wild actually have - so this is where serving
+        /// hashes matters most, even though the torrent itself is driven
+        /// through its v1 half.
+        hashes: Option<std::sync::Arc<dyn librqbit::HashProvider>>,
+    },
     /// A v2-only torrent, which needs the whole synthetic model.
     V2Only(Box<PreparedV2>),
 }
@@ -1006,9 +1162,17 @@ pub fn prepare(torrent_bytes: &[u8]) -> Result<V2Prep, String> {
         return Ok(V2Prep::V1Only);
     };
     let truncated = librqbit::Id20::new(meta.truncated_info_hash());
+    let hashes = {
+        let h = V2Hashes::new(&meta);
+        match h.is_empty() {
+            true => None,
+            false => Some(std::sync::Arc::new(h) as std::sync::Arc<dyn librqbit::HashProvider>),
+        }
+    };
     if meta.has_v1 {
         return Ok(V2Prep::Hybrid {
             secondary: truncated,
+            hashes,
         });
     }
     let synthetic = synthetic_v1(&meta);
@@ -1017,6 +1181,7 @@ pub fn prepare(torrent_bytes: &[u8]) -> Result<V2Prep, String> {
         wire_hash: truncated,
         info_bytes: meta.info_bytes.clone(),
         verifier: std::sync::Arc::new(V2Verifier::new(&meta.layout)),
+        hashes,
         files: meta.files.len(),
         pieces: meta.layout.pieces.len(),
     })))
@@ -1586,6 +1751,173 @@ mod tests {
             pos /= 2;
         }
         (base, proof)
+    }
+
+    /// What a real v2 peer would do, both halves, with no network in it.
+    ///
+    /// The requests are the ones `plan_piece_layer_requests` produces - i.e.
+    /// what NanoTorrent itself asks when resolving a v2 magnet - and the
+    /// answers come from the SERVING path a peer asking us would reach. Each
+    /// answer then has to fold back to the `pieces root` inside the info dict,
+    /// which is the same check any correct client applies before trusting a
+    /// hash. Passing means a libtorrent peer would accept it: the wire layout
+    /// is already pinned by the message tests in the peer protocol crate, and
+    /// the semantics are exactly this fold.
+    #[test]
+    fn we_answer_hash_requests_the_way_a_peer_can_verify() {
+        use librqbit::HashProvider;
+
+        let pl = 4 * BLOCK as u32;
+        // 33 blocks: a padded tree and a short last piece, the two cases that
+        // break naive folding.
+        let payload: Vec<u8> = (0..(33 * BLOCK)).map(|i| (i * 19) as u8).collect();
+        let meta = round_trip("serve", &payload, pl, TorrentVersion::V2);
+        let root = meta.files[0].pieces_root.unwrap();
+        let tree = full_tree(&payload);
+
+        let provider = V2Hashes::new(&meta);
+        assert!(!provider.is_empty(), "a 33-block file has a piece layer");
+
+        for plan in plan_piece_layer_requests(payload.len() as u64, pl) {
+            let request = librqbit_peer_protocol::HashRequest {
+                pieces_root: root,
+                base_layer: plan.base_layer,
+                index: plan.index,
+                length: plan.length,
+                proof_layers: plan.proof_layers,
+            };
+            let hashes = provider
+                .hashes_for(&request)
+                .expect("a planned request must be answerable");
+
+            let (base, proof) = hashes.split_at(plan.length as usize);
+            assert_eq!(
+                proof.len(),
+                plan.proof_layers as usize,
+                "wrong number of proof hashes"
+            );
+            assert!(
+                verify_hashes(base, proof, plan.index, &root),
+                "our own answer did not fold back to the pieces root"
+            );
+
+            // ...and byte-for-byte what a full tree gives. That is the
+            // independent check: the serving path builds from the stored piece
+            // layer, the oracle from the file itself.
+            let (want_base, want_proof) = answer(&tree, &plan);
+            assert_eq!(base, &want_base[..], "base run disagrees with the tree");
+            assert_eq!(proof, &want_proof[..], "proof disagrees with the tree");
+        }
+    }
+
+    /// The same for a file needing several requests, so the proof layers are
+    /// non-empty and a wrong sibling would show up.
+    #[test]
+    fn a_multi_request_file_is_served_with_correct_proofs() {
+        use librqbit::HashProvider;
+
+        let pl = BLOCK as u32; // one block per piece: many piece-layer nodes
+        let payload: Vec<u8> = (0..(600 * BLOCK)).map(|i| (i * 7) as u8).collect();
+        let meta = round_trip("serve-multi", &payload, pl, TorrentVersion::V2);
+        let root = meta.files[0].pieces_root.unwrap();
+        let provider = V2Hashes::new(&meta);
+
+        let plans = plan_piece_layer_requests(payload.len() as u64, pl);
+        assert!(plans.len() > 1, "600 blocks should need several requests");
+        assert!(plans.iter().all(|p| p.proof_layers > 0));
+
+        let mut recovered = Vec::new();
+        for plan in &plans {
+            let request = librqbit_peer_protocol::HashRequest {
+                pieces_root: root,
+                base_layer: plan.base_layer,
+                index: plan.index,
+                length: plan.length,
+                proof_layers: plan.proof_layers,
+            };
+            let hashes = provider.hashes_for(&request).expect("answerable");
+            let (base, proof) = hashes.split_at(plan.length as usize);
+            assert!(
+                verify_hashes(base, proof, plan.index, &root),
+                "run at index {} did not verify",
+                plan.index
+            );
+            recovered.extend_from_slice(base);
+        }
+        for (i, piece) in meta.layout.pieces.iter().enumerate() {
+            assert_eq!(recovered[i], piece.hash, "piece {i} disagrees");
+        }
+    }
+
+    /// Everything we must refuse. A `hash reject` is a legal answer; a wrong
+    /// hash is not, and these are the ways one could be produced.
+    #[test]
+    fn unanswerable_hash_requests_are_rejected_not_guessed() {
+        use librqbit::HashProvider;
+
+        let pl = 4 * BLOCK as u32;
+        let payload: Vec<u8> = (0..(33 * BLOCK)).map(|i| (i * 19) as u8).collect();
+        let meta = round_trip("reject", &payload, pl, TorrentVersion::V2);
+        let root = meta.files[0].pieces_root.unwrap();
+        let provider = V2Hashes::new(&meta);
+
+        let good = librqbit_peer_protocol::HashRequest {
+            pieces_root: root,
+            base_layer: 2,
+            index: 0,
+            length: 16,
+            proof_layers: 0,
+        };
+        assert!(provider.hashes_for(&good).is_some(), "the control failed");
+
+        // A file we do not have.
+        let mut other = good;
+        other.pieces_root = [0xAB; 32];
+        assert!(provider.hashes_for(&other).is_none(), "unknown pieces root");
+
+        // The leaf layer: those hashes are not in the .torrent at all, and
+        // inventing them is exactly what must not happen.
+        let leaves = librqbit_peer_protocol::HashRequest { base_layer: 0, ..good };
+        assert!(provider.hashes_for(&leaves).is_none(), "leaf layer");
+        let below = librqbit_peer_protocol::HashRequest { base_layer: 1, ..good };
+        assert!(provider.hashes_for(&below).is_none(), "below the piece layer");
+
+        // Lengths the BEP rules out.
+        for length in [0u32, 1, 3, 6] {
+            let bad = librqbit_peer_protocol::HashRequest { length, ..good };
+            assert!(
+                provider.hashes_for(&bad).is_none(),
+                "length {length} should be refused"
+            );
+        }
+
+        // Index must be a multiple of length.
+        let misaligned = librqbit_peer_protocol::HashRequest { index: 1, length: 4, ..good };
+        assert!(provider.hashes_for(&misaligned).is_none(), "misaligned index");
+
+        // Past the end of the layer.
+        let past = librqbit_peer_protocol::HashRequest { index: 64, length: 16, ..good };
+        assert!(provider.hashes_for(&past).is_none(), "past the end");
+
+        // More proof layers than the tree has.
+        let deep = librqbit_peer_protocol::HashRequest { proof_layers: 9, ..good };
+        assert!(provider.hashes_for(&deep).is_none(), "impossible proof depth");
+    }
+
+    /// A torrent with nothing to serve must not claim it can.
+    ///
+    /// Every file fitting in one piece means no file has a piece layer, and
+    /// the handshake bit hangs off exactly this - advertising v2 there would
+    /// invite requests we could only ever reject.
+    #[test]
+    fn a_torrent_with_no_piece_layer_offers_no_hashes() {
+        let pl = 16 * BLOCK as u32;
+        let payload: Vec<u8> = (0..(3 * BLOCK)).map(|i| (i * 3) as u8).collect();
+        let meta = round_trip("nolayer", &payload, pl, TorrentVersion::V2);
+        assert!(
+            V2Hashes::new(&meta).is_empty(),
+            "a single-piece file has no layer to serve"
+        );
     }
 
     /// The hash exchange end to end, without a network: plan the requests a

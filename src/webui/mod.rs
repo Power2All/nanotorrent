@@ -274,6 +274,9 @@ struct SessionInfo {
     torrents: usize,
     /// Browsers holding an event stream open, this one included.
     clients: usize,
+    /// Whether the alternative speed limits are on, so the turtle in the
+    /// toolbar comes back lit after a reload rather than resetting to off.
+    alt_speed: bool,
 }
 
 #[derive(Serialize)]
@@ -494,6 +497,7 @@ async fn h_session(state: web::Data<AppState>) -> actix_web::Result<impl Respond
             upload_rate: up,
             torrents: st.session.torrents(&HashMap::new()).len(),
             clients: connected_clients(),
+            alt_speed: st.cfg.get_bool("speed.alt_enabled"),
         }
     })
     .await?;
@@ -583,6 +587,7 @@ fn snapshot(state: &AppState) -> serde_json::Value {
             upload_rate: up,
             torrents: rows.len(),
             clients: connected_clients(),
+            alt_speed: state.cfg.get_bool("speed.alt_enabled"),
         },
         "torrents": rows,
         "errors": errors,
@@ -930,6 +935,392 @@ where
     }
 }
 
+
+// --- the remote's half of the desktop's per-torrent controls -----------------
+//
+// Everything below mirrors something the desktop already does, and calls the
+// same `Session` method it calls. Nothing here decides policy: a limit written
+// from a phone has to behave exactly like the same limit set from the window,
+// or one of the two is lying.
+
+#[derive(Deserialize)]
+struct QueueRequest {
+    /// "top", "up", "down" or "bottom".
+    to: String,
+}
+
+/// `POST /api/torrents/{hash}/queue` - move one torrent in the queue.
+async fn h_queue(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<QueueRequest>,
+) -> actix_web::Result<HttpResponse> {
+    use crate::bittorrent::session::QueueMove;
+    let to = match body.into_inner().to.as_str() {
+        "top" => QueueMove::Top,
+        "up" => QueueMove::Up,
+        "down" => QueueMove::Down,
+        "bottom" => QueueMove::Bottom,
+        other => {
+            return Err(ErrorBadRequest(format!(
+                "unknown queue move {other:?}, expected top/up/down/bottom"
+            )));
+        }
+    };
+    with_torrent(&state, hash.into_inner(), move |s, h| {
+        s.move_in_queue(h, to)
+    })
+    .await
+}
+
+/// `POST /api/torrents/{hash}/reannounce` - ask the trackers again now.
+async fn h_reannounce(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+) -> actix_web::Result<HttpResponse> {
+    with_torrent(&state, hash.into_inner(), |s, h| s.reannounce(h)).await
+}
+
+#[derive(Serialize)]
+struct FileRow {
+    index: usize,
+    name: String,
+    length: u64,
+    progress: f32,
+    /// 0 skip, 1 normal, 2 high, 3 maximum - the same scale the database and
+    /// the desktop's Files tab use.
+    priority: i64,
+}
+
+/// `GET /api/torrents/{hash}/files` - the file list with its priorities.
+async fn h_files(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+) -> actix_web::Result<HttpResponse> {
+    let st = state.clone();
+    let hash = hash.into_inner();
+    let rows = web::block(move || {
+        if !st.session.exists(&hash) {
+            return None;
+        }
+        let stored = st.session.file_priorities(&hash);
+        Some(
+            st.session
+                .files(&hash)
+                .into_iter()
+                .enumerate()
+                .map(|(index, f)| FileRow {
+                    index,
+                    name: f.name,
+                    length: f.length,
+                    progress: f.progress,
+                    // Absent means nobody has touched it, which is Normal -
+                    // only rows that differ are stored.
+                    priority: stored
+                        .get(&index)
+                        .copied()
+                        .unwrap_or(crate::bittorrent::session::PRIORITY_NORMAL),
+                })
+                .collect::<Vec<_>>(),
+        )
+    })
+    .await?
+    .ok_or_else(|| ErrorNotFound("no torrent with that info hash"))?;
+    Ok(HttpResponse::Ok().json(rows))
+}
+
+#[derive(Deserialize)]
+struct FilePriorityRequest {
+    index: usize,
+    priority: i64,
+}
+
+/// `POST /api/torrents/{hash}/files` - set one file's priority.
+async fn h_set_file_priority(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<FilePriorityRequest>,
+) -> actix_web::Result<HttpResponse> {
+    use crate::bittorrent::session::{PRIORITY_MAX, PRIORITY_SKIP};
+    let req = body.into_inner();
+    if !(PRIORITY_SKIP..=PRIORITY_MAX).contains(&req.priority) {
+        return Err(ErrorBadRequest(
+            "priority must be 0 (skip), 1 (normal), 2 (high) or 3 (maximum)",
+        ));
+    }
+    with_torrent(&state, hash.into_inner(), move |s, h| {
+        s.set_file_priority(h, req.index, req.priority);
+    })
+    .await
+}
+
+#[derive(Serialize)]
+struct TrackerRowJson {
+    /// "source" (DHT/LSD/PeX), "tier" (a group heading) or "tracker".
+    kind: &'static str,
+    label: String,
+    status: String,
+    seeders: Option<u32>,
+    leechers: Option<u32>,
+    fails: u32,
+}
+
+/// `GET /api/torrents/{hash}/trackers` - the Trackers tab, as data.
+async fn h_trackers(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+) -> actix_web::Result<HttpResponse> {
+    use crate::bittorrent::session::TrackerRowKind;
+    let st = state.clone();
+    let hash = hash.into_inner();
+    let rows = web::block(move || {
+        if !st.session.exists(&hash) {
+            return None;
+        }
+        let tr = st.translator();
+        Some(
+            st.session
+                .tracker_rows(&hash, &tr)
+                .into_iter()
+                .map(|r| TrackerRowJson {
+                    kind: match r.kind {
+                        TrackerRowKind::Source => "source",
+                        TrackerRowKind::Tier => "tier",
+                        TrackerRowKind::Tracker => "tracker",
+                    },
+                    label: r.label,
+                    status: r.status,
+                    seeders: r.seeders,
+                    leechers: r.leechers,
+                    fails: r.fails,
+                })
+                .collect::<Vec<_>>(),
+        )
+    })
+    .await?
+    .ok_or_else(|| ErrorNotFound("no torrent with that info hash"))?;
+    Ok(HttpResponse::Ok().json(rows))
+}
+
+#[derive(Deserialize)]
+struct TrackerRequest {
+    /// Add: the new URL. Edit: the replacement. Remove: the one to drop.
+    url: String,
+    /// Add only. Past the last tier means a new one, which is how "add a tier"
+    /// is spelled - the same rule the desktop's picker follows.
+    #[serde(default)]
+    tier: usize,
+    /// Edit only: the URL being replaced.
+    #[serde(default)]
+    from: Option<String>,
+}
+
+/// `POST /api/torrents/{hash}/trackers` - add one.
+async fn h_add_tracker(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<TrackerRequest>,
+) -> actix_web::Result<HttpResponse> {
+    let req = body.into_inner();
+    let st = state.clone();
+    let hash = hash.into_inner();
+    let ok = web::block(move || {
+        st.session.exists(&hash) && st.session.add_tracker(&hash, req.url.trim(), req.tier)
+    })
+    .await?;
+    match ok {
+        true => Ok(HttpResponse::NoContent().finish()),
+        // One message for both causes: a URL that is not a tracker address,
+        // and a torrent that is no longer there. The caller can tell which by
+        // whether the torrent is still in its list.
+        false => Err(ErrorBadRequest("not a usable tracker URL for that torrent")),
+    }
+}
+
+/// `POST /api/torrents/{hash}/trackers/edit` - replace one URL, keeping its
+/// tier. Deliberately not a DELETE-then-POST: the tier would be lost.
+async fn h_edit_tracker(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<TrackerRequest>,
+) -> actix_web::Result<HttpResponse> {
+    let req = body.into_inner();
+    let Some(from) = req.from else {
+        return Err(ErrorBadRequest("`from` is required when editing a tracker"));
+    };
+    let st = state.clone();
+    let hash = hash.into_inner();
+    let ok = web::block(move || {
+        st.session.exists(&hash) && st.session.edit_tracker(&hash, &from, req.url.trim())
+    })
+    .await?;
+    match ok {
+        true => Ok(HttpResponse::NoContent().finish()),
+        false => Err(ErrorBadRequest("not a usable tracker URL for that torrent")),
+    }
+}
+
+/// `POST /api/torrents/{hash}/trackers/remove` - stop using one.
+///
+/// A POST rather than a DELETE because the URL travels in the body: it is long,
+/// contains its own query string, and does not want percent-encoding twice.
+async fn h_remove_tracker(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<TrackerRequest>,
+) -> actix_web::Result<HttpResponse> {
+    let url = body.into_inner().url;
+    with_torrent(&state, hash.into_inner(), move |s, h| {
+        s.remove_tracker(h, &url);
+    })
+    .await
+}
+
+#[derive(Serialize)]
+struct TagsResponse {
+    /// Every tag that exists, so the page can offer them all.
+    all: Vec<String>,
+    /// The ones on this torrent.
+    on: Vec<String>,
+    /// This torrent's own ratio limit. `null` follows the global setting.
+    ratio_limit: Option<f64>,
+    /// This torrent's own seeding time limit, in minutes. `null` follows the
+    /// global setting.
+    seed_time_limit: Option<i64>,
+}
+
+/// `GET /api/torrents/{hash}/tags` - tags and share limits.
+///
+/// One read for the whole panel rather than two: they are shown together and
+/// change together, and a second round trip buys nothing.
+async fn h_tags(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+) -> actix_web::Result<HttpResponse> {
+    let st = state.clone();
+    let hash = hash.into_inner();
+    let out = web::block(move || {
+        if !st.session.exists(&hash) {
+            return None;
+        }
+        let (ratio_limit, seed_time_limit) = st.session.share_overrides(&hash);
+        Some(TagsResponse {
+            all: st.cfg.get_tags().into_iter().map(|t| t.name).collect(),
+            on: st.cfg.tags_for(&hash).into_iter().map(|t| t.name).collect(),
+            ratio_limit,
+            seed_time_limit,
+        })
+    })
+    .await?
+    .ok_or_else(|| ErrorNotFound("no torrent with that info hash"))?;
+    Ok(HttpResponse::Ok().json(out))
+}
+
+#[derive(Deserialize)]
+struct TagsRequest {
+    /// The complete set this torrent should carry. Names that do not exist yet
+    /// are created, the same as typing a new one in Preferences.
+    tags: Vec<String>,
+}
+
+/// `POST /api/torrents/{hash}/tags` - replace the torrent's tags.
+async fn h_set_tags(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<TagsRequest>,
+) -> actix_web::Result<HttpResponse> {
+    let wanted = body.into_inner().tags;
+    let st = state.clone();
+    let hash = hash.into_inner();
+    let found = web::block(move || {
+        if !st.session.exists(&hash) {
+            return false;
+        }
+        let wanted: Vec<String> = wanted
+            .into_iter()
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .collect();
+        // Remove first, then add: a tag in both lists is left alone rather
+        // than being taken off and put back.
+        for tag in st.cfg.tags_for(&hash) {
+            if !wanted.contains(&tag.name) {
+                st.cfg.remove_tag(&hash, tag.id);
+            }
+        }
+        for name in &wanted {
+            if let Some(id) = st.cfg.ensure_tag(name) {
+                st.cfg.add_tag(&hash, id);
+            }
+        }
+        true
+    })
+    .await?;
+    match found {
+        true => Ok(HttpResponse::NoContent().finish()),
+        false => Err(ErrorNotFound("no torrent with that info hash")),
+    }
+}
+
+#[derive(Deserialize)]
+struct LimitsRequest {
+    /// Stop seeding at this ratio. `null` follows the global setting, 0 means
+    /// no limit at all - the same three-way the nullable column carries.
+    #[serde(default, deserialize_with = "double_option")]
+    ratio: Option<Option<f64>>,
+    /// Stop seeding after this many minutes. Same three-way.
+    #[serde(default, deserialize_with = "double_option")]
+    seed_minutes: Option<Option<i64>>,
+}
+
+/// Tells "absent" from "present and null", which is what lets one endpoint set
+/// either limit without disturbing the other.
+fn double_option<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Deserialize::deserialize(d).map(Some)
+}
+
+/// `POST /api/torrents/{hash}/limits` - this torrent's own share limits.
+async fn h_limits(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<LimitsRequest>,
+) -> actix_web::Result<HttpResponse> {
+    let req = body.into_inner();
+    with_torrent(&state, hash.into_inner(), move |s, h| {
+        if let Some(ratio) = req.ratio {
+            s.set_ratio_limit(h, ratio);
+        }
+        if let Some(minutes) = req.seed_minutes {
+            s.set_seed_time_limit(h, minutes);
+        }
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct AltSpeedRequest {
+    enabled: bool,
+}
+
+/// `POST /api/speed/alt` - the turtle button.
+///
+/// Writes the manual switch only. The schedule can also turn the alternative
+/// limits on, and this must not silently turn that off - the scheduler would
+/// put them straight back and the button would look broken.
+async fn h_alt_speed(
+    state: web::Data<AppState>,
+    body: web::Json<AltSpeedRequest>,
+) -> actix_web::Result<HttpResponse> {
+    let on = body.into_inner().enabled;
+    let st = state.clone();
+    web::block(move || st.cfg.set("speed.alt_enabled", &on)).await?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
 /// `POST /api/torrents/{hash}/pause`
 async fn h_pause(
     state: web::Data<AppState>,
@@ -1220,6 +1611,35 @@ struct PluginSurfaceDto {
     buttons: Vec<[String; 2]>,
     groups: Vec<PluginRowDto>,
     rows: Vec<PluginRowDto>,
+    /// Non-empty while the plugin has a form up, in which case the browser
+    /// draws that instead of the lists - the same swap the window makes.
+    form_id: String,
+    form_title: String,
+    fields: Vec<PluginFieldDto>,
+}
+
+#[derive(Serialize)]
+struct PluginFieldDto {
+    id: String,
+    label: String,
+    /// "text", "check", "choice" or "number".
+    kind: String,
+    value: String,
+    options: Vec<String>,
+    hint: String,
+}
+
+impl From<&crate::plugins::ui::Field> for PluginFieldDto {
+    fn from(f: &crate::plugins::ui::Field) -> Self {
+        PluginFieldDto {
+            id: f.id.clone(),
+            label: f.label.clone(),
+            kind: f.kind.clone(),
+            value: f.value.clone(),
+            options: f.options.clone(),
+            hint: f.hint.clone(),
+        }
+    }
 }
 
 /// What the browser is allowed to send back. Named rather than free-form so a
@@ -1238,6 +1658,15 @@ enum PluginEventBody {
         input: String,
     },
     Menu { id: String },
+    /// A form saved. `values` is field id to value, the same shape the window
+    /// reads back out of its own controls.
+    Form {
+        id: String,
+        #[serde(default)]
+        values: Vec<(String, String)>,
+    },
+    /// A form dismissed without saving.
+    FormCancel { id: String },
     Configure,
 }
 
@@ -1334,6 +1763,9 @@ async fn h_plugin(name: web::Path<String>) -> actix_web::Result<HttpResponse> {
             .collect(),
         groups: ui.groups.iter().map(PluginRowDto::from).collect(),
         rows: ui.rows.iter().map(PluginRowDto::from).collect(),
+        form_id: ui.form_id.clone(),
+        form_title: ui.form_title.clone(),
+        fields: ui.fields.iter().map(PluginFieldDto::from).collect(),
     }))
 }
 
@@ -1362,6 +1794,8 @@ async fn h_plugin_event(
         PluginEventBody::Group { id } => UiEvent::Group { plugin, id },
         PluginEventBody::Button { id, input } => UiEvent::Button { plugin, id, input },
         PluginEventBody::Menu { id } => UiEvent::Menu { plugin, id },
+        PluginEventBody::Form { id, values } => UiEvent::Form { plugin, id, values },
+        PluginEventBody::FormCancel { id } => UiEvent::FormCancelled { plugin, id },
         PluginEventBody::Configure => UiEvent::Configure { plugin },
     });
     Ok(HttpResponse::Accepted().finish())
@@ -1702,6 +2136,18 @@ fn build(
                     .route("/torrents/{hash}/pause", web::post().to(h_pause))
                     .route("/torrents/{hash}/resume", web::post().to(h_resume))
                     .route("/torrents/{hash}/recheck", web::post().to(h_recheck))
+                    .route("/torrents/{hash}/queue", web::post().to(h_queue))
+                    .route("/torrents/{hash}/reannounce", web::post().to(h_reannounce))
+                    .route("/torrents/{hash}/files", web::get().to(h_files))
+                    .route("/torrents/{hash}/files", web::post().to(h_set_file_priority))
+                    .route("/torrents/{hash}/trackers", web::get().to(h_trackers))
+                    .route("/torrents/{hash}/trackers", web::post().to(h_add_tracker))
+                    .route("/torrents/{hash}/trackers/edit", web::post().to(h_edit_tracker))
+                    .route("/torrents/{hash}/trackers/remove", web::post().to(h_remove_tracker))
+                    .route("/torrents/{hash}/tags", web::get().to(h_tags))
+                    .route("/torrents/{hash}/tags", web::post().to(h_set_tags))
+                    .route("/torrents/{hash}/limits", web::post().to(h_limits))
+                    .route("/speed/alt", web::post().to(h_alt_speed))
                     .route("/columns", web::get().to(h_columns))
                     .route("/columns", web::post().to(h_set_column))
                     .route("/charts", web::get().to(h_charts))

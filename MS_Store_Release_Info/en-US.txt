@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: English (United States) (en-US)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent is a Rust port of PicoTorrent by Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.4
+Version 0.3.5
 
-- Paused torrents no longer re-create their files when NanoTorrent starts. A torrent whose data you had deleted or moved could come back at 0% with a folder of empty files.
-- The web interface now receives live updates instead of asking for them: it reacts instantly and uses far less processor time.
-- A connection indicator shows whether the browser is still in touch with NanoTorrent, and reconnects by itself.
-- The torrent list in the web interface can be paged, and sorted across every page.
-- Both the window and the web interface show how many web clients are connected.
-- The details panel fills as soon as you click a torrent, behind a loading overlay, instead of up to a second later.
-- Preferences is rebuilt to match the main window: icon tabs that scroll when they do not fit, a wider window, and scrollbars that no longer overlap.
-- Preferences shows the language you chose, and every open window changes language when you press Ok.
-- Closing a window now really closes it, and Help gains a link to the plugin API documentation.
+- Share limits: stop seeding at a ratio, after a set time, or whichever comes first, then pause or remove the torrent.
+- Alternative speed limits, on a schedule or switched by hand from the toolbar.
+- Queue order from the toolbar, per-file priorities, and tags.
+- A watched folder that adds any .torrent dropped into it.
+- Add, edit and remove a torrent's trackers, in announce tiers.
+- The settings database can be encrypted, with no password to type, and your settings exported and imported as JSON.
+- The web interface gains queue order, the speed switch, and a per-torrent panel for files, trackers, tags and limits.
+- Pieces that few peers have are asked for first, and BitTorrent v2 torrents can now be seeded to others.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

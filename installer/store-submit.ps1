@@ -1,8 +1,26 @@
 # Submit an update to the Microsoft Store from this machine.
 #
 #   installer\store-submit.ps1 -ProductId 9NBLGGH4XXXX
+#   installer\store-submit.ps1
 #   installer\store-submit.ps1 -ProductId 9NBLGGH4XXXX -Msix installer\NanoTorrent.msix
-#   installer\store-submit.ps1 -ProductId 9NBLGGH4XXXX -DryRun
+#   installer\store-submit.ps1 -DryRun
+#
+# The first form is the usual one. It needs the Store ID and the package
+# identity, and rather than typing them every time, put them in
+#
+#   installer\store-settings.local.txt
+#
+# which is git-ignored:
+#
+#   STORE_PRODUCT_ID    = 9NBLGGH4XXXX
+#   STORE_IDENTITY_NAME = 12345Publisher.NanoTorrent
+#   STORE_PUBLISHER     = CN=00000000-0000-0000-0000-000000000000
+#
+# None of those three is a credential - all three are in the manifest of the
+# package the Store ships - but this repository is public and the workflow
+# keeps them as GitHub secrets, so they do not belong in a committed file
+# either. A parameter beats the environment, and the environment beats this
+# file, so a one-off submission can still override any of them.
 #
 # Does what .github/workflows/store-publish.yml does, without GitHub: build the
 # package, upload it, rewrite the "What's new" text for every language from
@@ -35,9 +53,21 @@ param(
     # the environment, rather than typed every time.
     [string]$IdentityName = $env:STORE_IDENTITY_NAME,
     [string]$Publisher = $env:STORE_PUBLISHER,
-    [string]$PublisherDisplayName = $(
-        if ($env:STORE_PUBLISHER_DISPLAY_NAME) { $env:STORE_PUBLISHER_DISPLAY_NAME } else { "Power2All" }
-    ),
+    # Resolved in the body rather than here, so that "given on the command
+    # line" can be told apart from "left at its default" - the settings file
+    # has to be able to set it, and cannot if the default already filled it in.
+    [string]$PublisherDisplayName,
+
+    # Where those settings live. Beside this script, not in the profile
+    # folder: it belongs to the checkout, and a second clone should not
+    # silently inherit the first one's Store identity.
+    [string]$ConfigPath,
+
+    # Leave the listing's screenshots alone. The default is to replace them
+    # with `images/*.png`, which is what keeps them from going stale one
+    # language at a time - but a submission that is only a rebuild does not
+    # need the Store to re-review seven images.
+    [switch]$KeepScreenshots,
 
     # Print every step without running any of them.
     [switch]$DryRun,
@@ -50,8 +80,63 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
+if (-not $ConfigPath) {
+    $ConfigPath = Join-Path $PSScriptRoot "store-settings.local.txt"
+}
+
+# `NAME = value` per line, `#` comments, blank lines ignored. Deliberately not
+# a .ps1 to dot-source: this file holds three strings, and a settings file that
+# can run code is a settings file that eventually does.
+function Read-LocalSettings([string]$path) {
+    $found = @{}
+    if (-not (Test-Path $path)) { return $found }
+    foreach ($line in Get-Content -LiteralPath $path) {
+        $text = $line.Trim()
+        if (-not $text -or $text.StartsWith('#')) { continue }
+        $at = $text.IndexOf('=')
+        if ($at -lt 1) { continue }
+        $name = $text.Substring(0, $at).Trim()
+        $value = $text.Substring($at + 1).Trim()
+        # Quotes are what anyone writes out of habit, and none of these values
+        # legitimately begins and ends with one.
+        if ($value.Length -ge 2 -and
+            ((($value[0] -eq '"') -and ($value[-1] -eq '"')) -or
+             (($value[0] -eq "'") -and ($value[-1] -eq "'")))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        $found[$name] = $value
+    }
+    return $found
+}
+
+$settings = Read-LocalSettings $ConfigPath
+function Get-Setting([string]$name) {
+    if ($settings.ContainsKey($name)) { return $settings[$name] }
+    return $null
+}
+
+# Parameter, then environment, then the file. The parameter defaults above
+# already folded the environment in, so anything still empty falls to the file.
+if (-not $ProductId) { $ProductId = Get-Setting 'STORE_PRODUCT_ID' }
+if (-not $IdentityName) { $IdentityName = Get-Setting 'STORE_IDENTITY_NAME' }
+if (-not $Publisher) { $Publisher = Get-Setting 'STORE_PUBLISHER' }
+if (-not $PublisherDisplayName) { $PublisherDisplayName = $env:STORE_PUBLISHER_DISPLAY_NAME }
+if (-not $PublisherDisplayName) { $PublisherDisplayName = Get-Setting 'STORE_PUBLISHER_DISPLAY_NAME' }
+if (-not $PublisherDisplayName) { $PublisherDisplayName = "Power2All" }
+
 if (-not $ProductId) {
-    throw "no -ProductId, and STORE_PRODUCT_ID is not set. Partner Center > Product identity > Store ID."
+    throw @"
+no Store product ID.
+
+Give it as -ProductId, set STORE_PRODUCT_ID, or put it in
+$ConfigPath :
+
+  STORE_PRODUCT_ID    = 9NBLGGH4XXXX
+  STORE_IDENTITY_NAME = 12345Publisher.NanoTorrent
+  STORE_PUBLISHER     = CN=00000000-0000-0000-0000-000000000000
+
+All three are on Partner Center > Product identity. That file is git-ignored.
+"@
 }
 
 function Invoke-Step {
@@ -127,9 +212,12 @@ Both come from Partner Center > Product identity, next to the Store ID:
   Name      -> -IdentityName        e.g. 12345Publisher.NanoTorrent
   Publisher -> -Publisher           e.g. CN=<guid>
 
-They are usually set once in the environment rather than typed each time:
-  `$env:STORE_IDENTITY_NAME = '...'
-  `$env:STORE_PUBLISHER     = '...'
+They are usually written once into
+  $ConfigPath
+rather than typed each time:
+  STORE_IDENTITY_NAME = ...
+  STORE_PUBLISHER     = ...
+That file is git-ignored. The environment still works too.
 
 A package built without them carries a placeholder identity and Partner
 Center refuses it on upload.
@@ -172,11 +260,13 @@ Invoke-Step "Upload the package (left as a draft)" {
 # ---------------------------------------------------------------------------
 #
 # `msstore publish` only ever uploads the package. Release notes come from
-# MS_Store_Release_Info, which is why they no longer have to be pasted into
-# Partner Center by hand, once per language.
+# MS_Store_Release_Info and screenshots from images/, which is why neither has
+# to be attached in Partner Center by hand, once per language.
 
 $draft = Join-Path $env:TEMP "nanotorrent-submission.json"
 $updated = Join-Path $env:TEMP "nanotorrent-submission-updated.json"
+$final = Join-Path $env:TEMP "nanotorrent-submission-final.json"
+$shots = Join-Path $env:TEMP "nanotorrent-listing-images.zip"
 
 Invoke-Step "Read the draft submission" {
     msstore submission get $ProductId | Out-File -Encoding utf8 $draft
@@ -190,12 +280,26 @@ Invoke-Step "Fold in this version's What's new, for every language" {
         -SubmissionPath $draft -OutPath $updated -Version $version
 }
 
+# Screenshots are not metadata - their bytes have to be added to the archive
+# the package went up in. store-images.ps1 explains why; the short version is
+# that `msstore` has no command for it.
+if ($KeepScreenshots) {
+    $final = $updated
+    Write-Host ""
+    Write-Host "==> Screenshots left as they are (-KeepScreenshots)" -ForegroundColor Cyan
+} else {
+    Invoke-Step "Fold in the screenshots, for every language" {
+        & (Join-Path $PSScriptRoot "store-images.ps1") `
+            -SubmissionPath $updated -OutPath $final -ZipPath $shots -Upload
+    }
+}
+
 # --payload, not the JSON inline. Windows caps a command line at about 32,767
 # characters and this submission carries 41 languages of descriptions and
 # release notes, which is far past it - inline fails with "The filename or
 # extension is too long". The CLI's own help singles this case out.
 Invoke-Step "Send the listings back" {
-    msstore submission update $ProductId --payload $updated
+    msstore submission update $ProductId --payload $final
 }
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Slovenčina (Slovensko) - Partner Center: Slovak (Slovakia) (sk-SK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Verzia 0.3.4
+Verzia 0.3.5
 
-- Pozastavené torrenty už pri spustení NanoTorrentu znova nevytvárajú svoje súbory. Torrent, ktorého údaje ste zmazali alebo presunuli, sa mohol vrátiť na 0 % s priečinkom prázdnych súborov.
-- Webové rozhranie teraz dostáva živé aktualizácie namiesto toho, aby si o ne žiadalo: reaguje okamžite a spotrebuje oveľa menej procesora.
-- Ukazovateľ spojenia hovorí, či je prehliadač stále v spojení s NanoTorrentom, a sám sa znova pripojí.
-- Zoznam torrentov vo webovom rozhraní sa dá stránkovať a zoradiť naprieč všetkými stránkami.
-- Okno aj webové rozhranie ukazujú, koľko webových klientov je pripojených.
-- Panel podrobností sa naplní hneď po kliknutí na torrent, za vrstvou načítania, nie až o sekundu neskôr.
-- Predvoľby boli prestavané podľa hlavného okna: karty s ikonami, ktoré sa posúvajú, keď sa nezmestia, širšie okno a posuvníky, ktoré už nič neprekrývajú.
-- Predvoľby ukazujú jazyk, ktorý ste zvolili, a každé otvorené okno zmení jazyk po stlačení Ok.
-- Zatvorenie okna ho teraz naozaj zatvorí a v ponuke Pomocník pribudol odkaz na dokumentáciu API doplnkov.
+- Limity zdieľania: ukončiť seedovanie pri danom pomere, po nastavenom čase alebo podľa toho, čo nastane skôr, a potom torrent pozastaviť či odstrániť.
+- Alternatívne rýchlostné limity, podľa plánu alebo prepnuté ručne z panela nástrojov.
+- Poradie vo fronte z panela nástrojov, priority jednotlivých súborov a štítky.
+- Sledovaný priečinok, ktorý pridá každý doň vložený súbor .torrent.
+- Pridávanie, úprava a odstraňovanie trackerov torrentu, v úrovniach oznamovania.
+- Databázu nastavení možno zašifrovať, bez hesla, ktoré by bolo treba písať, a nastavenia exportovať a importovať ako JSON.
+- Webové rozhranie získava poradie vo fronte, prepínač rýchlosti a panel pre každý torrent so súbormi, trackermi, štítkami a limitmi.
+- Časti, ktoré má málo partnerov, sa vyžadujú ako prvé, a torrenty BitTorrent v2 možno teraz zdieľať ostatným.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

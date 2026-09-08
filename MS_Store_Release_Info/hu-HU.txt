@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-0.3.4-es verzió
+0.3.5-es verzió
 
-- A szüneteltetett torrentek már nem hozzák létre újra a fájljaikat a NanoTorrent indulásakor. Az a torrent, amelynek adatait törölte vagy áthelyezte, 0%-on térhetett vissza, üres fájlok mappájával.
-- A webes felület mostantól élőben kapja a frissítéseket ahelyett, hogy kérné őket: azonnal reagál, és sokkal kevesebb processzoridőt használ.
-- Kapcsolatjelző mutatja, hogy a böngésző még kapcsolatban van-e a NanoTorrenttel, és magától újracsatlakozik.
-- A webes felület torrentlistája lapozható, és minden lapon átívelően rendezhető.
-- Az ablak és a webes felület is mutatja, hány webes ügyfél csatlakozik.
-- A részletek panel azonnal feltöltődik, amint egy torrentre kattint, betöltési réteg mögött, nem pedig akár egy másodperccel később.
-- A beállítások a főablakhoz igazodva épültek újra: ikonos fülek, amelyek gördülnek, ha nem férnek el, szélesebb ablak, és görgetősávok, amelyek már nem takarnak semmit.
-- A beállítások a kiválasztott nyelvet mutatják, és minden nyitott ablak nyelvet vált az Ok megnyomásakor.
-- Az ablak bezárása mostantól valóban bezárja, a Súgó pedig hivatkozást kapott a bővítmény API dokumentációjára.
+- Megosztási korlátok: a megosztás leállítása adott aránynál, megadott idő után, vagy amelyik előbb bekövetkezik, majd a torrent szüneteltetése vagy eltávolítása.
+- Alternatív sebességkorlátok, ütemezés szerint vagy kézzel átkapcsolva az eszköztárról.
+- Sorrend a várólistában az eszköztárról, fájlonkénti prioritások és címkék.
+- Figyelt mappa, amely hozzáadja a bele helyezett minden .torrent fájlt.
+- Egy torrent követőinek hozzáadása, szerkesztése és eltávolítása bejelentési szintenként.
+- A beállítások adatbázisa titkosítható, beírandó jelszó nélkül, a beállítások pedig JSON formátumban exportálhatók és importálhatók.
+- A webes felület sorrendet, sebességkapcsolót és torrentenkénti panelt kap a fájlokhoz, követőkhöz, címkékhez és korlátokhoz.
+- A kevés partnernél meglévő darabokat kéri le először, és a BitTorrent v2 torrentek immár megoszthatók másokkal.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

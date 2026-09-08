@@ -1,0 +1,67 @@
+diff --git a/src/torrent_state/live/mod.rs b/src/torrent_state/live/mod.rs
+index c70e215..c60fb61 100644
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -833,6 +833,39 @@ impl TorrentStateLive {
+         Err(res)
+     }
+ 
++    // NanoTorrent patch 0017: set the file priority ordering on a running
++    // torrent. Upstream derives it once, by filename, with a `TODO: make it
++    // configurable` where it does so - this is that.
++    //
++    // The ordering is a list of file indices, most wanted first. It is only a
++    // preference about which piece to ask for next, so an ordering that names
++    // fewer files than the torrent has is not an error: whatever is missing
++    // simply keeps its place behind what is listed.
++    pub(crate) fn set_file_priorities(&self, order: Vec<usize>) {
++        let file_count = self.metadata.file_infos.len();
++        let mut seen = vec![false; file_count];
++        let mut priorities = Vec::with_capacity(file_count);
++
++        for id in order {
++            if id < file_count && !seen[id] {
++                seen[id] = true;
++                priorities.push(id);
++            }
++        }
++        // Anything the caller did not mention keeps its own order behind the
++        // rest, so the result is always a complete permutation - which is what
++        // the picker assumes when it walks this list.
++        for (id, listed) in seen.into_iter().enumerate() {
++            if !listed {
++                priorities.push(id);
++            }
++        }
++
++        // Through the timed helper, like every other writer here, so a lock
++        // held too long shows up in the same place as the rest.
++        self.lock_write("set_file_priorities").file_priorities = priorities;
++    }
++
+     pub(crate) fn update_only_files(&self, only_files: &HashSet<usize>) -> anyhow::Result<()> {
+         let mut g = self.lock_write("update_only_files");
+         let pt = g.get_pieces_mut()?;
+diff --git a/src/torrent_state/mod.rs b/src/torrent_state/mod.rs
+index a343cda..0b58257 100644
+--- a/src/torrent_state/mod.rs
++++ b/src/torrent_state/mod.rs
+@@ -651,6 +651,18 @@ impl ManagedTorrent {
+         .boxed()
+     }
+ 
++    // NanoTorrent patch 0017: hand a file priority ordering to a live torrent.
++    //
++    // Live only, and deliberately silent otherwise. A paused torrent is asking
++    // for nothing, so it has no queue to reorder; it picks the ordering up when
++    // it goes live, from whatever the caller sets then.
++    pub fn set_file_priorities(&self, order: Vec<usize>) {
++        let g = self.locked.read();
++        if let ManagedTorrentState::Live(l) = &g.state {
++            l.set_file_priorities(order);
++        }
++    }
++
+     // Returns true if needed to unpause torrent.
+     // This is just implementation detail - it's easier to pause/unpause than to tinker with internals.
+     pub(crate) fn update_only_files(&self, only_files: &HashSet<usize>) -> anyhow::Result<()> {

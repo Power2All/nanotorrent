@@ -37,6 +37,18 @@ impl SerializedTorrent {
         &self.info_hash
     }
     pub fn into_add_torrent(self) -> anyhow::Result<(AddTorrent<'static>, AddTorrentOptions)> {
+        // NanoTorrent: the stored tracker list is what the torrent was
+        // announcing to when the session was saved, which is the file's own
+        // trackers PLUS any added by hand. Only the magnet branch below used
+        // it, so a torrent restored from its .torrent bytes came back with the
+        // added ones silently missing - they were saved, and then dropped on
+        // the way back in.
+        //
+        // Handing them over as custom trackers restores them. The file's own
+        // are in this list too and so arrive twice, which costs nothing:
+        // `ManagedTorrentShared::trackers` is a HashSet.
+        let restored: Vec<String> = self.trackers.iter().cloned().collect();
+
         let add_torrent = if !self.torrent_bytes.is_empty() {
             AddTorrent::TorrentFileBytes(self.torrent_bytes)
         } else {
@@ -59,6 +71,12 @@ impl SerializedTorrent {
             ),
             only_files: self.only_files,
             overwrite: true,
+            trackers: Some(restored),
+            // The stored list is the whole announce list as it stood when the
+            // session was saved - including a removal the user made. Extending
+            // the file's own list instead would put a removed tracker back on
+            // every start.
+            replace_trackers: true,
             ..Default::default()
         };
 

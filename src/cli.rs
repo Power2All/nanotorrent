@@ -68,6 +68,9 @@ pub struct Setting {
 const THEMES: &[&str] = &["system", "light", "dark"];
 const CLOSE_ACTIONS: &[&str] = &["ask", "minimize", "exit"];
 const TLS_MODES: &[&str] = &["self-signed", "custom", "off"];
+/// What happens to a torrent that has met its share limit. Pause is first
+/// because it is the default, and the only one that destroys nothing.
+const SHARE_ACTIONS: &[&str] = &["pause", "remove", "remove_with_data"];
 /// Index order is the stored value - see `ConnectionProxyType::from_i64`.
 const PROXY_TYPES: &[&str] = &[
     "none",
@@ -108,6 +111,35 @@ pub const SETTINGS: &[Setting] = &[
     Setting { name: "download-rate-limit", key: "libtorrent.download_rate_limit", section: "downloads", kind: Kind::Int { lo: 0, hi: 10_000_000, unit: "KB/s" } },
     Setting { name: "limit-upload", key: "libtorrent.enable_upload_rate_limit", section: "downloads", kind: Kind::Bool },
     Setting { name: "upload-rate-limit", key: "libtorrent.upload_rate_limit", section: "downloads", kind: Kind::Int { lo: 0, hi: 10_000_000, unit: "KB/s" } },
+    // Inherited from PicoTorrent and unused until now. Moving a finished
+    // download out of the save path, and keeping partial files out of it.
+    Setting { name: "move-completed", key: "move_completed_downloads", section: "downloads", kind: Kind::Bool },
+    Setting { name: "move-completed-path", key: "move_completed_downloads_path", section: "downloads", kind: Kind::Dir },
+    Setting { name: "incomplete-folder", key: "downloads.incomplete_enabled", section: "downloads", kind: Kind::Bool },
+    Setting { name: "incomplete-path", key: "downloads.incomplete_path", section: "downloads", kind: Kind::Dir },
+
+    // --- Share limits ----------------------------------------------------
+    // Off by default: the inherited ratio limit is 200 and nothing read it
+    // before, so without this switch every upgrade would start enforcing it.
+    Setting { name: "share-limits", key: "queue.share_limit_enabled", section: "share_limits", kind: Kind::Bool },
+    // Hundredths, because that is how the inherited libtorrent key stores it.
+    Setting { name: "share-ratio-limit", key: "libtorrent.share_ratio_limit", section: "share_limits", kind: Kind::Int { lo: 0, hi: 1_000_000, unit: "hundredths (200 = ratio 2.00), 0 = no limit" } },
+    Setting { name: "seed-time-limit", key: "queue.seed_time_limit", section: "share_limits", kind: Kind::Int { lo: -1, hi: 525_600, unit: "minutes, -1 = no limit" } },
+    Setting { name: "share-limit-action", key: "queue.share_limit_action", section: "share_limits", kind: Kind::Choice(SHARE_ACTIONS) },
+
+    // --- Watched folder --------------------------------------------------
+    Setting { name: "watch-folder", key: "watch.enabled", section: "watch", kind: Kind::Bool },
+    Setting { name: "watch-path", key: "watch.path", section: "watch", kind: Kind::Dir },
+    Setting { name: "watch-start", key: "watch.start", section: "watch", kind: Kind::Bool },
+
+    // --- Alternative speed limits ----------------------------------------
+    Setting { name: "alt-speed", key: "speed.alt_enabled", section: "speed", kind: Kind::Bool },
+    Setting { name: "alt-download-rate", key: "speed.alt_download_rate", section: "speed", kind: Kind::Int { lo: 0, hi: 10_000_000, unit: "KB/s" } },
+    Setting { name: "alt-upload-rate", key: "speed.alt_upload_rate", section: "speed", kind: Kind::Int { lo: 0, hi: 10_000_000, unit: "KB/s" } },
+    Setting { name: "alt-speed-schedule", key: "speed.schedule_enabled", section: "speed", kind: Kind::Bool },
+    Setting { name: "alt-speed-from", key: "speed.schedule_from", section: "speed", kind: Kind::Int { lo: 0, hi: 1439, unit: "minutes past midnight" } },
+    Setting { name: "alt-speed-to", key: "speed.schedule_to", section: "speed", kind: Kind::Int { lo: 0, hi: 1439, unit: "minutes past midnight" } },
+    Setting { name: "alt-speed-days", key: "speed.schedule_days", section: "speed", kind: Kind::Int { lo: 0, hi: 127, unit: "bitmask, Monday = 1" } },
 
     // --- Connection ------------------------------------------------------
     Setting { name: "listen-address", key: "", section: "connection", kind: Kind::ListenAddress },
@@ -394,10 +426,14 @@ pub fn set(cfg: &Configuration, s: &Setting, value: &str, tr: &Translator) -> Re
         }
         Kind::Text => cfg.set(s.key, &value),
         Kind::Dir => {
-            // Checked now rather than at startup, where a typo would show up as
-            // torrents landing somewhere unexpected.
+            // Empty clears it, the same way Kind::Text does. Without this there
+            // was no way to unset an optional folder - the watched folder and
+            // the incomplete folder both need one, and "type a path you do not
+            // want" is not an answer.
             anyhow::ensure!(
-                std::path::Path::new(value).is_dir(),
+                value.is_empty() || std::path::Path::new(value).is_dir(),
+                // Checked now rather than at startup, where a typo would show
+                // up as torrents landing somewhere unexpected.
                 "{value} is not an existing directory"
             );
             cfg.set(s.key, &value);

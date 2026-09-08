@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Português (Portugal) - Partner Center: Portuguese (Portugal) (pt-PT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ O NanoTorrent é uma adaptação em Rust do PicoTorrent, de Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versão 0.3.4
+Versão 0.3.5
 
-- Os torrents em pausa deixaram de recriar os seus ficheiros quando o NanoTorrent arranca. Um torrent cujos dados tivesse apagado ou movido podia voltar a 0% com uma pasta de ficheiros vazios.
-- A interface web recebe agora atualizações em direto em vez de as pedir: reage de imediato e usa bastante menos processador.
-- Um indicador de ligação mostra se o navegador continua em contacto com o NanoTorrent, e volta a ligar-se sozinho.
-- A lista de torrents na interface web pode ser paginada e ordenada em todas as páginas.
-- Tanto a janela como a interface web mostram quantos clientes web estão ligados.
-- O painel de detalhes preenche-se assim que carrega num torrent, por trás de uma camada de carregamento, em vez de até um segundo depois.
-- As preferências foram refeitas à imagem da janela principal: separadores com ícone que deslizam quando não cabem, janela mais larga e barras de deslocamento que já não se sobrepõem.
-- As preferências mostram o idioma que escolheu, e cada janela aberta muda de idioma ao carregar em Ok.
-- Fechar uma janela fecha-a agora mesmo, e a Ajuda ganha uma ligação à documentação da API de plug-ins.
+- Limites de partilha: parar de semear num rácio, ao fim de um tempo definido ou o que acontecer primeiro, e depois pausar ou remover o torrent.
+- Limites de velocidade alternativos, por agendamento ou accionados à mão a partir da barra de ferramentas.
+- Ordem da fila a partir da barra de ferramentas, prioridades por ficheiro e etiquetas.
+- Uma pasta vigiada que adiciona qualquer .torrent que lá seja colocado.
+- Adicionar, editar e remover os rastreadores de um torrent, em níveis de anúncio.
+- A base de dados de definições pode ser cifrada, sem palavra-passe para escrever, e as definições exportadas e importadas em JSON.
+- A interface web ganha a ordem da fila, o interruptor de velocidade e um painel por torrent para ficheiros, rastreadores, etiquetas e limites.
+- As partes que poucos pares têm são pedidas primeiro, e os torrents BitTorrent v2 já podem ser semeados para outros.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

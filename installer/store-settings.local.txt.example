@@ -1,0 +1,35 @@
+# Copy this file to store-settings.local.txt and fill in your own values.
+# That name is git-ignored; this one is the template and is committed.
+#
+# With it in place, submitting to the Store is one command:
+#
+#   .\installer\store-submit.ps1 -DryRun     # show what would happen
+#   .\installer\store-submit.ps1             # do it
+#
+# All three values are on Partner Center > Product identity. None of them is a
+# credential - every one is in the manifest of the package the Store ships -
+# but this repository is public and the workflow keeps them as GitHub secrets,
+# so they stay out of it here too.
+#
+# The real credentials are not here and never should be: `msstore reconfigure`
+# holds those on the machine.
+#
+# `NAME = value`, one per line. `#` starts a comment. Quotes around a value are
+# optional and are stripped.
+#
+# A parameter on the command line beats the environment, and the environment
+# beats this file, so a one-off submission can override any of these without
+# editing anything.
+
+# Product identity > Store ID. Twelve characters, starts with a 9.
+STORE_PRODUCT_ID    = 9NBLGGH4XXXX
+
+# Product identity > Package identity > Name.
+STORE_IDENTITY_NAME = 12345Publisher.NanoTorrent
+
+# Product identity > Package identity > Publisher. A package whose identity
+# does not match the reservation is rejected at upload.
+STORE_PUBLISHER     = CN=00000000-0000-0000-0000-000000000000
+
+# Optional. Defaults to Power2All.
+# STORE_PUBLISHER_DISPLAY_NAME = Power2All

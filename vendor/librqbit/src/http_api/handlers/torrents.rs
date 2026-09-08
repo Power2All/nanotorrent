@@ -341,7 +341,7 @@ pub async fn h_add_peers(
 
     let mut count = 0;
     for addr in addrs {
-        if live.add_peer_if_not_seen(addr)? {
+        if live.add_peer_if_not_seen(addr, crate::type_aliases::PeerSource::Manual)? {
             count += 1;
         }
     }

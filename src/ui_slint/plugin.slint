@@ -1,15 +1,16 @@
 // The one window shape a plugin can put on screen.
 //
-// A title, a list, an optional text field and a row of buttons. That is the
-// whole vocabulary, and it is fixed on purpose: a plugin says what goes in the
-// list, the client decides how it looks. Nothing here lets a script draw
+// A title, a list, an optional text field, a row of buttons, and a form for the
+// settings a single field cannot carry. That is the whole vocabulary, and it is
+// fixed on purpose: a plugin says what goes in the list and which controls its
+// form wants, the client decides how any of it looks. Nothing here lets a script draw
 // something that could pass for part of NanoTorrent asking for a password, and
 // nothing here needs to change when a plugin does.
 //
 // Unlike the dialogs beside it this window is resizable and non-modal - it is
 // somewhere to work, not something to answer.
 
-import { ScrollView, Button, LineEdit, ListView, Palette } from "std-widgets.slint";
+import { ScrollView, Button, LineEdit, ListView, Palette, CheckBox, ComboBox } from "std-widgets.slint";
 import { L } from "globals.slint";
 
 export struct PluginRowItem {
@@ -85,6 +86,21 @@ component PluginList inherits Rectangle {
     }
 }
 
+/// One control on a plugin's form.
+///
+/// `value` is in-out because the controls write straight back into the model -
+/// that is what lets Rust read the filled-in form back on Save without a
+/// callback per keystroke.
+export struct PluginField {
+    id: string,
+    label: string,
+    /// "text", "check", "choice" or "number".
+    kind: string,
+    value: string,
+    options: [string],
+    hint: string,
+}
+
 export component PluginWindow inherits Window {
     icon: @image-url("../../res/app.png");
     // The plugin's own words, not an i18n key: it is the plugin's window.
@@ -118,6 +134,17 @@ export component PluginWindow inherits Window {
     in property <string> status;
     in-out property <string> input-text;
 
+    /// Non-empty while a form is open, which is also what swaps the lists out
+    /// for it. The form is the whole window while it is up: it is a different
+    /// job from browsing, and half a list behind a form is neither.
+    /// Handed back with the values, so a plugin with several forms knows
+    /// which one came back.
+    in property <string> form-id;
+    in property <string> form-title;
+    in-out property <[PluginField]> fields;
+
+    callback form-saved();
+    callback form-cancelled();
     callback row-activated(string);
     callback group-activated(string);
     /// The button's id, and whatever is in the text field - a plugin adding a
@@ -139,8 +166,81 @@ export component PluginWindow inherits Window {
         padding: 12px;
         spacing: 8px;
 
+        // --- a form, when the plugin has put one up ------------------------
+        // A title is optional; `form-id` is what says a form is up.
+        if root.form-id != "" && root.form-title != "": Text {
+            text: root.form-title;
+            font-size: 14px;
+            font-weight: 700;
+            color: Palette.foreground;
+        }
+        if root.form-id != "": Flickable {
+            vertical-stretch: 1;
+            viewport-height: form-body.preferred-height;
+            form-body := VerticalLayout {
+                width: parent.width;
+                spacing: 10px;
+
+                for f[i] in root.fields: VerticalLayout {
+                    spacing: 3px;
+
+                    // A checkbox carries its own label, so a second one above
+                    // it would say everything twice.
+                    if f.kind != "check": Text {
+                        text: f.label;
+                        font-size: 12px;
+                        color: Palette.foreground;
+                    }
+
+                    if f.kind == "check": CheckBox {
+                        text: f.label;
+                        checked: f.value != "";
+                        toggled => {
+                            // "1" and "" rather than true/false: every value
+                            // crosses to the plugin as a string, so a script
+                            // reads them all the same way.
+                            root.fields[i].value = self.checked ? "1" : "";
+                        }
+                    }
+
+                    if f.kind == "choice": ComboBox {
+                        model: f.options;
+                        current-value: f.value;
+                        selected(v) => { root.fields[i].value = v; }
+                    }
+
+                    if f.kind != "check" && f.kind != "choice": LineEdit {
+                        text: f.value;
+                        input-type: f.kind == "number" ? InputType.number : InputType.text;
+                        edited(s) => { root.fields[i].value = s; }
+                    }
+
+                    if f.hint != "": Text {
+                        text: f.hint;
+                        font-size: 11px;
+                        color: #888;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+        if root.form-id != "": HorizontalLayout {
+            spacing: 8px;
+            height: 32px;
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: L.s(L.revision, "cancel");
+                clicked => { root.form-cancelled(); }
+            }
+            Button {
+                primary: true;
+                text: L.s(L.revision, "save");
+                clicked => { root.form-saved(); }
+            }
+        }
+
         // --- what the plugin offers to do ---------------------------------
-        if root.placeholder != "" || root.buttons.length > 0: HorizontalLayout {
+        if root.form-id == "" && (root.placeholder != "" || root.buttons.length > 0): HorizontalLayout {
             spacing: 8px;
             height: 32px;
 
@@ -170,14 +270,14 @@ export component PluginWindow inherits Window {
         // The upper one only exists if the plugin filled it. Fixed height
         // rather than a share of the window: it is a chooser, and the items it
         // chooses between are what the window is actually for.
-        if root.groups.length > 0: PluginList {
+        if root.form-id == "" && root.groups.length > 0: PluginList {
             height: 108px;
             rows: root.groups;
             empty-text: "";
             activated(id) => { root.group-activated(id); }
         }
 
-        PluginList {
+        if root.form-id == "": PluginList {
             vertical-stretch: 1;
             rows: root.rows;
             empty-text: L.s(L.revision, "plugin_no_rows");

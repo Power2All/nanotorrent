@@ -1,4 +1,4 @@
-use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use anyhow::Context;
 use buffers::ByteBufOwned;
@@ -8,7 +8,7 @@ use tracing::{Instrument, debug, debug_span};
 
 use crate::{
     peer_connection::PeerConnectionOptions, peer_info_reader, spawn_utils::BlockingSpawner,
-    stream_connect::StreamConnector,
+    stream_connect::StreamConnector, type_aliases::PeerSource,
 };
 use librqbit_core::hash_id::Id20;
 
@@ -19,15 +19,18 @@ pub enum ReadMetainfoResult<Rx> {
         info: TorrentMetaV1Info<ByteBufOwned>,
         info_bytes: ByteBufOwned,
         rx: Rx,
-        seen: HashSet<SocketAddr>,
+        // NanoTorrent: a map rather than a set, so a magnet's early peers keep
+        // the source that found them instead of all becoming "initial" when
+        // they are handed back to the live stream.
+        seen: HashMap<SocketAddr, PeerSource>,
     },
     ChannelClosed {
         #[allow(dead_code)]
-        seen: HashSet<SocketAddr>,
+        seen: HashMap<SocketAddr, PeerSource>,
     },
 }
 
-pub async fn read_metainfo_from_peer_receiver<A: Stream<Item = SocketAddr> + Unpin>(
+pub async fn read_metainfo_from_peer_receiver<A: Stream<Item = (SocketAddr, PeerSource)> + Unpin>(
     peer_id: Id20,
     info_hash: Id20,
     initial_addrs: Vec<SocketAddr>,
@@ -38,7 +41,7 @@ pub async fn read_metainfo_from_peer_receiver<A: Stream<Item = SocketAddr> + Unp
     // NanoTorrent seam, see MetadataInterceptor.
     interceptor: Option<Arc<dyn crate::piece_verify::MetadataInterceptor>>,
 ) -> ReadMetainfoResult<A> {
-    let mut seen = HashSet::<SocketAddr>::new();
+    let mut seen = HashMap::<SocketAddr, PeerSource>::new();
     let mut addrs = addrs_stream;
 
     let semaphore = tokio::sync::Semaphore::new(128);
@@ -73,7 +76,7 @@ pub async fn read_metainfo_from_peer_receiver<A: Stream<Item = SocketAddr> + Unp
     let mut unordered = FuturesUnordered::new();
 
     for a in initial_addrs {
-        seen.insert(a);
+        seen.insert(a, PeerSource::Initial);
         unordered.push(read_info_guarded(a));
     }
 
@@ -97,8 +100,8 @@ pub async fn read_metainfo_from_peer_receiver<A: Stream<Item = SocketAddr> + Unp
 
             next_addr = addrs.next(), if !addrs_completed => {
                 match next_addr {
-                    Some(addr) => {
-                        if seen.insert(addr) {
+                    Some((addr, source)) => {
+                        if seen.insert(addr, source).is_none() {
                             unordered.push(read_info_guarded(addr));
                         }
                         continue;

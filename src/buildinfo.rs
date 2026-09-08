@@ -20,7 +20,7 @@ pub fn user_agent() -> String {
 /// string, e.g. `NanoTorrent 0.2.0`.
 ///
 /// Space-separated, not the `Name/version` of a User-Agent - that is the
-/// convention peers display ("qBittorrent v4.6.0", "rqbit 8.1.1"), and this
+/// convention peers display ("rqbit 8.1.1"), and this
 /// value goes straight into other clients' Client column.
 ///
 /// The peer id carries the same identity in its own encoding (`-NT0200-`, see

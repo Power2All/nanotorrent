@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Afrikaans (Suid-Afrika) - Partner Center: Afrikaans (South Africa) (af-ZA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent is 'n Rust-oordrag van PicoTorrent deur Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Weergawe 0.3.4
+Weergawe 0.3.5
 
-- Gepouseerde torrents skep nie meer hul lêers wanneer NanoTorrent begin nie. 'n Torrent waarvan die data uitgevee of geskuif is, kon by 0% terugkom met 'n vouer vol leë lêers.
-- Die webkoppelvlak ontvang nou lewendige opdaterings in plaas daarvan om daarvoor te vra: dit reageer onmiddellik en gebruik heelwat minder verwerkertyd.
-- 'n Verbindingsaanwyser wys of die blaaier nog met NanoTorrent in kontak is, en herkoppel self.
-- Die torrentlys in die webkoppelvlak kan in bladsye verdeel word, en oor alle bladsye heen gesorteer word.
-- Beide die venster en die webkoppelvlak wys hoeveel webkliënte gekoppel is.
-- Die besonderhedepaneel vul sodra jy op 'n torrent klik, agter 'n laai-oorleg, in plaas van tot 'n sekonde later.
-- Voorkeure is herbou om by die hoofvenster te pas: ikoontabs wat rol wanneer hulle nie pas nie, 'n wyer venster, en rolstawe wat nie meer oorvleuel nie.
-- Voorkeure wys die taal wat jy gekies het, en elke oop venster verander van taal wanneer jy Ok druk.
-- Om 'n venster te sluit, sluit dit nou werklik, en Hulp kry 'n skakel na die inprop-API-dokumentasie.
+- Deelperke: hou op saai by 'n verhouding, ná 'n vasgestelde tyd, of wat ook al eerste kom, en laat die torrent daarna wag of verwyder dit.
+- Alternatiewe spoedperke, volgens 'n skedule of met die hand geskakel vanaf die nutsbalk.
+- Tou-volgorde vanaf die nutsbalk, prioriteite per lêer, en etikette.
+- 'n Dopgehoue vouer wat enige .torrent-lêer byvoeg wat daarin geplaas word.
+- Voeg 'n torrent se spoorsnyers by, wysig en verwyder hulle, in aankondigingsvlakke.
+- Die instellingsdatabasis kan geënkripteer word, sonder 'n wagwoord om te tik, en jou instellings kan as JSON uitgevoer en ingevoer word.
+- Die webkoppelvlak kry tou-volgorde, die spoedskakelaar, en 'n paneel per torrent vir lêers, spoorsnyers, etikette en perke.
+- Stukke wat min eweknieë het, word eerste aangevra, en BitTorrent v2-torrents kan nou aan ander gesaai word.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

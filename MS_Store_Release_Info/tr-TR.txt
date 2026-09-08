@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Türkçe (Türkiye) - Partner Center: Turkish (Turkey) (tr-TR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ NanoTorrent, Viktor Elofsson'ın PicoTorrent uygulamasının Rust'a aktarımıd�
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Sürüm 0.3.4
+Sürüm 0.3.5
 
-- Duraklatılmış torrentler NanoTorrent başlarken dosyalarını artık yeniden oluşturmuyor. Verilerini sildiğiniz ya da taşıdığınız bir torrent, boş dosyalarla dolu bir klasörle %0'a dönebiliyordu.
-- Web arayüzü güncellemeleri istemek yerine artık canlı olarak alıyor: anında tepki veriyor ve çok daha az işlemci zamanı kullanıyor.
-- Bağlantı göstergesi tarayıcının NanoTorrent ile hâlâ bağlantıda olup olmadığını gösterir ve kendiliğinden yeniden bağlanır.
-- Web arayüzündeki torrent listesi sayfalara bölünebilir ve tüm sayfalar boyunca sıralanabilir.
-- Pencere de web arayüzü de kaç web istemcisinin bağlı olduğunu gösterir.
-- Ayrıntılar paneli bir torrente tıkladığınız anda, bir yükleme örtüsünün ardında dolar; bir saniyeye kadar beklemez.
-- Tercihler ana pencereye uyacak biçimde yeniden yapıldı: sığmadığında kayan simgeli sekmeler, daha geniş bir pencere ve artık hiçbir şeyi örtmeyen kaydırma çubukları.
-- Tercihler seçtiğiniz dili gösterir ve Tamam'a bastığınızda açık her pencere dil değiştirir.
-- Bir pencereyi kapatmak artık onu gerçekten kapatıyor ve Yardım menüsüne eklenti API belgelerine bağlantı eklendi.
+- Paylaşım sınırları: belirli bir oranda, belirlenen bir süre sonunda ya da hangisi önce gerçekleşirse seed etmeyi durdurun, ardından torrenti duraklatın veya kaldırın.
+- Alternatif hız sınırları, bir zamanlamaya göre ya da araç çubuğundan elle açılıp kapatılarak.
+- Araç çubuğundan kuyruk sırası, dosya başına öncelikler ve etiketler.
+- İçine bırakılan her .torrent dosyasını ekleyen izlenen bir klasör.
+- Bir torrentin izleyicilerini duyuru katmanları hâlinde ekleyin, düzenleyin ve kaldırın.
+- Ayarlar veritabanı, yazılacak bir parola olmadan şifrelenebilir; ayarlarınız JSON olarak dışa ve içe aktarılabilir.
+- Web arayüzü kuyruk sırasını, hız anahtarını ve dosyalar, izleyiciler, etiketler ve sınırlar için torrent başına bir panel kazanır.
+- Az sayıda eşte bulunan parçalar önce istenir ve BitTorrent v2 torrentleri artık başkalarına seed edilebilir.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

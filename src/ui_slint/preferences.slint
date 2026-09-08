@@ -11,7 +11,8 @@
 import { Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView, Palette } from "std-widgets.slint";
 import { L } from "globals.slint";
 import { DetailTab, TabStrip, GeneralIcon, DownloadsIcon, ConnectionIcon,
-         ProxyTabIcon, WebTabIcon, PluginsIcon, LabelsIcon } from "tabs.slint";
+         ProxyTabIcon, WebTabIcon, PluginsIcon, LabelsIcon,
+         DatabaseIcon, SpeedIcon, QueueIcon } from "tabs.slint";
 
 // A left-aligned bold caption with its control beside it, which is the shape
 // almost every row in this dialog takes.
@@ -93,16 +94,82 @@ export struct PluginRow {
     configurable: bool,
 }
 
+/// A small "?" that explains a setting on hover.
+///
+/// The point is to let the LABEL stay short. A caption long enough to explain
+/// itself is a caption that gets clipped, and it gets clipped first in whatever
+/// language is wordiest - which is nobody's default, so it survives review and
+/// ships broken.
+component Hint inherits Rectangle {
+    in property <string> text;
+    width: 15px;
+    height: 15px;
+    border-radius: 8px;
+    // Mixed toward the background rather than a fixed grey, so it reads on both
+    // palettes - the same trick the tab strip uses.
+    background: Palette.foreground.mix(Palette.background, 0.45);
+
+    Text {
+        text: "?";
+        font-size: 11px;
+        font-weight: 700;
+        color: Palette.background;
+        width: 100%;
+        height: 100%;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    // Slint's own Tooltip: it attaches to the element it sits in and the
+    // compiler wires the hover tracking, so this needs no TouchArea of its own
+    // - and it must not have one, or it would eat the clicks meant for the
+    // control beside it.
+    Tooltip {
+        Rectangle {
+            background: Palette.alternate-background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 4px;
+            HorizontalLayout {
+                padding: 8px;
+                Text {
+                    text: root.text;
+                    font-size: 12px;
+                    color: Palette.foreground;
+                    wrap: word-wrap;
+                    // Wraps rather than running off the screen. Wide enough for
+                    // a sentence, narrow enough to stay beside the control.
+                    max-width: 320px;
+                }
+            }
+        }
+    }
+}
+
 component Labelled inherits HorizontalLayout {
     in property <string> label;
+    /// When set, a "?" follows the caption and explains it on hover.
+    in property <string> hint;
     in property <length> label-width: 190px;
     spacing: 10px;
-    Text {
-        text: root.label;
-        font-weight: 700;
-        font-size: 13px;
+    HorizontalLayout {
         width: root.label-width;
-        vertical-alignment: center;
+        spacing: 5px;
+        Text {
+            text: root.label;
+            font-weight: 700;
+            font-size: 13px;
+            vertical-alignment: center;
+            // Stretch and elide, so a caption too long for the column ends in
+            // an ellipsis instead of being cut through a letter - and so the
+            // "?" is never the thing that gets pushed out.
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        if root.hint != "": VerticalLayout {
+            alignment: center;
+            Hint { text: root.hint; }
+        }
     }
     @children
 }
@@ -178,7 +245,10 @@ export component PreferencesDialog inherits Window {
         root.current-tab == 3 ? tb4.preferred-height :
         root.current-tab == 4 ? tb5.preferred-height :
         root.current-tab == 5 ? tb7.preferred-height :
-                                  tb6.preferred-height;
+        root.current-tab == 6 ? tb6.preferred-height :
+        root.current-tab == 7 ? tb8.preferred-height :
+        root.current-tab == 8 ? tb9.preferred-height :
+                                  tb10.preferred-height;
     // Tab bar, footer row, and the 12px padding top and bottom plus 10px
     // between the tabs and the footer.
     // The strip's reserved room, NOT its height: reading `tabstrip.height`
@@ -219,6 +289,45 @@ export component PreferencesDialog inherits Window {
     in-out property <bool> limit-upload;
     in-out property <string> upload-limit;
 
+    // --- Downloads, continued --------------------------------------------
+    in-out property <bool> incomplete-enabled;
+    in-out property <string> incomplete-path;
+    in-out property <bool> move-completed;
+    in-out property <string> move-completed-path;
+    in-out property <bool> watch-enabled;
+    in-out property <string> watch-path;
+    in-out property <bool> watch-start;
+    /// Labels, with "none" first, and which one the watched folder assigns.
+    in property <[string]> watch-label-names;
+    in-out property <int> watch-label-index;
+
+    // --- Speed -------------------------------------------------------------
+    in-out property <bool> alt-enabled;
+    in-out property <string> alt-download-limit;
+    in-out property <string> alt-upload-limit;
+    in-out property <bool> schedule-enabled;
+    // "HH:MM" in the fields; Rust converts to minutes past midnight, which is
+    // what the setting stores.
+    in-out property <string> schedule-from;
+    in-out property <string> schedule-to;
+    // One per weekday, Monday first. A bitmask in the database, seven booleans
+    // here, because a checkbox row is what this looks like on screen.
+    in-out property <[bool]> schedule-days;
+    /// Filled in by Rust, in the same order. The names cannot be built here as
+    /// "weekday_" + i: a computed key is invisible to the test that checks
+    /// every string the markup asks for actually exists.
+    in property <[string]> weekday-names;
+    callback schedule-day-toggled(int, bool);
+
+    // --- Queue and seeding -------------------------------------------------
+    in-out property <bool> share-limits-enabled;
+    /// Shown as "2.00", stored as 200. Rust does the arithmetic so the field
+    /// reads the way a ratio is written.
+    in-out property <string> share-ratio-limit;
+    in-out property <string> seed-time-limit;
+    in property <[string]> share-actions;
+    in-out property <int> share-action-index;
+
     // --- Connection ------------------------------------------------------
     in-out property <string> listen-address;
     in-out property <string> listen-port;
@@ -251,13 +360,38 @@ export component PreferencesDialog inherits Window {
     in-out property <bool> proxy-peers;
     in-out property <bool> proxy-trackers;
 
+    // --- Database ---------------------------------------------------------
+    // Not applied on Ok like everything else here: this one rewrites a file on
+    // disk rather than storing a value, so the button does it there and then
+    // and the state below is what came back.
+    in property <bool> db-encrypted;
+    in property <string> db-key-path;
+    /// Why the last attempt failed, or empty when none has.
+    in property <string> db-error;
+    /// What the last export or import did, good news or bad.
+    in property <string> db-note;
+    in property <bool> db-note-bad;
+    callback set-db-encryption(bool);
+    callback export-settings();
+    callback import-settings();
+
     callback accepted();
     callback cancelled();
     callback browse-save-path();
+    callback browse-incomplete();
+    callback browse-move-completed();
+    callback browse-watch();
     callback browse-ipfilter();
     callback set-associations();
 
     // --- Labels & filters -------------------------------------------------
+    // --- Tags -------------------------------------------------------------
+    in property <[string]> tag-names;
+    in-out property <int> tag-index: -1;
+    in-out property <string> new-tag;
+    callback add-tag();
+    callback delete-tag();
+
     in property <[NamedRule]> labels;
     in property <[NamedRule]> filters;
     in-out property <int> label-index: -1;
@@ -363,6 +497,18 @@ export component PreferencesDialog inherits Window {
                     DownloadsIcon { ink: parent.ink; }
                 }
                 DetailTab {
+                    label: L.s(L.revision, "speed");
+                    selected: root.current-tab == 8;
+                    picked => { root.current-tab = 8; }
+                    SpeedIcon { ink: parent.ink; }
+                }
+                DetailTab {
+                    label: L.s(L.revision, "queue_and_seeding");
+                    selected: root.current-tab == 9;
+                    picked => { root.current-tab = 9; }
+                    QueueIcon { ink: parent.ink; }
+                }
+                DetailTab {
                     label: L.s(L.revision, "connection");
                     selected: root.current-tab == 2;
                     picked => { root.current-tab = 2; }
@@ -391,6 +537,12 @@ export component PreferencesDialog inherits Window {
                     selected: root.current-tab == 6;
                     picked => { root.current-tab = 6; }
                     LabelsIcon { ink: parent.ink; }
+                }
+                DetailTab {
+                    label: L.s(L.revision, "database");
+                    selected: root.current-tab == 7;
+                    picked => { root.current-tab = 7; }
+                    DatabaseIcon { ink: parent.ink; }
                 }
             }
             Rectangle { height: 1px; background: Palette.border; }
@@ -510,38 +662,71 @@ export component PreferencesDialog inherits Window {
                         }
                         Labelled {
                             label: "    " + L.s(L.revision, "pause_on_low_disk_space_limit");
+                            hint: L.s(L.revision, "hint_low_disk");
                             LineEdit { text <=> root.low-disk-limit; width: 100px; enabled: root.pause-on-low-disk; }
                             Text { text: "%"; vertical-alignment: center; color: Palette.foreground; }
                             Rectangle { horizontal-stretch: 1; }
                         }
 
-                        Labelled {
-                            label: L.s(L.revision, "active_limit");
-                            LineEdit { text <=> root.active-limit; width: 100px; }
-                            Rectangle { horizontal-stretch: 1; }
+                        // Partial downloads live here until they finish, so
+                        // the destination never holds a half-written file.
+                        CheckBox {
+                            text: L.s(L.revision, "incomplete_folder");
+                            checked <=> root.incomplete-enabled;
                         }
                         Labelled {
-                            label: L.s(L.revision, "active_downloads");
-                            LineEdit { text <=> root.active-downloads; width: 100px; }
-                            Rectangle { horizontal-stretch: 1; }
-                        }
-                        Labelled {
-                            label: L.s(L.revision, "active_seeds");
-                            LineEdit { text <=> root.active-seeds; width: 100px; }
-                            Rectangle { horizontal-stretch: 1; }
+                            label: "    " + L.s(L.revision, "incomplete_path");
+                            LineEdit { text <=> root.incomplete-path; horizontal-stretch: 1; enabled: root.incomplete-enabled; }
+                            Button {
+                                text: L.s(L.revision, "browse");
+                                enabled: root.incomplete-enabled;
+                                clicked => { root.browse-incomplete(); }
+                            }
                         }
 
-                        CheckBox { text: L.s(L.revision, "enable_dl_rate_limit"); checked <=> root.limit-download; }
-                        Labelled {
-                            label: "    " + L.s(L.revision, "dl_rate_limit");
-                            LineEdit { text <=> root.download-limit; width: 100px; enabled: root.limit-download; }
-                            Rectangle { horizontal-stretch: 1; }
+                        CheckBox {
+                            text: L.s(L.revision, "move_completed");
+                            checked <=> root.move-completed;
                         }
-                        CheckBox { text: L.s(L.revision, "enable_ul_rate_limit"); checked <=> root.limit-upload; }
                         Labelled {
-                            label: "    " + L.s(L.revision, "ul_rate_limit");
-                            LineEdit { text <=> root.upload-limit; width: 100px; enabled: root.limit-upload; }
-                            Rectangle { horizontal-stretch: 1; }
+                            label: "    " + L.s(L.revision, "move_completed_path");
+                            LineEdit { text <=> root.move-completed-path; horizontal-stretch: 1; enabled: root.move-completed; }
+                            Button {
+                                text: L.s(L.revision, "browse");
+                                enabled: root.move-completed;
+                                clicked => { root.browse-move-completed(); }
+                            }
+                        }
+
+                        Rectangle { height: 4px; }
+
+                        CheckBox {
+                            text: L.s(L.revision, "watch_folder");
+                            checked <=> root.watch-enabled;
+                        }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "watch_path");
+                            LineEdit { text <=> root.watch-path; horizontal-stretch: 1; enabled: root.watch-enabled; }
+                            Button {
+                                text: L.s(L.revision, "browse");
+                                enabled: root.watch-enabled;
+                                clicked => { root.browse-watch(); }
+                            }
+                        }
+                        CheckBox {
+                            text: "    " + L.s(L.revision, "watch_start");
+                            checked <=> root.watch-start;
+                            enabled: root.watch-enabled;
+                        }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "label");
+                            hint: L.s(L.revision, "hint_watch_label");
+                            ComboBox {
+                                model: root.watch-label-names;
+                                current-index <=> root.watch-label-index;
+                                enabled: root.watch-enabled;
+                                horizontal-stretch: 1;
+                            }
                         }
 
                         Rectangle { vertical-stretch: 1; }
@@ -837,6 +1022,7 @@ export component PreferencesDialog inherits Window {
                             }
                             Labelled {
                                 label: "    " + L.s(L.revision, "web_keep_alive");
+                                hint: L.s(L.revision, "hint_keep_alive");
                                 LineEdit {
                                     text <=> root.web-keep-alive;
                                     horizontal-stretch: 1;
@@ -887,6 +1073,7 @@ export component PreferencesDialog inherits Window {
                             }
                             Labelled {
                                 label: "    " + L.s(L.revision, "web_max_body");
+                                hint: L.s(L.revision, "hint_max_body");
                                 LineEdit {
                                     text <=> root.web-max-body;
                                     horizontal-stretch: 1;
@@ -901,6 +1088,7 @@ export component PreferencesDialog inherits Window {
                             }
                             Labelled {
                                 label: "    " + L.s(L.revision, "auth_max_failures");
+                                hint: L.s(L.revision, "hint_auth_failures");
                                 LineEdit {
                                     text <=> root.web-auth-max-failures;
                                     horizontal-stretch: 1;
@@ -911,6 +1099,7 @@ export component PreferencesDialog inherits Window {
                             }
                             Labelled {
                                 label: "    " + L.s(L.revision, "auth_window");
+                                hint: L.s(L.revision, "hint_auth_window");
                                 LineEdit {
                                     text <=> root.web-auth-window;
                                     horizontal-stretch: 1;
@@ -921,6 +1110,7 @@ export component PreferencesDialog inherits Window {
                             }
                             Labelled {
                                 label: "    " + L.s(L.revision, "auth_block");
+                                hint: L.s(L.revision, "hint_auth_block");
                                 LineEdit {
                                     text <=> root.web-auth-block;
                                     horizontal-stretch: 1;
@@ -1082,9 +1272,12 @@ export component PreferencesDialog inherits Window {
                 // No ScrollView around this one: both panes are ListViews that
                 // scroll themselves. It still has to count towards the window
                 // height below, or the window would be too short for it.
-                tb6 := HorizontalLayout {
+                tb6 := VerticalLayout {
                     padding: 12px;
-                    spacing: 16px;
+                    spacing: 10px;
+
+                    HorizontalLayout {
+                        spacing: 16px;
 
                     VerticalLayout {
                         spacing: 6px;
@@ -1221,6 +1414,327 @@ export component PreferencesDialog inherits Window {
                                 clicked => { root.save-filter(); }
                             }
                         }
+                    }
+                    }
+
+                    Rectangle { height: 1px; background: Palette.border; }
+
+                    // Tags are one line rather than a third list: they carry
+                    // nothing but a name, so there is nothing to edit once one
+                    // exists. Which torrents have which is set from the list's
+                    // context menu, where the torrents are.
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: L.s(L.revision, "tags");
+                            font-weight: 700;
+                            font-size: 13px;
+                            width: 90px;
+                            vertical-alignment: center;
+                        }
+                        LineEdit {
+                            text <=> root.new-tag;
+                            placeholder-text: L.s(L.revision, "add_tag");
+                            horizontal-stretch: 1;
+                        }
+                        Button {
+                            text: L.s(L.revision, "add");
+                            enabled: root.new-tag != "";
+                            clicked => { root.add-tag(); }
+                        }
+                        ComboBox {
+                            model: root.tag-names;
+                            current-index <=> root.tag-index;
+                            width: 160px;
+                        }
+                        Button {
+                            text: L.s(L.revision, "delete");
+                            enabled: root.tag-index >= 0 && root.tag-names.length > 0;
+                            clicked => { root.delete-tag(); }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                visible: root.current-tab == 7;
+                ScrollView {
+                    vertical-scrollbar-policy: as-needed;
+                    tb8 := VerticalLayout {
+                        padding: 12px;
+                        // Room for the vertical scrollbar, which a ScrollView draws inside
+                        // its own bounds - over the right-hand edge of whatever is there.
+                        //
+                        // A constant, not a test for whether the bar is showing: that test
+                        // reads viewport-height, padding feeds height, and height feeds
+                        // viewport-height. Slint calls that a binding loop.
+                        padding-right: 28px;
+                        spacing: 10px;
+
+                        Text {
+                            text: L.s(L.revision, "database_explain");
+                            wrap: word-wrap;
+                            font-size: 13px;
+                            color: Palette.foreground;
+                        }
+
+                        Labelled {
+                            label: L.s(L.revision, "database_status");
+                            Text {
+                                text: root.db-encrypted
+                                    ? L.s(L.revision, "database_on")
+                                    : L.s(L.revision, "database_off");
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                color: root.db-encrypted ? #3fa34d : Palette.foreground;
+                            }
+                        }
+
+                        // Only meaningful once there is a key, and its absence is
+                        // not worth a row saying so.
+                        if root.db-encrypted: Labelled {
+                            label: L.s(L.revision, "database_key_file");
+                            Text {
+                                text: root.db-key-path;
+                                font-size: 12px;
+                                wrap: word-wrap;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                color: Palette.foreground;
+                            }
+                        }
+
+                        if root.db-encrypted: Text {
+                            text: L.s(L.revision, "database_backup_key");
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: Palette.foreground;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Button {
+                                text: root.db-encrypted
+                                    ? L.s(L.revision, "database_decrypt")
+                                    : L.s(L.revision, "database_encrypt");
+                                primary: !root.db-encrypted;
+                                clicked => { root.set-db-encryption(!root.db-encrypted); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+
+                        if root.db-error != "": Text {
+                            text: root.db-error;
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: #f2705f;
+                        }
+
+                        Rectangle { height: 8px; }
+                        Rectangle { height: 1px; background: Palette.border; }
+
+                        Text {
+                            text: L.s(L.revision, "settings_transfer");
+                            font-weight: 700;
+                            font-size: 13px;
+                            color: Palette.foreground;
+                        }
+                        Text {
+                            text: L.s(L.revision, "settings_transfer_explain");
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: Palette.foreground;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Button {
+                                text: L.s(L.revision, "export_settings");
+                                clicked => { root.export-settings(); }
+                            }
+                            Button {
+                                text: L.s(L.revision, "import_settings");
+                                clicked => { root.import-settings(); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+
+                        if root.db-note != "": Text {
+                            text: root.db-note;
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: root.db-note-bad ? #f2705f : Palette.foreground;
+                        }
+
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                visible: root.current-tab == 8;
+                ScrollView {
+                    vertical-scrollbar-policy: as-needed;
+                    tb9 := VerticalLayout {
+                        padding: 12px;
+                        padding-right: 28px;
+                        spacing: 10px;
+
+                        CheckBox { text: L.s(L.revision, "enable_dl_rate_limit"); checked <=> root.limit-download; }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "dl_rate_limit");
+                            LineEdit { text <=> root.download-limit; width: 100px; enabled: root.limit-download; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        CheckBox { text: L.s(L.revision, "enable_ul_rate_limit"); checked <=> root.limit-upload; }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "ul_rate_limit");
+                            LineEdit { text <=> root.upload-limit; width: 100px; enabled: root.limit-upload; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+
+                        Rectangle { height: 4px; }
+                        Rectangle { height: 1px; background: Palette.border; }
+
+                        Text {
+                            text: L.s(L.revision, "alt_speed_limits");
+                            font-weight: 700;
+                            font-size: 13px;
+                            color: Palette.foreground;
+                        }
+                        Text {
+                            text: L.s(L.revision, "alt_speed_explain");
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: Palette.foreground;
+                        }
+
+                        CheckBox { text: L.s(L.revision, "alt_speed_now"); checked <=> root.alt-enabled; }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "dl_rate_limit");
+                            LineEdit { text <=> root.alt-download-limit; width: 100px; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "ul_rate_limit");
+                            LineEdit { text <=> root.alt-upload-limit; width: 100px; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+
+                        CheckBox { text: L.s(L.revision, "alt_speed_schedule"); checked <=> root.schedule-enabled; }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "alt_speed_from");
+                            LineEdit { text <=> root.schedule-from; width: 100px; enabled: root.schedule-enabled; }
+                            Text {
+                                text: L.s(L.revision, "alt_speed_to");
+                                vertical-alignment: center;
+                                color: Palette.foreground;
+                            }
+                            LineEdit { text <=> root.schedule-to; width: 100px; enabled: root.schedule-enabled; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+
+                        // One box per weekday. The model is seven booleans and
+                        // the database stores a bitmask; the conversion is in
+                        // Rust, because a bitmask is not something to make
+                        // somebody count out in a text field.
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text {
+                                text: L.s(L.revision, "alt_speed_days");
+                                font-weight: 700;
+                                font-size: 13px;
+                                width: 190px;
+                                vertical-alignment: center;
+                            }
+                            for day[i] in root.schedule-days: CheckBox {
+                                text: root.weekday-names[i];
+                                checked: day;
+                                enabled: root.schedule-enabled;
+                                toggled => { root.schedule-day-toggled(i, self.checked); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: 0; y: 0; width: parent.width; height: parent.height;
+                visible: root.current-tab == 9;
+                ScrollView {
+                    vertical-scrollbar-policy: as-needed;
+                    tb10 := VerticalLayout {
+                        padding: 12px;
+                        padding-right: 28px;
+                        spacing: 10px;
+
+                        Labelled {
+                            label: L.s(L.revision, "active_limit");
+                            LineEdit { text <=> root.active-limit; width: 100px; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        Labelled {
+                            label: L.s(L.revision, "active_downloads");
+                            LineEdit { text <=> root.active-downloads; width: 100px; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        Labelled {
+                            label: L.s(L.revision, "active_seeds");
+                            LineEdit { text <=> root.active-seeds; width: 100px; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+
+                        Rectangle { height: 4px; }
+                        Rectangle { height: 1px; background: Palette.border; }
+
+                        Text {
+                            text: L.s(L.revision, "share_limits");
+                            font-weight: 700;
+                            font-size: 13px;
+                            color: Palette.foreground;
+                        }
+                        Text {
+                            text: L.s(L.revision, "share_limits_explain");
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: Palette.foreground;
+                        }
+
+                        CheckBox {
+                            text: L.s(L.revision, "share_limits_on");
+                            checked <=> root.share-limits-enabled;
+                        }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "share_ratio_limit");
+                            LineEdit { text <=> root.share-ratio-limit; width: 100px; enabled: root.share-limits-enabled; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "seed_time_limit");
+                            LineEdit { text <=> root.seed-time-limit; width: 100px; enabled: root.share-limits-enabled; }
+                            Text {
+                                text: L.s(L.revision, "minutes");
+                                vertical-alignment: center;
+                                color: Palette.foreground;
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        Labelled {
+                            label: "    " + L.s(L.revision, "share_limit_action");
+                            ComboBox {
+                                model: root.share-actions;
+                                current-index <=> root.share-action-index;
+                                enabled: root.share-limits-enabled;
+                                horizontal-stretch: 1;
+                            }
+                        }
+
+                        Rectangle { vertical-stretch: 1; }
                     }
                 }
             }

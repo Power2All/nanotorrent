@@ -97,24 +97,58 @@ export component TabStrip inherits Rectangle {
     min-height: 30px + root.bar-room;
     max-height: 30px + root.bar-room;
 
-    sv := ScrollView {
+    // The wheel scrolls the row sideways. This strip only ever scrolls
+    // horizontally, and the wheel most mice have only sends VERTICAL deltas -
+    // so without this the wheel does nothing over a row that visibly has more
+    // tabs off the edge, which reads as broken rather than as unsupported.
+    //
+    // The TouchArea is the ScrollView's PARENT, not a sibling behind it:
+    // Slint delivers an event to the innermost element and bubbles it up the
+    // parent chain, so a sibling underneath would never see it. As a parent it
+    // gets what the tabs themselves do not handle, and the tabs still get their
+    // clicks because children sit above it.
+    TouchArea {
         x: 0;
         y: 0;
         width: parent.width;
         height: parent.height;
-        vertical-scrollbar-policy: always-off;
-        viewport-width: inner.preferred-width;
 
-        // Holds the row at the top; whatever is left over is where the bar
-        // draws.
-        VerticalLayout {
-            alignment: start;
-            inner := HorizontalLayout {
+        scroll-event(event) => {
+            if (!root.scrolls) {
+                // Nothing to scroll: let the wheel go to whatever is behind,
+                // rather than swallowing it over a row that fits.
+                return EventResult.reject;
+            }
+            // A tilt wheel or a trackpad gives delta-x directly; a plain wheel
+            // gives delta-y and means the same thing here.
+            sv.viewport-x = clamp(
+                sv.viewport-x + (event.delta-x != 0 ? event.delta-x : event.delta-y),
+                // viewport-x runs from 0 (leftmost) down to a negative number,
+                // so the LOWER bound is the negative one.
+                min(0px, sv.visible-width - sv.viewport-width),
+                0px);
+            return EventResult.accept;
+        }
+
+        sv := ScrollView {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            vertical-scrollbar-policy: always-off;
+            viewport-width: inner.preferred-width;
+
+            // Holds the row at the top; whatever is left over is where the bar
+            // draws.
+            VerticalLayout {
                 alignment: start;
-                padding-left: 6px;
-                padding-top: 1px;
-                spacing: 2px;
-                @children
+                inner := HorizontalLayout {
+                    alignment: start;
+                    padding-left: 6px;
+                    padding-top: 1px;
+                    spacing: 2px;
+                    @children
+                }
             }
         }
     }
@@ -201,6 +235,47 @@ export component PluginsIcon inherits Rectangle {
         viewbox-width: 20; viewbox-height: 20;
         fill: root.ink;
         commands: "M 3 3 L 12 3 L 12 6 L 16 6 L 16 11 L 12 11 L 12 17 L 3 17 Z";
+    }
+}
+
+// A speedometer needle, for Speed. A wedge and a pointer rather than a dial:
+// an arc at 16px reads as a smudge.
+export component SpeedIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 2 15 L 4 9 L 7 6 L 13 6 L 16 9 L 18 15 L 15 15 L 13 10 L 7 10 L 5 15 Z M 9 15 L 14 11 L 15 12 L 11 16 Z";
+    }
+}
+
+// Stacked bars of decreasing width, for the queue: a list with an order.
+export component QueueIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 2 3 L 18 3 L 18 6 L 2 6 Z M 2 8 L 14 8 L 14 11 L 2 11 Z M 2 13 L 10 13 L 10 16 L 2 16 Z";
+    }
+}
+
+// A padlock, for Database - the tab is about encrypting it, and a lock says
+// that where a cylinder would only repeat the word.
+export component DatabaseIcon inherits Rectangle {
+    in property <color> ink;
+    width: 16px;
+    height: 16px;
+    Path {
+        x: 0; y: 0; width: parent.width; height: parent.height;
+        viewbox-width: 20; viewbox-height: 20;
+        fill: root.ink;
+        commands: "M 4 9 L 16 9 L 16 18 L 4 18 Z M 6 9 L 6 6 L 8 4 L 12 4 L 14 6 L 14 9 L 12 9 L 12 6.5 L 11 5.5 L 9 5.5 L 8 6.5 L 8 9 Z";
     }
 }
 

@@ -45,6 +45,30 @@ pub trait MetadataInterceptor: Send + Sync + std::fmt::Debug {
     fn substitute_info(&self, info_bytes: &[u8]) -> anyhow::Result<Vec<u8>>;
 }
 
+/// Answers BEP 52 `hash request` messages for one torrent.
+///
+/// The other half of [`MetadataInterceptor`]: that one ASKS for hashes when
+/// resolving a v2 magnet, this one ANSWERS when a peer asks us. Separate
+/// traits because they are needed at different times and by different
+/// torrents - a torrent added from a `.torrent` never asks, and only a torrent
+/// whose layers we hold can answer.
+///
+/// Installing one is also what makes the engine advertise v2 in its
+/// handshake: the bit says "I can serve these", so it must not be set by a
+/// torrent that has nothing to serve.
+pub trait HashProvider: Send + Sync + std::fmt::Debug {
+    /// The hashes satisfying `request`, base layer first and then the proof
+    /// layers, or `None` to reject it.
+    ///
+    /// Returning `None` is normal and not an error: it is the honest answer
+    /// for a file we do not have the layers for, and the caller turns it into
+    /// a `hash reject`, which is what the BEP asks for.
+    fn hashes_for(
+        &self,
+        request: &peer_binary_protocol::HashRequest,
+    ) -> Option<Vec<[u8; 32]>>;
+}
+
 /// Accumulates one piece's bytes and answers whether they are correct.
 ///
 /// The engine feeds the piece in order and in arbitrary-sized slices. An

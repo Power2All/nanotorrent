@@ -8,9 +8,17 @@
   include_str! - same approach as lang/*.json and res/flags/*.png.
 
   Deliberately a REMOTE, not a second full client: add, watch, pause, resume,
-  remove, set a torrent's location, and pick a folder on the machine
-  NanoTorrent runs on. The desktop UI keeps the things that only make sense
-  sitting in front of it.
+  remove, set a torrent's location, order the queue, and pick a folder on the
+  machine NanoTorrent runs on. A per-torrent panel carries the rest - file
+  priorities, trackers, tags and that torrent's own share limits - because
+  those are things you reach for when you are not sitting in front of the
+  machine. What stays on the desktop is what needs a window: the piece bar,
+  the peer list with its flags, the charts and the plugin windows.
+
+  Every write here calls the same `Session` method the desktop calls. That is
+  the rule that keeps the two surfaces honest - a limit set from a phone has
+  to behave exactly like the same limit set from the window, or one of them is
+  lying.
 
   Two rules worth keeping if you edit this:
 
@@ -188,7 +196,7 @@ dialog {
 
    The rest stay narrow: a confirmation as wide as the screen reads as a page,
    not a question. */
-#add, #plug, #plugs { max-width: min(76rem, 96vw); }
+#add, #plug, #plugs, #tdet { max-width: min(76rem, 96vw); }
 dialog::backdrop { background: #0008; }
 .dlg-head { padding: .8rem 1rem; border-bottom: 1px solid var(--line); font-weight: 600; }
 .dlg-body { padding: 1rem; display: grid; gap: .8rem; }
@@ -302,6 +310,52 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
 .tool svg { width: 18px; height: 18px; fill: currentColor; }
 .tool:disabled { opacity: .35; }
 .tool-sep { width: 1px; height: 1.2rem; background: var(--line); margin: 0 .15rem; }
+/* A toolbar button that is a switch rather than an action, drawn held down.
+   The desktop's turtle does the same thing for the same reason: an icon-only
+   toggle with no state showing is indistinguishable from one that did
+   nothing. */
+.tool.on { background: var(--accent); color: #fff; }
+.tool.on svg { fill: #fff; }
+
+/* The per-torrent panel. A <dialog> rather than a second drawer: the drawer
+   slides over the list, and this is opened FROM a row - keeping the list
+   visible behind a backdrop is what says which torrent it belongs to.
+
+   Sections stacked rather than tabbed: three short lists, and a panel that
+   scrolls is easier on a phone than a tab strip that has to scroll sideways. */
+#tdet .dlg-body { max-height: min(70vh, 40rem); overflow-y: auto; }
+.sec-title {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); margin: 1.1rem 0 .4rem; font-weight: 600;
+}
+.sec-title:first-child { margin-top: 0; }
+/* One row of any of the three lists. */
+.lrow {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .3rem 0; border-bottom: 1px solid var(--line);
+}
+.lrow:last-child { border-bottom: 0; }
+/* The name column. min-width:0 is what lets it shrink far enough to ellipsis
+   instead of pushing the controls beside it off the panel. */
+.lrow .grow {
+  flex: 1; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.lrow .num { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lrow select { flex: 0 0 auto; }
+.trk-tier { font-weight: 600; color: var(--muted); }
+.trk-src { color: var(--muted); font-style: italic; }
+/* Tags are checkboxes in a row, so `label`'s global grid has to be undone. */
+.tagbox { display: flex; flex-wrap: wrap; gap: .4rem 1rem; }
+.tagbox label {
+  display: flex; flex-direction: row; align-items: center;
+  gap: .35rem; color: var(--fg); font-size: .9rem;
+}
+.addrow { display: flex; gap: .4rem; align-items: center; margin-top: .5rem; }
+.addrow input[type=text] { flex: 1; min-width: 0; }
+.addrow select { flex: 0 0 auto; }
+.limits { display: flex; gap: .8rem; flex-wrap: wrap; align-items: end; }
+.limits label { flex: 1; min-width: 11rem; }
 
 /* Throughput charts, to the desktop's geometry: 96px by default, dragged
    between 48 and 320, one grip each.
@@ -481,6 +535,26 @@ th .arrow { opacity: .75; font-size: .8em; }
   <button class="tool" id="tb-pause" title="{{pause}}" aria-label="{{pause}}" disabled>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3h4v14H5zM11 3h4v14h-4z"/></svg>
   </button>
+  <span class="tool-sep"></span>
+  <!-- Queue order, in queue order left to right. Same four actions and the
+       same multi-selection rules as the desktop toolbar. -->
+  <button class="tool" id="tb-qtop" title="{{queue_top}}" aria-label="{{queue_top}}" disabled>
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 2h12v2H4zM9 16V9H5l5-5 5 5h-4v7z"/></svg>
+  </button>
+  <button class="tool" id="tb-qup" title="{{up}}" aria-label="{{up}}" disabled>
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 17V8H5l5-5 5 5h-4v9z"/></svg>
+  </button>
+  <button class="tool" id="tb-qdown" title="{{down}}" aria-label="{{down}}" disabled>
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 3v9H5l5 5 5-5h-4V3z"/></svg>
+  </button>
+  <button class="tool" id="tb-qbottom" title="{{queue_bottom}}" aria-label="{{queue_bottom}}" disabled>
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16h12v2H4zM9 4v7H5l5 5 5-5h-4V4z"/></svg>
+  </button>
+  <span class="tool-sep"></span>
+  <!-- The turtle, latched on while the alternative limits are in force. -->
+  <button class="tool" id="tb-alt" title="{{alt_speed_now}}" aria-label="{{alt_speed_now}}">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 13h2v3H3zM15 13h2v3h-2zM10 4c4 0 7 2 7 5v3H3V9c0-3 3-5 7-5zM1 8h2v2H1z"/></svg>
+  </button>
   <span class="stat" id="sel-count" title="{{status}}"></span>
   <span class="tool-sep"></span>
   <!-- One minute of each direction, the same pair the desktop toolbar draws.
@@ -563,6 +637,7 @@ th .arrow { opacity: .75; font-size: .8em; }
       <select id="plug-pick" hidden></select>
       <div class="plug-list" id="plug-groups" hidden></div>
       <div class="plug-list" id="plug-rows"></div>
+      <div id="plug-form" hidden></div>
       <div class="plug-status" id="plug-status"></div>
       <input type="text" id="plug-input" hidden>
       <div class="plug-buttons" id="plug-buttons"></div>
@@ -605,6 +680,48 @@ th .arrow { opacity: .75; font-size: .8em; }
     <div class="dlg-foot">
       <button value="cancel">{{cancel}}</button>
       <button class="primary" id="add-ok" value="ok">{{add}}</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Per-torrent details: files and their priorities, trackers, tags and this
+     torrent's own share limits. Everything the desktop's details panel and
+     context menu offer that makes sense from a phone. -->
+<dialog id="tdet">
+  <form method="dialog">
+    <div class="dlg-head" id="tdet-name"></div>
+    <div class="dlg-body">
+      <div class="sec-title">{{files}}</div>
+      <div id="tdet-files"></div>
+
+      <div class="sec-title">{{trackers}}</div>
+      <div id="tdet-trackers"></div>
+      <div class="addrow">
+        <input type="text" id="tdet-turl" placeholder="{{tracker_url}}">
+        <select id="tdet-tier"></select>
+        <button type="button" id="tdet-tadd">{{add_tracker}}</button>
+      </div>
+
+      <div class="sec-title">{{tags}}</div>
+      <div class="tagbox" id="tdet-tags"></div>
+      <div class="addrow">
+        <input type="text" id="tdet-newtag" placeholder="{{add_tag}}">
+        <button type="button" id="tdet-tagadd">{{add_tag}}</button>
+      </div>
+
+      <div class="sec-title">{{share_limits}}</div>
+      <div class="limits">
+        <label>{{share_ratio_limit}}
+          <select id="tdet-ratio"></select>
+        </label>
+        <label>{{seed_time_limit}}
+          <select id="tdet-seed"></select>
+        </label>
+        <button type="button" id="tdet-reannounce">{{force_reannounce}}</button>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button value="close">{{close}}</button>
     </div>
   </form>
 </dialog>
@@ -773,6 +890,7 @@ function renderRows(all) {
           act(() => api("POST", `/api/torrents/${t.info_hash}/location`, { path }));
         });
       }),
+      actionButton(T.details, "", () => openDetails(t)),
       actionButton("Remove", "danger", () => {
         // Two questions, because the second one is unrecoverable.
         if (!confirm(`Remove "${t.name}" from NanoTorrent?`)) return;
@@ -997,6 +1115,10 @@ function applySnapshot(info, list, errors) {
   $("dht").textContent = info.dht_nodes === null ? "-" : info.dht_nodes;
   $("count").textContent = info.torrents;
   pushRates(info.download_rate, info.upload_rate);
+  // The schedule can turn the alternative limits on without anyone touching
+  // the button, so the state comes from the server rather than from the last
+  // click - otherwise the turtle would go dark while the limits were on.
+  paintAltSpeed(info.alt_speed);
   LAST_TORRENTS = list;
   renderRows(list);
   // Torrents may have been removed underneath the selection.
@@ -1374,6 +1496,88 @@ async function plugSend(body) {
   setTimeout(plugDraw, 600);
 }
 
+
+// The form a plugin puts up in place of its lists. Drawn once when it appears
+// and then left alone - see the note in plugDraw about the poll.
+let plugFormId = "";
+
+function drawPlugForm(s) {
+  plugFormId = s.form_id;
+  const box = $("plug-form");
+  box.textContent = "";
+
+  for (const f of s.fields) {
+    const wrap = document.createElement("div");
+    wrap.className = "pref";
+
+    let control;
+    if (f.kind === "check") {
+      control = document.createElement("input");
+      control.type = "checkbox";
+      control.checked = f.value !== "";
+      const label = document.createElement("label");
+      label.style.display = "flex";
+      label.style.flexDirection = "row";
+      label.style.alignItems = "center";
+      label.style.gap = ".4rem";
+      const text = document.createElement("span");
+      text.textContent = f.label;        // the plugin's words, never innerHTML
+      label.append(control, text);
+      wrap.append(label);
+    } else {
+      const label = document.createElement("label");
+      label.textContent = f.label;
+      if (f.kind === "choice") {
+        control = document.createElement("select");
+        for (const o of f.options) {
+          const opt = document.createElement("option");
+          opt.value = o;
+          opt.textContent = o;
+          opt.selected = o === f.value;
+          control.append(opt);
+        }
+      } else {
+        control = document.createElement("input");
+        control.type = f.kind === "number" ? "number" : "text";
+        control.value = f.value;
+      }
+      label.append(control);
+      wrap.append(label);
+    }
+    control.dataset.field = f.id;
+
+    if (f.hint) {
+      const hint = document.createElement("div");
+      hint.className = "unit";
+      hint.textContent = f.hint;
+      wrap.append(hint);
+    }
+    box.append(wrap);
+  }
+
+  const foot = document.createElement("div");
+  foot.className = "addrow";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = T.cancel;
+  cancel.onclick = () => plugSend({ kind: "formcancel", id: s.form_id });
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "primary";
+  save.textContent = T.save;
+  save.onclick = () => {
+    // A checkbox travels as "1" or "", so every value is a string and the
+    // plugin reads them all the same way - the rule the window follows too.
+    const values = [...box.querySelectorAll("[data-field]")].map((el) => [
+      el.dataset.field,
+      el.type === "checkbox" ? (el.checked ? "1" : "") : el.value,
+    ]);
+    plugSend({ kind: "form", id: s.form_id, values });
+  };
+  foot.append(cancel, save);
+  box.append(foot);
+}
+
 async function plugDraw() {
   if (!plugCurrent) return;
   let s;
@@ -1382,8 +1586,22 @@ async function plugDraw() {
   } catch (e) {
     return;
   }
-  $("plug-title").textContent = s.title || s.name;
+  $("plug-title").textContent = (s.form_id ? s.form_title : "") || s.title || s.name;
   $("plug-status").textContent = s.status;
+
+  // A form takes the whole panel, exactly as it does in the desktop window.
+  // While one is up the two-second poll is suspended: redrawing would throw
+  // away whatever had been typed.
+  const onForm = !!s.form_id;
+  for (const id of ["plug-groups", "plug-rows", "plug-input", "plug-buttons"]) {
+    $(id).hidden = onForm;
+  }
+  $("plug-form").hidden = !onForm;
+  if (onForm) {
+    if (plugFormId !== s.form_id) drawPlugForm(s);
+    return;
+  }
+  plugFormId = "";
 
   const groups = $("plug-groups");
   groups.textContent = "";
@@ -1503,6 +1721,9 @@ function syncToolbar() {
   // to rather than toggling everything.
   $("tb-resume").disabled = !picked.some((t) => t.paused);
   $("tb-pause").disabled = !picked.some((t) => !t.paused);
+  for (const id of ["tb-qtop", "tb-qup", "tb-qdown", "tb-qbottom"]) {
+    $(id).disabled = n === 0;
+  }
   $("sel-count").textContent = n > 1 ? n + "" : "";
 }
 
@@ -1531,6 +1752,283 @@ $("tb-remove").onclick = () => {
   act(() => Promise.all(picked.map((t) =>
     api("DELETE", `/api/torrents/${t.info_hash}?delete_files=${withData}`))));
 };
+
+
+// --- per-torrent details ----------------------------------------------------
+// Files and their priorities, trackers, tags and this torrent's own share
+// limits - the parts of the desktop's details panel and context menu that make
+// sense from a phone. Every write calls the same `Session` method the desktop
+// calls, so the two cannot drift apart.
+//
+// The panel reads on open and after each change rather than polling: nothing
+// here moves on its own except tracker status, and a list that rewrites itself
+// under your finger while you are picking a priority is worse than stale.
+let detHash = null;
+let detTiers = 1;
+
+// 0 skip, 1 normal, 2 high, 3 maximum - the same scale the database uses.
+const PRIORITIES = [
+  [0, T.priority_skip],
+  [1, T.priority_normal],
+  [2, T.priority_high],
+  [3, T.priority_max],
+];
+
+// The ratios and durations the desktop's submenus offer, so both surfaces
+// present the same choices.
+const RATIO_PRESETS = [1, 2, 3, 5];
+const SEED_PRESETS = [30, 60, 360, 1440];
+
+function option(value, text, selected) {
+  const o = document.createElement("option");
+  o.value = value;
+  o.textContent = text;
+  o.selected = selected;
+  return o;
+}
+
+/// Minutes as the ETA column spells them, so nothing new needs translating.
+function minutesLabel(m) {
+  return m % 60 === 0 ? `${m / 60}h` : `${m}m`;
+}
+
+async function openDetails(t) {
+  detHash = t.info_hash;
+  $("tdet-name").textContent = t.name;          // never innerHTML - hostile input
+  $("tdet").showModal();
+  await drawDetails();
+}
+
+async function drawDetails() {
+  if (!detHash) return;
+  try {
+    // One round trip each, in parallel: they are independent and the panel is
+    // not usable until all three have arrived anyway.
+    const [files, trackers, meta] = await Promise.all([
+      api("GET", `/api/torrents/${detHash}/files`),
+      api("GET", `/api/torrents/${detHash}/trackers`),
+      api("GET", `/api/torrents/${detHash}/tags`),
+    ]);
+    drawFiles(files);
+    drawTrackers(trackers);
+    drawTags(meta);
+    drawLimits(meta);
+  } catch (e) { toast(e.message); }
+}
+
+function drawFiles(files) {
+  const box = $("tdet-files");
+  box.textContent = "";
+  for (const f of files) {
+    const row = document.createElement("div");
+    row.className = "lrow";
+    const name = document.createElement("span");
+    name.className = "grow";
+    name.textContent = f.name;                  // attacker-controlled
+    name.title = f.name;
+    const size = document.createElement("span");
+    size.className = "num";
+    size.textContent = `${bytes(f.length)} - ${(f.progress * 100).toFixed(0)}%`;
+    const pick = document.createElement("select");
+    for (const [value, text] of PRIORITIES) {
+      pick.append(option(value, text, value === f.priority));
+    }
+    pick.addEventListener("change", () =>
+      act(() => api("POST", `/api/torrents/${detHash}/files`, {
+        index: f.index,
+        priority: Number(pick.value),
+      })));
+    row.append(name, size, pick);
+    box.append(row);
+  }
+}
+
+function drawTrackers(rows) {
+  const box = $("tdet-trackers");
+  box.textContent = "";
+  // The tier picker's last entry is "new tier", and its index is one past the
+  // last real one - which is exactly what the server reads as "make a new
+  // one", so there is no separate button for it.
+  detTiers = rows.filter((r) => r.kind === "tier").length;
+
+  for (const r of rows) {
+    const row = document.createElement("div");
+    row.className = "lrow";
+    const label = document.createElement("span");
+    label.className = "grow" + (r.kind === "tier" ? " trk-tier" : r.kind === "source" ? " trk-src" : "");
+    label.textContent = r.label;                // attacker-controlled
+    label.title = r.label;
+    row.append(label);
+
+    if (r.kind !== "tier") {
+      const status = document.createElement("span");
+      status.className = "num";
+      const counts = r.seeders !== null && r.leechers !== null
+        ? ` - ${T.seeds} ${r.seeders} / ${T.leeches} ${r.leechers}`
+        : "";
+      status.textContent = r.status + counts;
+      row.append(status);
+    }
+
+    // Only a real tracker can be edited or removed; a tier heading and the
+    // DHT/LSD/PeX rows are not addresses.
+    if (r.kind === "tracker") {
+      row.append(
+        actionButton(T.edit, "", async () => {
+          const next = prompt(T.tracker_url, r.label);
+          if (next === null || next.trim() === r.label) return;
+          await act(() => api("POST", `/api/torrents/${detHash}/trackers/edit`,
+            { from: r.label, url: next }));
+          await drawDetails();
+        }),
+        actionButton(T.remove, "danger", async () => {
+          await act(() => api("POST", `/api/torrents/${detHash}/trackers/remove`, { url: r.label }));
+          await drawDetails();
+        }),
+      );
+    }
+    box.append(row);
+  }
+
+  const tier = $("tdet-tier");
+  tier.textContent = "";
+  for (let i = 0; i < detTiers; i++) tier.append(option(i, `${T.tier} #${i}`));
+  // Selected by default: adding to a tier of its own is the safe choice, since
+  // it cannot change the announce order of what is already there.
+  tier.append(option(detTiers, T.new_tier, true));
+}
+
+function drawTags(meta) {
+  const box = $("tdet-tags");
+  box.textContent = "";
+  if (!meta.all.length) {
+    const none = document.createElement("span");
+    none.className = "num";
+    none.textContent = T.no_tags_yet;
+    box.append(none);
+    return;
+  }
+  for (const name of meta.all) {
+    const label = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = meta.on.includes(name);
+    cb.addEventListener("change", () => saveTags());
+    cb.dataset.tag = name;
+    const text = document.createElement("span");
+    text.textContent = name;                    // user-supplied
+    label.append(cb, text);
+    box.append(label);
+  }
+}
+
+function saveTags(extra) {
+  const tags = [...$("tdet-tags").querySelectorAll("input[type=checkbox]")]
+    .filter((cb) => cb.checked)
+    .map((cb) => cb.dataset.tag);
+  if (extra) tags.push(extra);
+  return act(() => api("POST", `/api/torrents/${detHash}/tags`, { tags }));
+}
+
+function drawLimits(meta) {
+  // Three states, not two: "follow the global setting" is null in the column,
+  // and 0 is this torrent saying it has no limit at all. A single control has
+  // to carry both, so they are separate entries rather than an empty box.
+  const ratio = $("tdet-ratio");
+  ratio.textContent = "";
+  ratio.append(option("", T.share_ratio_global, meta.ratio_limit === null));
+  ratio.append(option("0", T.share_ratio_none, meta.ratio_limit === 0));
+  for (const r of RATIO_PRESETS) {
+    ratio.append(option(String(r), r.toFixed(1), meta.ratio_limit === r));
+  }
+  // A value set from the desktop that is not one of the presets still has to
+  // show, or the box would claim a limit the torrent does not have.
+  if (meta.ratio_limit !== null && meta.ratio_limit > 0 && !RATIO_PRESETS.includes(meta.ratio_limit)) {
+    ratio.append(option(String(meta.ratio_limit), meta.ratio_limit.toFixed(2), true));
+  }
+
+  const seed = $("tdet-seed");
+  seed.textContent = "";
+  seed.append(option("", T.share_ratio_global, meta.seed_time_limit === null));
+  seed.append(option("0", T.share_ratio_none, meta.seed_time_limit === 0));
+  for (const m of SEED_PRESETS) {
+    seed.append(option(String(m), minutesLabel(m), meta.seed_time_limit === m));
+  }
+  if (meta.seed_time_limit !== null && meta.seed_time_limit > 0 && !SEED_PRESETS.includes(meta.seed_time_limit)) {
+    seed.append(option(String(meta.seed_time_limit), minutesLabel(meta.seed_time_limit), true));
+  }
+}
+
+// An empty value is "follow the global setting", which is null on the wire -
+// distinct from 0, which is "no limit".
+const limitValue = (el) => (el.value === "" ? null : Number(el.value));
+
+$("tdet-ratio").addEventListener("change", () =>
+  act(() => api("POST", `/api/torrents/${detHash}/limits`, { ratio: limitValue($("tdet-ratio")) })));
+$("tdet-seed").addEventListener("change", () =>
+  act(() => api("POST", `/api/torrents/${detHash}/limits`, { seed_minutes: limitValue($("tdet-seed")) })));
+
+$("tdet-tadd").onclick = async () => {
+  const url = $("tdet-turl").value.trim();
+  if (!url) return;
+  try {
+    await api("POST", `/api/torrents/${detHash}/trackers`,
+      { url, tier: Number($("tdet-tier").value) });
+    $("tdet-turl").value = "";
+    await drawDetails();
+  } catch { toast(T.tracker_url_invalid); }
+};
+$("tdet-turl").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); $("tdet-tadd").click(); }
+});
+
+$("tdet-tagadd").onclick = async () => {
+  const name = $("tdet-newtag").value.trim();
+  if (!name) return;
+  await saveTags(name);
+  $("tdet-newtag").value = "";
+  await drawDetails();
+};
+$("tdet-newtag").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); $("tdet-tagadd").click(); }
+});
+
+$("tdet-reannounce").onclick = () =>
+  act(() => api("POST", `/api/torrents/${detHash}/reannounce`));
+
+$("tdet").addEventListener("close", () => { detHash = null; });
+
+// --- queue order and the turtle ---------------------------------------------
+// Top and Bottom are applied in the order that keeps a multiple selection
+// together: moving each in turn to the top would reverse them, so the list is
+// walked backwards for Top and forwards for Bottom. Same rule as the desktop.
+function moveQueue(to) {
+  const picked = chosen();
+  const order = to === "top" ? [...picked].reverse() : picked;
+  return act(async () => {
+    for (const t of order) {
+      await api("POST", `/api/torrents/${t.info_hash}/queue`, { to });
+    }
+  });
+}
+
+$("tb-qtop").onclick = () => moveQueue("top");
+$("tb-qup").onclick = () => moveQueue("up");
+$("tb-qdown").onclick = () => moveQueue("down");
+$("tb-qbottom").onclick = () => moveQueue("bottom");
+
+// The manual switch only. The schedule can also have the limits on, and this
+// must not silently turn that off - the scheduler would put them straight back
+// and the button would look broken.
+let altSpeed = false;
+$("tb-alt").onclick = () =>
+  act(() => api("POST", "/api/speed/alt", { enabled: !altSpeed }));
+
+function paintAltSpeed(on) {
+  altSpeed = on;
+  $("tb-alt").classList.toggle("on", on);
+  $("tb-alt").setAttribute("aria-pressed", on ? "true" : "false");
+}
 
 // --- charts -----------------------------------------------------------------
 // One minute at the refresh interval, the same window the desktop keeps.

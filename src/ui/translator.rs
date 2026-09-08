@@ -466,21 +466,33 @@ mod slint_key_tests {
         let english = super::parse_lang(super::embedded("en-US").expect("en-US is embedded"), false);
 
         let mut missing: Vec<String> = Vec::new();
+        let mut found = 0usize;
         for file in [
             include_str!("../ui_slint/app.slint"),
             include_str!("../ui_slint/preferences.slint"),
             include_str!("../ui_slint/about.slint"),
             include_str!("../ui_slint/create.slint"),
             include_str!("../ui_slint/closeprompt.slint"),
+            include_str!("../ui_slint/dbprompt.slint"),
             include_str!("../ui_slint/tray.slint"),
+            // Four more that carried keys but were never scanned: the
+            // list was hand-written and fell behind the directory.
+            include_str!("../ui_slint/clihelp.slint"),
+            include_str!("../ui_slint/plugin.slint"),
+            include_str!("../ui_slint/remove.slint"),
+            include_str!("../ui_slint/update.slint"),
         ] {
+            // The whole call, not just `L.s("`: every use passes the revision
+            // first, so the shorter pattern matched nothing at all and this
+            // test had been checking an empty set.
             for (_, rest) in file
-                .match_indices("L.s(\"")
+                .match_indices("L.s(L.revision, \"")
                 .map(|(i, m)| (i, &file[i + m.len()..]))
             {
                 let Some(key) = rest.split('"').next() else {
                     continue;
                 };
+                found += 1;
                 if !english.contains_key(key) && !missing.contains(&key.to_string()) {
                     missing.push(key.to_string());
                 }
@@ -490,5 +502,8 @@ mod slint_key_tests {
             missing.is_empty(),
             "keys not in lang/en-US.json: {missing:?}"
         );
+        // The pattern above silently matched nothing once before, which is
+        // worse than no test at all - it read as green.
+        assert!(found > 100, "only {found} keys found in the markup");
     }
 }

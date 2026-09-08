@@ -214,6 +214,22 @@ pub struct TorrentStateLive {
         ChunkInfo,
     )>,
     ratelimits: Limits,
+
+    /// NanoTorrent: how many connected peers hold each piece, by piece index.
+    ///
+    /// Recomputed on a timer rather than kept as running counters incremented
+    /// from `bitfield`, `have`, `have all`, `have none` and every disconnect
+    /// path. Those five places are five chances to leak a count, and a leaked
+    /// count never heals - whereas this is rebuilt from scratch every couple
+    /// of seconds and cannot drift at all.
+    ///
+    /// Being a little stale costs nothing: this orders a choice between pieces
+    /// we are going to download anyway. It is never a correctness input.
+    ///
+    /// ponytail: O(peers x pieces) rebuild every 2s. Fine to five figures of
+    /// pieces; if that ever bites, make it incremental and add a periodic
+    /// rebuild to correct the drift.
+    availability: RwLock<Vec<u32>>,
 }
 
 impl TorrentStateLive {
@@ -229,6 +245,70 @@ impl TorrentStateLive {
                 _ => None,
             })
             .collect()
+    }
+
+    /// NanoTorrent addition: connected peers grouped by what found them, as
+    /// (source, connected, of which seeds).
+    ///
+    /// Counted from the live peer map on each call rather than kept as running
+    /// totals: a peer can disconnect without anything decrementing a counter,
+    /// and a stale count that only ever grows is worse than none. The map is a
+    /// few hundred entries at most and this is read about once a second.
+    ///
+    /// A seed is a peer whose bitfield is complete. `total_pieces` is passed in
+    /// because the peer bitfield is padded up to a byte, so counting ones is
+    /// only meaningful against the real piece count.
+    pub fn peer_counts_by_source(
+        &self,
+        total_pieces: u64,
+    ) -> Vec<(crate::type_aliases::PeerSource, u32, u32)> {
+        let mut counts: Vec<(crate::type_aliases::PeerSource, u32, u32)> = Vec::new();
+        for entry in self.peers.states.iter() {
+            let peer = entry.value();
+            let PeerState::Live(live) = peer.get_state() else {
+                continue;
+            };
+            let seed = live.bitfield.count_ones() as u64 >= total_pieces;
+            match counts.iter_mut().find(|(s, _, _)| *s == peer.source) {
+                Some(row) => {
+                    row.1 += 1;
+                    row.2 += u32::from(seed);
+                }
+                None => counts.push((peer.source, 1, u32::from(seed))),
+            }
+        }
+        counts
+    }
+
+    /// Rebuild [`Self::availability`] from the connected peers' bitfields.
+    ///
+    /// A seed contributes to every piece; that is the point, since a swarm
+    /// with a seed in it has no rare pieces and the ordering should fall back
+    /// to what it was.
+    fn refresh_availability(&self) {
+        let mut counts = vec![0u32; self.lengths.total_pieces() as usize];
+        for entry in self.peers.states.iter() {
+            let PeerState::Live(live) = entry.value().get_state() else {
+                continue;
+            };
+            for piece in live.bitfield.iter_ones() {
+                if let Some(slot) = counts.get_mut(piece) {
+                    *slot += 1;
+                }
+            }
+        }
+        *self.availability.write() = counts;
+    }
+
+    /// How many connected peers hold `piece`. 0 when nothing is known yet,
+    /// which makes every piece look equally rare and the ordering fall back to
+    /// the file-priority order it had before.
+    pub fn piece_availability(&self, piece: ValidPieceIndex) -> u32 {
+        self.availability
+            .read()
+            .get(piece.get() as usize)
+            .copied()
+            .unwrap_or(0)
     }
 
     pub(crate) fn new(
@@ -309,6 +389,7 @@ impl TorrentStateLive {
                 .collect(),
             ratelimit_upload_tx,
             ratelimits,
+            availability: RwLock::new(vec![0; lengths.total_pieces() as usize]),
         });
 
         state.spawn(
@@ -351,6 +432,24 @@ impl TorrentStateLive {
             debug_span!(parent: state.shared.span.clone(), "upload_scheduler"),
             format!("[{}]upload_scheduler", state.shared.id),
             state.clone().task_upload_scheduler(ratelimit_upload_rx),
+        );
+
+        // NanoTorrent: keeps the rarest-first ordering fed. See `availability`.
+        state.spawn(
+            debug_span!(parent: state.shared.span.clone(), "availability"),
+            format!("[{}]availability", state.shared.id),
+            {
+                let state = Arc::downgrade(&state);
+                async move {
+                    loop {
+                        match state.upgrade() {
+                            Some(state) => state.refresh_availability(),
+                            None => return Ok(()),
+                        }
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                    }
+                }
+            },
         );
         Ok(state)
     }
@@ -738,8 +837,12 @@ impl TorrentStateLive {
         let _ = self.have_broadcast_tx.send(index);
     }
 
-    pub(crate) fn add_peer_if_not_seen(&self, addr: SocketAddr) -> crate::Result<bool> {
-        match self.peers.add_if_not_seen(addr) {
+    pub(crate) fn add_peer_if_not_seen(
+        &self,
+        addr: SocketAddr,
+        source: crate::type_aliases::PeerSource,
+    ) -> crate::Result<bool> {
+        match self.peers.add_if_not_seen(addr, source) {
             Some(handle) => handle,
             None => return Ok(false),
         };
@@ -831,6 +934,39 @@ impl TorrentStateLive {
             warn!(id=self.shared.id, info_hash=?self.shared.info_hash, "there's nowhere to send fatal error, receiver is dead");
         }
         Err(res)
+    }
+
+    // NanoTorrent patch 0017: set the file priority ordering on a running
+    // torrent. Upstream derives it once, by filename, with a `TODO: make it
+    // configurable` where it does so - this is that.
+    //
+    // The ordering is a list of file indices, most wanted first. It is only a
+    // preference about which piece to ask for next, so an ordering that names
+    // fewer files than the torrent has is not an error: whatever is missing
+    // simply keeps its place behind what is listed.
+    pub(crate) fn set_file_priorities(&self, order: Vec<usize>) {
+        let file_count = self.metadata.file_infos.len();
+        let mut seen = vec![false; file_count];
+        let mut priorities = Vec::with_capacity(file_count);
+
+        for id in order {
+            if id < file_count && !seen[id] {
+                seen[id] = true;
+                priorities.push(id);
+            }
+        }
+        // Anything the caller did not mention keeps its own order behind the
+        // rest, so the result is always a complete permutation - which is what
+        // the picker assumes when it walks this list.
+        for (id, listed) in seen.into_iter().enumerate() {
+            if !listed {
+                priorities.push(id);
+            }
+        }
+
+        // Through the timed helper, like every other writer here, so a lock
+        // held too long shows up in the same place as the rest.
+        self.lock_write("set_file_priorities").file_priorities = priorities;
     }
 
     pub(crate) fn update_only_files(&self, only_files: &HashSet<usize>) -> anyhow::Result<()> {
@@ -1078,6 +1214,10 @@ impl PeerConnectionHandler for &'_ PeerHandler {
             .fetch_add(connection_time.as_millis() as u64, Ordering::Relaxed);
     }
 
+    fn advertises_v2(&self) -> bool {
+        self.state.shared.options.hash_provider.is_some()
+    }
+
     async fn on_received_message(&self, message: Message<'_>) -> anyhow::Result<()> {
         // The first message must be "bitfield", but if it's not sent,
         // assume the bitfield is all zeroes and was sent.
@@ -1119,6 +1259,11 @@ impl PeerConnectionHandler for &'_ PeerHandler {
             Message::Cancel(_) => {
                 trace!("received \"cancel\", but we don't process it yet")
             }
+            // BEP 52. NanoTorrent addition: answer if we hold the layers for
+            // the file being asked about, and reject politely if not. An
+            // ignored request leaves the asking peer waiting for a reply that
+            // never comes, which is the one outcome the BEP rules out.
+            Message::HashRequest(request) => self.on_hash_request(request)?,
             Message::Extended(ExtendedMessage::UtMetadata(UtMetadata::Request(
                 metadata_piece_id,
             ))) => {
@@ -1513,6 +1658,7 @@ impl PeerHandler {
                             .try_write()
                             .is_some()
                     },
+                    availability: |p| self.state.piece_availability(p),
                 });
 
                 match result {
@@ -1637,6 +1783,37 @@ impl PeerHandler {
         trace!(all, "peer sent have_all/have_none");
         self.state.peers.update_bitfield(self.addr, bf);
         self.on_bitfield_notify.notify_waiters();
+    }
+
+    /// Answer a BEP 52 `hash request`, or reject it.
+    ///
+    /// The hashes themselves come from the embedder: the engine has no merkle
+    /// tree of its own, and for a torrent added from a `.torrent` the layers
+    /// travel outside the info dict, so only whoever parsed the file has them.
+    fn on_hash_request(
+        &self,
+        request: peer_binary_protocol::HashRequest,
+    ) -> anyhow::Result<()> {
+        let answer = self
+            .state
+            .shared
+            .options
+            .hash_provider
+            .as_ref()
+            .and_then(|p| p.hashes_for(&request));
+
+        let message = match answer {
+            Some(hashes) if !hashes.is_empty() => {
+                let mut flat = Vec::with_capacity(hashes.len() * 32);
+                for h in &hashes {
+                    flat.extend_from_slice(h);
+                }
+                WriterRequest::Hashes(request, flat)
+            }
+            _ => WriterRequest::Message(Message::HashReject(request)),
+        };
+        self.tx.send(message).ok();
+        Ok(())
     }
 
     /// BEP 6 `reject request`: this peer will not serve that chunk. Put the
@@ -2127,7 +2304,7 @@ impl PeerHandler {
             .chain(msg.added_peers())
             .for_each(|peer| {
                 self.state
-                    .add_peer_if_not_seen(peer.addr)
+                    .add_peer_if_not_seen(peer.addr, crate::type_aliases::PeerSource::Pex)
                     .map_err(|error| {
                         warn!(
                             id = self.state.shared.id,

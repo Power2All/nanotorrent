@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.4 - Microsoft Store listing
+NanoTorrent 0.3.5 - Microsoft Store listing
 Language: Català (Espanya) - Partner Center: Catalan (Spain) (ca-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,17 +29,16 @@ El NanoTorrent és una adaptació en Rust del PicoTorrent, de Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versió 0.3.4
+Versió 0.3.5
 
-- Els torrents en pausa ja no tornen a crear els seus fitxers en iniciar NanoTorrent. Un torrent amb les dades esborrades o mogudes podia tornar al 0% amb una carpeta de fitxers buits.
-- La interfície web ara rep actualitzacions en directe en lloc de demanar-les: reacciona a l'instant i consumeix molt menys processador.
-- Un indicador de connexió mostra si el navegador continua en contacte amb NanoTorrent, i es torna a connectar sol.
-- La llista de torrents de la interfície web es pot paginar i ordenar a través de totes les pàgines.
-- Tant la finestra com la interfície web mostren quants clients web hi ha connectats.
-- El plafó de detalls s'omple tan bon punt feu clic en un torrent, darrere d'una capa de càrrega, en lloc de fins a un segon després.
-- Les preferències s'han refet per encaixar amb la finestra principal: pestanyes amb icona que es desplacen quan no hi caben, una finestra més ampla i barres de desplaçament que ja no se superposen.
-- Les preferències mostren l'idioma que heu triat, i cada finestra oberta canvia d'idioma en prémer D'acord.
-- Tancar una finestra ara la tanca de debò, i Ajuda incorpora un enllaç a la documentació de l'API de connectors.
+- Límits de compartició: deixar de compartir en una proporció, després d'un temps fixat o el que arribi primer, i després aturar o eliminar el torrent.
+- Límits de velocitat alternatius, per horari o commutats a mà des de la barra d'eines.
+- Ordre de la cua des de la barra d'eines, prioritats per fitxer i etiquetes.
+- Una carpeta vigilada que afegeix qualsevol fitxer .torrent que s'hi deixi.
+- Afegir, editar i eliminar els rastrejadors d'un torrent, en nivells d'anunci.
+- La base de dades de configuració es pot xifrar, sense cap contrasenya per escriure, i la configuració es pot exportar i importar en JSON.
+- La interfície web guanya l'ordre de la cua, el commutador de velocitat i un tauler per torrent per a fitxers, rastrejadors, etiquetes i límits.
+- Les peces que tenen pocs parells es demanen primer, i els torrents de BitTorrent v2 ja es poden compartir amb altres.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
