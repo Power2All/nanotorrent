@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.3.5"
+version = "0.3.6"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -193,7 +193,7 @@ raw-window-handle = { version = "0.6", optional = true }
 # raw-window-handle-06 for the HWND behind the Slint window: real modality on
 # Windows is EnableWindow on the owner, which needs it. Adds no crates - it is
 # already in the tree.
-slint = { version = "1", optional = true, features = ["raw-window-handle-06"] }
+slint = { version = "1", optional = true, features = ["raw-window-handle-06", "renderer-software"] }
 # Constant-time comparison for the auth username. argon2 already compares the
 # password hash in constant time; the username needs the same treatment or it
 # leaks through timing.
