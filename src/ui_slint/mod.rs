@@ -64,6 +64,24 @@ mod flags;
 mod modal;
 mod pluginwindow;
 
+// One UI update every two seconds is sufficient for transfer-rate text, ETA,
+// and the chart. More importantly, it halves the number of full list-model
+// replacements and associated redraw opportunities while a transfer is active.
+const UI_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Use Slint's CPU rasterizer unless a caller explicitly chose a backend.
+fn select_default_renderer() {
+    if std::env::var_os("SLINT_BACKEND").is_none() {
+        // This runs before the first Slint component is created, so backend
+        // selection has not happened yet. The software renderer is enabled in
+        // Cargo.toml above.
+        unsafe {
+            std::env::set_var("SLINT_BACKEND", "winit-software");
+        }
+    }
+}
+
+
 /// Everything the callbacks need, kept in one `Rc` so each closure clones a
 /// single handle rather than five.
 struct Ui {
@@ -235,7 +253,8 @@ fn to_row(status: &TorrentStatus, tr: &Translator, selected: bool) -> Row {
 /// Returns only when the UI is done, so the caller can shut the session down
 /// afterwards.
 pub fn run(ctx: AppContext) -> anyhow::Result<()> {
-    let window = MainWindow::new().map_err(|e| {
+    select_default_renderer();
+	let window = MainWindow::new().map_err(|e| {
         // winit's own words for a missing display server are "neither
         // WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set", which names
         // what is absent but not why or what to do about it.
@@ -408,7 +427,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         let (w, u) = (window.as_weak(), ui.clone());
         modal_timer.start(
             slint::TimerMode::Repeated,
-            std::time::Duration::from_millis(100),
+			std::time::Duration::from_millis(100),
             move || {
                 let Some(window) = w.upgrade() else { return };
                 // A safety net now, not the main path: dismiss() does the
@@ -424,7 +443,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         let (w, ui, model) = (window.as_weak(), ui.clone(), model.clone());
         timer.start(
             slint::TimerMode::Repeated,
-            std::time::Duration::from_secs(1),
+            UI_REFRESH_INTERVAL,
             move || {
                 // A second instance forwards its argv here rather than
                 // opening a second window - see ipc::init.
