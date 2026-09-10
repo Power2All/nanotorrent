@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Lietuvių (Lietuva) - Partner Center: Lithuanian (Lithuania) (lt-LT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent yra Viktoro Elofssono PicoTorrent perkėlimas į Rust kalbą.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versija 0.3.5
+Versija 0.3.7
 
 - Dalijimosi ribos: nustoti skleisti pasiekus santykį, po nustatyto laiko arba kas įvyks pirmiau, o paskui pristabdyti ar pašalinti torentą.
 - Alternatyvios greičio ribos — pagal tvarkaraštį arba perjungiamos ranka iš įrankių juostos.
@@ -39,6 +39,9 @@ Versija 0.3.5
 - Nustatymų duomenų bazę galima užšifruoti be slaptažodžio, kurį reikėtų vesti, o nustatymus eksportuoti ir importuoti JSON formatu.
 - Žiniatinklio sąsaja gauna eilės tvarką, greičio jungiklį ir kiekvieno torento skydelį failams, sekikliams, žymoms ir riboms.
 - Dalys, kurių turi nedaug siuntėjų, prašomos pirmiausia, o BitTorrent v2 torentus dabar galima skleisti kitiems.
+- Magnet nuorodos dabar atveria pridėjimo langą, kaip ir .torrent failai, nebent pasirinkote jį praleisti.
+- Kelis failus turintis torentas dedamas į jo vardu pavadintą aplanką, o ne išbarstomas įrašymo aplanke.
+- Mažesnės procesoriaus ir atminties sąnaudos, kol langas atvertas.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

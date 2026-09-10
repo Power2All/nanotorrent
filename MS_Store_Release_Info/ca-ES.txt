@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Català (Espanya) - Partner Center: Catalan (Spain) (ca-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ El NanoTorrent és una adaptació en Rust del PicoTorrent, de Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versió 0.3.5
+Versió 0.3.7
 
 - Límits de compartició: deixar de compartir en una proporció, després d'un temps fixat o el que arribi primer, i després aturar o eliminar el torrent.
 - Límits de velocitat alternatius, per horari o commutats a mà des de la barra d'eines.
@@ -39,6 +39,9 @@ Versió 0.3.5
 - La base de dades de configuració es pot xifrar, sense cap contrasenya per escriure, i la configuració es pot exportar i importar en JSON.
 - La interfície web guanya l'ordre de la cua, el commutador de velocitat i un tauler per torrent per a fitxers, rastrejadors, etiquetes i límits.
 - Les peces que tenen pocs parells es demanen primer, i els torrents de BitTorrent v2 ja es poden compartir amb altres.
+- Els enllaços magnet ara obren la finestra d’afegir torrent, com els fitxers .torrent, tret que hàgiu triat ometre-la.
+- Un torrent amb diversos fitxers es desa en una carpeta amb el seu nom, en lloc de solt a la carpeta de destinació.
+- Menys ús de processador i de memòria mentre la finestra és oberta.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Français (France) - Partner Center: French (France) (fr-FR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent est un portage en Rust de PicoTorrent, de Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.5
+Version 0.3.7
 
 - Limites de partage : arrêter le partage à un ratio, après une durée définie, ou au premier des deux, puis mettre le torrent en pause ou le supprimer.
 - Limites de vitesse alternatives, selon un horaire ou basculées à la main depuis la barre d'outils.
@@ -39,6 +39,9 @@ Version 0.3.5
 - La base de données des réglages peut être chiffrée, sans mot de passe à saisir, et vos réglages exportés et importés en JSON.
 - L'interface web gagne l'ordre de la file, le commutateur de vitesse et un panneau par torrent pour les fichiers, les trackers, les étiquettes et les limites.
 - Les morceaux que peu de pairs possèdent sont demandés en premier, et les torrents BitTorrent v2 peuvent désormais être partagés avec d'autres.
+- Les liens magnet ouvrent désormais la fenêtre d’ajout, comme les fichiers .torrent, sauf si vous avez choisi de la passer.
+- Un torrent contenant plusieurs fichiers est placé dans un dossier à son nom, au lieu d’être éparpillé dans le dossier de destination.
+- Moins de processeur et de mémoire utilisés lorsque la fenêtre est ouverte.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

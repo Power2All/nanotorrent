@@ -235,10 +235,14 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   arrive in **one dialog**, listed down the side behind a draggable divider -
   long names need the room - with each one's file tree shown as you select it.
   The divider's position is remembered. File selection is per torrent; save
-  path and start apply to the batch. Add magnet, which **fetches the metadata first** and then
-  shows the same dialog with the real file list. Every add reports back: how
-  many were added, and how many were already in the list rather than silently
-  doing nothing.
+  path and start apply to the batch. Add magnet, which **fetches the metadata
+  first** and then shows the same dialog with the real file list - and so does a
+  magnet opened from a browser, the shell or a second instance, which is the
+  point: a magnet clicked outside the application gets the same say over save
+  path and file selection as one typed into the dialog. Preferences ▸ **Skip
+  "Add torrent" dialog** turns the dialog off for both kinds. Every add reports
+  back: how many were added, and how many were already in the list rather than
+  silently doing nothing.
 - **Torrent creation** — BitTorrent v1, v2 and hybrid (BEP 52), with tracker /
   comment / private options.
 - **Web interface** — an optional authenticated HTTPS remote: session and
@@ -327,6 +331,13 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   added and then renamed aside rather than deleted: the file is yours, and a
   scanner that eats its input is one wrong path away from clearing a folder
   somebody was keeping.
+- **Folder layout** — a torrent holding **one file** writes that file straight
+  into the save path; one holding **several** gets a folder named after the
+  torrent and keeps its own sub-paths inside it. A save path already named
+  after the torrent is used as it is rather than nested inside itself, so
+  picking the folder by hand and re-adding a torrent both land in the same
+  place. The rule follows the torrent through the incomplete folder and the
+  move on completion.
 - **Incomplete folder** — download to one place, move to the save path on
   completion. Distinct from "move completed downloads", which moves *out* of
   the save path afterwards; this one keeps partial files off the destination
@@ -609,6 +620,43 @@ one. Collected so nobody has to file them twice.
   yet.
 
 ## History
+
+**v0.3.7** is two bugs about where a torrent goes and who gets asked first.
+Both had the same shape: a feature that existed, was documented, and was never
+actually reached.
+
+**Magnet links skipped the Add dialog.** Preferences has a "Skip 'Add torrent'
+dialog" setting, and a magnet ignored it in the unhelpful direction - a link
+clicked in a browser went straight into the session and started downloading,
+with no say over the save path or which files were wanted. The resolver that
+fetches a magnet's metadata so the dialog can show a real file list had been
+written for exactly this and had **no callers**: `.torrent` files went through
+the dialog, magnets went around it. Both kinds now go through one function, so
+the setting means the same thing for both. Fetching metadata from the swarm is
+not instant, so the wait says so on screen rather than looking like nothing
+happened, and a magnet nobody answers for is added anyway - it can be seen and
+stopped in the list, which is better than vanishing.
+
+**A torrent with several files emptied itself into the save path.** The engine
+decides the containing directory in one place - one file goes straight into the
+folder, several get a directory named after the torrent - and that code only
+ran for its own default folder. NanoTorrent always names a folder, which took
+the other branch of the same match and was used verbatim, so a season of
+episodes arrived loose beside everything else already there. Nothing failed;
+it just looked like that was where they belonged. The rule now applies to an
+explicit folder too, and only for a **fresh add** - every other add in the file
+is a re-add pointing at data that already exists and must use its folder
+exactly as given. A folder already named after the torrent is left alone, or
+the data would sink a level deeper on every re-add.
+
+The two releases before it were feature work: **v0.3.5** brought share limits,
+alternative speed limits on a schedule, queue order from the toolbar, per-file
+priorities, tags, a watched folder, tracker editing in announce tiers, an
+encryptable settings database, and import from an existing PicoTorrent
+install. **v0.3.6** was performance: the torrent list and the details panel
+were rebuilding their models once a second, which Slint reads as "everything
+changed" and repaints in full. They now set the rows that actually differ,
+which is most of the difference between 46% of a core and 14%.
 
 **v0.3.4** is about the web interface being live rather than polled, and about
 one bug that had been quietly undoing people's downloads.

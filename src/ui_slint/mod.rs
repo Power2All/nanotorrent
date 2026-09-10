@@ -69,18 +69,33 @@ mod pluginwindow;
 // replacements and associated redraw opportunities while a transfer is active.
 const UI_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// Use Slint's CPU rasterizer unless a caller explicitly chose a backend.
+/// Use Slint's Skia renderer unless a caller explicitly chose a backend.
+///
+/// Slint offers three: FemtoVG (the default, OpenGL), Skia, and a software
+/// rasteriser. FemtoVG was what pinned the GPU here.
+///
+/// Skia rather than `winit-software`, which is the obvious answer and the
+/// wrong one: the software renderer does not pick up the display's scale
+/// factor the way the accelerated ones do, so on a HiDPI screen the whole
+/// window comes out mis-scaled. `SLINT_SCALE_FACTOR` can force it, but that
+/// is a number this application would have to guess per monitor.
+///
+/// Skia keeps the text quality and, measured on this application's workload -
+/// a list repainted about once a second - leaves the GPU essentially idle.
+///
+/// `SLINT_BACKEND` is still honoured when it is already set, so
+/// `winit-femtovg` and `winit-software` remain available to anyone who wants
+/// to compare.
 fn select_default_renderer() {
     if std::env::var_os("SLINT_BACKEND").is_none() {
         // This runs before the first Slint component is created, so backend
-        // selection has not happened yet. The software renderer is enabled in
+        // selection has not happened yet. The Skia renderer is enabled in
         // Cargo.toml above.
         unsafe {
-            std::env::set_var("SLINT_BACKEND", "winit-software");
+            std::env::set_var("SLINT_BACKEND", "winit-skia");
         }
     }
 }
-
 
 /// Everything the callbacks need, kept in one `Rc` so each closure clones a
 /// single handle rather than five.
@@ -152,6 +167,8 @@ struct Ui {
     /// The .torrent currently in the Add dialog, and any queued behind it.
     /// argv can name several, and only one dialog is shown at a time.
     pending: RefCell<Vec<Vec<u8>>>,
+    /// Where magnets being resolved for the Add dialog leave their metadata.
+    magnet_slot: Arc<std::sync::Mutex<Vec<crate::bittorrent::session::MagnetOutcome>>>,
     /// Set once the window exists, so a dialog can push a setting back into it
     /// (the theme) without the caller having to thread the window through.
     main: RefCell<Option<slint::Weak<MainWindow>>>,
@@ -253,7 +270,7 @@ fn to_row(status: &TorrentStatus, tr: &Translator, selected: bool) -> Row {
 /// Returns only when the UI is done, so the caller can shut the session down
 /// afterwards.
 pub fn run(ctx: AppContext) -> anyhow::Result<()> {
-    select_default_renderer();
+	select_default_renderer();
 	let window = MainWindow::new().map_err(|e| {
         // winit's own words for a missing display server are "neither
         // WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set", which names
@@ -337,6 +354,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         env: ctx.env.clone(),
         torrent_dialog: RefCell::new(None),
         pending: RefCell::new(Vec::new()),
+        magnet_slot: Arc::new(std::sync::Mutex::new(Vec::new())),
         main: RefCell::new(None),
         tray: RefCell::new(None),
         web: RefCell::new(ctx.web.clone()),
@@ -458,6 +476,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
                     handle_params(&ui, &forwarded);
                 }
                 poll_create_torrent(&ui);
+                poll_magnets(&ui);
                 poll_update(&ui);
                 if let Some(window) = w.upgrade() {
                     if let Some(tray) = tray.as_ref() {
@@ -1246,16 +1265,14 @@ fn default_add_params() -> AddParams {
 /// Handle `.torrent` paths and `magnet:` links from argv, or forwarded by a
 /// second instance.
 ///
-/// Magnets are added straight away - there is nothing to choose until their
-/// metadata resolves. Files go through the Add dialog, so the save path and
-/// file selection can be set before anything is written.
+/// Both kinds go through the Add dialog, so the save path and the file
+/// selection can be set before anything is written - unless Preferences says
+/// to skip it.
 fn handle_params(ui: &Rc<Ui>, args: &[String]) {
+    let mut magnets = Vec::new();
     for arg in args {
         if arg.starts_with("magnet:") {
-            ui.session.add_torrent(
-                AddTorrentSource::MagnetUri(arg.clone()),
-                default_add_params(),
-            );
+            magnets.push(arg.clone());
         } else if arg.to_lowercase().ends_with(".torrent") {
             match std::fs::read(arg) {
                 Ok(bytes) => ui.pending.borrow_mut().push(bytes),
@@ -1263,6 +1280,77 @@ fn handle_params(ui: &Rc<Ui>, args: &[String]) {
                 Err(err) => tracing::error!("cannot read {arg}: {err}"),
             }
         }
+    }
+    add_magnets(ui, magnets);
+    show_next_pending(ui);
+}
+
+/// Add magnet links, through the Add dialog unless Preferences says to skip it.
+///
+/// A magnet carries no file list, so there is nothing to show a dialog ABOUT
+/// until its metadata has been fetched from the swarm. That is what
+/// [`crate::bittorrent::session::Session::resolve_magnet`] is for, and until
+/// now nothing called it: every magnet was added straight to the session, so a
+/// link opened from a browser started downloading with no dialog and no say in
+/// where it went - whatever the setting said.
+///
+/// The fetch is not instant and can fail, so it happens in the background and
+/// lands in `magnet_slot`; [`poll_magnets`] picks it up on the refresh tick.
+fn add_magnets(ui: &Rc<Ui>, links: Vec<String>) {
+    if links.is_empty() {
+        return;
+    }
+
+    if ui.cfg.get_bool("skip_add_torrent_dialog") {
+        for magnet in links {
+            ui.session
+                .add_torrent(AddTorrentSource::MagnetUri(magnet), default_add_params());
+        }
+        return;
+    }
+
+    // Asking the swarm for metadata takes as long as it takes. Without a word
+    // on screen, clicking a magnet link looks exactly like the application
+    // ignoring it.
+    if let Some(window) = ui.main.borrow().as_ref().and_then(|w| w.upgrade()) {
+        let text = ui.tr.borrow().i18n("fetching_magnet_metadata");
+        show_toast(&window, &text);
+    }
+    for magnet in links {
+        tracing::info!("resolving magnet metadata before the add dialog");
+        ui.session.resolve_magnet(magnet, ui.magnet_slot.clone());
+    }
+}
+
+/// Drain magnets whose metadata has arrived. Called from the refresh tick.
+fn poll_magnets(ui: &Rc<Ui>) {
+    let resolved = match ui.magnet_slot.lock() {
+        Ok(mut slot) if !slot.is_empty() => std::mem::take(&mut *slot),
+        _ => return,
+    };
+
+    let mut failed = 0;
+    for outcome in resolved {
+        match outcome {
+            crate::bittorrent::session::MagnetOutcome::Resolved(bytes) => {
+                ui.pending.borrow_mut().push(bytes)
+            }
+            // Nothing answered, or not in time. Adding it anyway is what the
+            // click asked for; it keeps looking for peers in the list, where
+            // it can be seen and stopped, rather than being dropped in silence.
+            crate::bittorrent::session::MagnetOutcome::Failed(uri) => {
+                failed += 1;
+                ui.session
+                    .add_torrent(AddTorrentSource::MagnetUri(uri), default_add_params());
+            }
+        }
+    }
+
+    if failed > 0
+        && let Some(window) = ui.main.borrow().as_ref().and_then(|w| w.upgrade())
+    {
+        let text = ui.tr.borrow().i18n("magnet_metadata_unavailable");
+        show_error_toast(&window, &text);
     }
     show_next_pending(ui);
 }
@@ -1345,7 +1433,32 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
         .iter()
         .map(|r| to_row(r, &ui.tr.borrow(), selected.contains(&r.info_hash)))
         .collect();
-    model.set_vec(mapped);
+
+    // Write only the rows that actually differ.
+    //
+    // `set_vec` replaces the model, which Slint takes as "every row changed":
+    // it re-lays-out and repaints the whole list, once a second, whether or
+    // not anything moved. On a HiDPI screen that is several million pixels of
+    // rasterising per tick, and it measured at roughly a third of a core with
+    // the window merely open and idle.
+    //
+    // Per-row writes notify per row, so a list where nothing changed - every
+    // torrent paused, or simply a second in which no rate text moved - costs
+    // no repaint at all. The generated row struct derives `PartialEq`, which
+    // is what makes the comparison a one-liner.
+    //
+    // The length check first: a row added or removed shifts every index after
+    // it, so there is nothing to diff against and replacing is both correct
+    // and cheaper than reconciling.
+    if model.row_count() == mapped.len() {
+        for (index, row) in mapped.into_iter().enumerate() {
+            if model.row_data(index).as_ref() != Some(&row) {
+                model.set_row_data(index, row);
+            }
+        }
+    } else {
+        model.set_vec(mapped);
+    }
 
     let (down, up) = ui.session.session_rates();
     // Two readings rather than one string: each sits beside its own arrow in
@@ -1708,6 +1821,23 @@ fn file_tree<'a>(paths: impl Iterator<Item = &'a str>) -> Vec<(Option<usize>, us
 }
 
 /// Trackers.
+/// Do these rows differ from the ones the list is already showing?
+///
+/// The detail lists each built a brand-new model every tick, which Slint reads
+/// as a complete change: the whole list re-laid-out and repainted once a
+/// second, even when not one value in it had moved. Comparing first walks a
+/// list that is already in memory, which is nothing beside rasterising it.
+fn list_changed<T>(current: &ModelRc<T>, rows: &[T]) -> bool
+where
+    T: Clone + PartialEq + 'static,
+{
+    current.row_count() != rows.len()
+        || rows
+            .iter()
+            .enumerate()
+            .any(|(index, row)| current.row_data(index).as_ref() != Some(row))
+}
+
 fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
     // Not while a tracker URL is being edited. This runs on the one-second
     // tick, and rebuilding the model replaces the row - taking the text field
@@ -1760,7 +1890,9 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                 })
                 .collect();
             drop(tr);
-            window.set_detail_files(ModelRc::new(VecModel::from(rows)));
+            if list_changed(&window.get_detail_files(), &rows) {
+                window.set_detail_files(ModelRc::new(VecModel::from(rows)));
+            }
         }
         2 => {
             let rows: Vec<PeerEntryRow> = ui
@@ -1781,7 +1913,9 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                     }
                 })
                 .collect();
-            window.set_detail_peers(ModelRc::new(VecModel::from(rows)));
+            if list_changed(&window.get_detail_peers(), &rows) {
+                window.set_detail_peers(ModelRc::new(VecModel::from(rows)));
+            }
         }
         3 => {
             let tr2 = ui.tr.borrow();
@@ -1805,7 +1939,9 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                     indented: matches!(t.kind, crate::bittorrent::session::TrackerRowKind::Tracker),
                 })
                 .collect();
-            window.set_detail_trackers(ModelRc::new(VecModel::from(rows)));
+            if list_changed(&window.get_detail_trackers(), &rows) {
+                window.set_detail_trackers(ModelRc::new(VecModel::from(rows)));
+            }
 
             // Tier names, ending in "New tier" - so choosing the last entry is
             // how a tier gets added, and there is no separate button for it.
@@ -2640,10 +2776,7 @@ fn open_add_magnet(ui: &Rc<Ui>) {
                 tracing::info!("add magnet: no magnet links or info hashes in the input");
                 return;
             }
-            for magnet in links {
-                u.session
-                    .add_torrent(AddTorrentSource::MagnetUri(magnet), default_add_params());
-            }
+            add_magnets(&u, links);
             d.set_links(SharedString::new());
             dismiss(&u, &d);
         });

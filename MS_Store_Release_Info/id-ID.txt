@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versi 0.3.5
+Versi 0.3.7
 
 - Batas berbagi: berhenti menyemai pada rasio tertentu, setelah waktu yang ditentukan, atau mana yang lebih dulu, lalu jeda atau hapus torrent tersebut.
 - Batas kecepatan alternatif, menurut jadwal atau dialihkan secara manual dari bilah alat.
@@ -39,6 +39,9 @@ Versi 0.3.5
 - Basis data pengaturan dapat dienkripsi, tanpa kata sandi yang perlu diketik, dan pengaturan Anda diekspor serta diimpor sebagai JSON.
 - Antarmuka web mendapat urutan antrean, sakelar kecepatan, dan panel per torrent untuk berkas, pelacak, tag, dan batas.
 - Bagian yang dimiliki sedikit rekan diminta lebih dulu, dan torrent BitTorrent v2 kini dapat disemai kepada orang lain.
+- Tautan magnet kini membuka jendela tambah torrent seperti berkas .torrent, kecuali Anda memilih untuk melewatinya.
+- Torrent berisi beberapa berkas ditempatkan dalam folder bernama sama, bukan berserakan di folder penyimpanan.
+- Pemakaian prosesor dan memori lebih rendah saat jendela terbuka.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

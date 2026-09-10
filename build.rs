@@ -179,6 +179,11 @@ fn verify_librqbit_patches() {
             "patches/0018-custom-tracker-tier.patch",
         ),
         (
+            "vendor/librqbit/src/session.rs",
+            "pub output_folder_subfolder: bool",
+            "patches/0020-output-folder-subfolder.patch",
+        ),
+        (
             "vendor/librqbit/src/session_persistence/mod.rs",
             "trackers: Some(restored)",
             "patches/0018-custom-tracker-tier.patch (restore)",

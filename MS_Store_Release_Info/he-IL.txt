@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: עברית (ישראל) - Partner Center: Hebrew (Israel) (he-IL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ Store listings > he-IL. The character limits shown are Microsoft's.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-גרסה 0.3.5
+גרסה 0.3.7
 
 - מגבלות שיתוף: להפסיק לזרוע ביחס מסוים, לאחר זמן שנקבע, או המוקדם מביניהם, ואז להשהות את הטורנט או להסיר אותו.
 - מגבלות מהירות חלופיות, לפי לוח זמנים או בהחלפה ידנית מסרגל הכלים.
@@ -39,6 +39,9 @@ Store listings > he-IL. The character limits shown are Microsoft's.
 - אפשר להצפין את מסד נתוני ההגדרות, בלי סיסמה להקליד, ולייצא ולייבא את ההגדרות כ‑JSON.
 - ממשק הרשת מקבל סדר תור, מתג מהירות, ולוח לכל טורנט עבור קבצים, טראקרים, תגיות ומגבלות.
 - חלקים שמעט עמיתים מחזיקים נדרשים ראשונים, וטורנטים של BitTorrent v2 ניתנים כעת לזריעה לאחרים.
+- קישורי מגנט פותחים כעת את חלון הוספת הטורנט, כמו קובצי ‎.torrent‎, אלא אם בחרת לדלג עליו.
+- טורנט המכיל כמה קבצים נשמר בתיקייה הנושאת את שמו, במקום מפוזר בתיקיית השמירה.
+- שימוש מופחת במעבד ובזיכרון כשהחלון פתוח.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

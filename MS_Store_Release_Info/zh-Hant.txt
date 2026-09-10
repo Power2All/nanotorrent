@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: 繁體中文 (台灣) - app locale zh-TW - Partner Center: Chinese (Traditional) (zh-Hant)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-版本 0.3.5
+版本 0.3.7
 
 - 分享限制：在達到某個分享率、經過設定時間，或兩者中先到者時停止做種，隨後暫停或移除該種子。
 - 備用速度限制，可依排程啟用，也可從工具列手動切換。
@@ -39,6 +39,9 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 - 設定資料庫可以加密，無需輸入密碼，設定也可匯出與匯入為 JSON。
 - 網頁介面新增佇列順序、速度開關，以及每個種子的面板，包含檔案、Tracker、標籤與限制。
 - 優先要求較少對等端擁有的分塊，BitTorrent v2 種子現在也可以向他人做種。
+- 磁力連結現在也會開啟「加入種子」視窗，與 .torrent 檔案相同，除非您選擇略過。
+- 含多個檔案的種子會放進以其命名的資料夾，而不再散落在儲存資料夾中。
+- 視窗開啟時的處理器與記憶體用量更低。
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

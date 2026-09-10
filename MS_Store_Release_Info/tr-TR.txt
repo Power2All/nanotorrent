@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Türkçe (Türkiye) - Partner Center: Turkish (Turkey) (tr-TR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent, Viktor Elofsson'ın PicoTorrent uygulamasının Rust'a aktarımıd�
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Sürüm 0.3.5
+Sürüm 0.3.7
 
 - Paylaşım sınırları: belirli bir oranda, belirlenen bir süre sonunda ya da hangisi önce gerçekleşirse seed etmeyi durdurun, ardından torrenti duraklatın veya kaldırın.
 - Alternatif hız sınırları, bir zamanlamaya göre ya da araç çubuğundan elle açılıp kapatılarak.
@@ -39,6 +39,9 @@ Sürüm 0.3.5
 - Ayarlar veritabanı, yazılacak bir parola olmadan şifrelenebilir; ayarlarınız JSON olarak dışa ve içe aktarılabilir.
 - Web arayüzü kuyruk sırasını, hız anahtarını ve dosyalar, izleyiciler, etiketler ve sınırlar için torrent başına bir panel kazanır.
 - Az sayıda eşte bulunan parçalar önce istenir ve BitTorrent v2 torrentleri artık başkalarına seed edilebilir.
+- Magnet bağlantıları artık .torrent dosyaları gibi ekleme penceresini açıyor; atlamayı seçmediyseniz.
+- Birden çok dosya içeren torrent, kaydetme klasörüne dağılmak yerine kendi adını taşıyan bir klasöre konur.
+- Pencere açıkken daha az işlemci ve bellek kullanımı.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
