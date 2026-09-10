@@ -878,3 +878,33 @@ mentioned goes in a tier of its own after them. Collapsing to one flat tier
 would have lost the fallback order on every restored torrent rather than only
 on edited ones - which matters because the restore path sets this flag too, so
 that a removal survives a restart.
+
+## 0020 - the containing directory applies to an explicit output folder too
+
+librqbit decides the containing directory in
+`get_default_subfolder_for_torrent`: one file goes straight into the folder,
+several get a directory named after the torrent. That is the rule every client
+follows and the one people expect.
+
+It only ran for the session's DEFAULT folder. An explicit
+`AddTorrentOptions::output_folder` took a different branch of the same match
+and was used verbatim - so every torrent NanoTorrent added, which always names
+a folder, skipped the rule entirely. A single file landed correctly by
+accident; a multi-file torrent emptied itself into the save path, one loose
+episode at a time, with nothing to say it had gone wrong.
+
+`output_folder_subfolder` applies the rule to an explicit folder as well. It is
+opt-in because the two kinds of add want opposite things: a FRESH add names a
+destination and wants the rule, while every re-add - moving storage, relocating
+a torrent, changing its trackers - points at data that is already somewhere and
+must use that folder exactly as given.
+
+Deciding it here rather than in the caller is what makes it work for a magnet.
+The name and the file count come from the metadata, which for a magnet does not
+exist until peers have been asked for it - long after the caller has had to say
+where the torrent goes.
+
+The folder is left alone when it is already named after the torrent, whether
+because the user picked that folder or because the torrent is being re-added
+after this happened once. Without that check the data would sink a level deeper
+every time, into `Season 1/Season 1/Season 1`.

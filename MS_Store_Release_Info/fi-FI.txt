@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versio 0.3.5
+Versio 0.3.7
 
 - Jakorajat: lopeta jakaminen tietyllä suhteella, määritetyn ajan jälkeen tai sen mukaan, kumpi täyttyy ensin, ja keskeytä tai poista torrent sen jälkeen.
 - Vaihtoehtoiset nopeusrajat, aikataulun mukaan tai käsin työkalupalkista kytkettynä.
@@ -39,6 +39,9 @@ Versio 0.3.5
 - Asetustietokannan voi salata ilman kirjoitettavaa salasanaa, ja asetukset voi viedä ja tuoda JSON-muodossa.
 - Verkkokäyttöliittymä saa jonon järjestyksen, nopeuskytkimen ja torrentkohtaisen paneelin tiedostoille, seurantapalvelimille, tunnisteille ja rajoille.
 - Osia, joita on harvoilla vertaisilla, pyydetään ensin, ja BitTorrent v2 -torrentteja voi nyt jakaa muille.
+- Magnet-linkit avaavat nyt torrentin lisäysikkunan kuten .torrent-tiedostotkin, ellet ole valinnut sen ohittamista.
+- Useita tiedostoja sisältävä torrent sijoitetaan sen mukaan nimettyyn kansioon eikä hajalleen tallennuskansioon.
+- Pienempi suorittimen ja muistin käyttö ikkunan ollessa auki.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

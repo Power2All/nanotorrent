@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Hrvatski (Hrvatska) - Partner Center: Croatian (Croatia) (hr-HR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent je prijenos PicoTorrenta Viktora Elofssona na Rust.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Verzija 0.3.5
+Verzija 0.3.7
 
 - Ograničenja dijeljenja: prestani sijati pri određenom omjeru, nakon zadanog vremena ili što prije nastupi, pa zatim pauziraj ili ukloni torrent.
 - Alternativna ograničenja brzine, prema rasporedu ili ručno prebačena s alatne trake.
@@ -39,6 +39,9 @@ Verzija 0.3.5
 - Baza podataka postavki može se šifrirati, bez lozinke koju treba upisivati, a postavke izvoziti i uvoziti kao JSON.
 - Web sučelje dobiva redoslijed u redu čekanja, prekidač brzine i ploču po torrentu za datoteke, trackere, oznake i ograničenja.
 - Dijelovi koje ima malo članova traže se prvi, a BitTorrent v2 torrenti sada se mogu dijeliti drugima.
+- Magnet poveznice sada otvaraju prozor za dodavanje, kao i .torrent datoteke, osim ako ste odabrali da se preskoči.
+- Torrent s više datoteka smješta se u mapu nazvanu po njemu umjesto raspršen po mapi za spremanje.
+- Manje opterećenje procesora i manja potrošnja memorije dok je prozor otvoren.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

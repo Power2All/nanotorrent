@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Română (România) - Partner Center: Romanian (Romania) (ro-RO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent este o portare în Rust a PicoTorrent, de Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versiunea 0.3.5
+Versiunea 0.3.7
 
 - Limite de partajare: opriți seedingul la un raport, după un timp stabilit sau la primul dintre ele, apoi puneți torrentul pe pauză ori eliminați-l.
 - Limite de viteză alternative, după un program sau comutate manual din bara de instrumente.
@@ -39,6 +39,9 @@ Versiunea 0.3.5
 - Baza de date cu setări poate fi criptată, fără parolă de tastat, iar setările pot fi exportate și importate ca JSON.
 - Interfața web capătă ordinea în coadă, comutatorul de viteză și un panou per torrent pentru fișiere, trackere, etichete și limite.
 - Piesele pe care le au puțini parteneri sunt cerute primele, iar torrentele BitTorrent v2 pot fi acum partajate altora.
+- Linkurile magnet deschid acum fereastra de adăugare, la fel ca fișierele .torrent, dacă nu ați ales să fie omisă.
+- Un torent cu mai multe fișiere este pus într-un folder cu numele lui, în loc să fie împrăștiat în folderul de salvare.
+- Consum mai mic de procesor și de memorie cât timp fereastra este deschisă.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

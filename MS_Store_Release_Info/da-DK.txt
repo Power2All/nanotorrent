@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Dansk (Danmark) - Partner Center: Danish (Denmark) (da-DK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent er en Rust-portering af PicoTorrent af Viktor Elofsson.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.5
+Version 0.3.7
 
 - Delingsgrænser: stop med at seede ved et forhold, efter en fastsat tid eller det, der indtræffer først, og sæt derefter torrenten på pause eller fjern den.
 - Alternative hastighedsgrænser, efter en tidsplan eller slået til i hånden fra værktøjslinjen.
@@ -39,6 +39,9 @@ Version 0.3.5
 - Indstillingsdatabasen kan krypteres, uden en adgangskode at taste, og dine indstillinger eksporteres og importeres som JSON.
 - Webgrænsefladen får køorden, hastighedskontakten og et panel pr. torrent til filer, trackere, tags og grænser.
 - Dele, som få peers har, hentes først, og BitTorrent v2-torrents kan nu seedes til andre.
+- Magnetlinks åbner nu vinduet Tilføj torrent ligesom .torrent-filer, medmindre du har valgt at springe det over.
+- En torrent med flere filer lægges i en mappe med dens eget navn i stedet for løst i destinationsmappen.
+- Lavere processor- og hukommelsesforbrug, mens vinduet er åbent.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -356,6 +356,18 @@ pub struct AddTorrentOptions {
     /// list has to be able to say how it is grouped - otherwise editing a
     /// torrent silently flattens the fallback order the file asked for.
     pub tracker_tiers: Option<Vec<Vec<String>>>,
+
+    /// NanoTorrent: apply the containing-directory rule to `output_folder`
+    /// too, not just to the session's default folder.
+    ///
+    /// An explicit `output_folder` is otherwise used verbatim, which is right
+    /// for re-adding a torrent whose data is already somewhere - and wrong for
+    /// a fresh add, where the caller has named a DESTINATION and expects what
+    /// every client does: one file written straight into it, several wrapped in
+    /// a directory named after the torrent. Deciding that here rather than in
+    /// the caller is what makes it work for a magnet, whose name nobody knows
+    /// until the metadata arrives.
+    pub output_folder_subfolder: bool,
 }
 
 pub struct ListOnlyResponse {
@@ -1575,7 +1587,19 @@ impl Session {
                 self.get_default_subfolder_for_torrent(&metadata.info, name.as_deref())?
                     .unwrap_or_default(),
             ),
-            (Some(o), None) => PathBuf::from(o),
+            (Some(o), None) => {
+                let folder = PathBuf::from(o);
+                // Already inside a directory of that name - joining it again
+                // would bury the data one level deeper on every re-add.
+                match self
+                    .get_default_subfolder_for_torrent(&metadata.info, name.as_deref())?
+                    .filter(|_| opts.output_folder_subfolder)
+                    .filter(|sub| folder.file_name() != Some(sub.as_os_str()))
+                {
+                    Some(sub) => folder.join(sub),
+                    None => folder,
+                }
+            }
             (Some(_), Some(_)) => {
                 bail!("you can't provide both output_folder and sub_folder")
             }

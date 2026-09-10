@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-0.3.5-es verzió
+0.3.7-es verzió
 
 - Megosztási korlátok: a megosztás leállítása adott aránynál, megadott idő után, vagy amelyik előbb bekövetkezik, majd a torrent szüneteltetése vagy eltávolítása.
 - Alternatív sebességkorlátok, ütemezés szerint vagy kézzel átkapcsolva az eszköztárról.
@@ -39,6 +39,9 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 - A beállítások adatbázisa titkosítható, beírandó jelszó nélkül, a beállítások pedig JSON formátumban exportálhatók és importálhatók.
 - A webes felület sorrendet, sebességkapcsolót és torrentenkénti panelt kap a fájlokhoz, követőkhöz, címkékhez és korlátokhoz.
 - A kevés partnernél meglévő darabokat kéri le először, és a BitTorrent v2 torrentek immár megoszthatók másokkal.
+- A magnet hivatkozások mostantól a hozzáadás ablakot nyitják meg, akárcsak a .torrent fájlok, hacsak nem kérte a kihagyását.
+- A több fájlt tartalmazó torrent a nevét viselő mappába kerül, nem pedig szétszórva a mentési mappába.
+- Kisebb processzor- és memóriahasználat, amíg az ablak nyitva van.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

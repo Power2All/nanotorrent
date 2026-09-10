@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -132,7 +132,7 @@ librqbit-peer-protocol = { version = "9.0.1", default-features = false }
 # VPN interface someone bound to is actually present. Already in the tree via
 # librqbit-dualstack-sockets, so naming it costs no new crate.
 network-interface = "2"
-maxminddb = "0.30"
+maxminddb = "0.31"
 open = "5.4.1"
 # Generates the self-signed certificate for the web API on first use, so HTTPS
 # works out of the box without asking anyone to run openssl.
@@ -193,7 +193,7 @@ raw-window-handle = { version = "0.6", optional = true }
 # raw-window-handle-06 for the HWND behind the Slint window: real modality on
 # Windows is EnableWindow on the owner, which needs it. Adds no crates - it is
 # already in the tree.
-slint = { version = "1", optional = true, features = ["raw-window-handle-06", "renderer-software"] }
+slint = { version = "1", optional = true, features = ["raw-window-handle-06", "renderer-skia"] }
 # Constant-time comparison for the auth username. argon2 already compares the
 # password hash in constant time; the username needs the same treatment or it
 # leaks through timing.

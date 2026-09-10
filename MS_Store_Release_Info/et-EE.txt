@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: Eesti (Eesti) - Partner Center: Estonian (Estonia) (et-EE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versioon 0.3.5
+Versioon 0.3.7
 
 - Jagamispiirid: lõpeta jagamine teatud suhtel, määratud aja järel või sõltuvalt sellest, kumb saabub enne, ning seejärel peata või eemalda torrent.
 - Alternatiivsed kiiruspiirid, ajakava järgi või käsitsi tööriistaribalt lülitatuna.
@@ -39,6 +39,9 @@ Versioon 0.3.5
 - Sätete andmebaasi saab krüptida ilma paroolita, mida sisestada, ning sätteid saab eksportida ja importida JSON-vormingus.
 - Veebiliides saab järjekorra järjestuse, kiiruslüliti ja torrendipõhise paneeli failide, jälgijate, siltide ja piiride jaoks.
 - Osi, mis on vähestel partneritel, küsitakse esimesena, ja BitTorrent v2 torrenteid saab nüüd teistele jagada.
+- Magnetlingid avavad nüüd lisamisakna nagu .torrent-failidki, kui te pole valinud selle vahelejätmist.
+- Mitme failiga torrent pannakse tema järgi nimetatud kausta, mitte laiali salvestuskausta.
+- Väiksem protsessori- ja mälukasutus, kui aken on avatud.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

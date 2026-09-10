@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.5 - Microsoft Store listing
+NanoTorrent 0.3.7 - Microsoft Store listing
 Language: 日本語 (日本) - Partner Center: Japanese (Japan) (ja-JP)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -29,7 +29,7 @@ NanoTorrent は Viktor Elofsson 氏による PicoTorrent の Rust 移植版で�
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-バージョン 0.3.5
+バージョン 0.3.7
 
 - 共有制限: 指定した比率、指定した時間、またはそのいずれか早いほうでシードを止め、そのあとトレントを一時停止するか削除します。
 - 代替の速度制限。スケジュールに従うか、ツールバーから手動で切り替えられます。
@@ -39,6 +39,9 @@ NanoTorrent は Viktor Elofsson 氏による PicoTorrent の Rust 移植版で�
 - 設定データベースを暗号化できます。入力するパスワードは不要で、設定は JSON として書き出し・読み込みできます。
 - Web インターフェイスにキュー順序、速度切り替え、そしてファイル・トラッカー・タグ・制限をまとめたトレントごとのパネルが加わりました。
 - 持っているピアが少ないピースを先に要求するようになり、BitTorrent v2 のトレントを他の人にシードできるようになりました。
+- マグネットリンクも .torrent ファイルと同じく追加ウィンドウを開くようになりました（省略する設定にしている場合を除く）。
+- 複数のファイルを含むトレントは、保存フォルダーに散らばらず、その名前のフォルダーにまとめられます。
+- ウィンドウを開いている間のプロセッサーとメモリーの使用量を削減しました。
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

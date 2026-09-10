@@ -90,15 +90,36 @@ fn move_finished(session: &Arc<Session>, cfg: &Configuration, hash: &str, name: 
         return;
     };
 
-    let Some(destination) = destination(cfg, &current) else {
+    // A multi-file torrent lives in a directory of its own, so the folder it
+    // was STAGED in - the one the settings talk about - is the parent. The
+    // directory travels with it: moving the files out of it and dropping them
+    // loose in the save path would undo the layout the add just chose.
+    let own_dir = own_directory(&current, name);
+    let staged = own_dir.map_or(current.as_str(), |parent| parent);
+
+    let Some(destination) = destination(cfg, staged) else {
         return;
     };
-    if same_folder(&current, &destination) {
+    if same_folder(staged, &destination) {
         return;
     }
+    let destination = match own_dir {
+        Some(_) => Path::new(&destination).join(name).display().to_string(),
+        None => destination,
+    };
 
     tracing::info!("{name} finished; moving it to {destination}");
     session.move_storage(hash, &destination);
+}
+
+/// The folder `current` sits in, when `current` is the torrent's own
+/// containing directory rather than the place it was added to.
+fn own_directory<'a>(current: &'a str, name: &str) -> Option<&'a str> {
+    let path = Path::new(current);
+    if path.file_name()? != Path::new(name).as_os_str() {
+        return None;
+    }
+    path.parent()?.to_str()
 }
 
 /// Where a finished torrent currently sitting in `current` should end up, or
@@ -298,6 +319,32 @@ mod tests {
             Some(String::from("D:\\done"))
         );
         assert_eq!(destination(&cfg, "D:\\somewhere-else"), None);
+    }
+
+    /// A multi-file torrent sits in a directory of its own, so the folder the
+    /// incomplete setting is talking about is the parent - and the finished
+    /// move has to put the directory back rather than tip the files out of it.
+    #[test]
+    fn a_torrents_own_directory_is_not_mistaken_for_where_it_was_staged() {
+        assert_eq!(own_directory(r"D:\part\Season 1", "Season 1"), Some(r"D:\part"));
+        assert_eq!(own_directory(r"D:\part", "Season 1"), None);
+        // A single-file torrent named after the folder it happens to be in is
+        // still in that folder, not in a directory of its own - but treating
+        // the two alike is harmless: the move puts the name back either way.
+        assert_eq!(
+            own_directory(r"D:\part\holiday.mkv", "holiday.mkv"),
+            Some(r"D:\part")
+        );
+
+        let cfg = cfg();
+        cfg.set("downloads.incomplete_enabled", &true);
+        cfg.set("downloads.incomplete_path", &r"D:\part");
+        cfg.set("default_save_path", &r"D:\done");
+        assert_eq!(
+            destination(&cfg, own_directory(r"D:\part\Season 1", "Season 1").unwrap()),
+            Some(String::from(r"D:\done")),
+            "a staged multi-file torrent was left in the incomplete folder"
+        );
     }
 
     #[test]

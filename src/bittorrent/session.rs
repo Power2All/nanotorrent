@@ -1575,6 +1575,12 @@ impl Session {
         let mut opts = AddTorrentOptions {
             paused: !params.start_torrent,
             output_folder: incomplete_folder(&Configuration::new(self.db.clone()), &params),
+            // A fresh add names a DESTINATION, so the containing-directory
+            // rule applies to it: one file lands in the folder as itself,
+            // several land in a directory named after the torrent. Only here -
+            // every other add in this file is a RE-add, pointing at data that
+            // is already somewhere, and must use the folder verbatim.
+            output_folder_subfolder: true,
             only_files: params.only_files.clone(),
             overwrite: true,
             ..Default::default()
@@ -3164,6 +3170,142 @@ async fn resume_after_restore(rq: Arc<RqbitSession>, hashes: Vec<String>) {
 pub enum AddTorrentSource {
     TorrentFileBytes(Vec<u8>),
     MagnetUri(String),
+}
+
+#[cfg(test)]
+mod layout_tests {
+    //! Which folder a torrent's files are written to.
+    //!
+    //! The rule every client follows: a torrent holding ONE file writes that
+    //! file straight into the chosen folder, and a torrent holding several
+    //! wraps them in a directory named after the torrent. Getting it wrong is
+    //! not subtle - it either scatters a season of episodes across the save
+    //! path or buries a single file one level too deep - but nothing fails
+    //! loudly, so it stays wrong until somebody opens the folder.
+    //!
+    //! `list_only` stops right after the folder is decided, so these ask the
+    //! engine the question directly rather than downloading anything.
+
+    use crate::bittorrent::torrent_create::{CreateInput, TorrentVersion, build};
+    use librqbit::{AddTorrent, AddTorrentOptions, AddTorrentResponse};
+    use std::path::{Path, PathBuf};
+
+    fn tmpdir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("nt-layout-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn torrent_of(source: &Path) -> Vec<u8> {
+        build(&CreateInput {
+            source,
+            trackers: &[],
+            comment: "",
+            created_by: "test".into(),
+            private: false,
+            piece_length: Some(65_536),
+            version: TorrentVersion::V1,
+        })
+        .unwrap()
+        .bytes
+    }
+
+    /// Where would this torrent be written, if added to `into` the way a fresh
+    /// add does it?
+    async fn folder_for(bytes: Vec<u8>, into: &Path, subfolder: bool) -> PathBuf {
+        let session = librqbit::Session::new_with_opts(
+            std::env::temp_dir(),
+            librqbit::SessionOptions {
+                dht: None,
+                listen: None,
+                disable_trackers: true,
+                persistence: None,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let response = session
+            .add_torrent(
+                AddTorrent::from_bytes(bytes),
+                Some(AddTorrentOptions {
+                    list_only: true,
+                    output_folder: Some(into.display().to_string()),
+                    output_folder_subfolder: subfolder,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap();
+        session.stop().await;
+
+        match response {
+            AddTorrentResponse::ListOnly(r) => r.output_folder,
+            _ => panic!("list_only did not list"),
+        }
+    }
+
+    /// One file lands in the chosen folder as itself, with no directory of its
+    /// own wrapped around it.
+    #[tokio::test]
+    async fn a_single_file_torrent_is_written_straight_into_the_folder() {
+        let dir = tmpdir("single");
+        let file = dir.join("holiday.mkv");
+        std::fs::write(&file, vec![7u8; 300_000]).unwrap();
+
+        let into = dir.join("downloads");
+        assert_eq!(
+            folder_for(torrent_of(&file), &into, true).await,
+            into,
+            "a single-file torrent must not be given a folder of its own"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Several files are wrapped in a directory named after the torrent.
+    #[tokio::test]
+    async fn a_multi_file_torrent_is_wrapped_in_a_directory_named_after_it() {
+        let dir = tmpdir("multi");
+        let src = dir.join("Season 1");
+        std::fs::create_dir_all(src.join("extras")).unwrap();
+        std::fs::write(src.join("e01.mkv"), vec![1u8; 200_000]).unwrap();
+        std::fs::write(src.join("extras").join("notes.txt"), vec![2u8; 4_000]).unwrap();
+
+        let into = dir.join("downloads");
+        assert_eq!(
+            folder_for(torrent_of(&src), &into, true).await,
+            into.join("Season 1"),
+            "a multi-file torrent must land inside a folder named after it"
+        );
+
+        // Pointed AT that directory - because the user picked it, or because
+        // the torrent is being re-added after this already happened once - the
+        // name is not appended a second time.
+        let already = into.join("Season 1");
+        assert_eq!(
+            folder_for(torrent_of(&src), &already, true).await,
+            already,
+            "a folder already named after the torrent was nested inside itself"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Every other add in this file is a re-add pointing at data that already
+    /// exists, and those must keep using the folder they were handed.
+    #[tokio::test]
+    async fn without_the_flag_the_folder_is_used_verbatim() {
+        let dir = tmpdir("verbatim");
+        let src = dir.join("Season 2");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("e01.mkv"), vec![1u8; 200_000]).unwrap();
+        std::fs::write(src.join("e02.mkv"), vec![2u8; 200_000]).unwrap();
+
+        let into = dir.join("downloads");
+        assert_eq!(folder_for(torrent_of(&src), &into, false).await, into);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]
