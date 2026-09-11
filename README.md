@@ -54,7 +54,7 @@ or build one yourself:
 
 | Platform | File | Built by |
 | --- | --- | --- |
-| Windows | `NanoTorrent-<ver>-Setup.exe` | NSIS, UPX-compressed payload — `installer/build-installer.bat` |
+| Windows | `NanoTorrent-<ver>-Setup.exe` | NSIS — `installer/build-installer.bat` |
 | Debian / Ubuntu | `nanotorrent-<ver>.deb` | `cargo deb` |
 | Fedora / RHEL / openSUSE | `nanotorrent-<ver>.rpm` | `cargo generate-rpm` |
 | Any Linux (glibc 2.35+) | `nanotorrent-<ver>-x86_64.AppImage` | `linuxdeploy` — one file, no install |
