@@ -15,10 +15,28 @@ if not exist "%ROOT%\target\release\nanotorrent-cli.exe" (
   echo   nanotorrent-cli.exe not found & exit /b 1
 )
 
-rem Optional: drop upx.exe next to this script to shrink the packaged exes.
+rem UPX packing is OFF. It is opt-in: set NANOTORRENT_UPX=1 and drop upx.exe
+rem next to this script.
+rem
+rem A packed binary is 16 MB on disk that has to allocate and decompress 64 MB
+rem before the loader has finished, on every single launch. A freshly installed
+rem 0.3.7 failed exactly there twice - an access violation inside ntdll, which
+rem reaches the user as "The application was unable to start correctly
+rem (0xc0000142)" and cannot be debugged from a stack trace. It has not been
+rem reproduced since, so this is not a proven verdict on UPX; it is a bad trade
+rem regardless, and a smaller one than it looks. NSIS already compresses the
+rem payload itself (SetCompressor /SOLID lzma below), so packing first only
+rem saves a couple of MB of DOWNLOAD - measured, 0.3.6 packed was 14.1 MB
+rem against 0.3.7 unpacked at 16.7 MB. The ~47 MB is installed footprint, not
+rem bandwidth. Against that: a slower start on every launch, a standing
+rem antivirus heuristic flag, and a class of loader failure with no stack
+rem trace. The MSIX is the same story - it is a compressed container, so
+rem packing inside it just hands the packager incompressible data.
 echo [2/5] UPX compression...
-if not exist "%~dp0upx.exe" (
-  echo   skipped ^(no upx.exe in installer folder - get it from https://upx.github.io^)
+if not "%NANOTORRENT_UPX%"=="1" (
+  echo   skipped ^(off by default - set NANOTORRENT_UPX=1 to pack^)
+) else if not exist "%~dp0upx.exe" (
+  echo   skipped ^(NANOTORRENT_UPX=1 but no upx.exe in installer folder^)
 ) else (
   rem Both binaries: the GUI is the bulk of the download, and the launcher
   rem ships beside it twice - once under its own name and once as

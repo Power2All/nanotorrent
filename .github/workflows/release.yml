@@ -9,7 +9,7 @@
 # installer/make-assets.ps1 follows for the NSIS script.
 #
 # Output names, all carrying the version:
-#   NanoTorrent-<ver>-Setup.exe   Windows, NSIS, UPX-compressed payload
+#   NanoTorrent-<ver>-Setup.exe   Windows, NSIS
 #   nanotorrent-<ver>.deb         Debian / Ubuntu
 #   nanotorrent-<ver>.rpm         Fedora / RHEL / openSUSE
 #   nanotorrent-<ver>-x86_64.AppImage   any glibc 2.35+ distro, no install
@@ -24,9 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       upx:
-        description: "UPX-compress the Windows executable"
+        description: "UPX-compress the Windows executable (off: see build-installer.bat)"
         type: boolean
-        default: true
+        default: false
       draft:
         description: "Create a draft GitHub release with the artifacts attached"
         type: boolean
@@ -68,9 +68,8 @@ jobs:
         run: cargo build --release --locked
 
       # upx.exe is deliberately not committed (see installer/.gitignore), so
-      # fetch it here. build-installer.bat picks it up automatically if it is
-      # sitting next to the script, and skips compression if it is not - which
-      # is exactly what unchecking the input should do.
+      # fetch it here. Packing is off by default and needs BOTH this file and
+      # NANOTORRENT_UPX=1, so leaving the input unchecked skips it twice over.
       - name: Fetch UPX
         if: inputs.upx
         shell: pwsh
@@ -86,12 +85,15 @@ jobs:
       - name: Install NSIS
         run: choco install nsis --no-progress -y
 
-      # The .bat is the same script used locally: it UPX-packs the exe,
-      # regenerates version.nsh / installer.bmp / readme.rtf, then runs
-      # makensis. Calling it rather than repeating its steps keeps one
-      # definition of how a Windows build is made.
+      # The .bat is the same script used locally: it regenerates version.nsh /
+      # installer.bmp / readme.rtf, then runs makensis. Calling it rather than
+      # repeating its steps keeps one definition of how a Windows build is
+      # made. It packs only when NANOTORRENT_UPX=1, which the step below sets
+      # from the workflow input.
       - name: Build installer
         shell: cmd
+        env:
+          NANOTORRENT_UPX: ${{ inputs.upx && '1' || '0' }}
         run: call installer\build-installer.bat
 
       - name: Check the expected file exists
