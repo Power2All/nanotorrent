@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Čeština (Česko) - Partner Center: Czech (Czechia) (cs-CZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Můžete také vytvářet vlastní torrenty, včetně BitTorrent v2 a hybridníc
 
 Vlajky zemí protějšků pocházejí z databáze uložené ve vašem počítači. Žádná adresa se nikdy nedotazuje po síti.
 
-K dispozici ve 41 jazycích, se světlým a tmavým motivem, které následují Windows.
+K dispozici ve 76 jazycích, se světlým a tmavým motivem, které následují Windows.
 
 NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Verze 0.3.7
+Verze 0.3.8
 
-- Limity sdílení: ukončit seedování při daném poměru, po nastaveném čase nebo podle toho, co nastane dříve, a poté torrent pozastavit či odebrat.
-- Alternativní rychlostní limity, podle plánu nebo přepnuté ručně z panelu nástrojů.
-- Pořadí ve frontě z panelu nástrojů, priority jednotlivých souborů a štítky.
-- Sledovaná složka, která přidá každý vložený soubor .torrent.
-- Přidávání, úprava a odebírání trackerů torrentu, v úrovních oznamování.
-- Databázi nastavení lze zašifrovat, bez hesla, které by bylo nutné psát, a nastavení exportovat a importovat jako JSON.
-- Webové rozhraní získává pořadí ve frontě, přepínač rychlosti a panel pro každý torrent se soubory, trackery, štítky a limity.
-- Části, které má málo protějšků, se vyžadují jako první, a torrenty BitTorrent v2 lze nyní sdílet ostatním.
-- Magnet odkazy nyní otevírají okno pro přidání torrentu stejně jako soubory .torrent, pokud jste si nezvolili jeho přeskočení.
-- Torrent s více soubory se uloží do složky pojmenované podle něj, místo aby se rozsypal do cílové složky.
-- Nižší zatížení procesoru a menší spotřeba paměti při otevřeném okně.
+- 35 dalších jazyků, celkem 76, přidaných v Evropě, jižní Asii, jihovýchodní Asii, střední Asii a Africe.
+- Dokončená stahování už nezůstávají uzamčená. Torrent, který byl dokončený nebo pozastavený, držel své soubory otevřené pro zápis a ve Windows to samo stačí k tomu, aby je jiný program nemohl otevřít: archiv nebo video ve složce stahování nešlo otevřít, dokud se NanoTorrent nezavřel. Soubory se nyní znovu otevřou jen pro čtení, jakmile už se do nich nebude zapisovat, a právo zápisu se automaticky získá zpět, když je znovu potřeba.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Plnohodnotná příkazová řádka pro skripty a stroje bez obrazovky
 Štítky a filtry udrží pořádek i v dlouhém seznamu
 Vlajky zemí protějšků se určují ve vašem počítači
 Světlý a tmavý motiv následující Windows
-K dispozici ve 41 jazycích
+K dispozici ve 76 jazycích
 Otevřený zdrojový kód pod licencí MIT
 
 

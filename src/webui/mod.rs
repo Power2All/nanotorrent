@@ -383,40 +383,47 @@ async fn h_health() -> impl Responder {
 /// asked for, which the script uses for the strings it builds at runtime.
 /// Serialising it as JSON is what keeps an apostrophe in a French translation
 /// from ending a JavaScript string literal.
+/// Every string key the page asks for, through either channel.
+///
+/// Shared with the test that checks they all resolve: if the test scanned
+/// separately it could agree with itself while disagreeing with what actually
+/// gets substituted, which is the one thing worth ruling out.
+fn template_keys(html: &str) -> Vec<&str> {
+    let mut keys = Vec::new();
+    let mut rest = html;
+    while let Some(start) = rest.find("{{") {
+        let Some(end) = rest[start..].find("}}") else { break };
+        let key = &rest[start + 2..start + end];
+        if key != "__T__" && !keys.contains(&key) {
+            keys.push(key);
+        }
+        rest = &rest[start + end + 2..];
+    }
+
+    // The script also reaches for strings the markup never names, as
+    // `T.some_key`. Those have to be in the table or they arrive as
+    // `undefined` - which is exactly how the first version shipped a toast
+    // reading "undefined: Failed to fetch". `T` is only ever the string
+    // table in this file, so matching on it is unambiguous.
+    let mut rest = html;
+    while let Some(at) = rest.find("T.") {
+        let tail = &rest[at + 2..];
+        let len = tail
+            .find(|c: char| !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_')
+            .unwrap_or(tail.len());
+        let key = &tail[..len];
+        if !key.is_empty() && !keys.contains(&key) {
+            keys.push(key);
+        }
+        rest = &rest[at + 2 + len..];
+    }
+    keys
+}
+
 fn render_page(tr: &crate::ui::translator::Translator) -> String {
     let html = include_str!("index.html");
 
-    let keys: Vec<&str> = {
-        let mut keys = Vec::new();
-        let mut rest = html;
-        while let Some(start) = rest.find("{{") {
-            let Some(end) = rest[start..].find("}}") else { break };
-            let key = &rest[start + 2..start + end];
-            if key != "__T__" && !keys.contains(&key) {
-                keys.push(key);
-            }
-            rest = &rest[start + end + 2..];
-        }
-
-        // The script also reaches for strings the markup never names, as
-        // `T.some_key`. Those have to be in the table or they arrive as
-        // `undefined` - which is exactly how the first version shipped a toast
-        // reading "undefined: Failed to fetch". `T` is only ever the string
-        // table in this file, so matching on it is unambiguous.
-        let mut rest = html;
-        while let Some(at) = rest.find("T.") {
-            let tail = &rest[at + 2..];
-            let len = tail
-                .find(|c: char| !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_')
-                .unwrap_or(tail.len());
-            let key = &tail[..len];
-            if !key.is_empty() && !keys.contains(&key) {
-                keys.push(key);
-            }
-            rest = &rest[at + 2 + len..];
-        }
-        keys
-    };
+    let keys = template_keys(html);
 
     let table: std::collections::BTreeMap<&str, String> =
         keys.iter().map(|k| (*k, tr.i18n(k))).collect();
@@ -2484,18 +2491,17 @@ mod page_script {
         )
         .expect("en-US parses");
 
-        let mut rest = html;
-        while let Some(start) = rest.find("{{") {
-            let Some(end) = rest[start..].find("}}") else { break };
-            let key = &rest[start + 2..start + end];
-            rest = &rest[start + end + 2..];
-            if key == "__T__" {
-                continue;
-            }
-            assert!(
-                english.get(key).is_some(),
-                "index.html asks for {{{{{key}}}}}, which en-US does not have"
-            );
-        }
+        // Both channels, via the same scan render_page substitutes with: a
+        // `{{key}}` that en-US lacks renders empty, and a `T.key` it lacks is
+        // silently humanised ("Confirm remove torrents" where a sentence
+        // belongs), which is the quieter and therefore worse failure.
+        let missing: Vec<&str> = super::template_keys(html)
+            .into_iter()
+            .filter(|k| english.get(k).is_none())
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "index.html asks for keys en-US does not have: {missing:?}"
+        );
     }
 }

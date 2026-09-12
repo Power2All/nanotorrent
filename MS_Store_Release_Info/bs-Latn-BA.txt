@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Bosanski (Bosna i Hercegovina) - Partner Center: Bosnian (Bosnia and Herzegovina) (bs-Latn-BA)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > bs-Latn-BA. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent je mali, brzi BitTorrent klijent koji vam se ne miješa u posao.
+
+To je izvorna aplikacija napisana u Rustu, a ne web stranica u prozoru. Pokreće se odmah i koristi djelić memorije koju traži tipičan savremeni klijent.
+
+Bez računa. Bez reklama. Bez telemetrije, bez analitike, bez prijavljivanja padova. Ništa se ne prikuplja o vama ni o tome šta preuzimate. NanoTorrent je otvorenog koda pod MIT licencom, pa je to nešto što možete provjeriti, a ne nešto što morate uzeti na vjeru.
+
+Dodajte torrente iz datoteka ili magnet linkova, pratite ih u listi koju možete sortirati, označavati i filtrirati, i otvorite panel s detaljima za datoteke, vršnjake i trackere. Podržani su DHT, razmjena vršnjaka, više nivoa trackera, UDP trackeri i privatni torrenti, a veze se mogu šifrirati uz opciono odbijanje svega nešifriranog.
+
+Postoji više načina da ga vodite. Prozor na radnoj površini je očigledan. Opcioni web interfejs, standardno isključen i zaštićen šifrom, omogućava vam da upravljate klijentom koji radi iz preglednika na drugoj mašini. A svaka postavka je dostupna iz komandne linije, što NanoTorrent čini skriptabilnim i upotrebljivim na mašini bez priključenog ekrana.
+
+Možete i praviti torrente, uključujući BitTorrent v2 i hibridne.
+
+Zastave država vršnjaka dolaze iz baze podataka koja se čuva na vašem računaru. Nijedna adresa se nikada ne traži preko mreže.
+
+Dostupan na 76 jezika, sa svijetlom i tamnom temom koje prate Windows.
+
+NanoTorrent je Rust port PicoTorrenta autora Viktora Elofssona.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Verzija 0.3.8
+
+- 35 jezika više, ukupno 76, dodanih u Evropi, južnoj Aziji, jugoistočnoj Aziji, srednjoj Aziji i Africi.
+- Završena preuzimanja više ne ostaju zaključana. Torrent koji je bio završen ili pauziran držao je svoje datoteke otvorenima za pisanje, a na Windowsu je već to dovoljno da drugi program ne može da ih otvori: arhiva ili video u folderu za preuzimanje nisu se mogli otvoriti dok se NanoTorrent ne zatvori. Datoteke se sada ponovo otvaraju samo za čitanje čim se više ništa ne bude zapisivalo, a pravo pisanja se automatski vraća ako ponovo zatreba.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Izvorna Rust aplikacija: brzo se pokreće i štedi memoriju
+Bez reklama, bez telemetrije, bez računa, nikada
+Magnet linkovi i .torrent datoteke
+DHT, razmjena vršnjaka, nivoi trackera i UDP trackeri
+Šifriranje veza (MSE/PE), opciono obavezno
+Pravite torrente, uključujući BitTorrent v2 i hibridne
+Podrška za SOCKS i HTTP proxy
+Opcioni web interfejs zaštićen šifrom za daljinsko upravljanje
+Puna komandna linija za skriptiranje i mašine bez ekrana
+Naljepnice i filteri za red u dugoj listi
+Zastave država vršnjaka potražene na vašem računaru
+Svijetla i tamna tema koje prate Windows
+Dostupan na 76 jezika
+Otvoreni kod pod MIT licencom
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent klijent
+magnet link
+p2p
+dijeljenje datoteka
+menadžer preuzimanja
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. NanoTorrent je softver otvorenog koda, izdat pod MIT licencom.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent je besplatan softver otvorenog koda, izdat pod MIT licencom. Puni tekst licence i kompletan izvorni kod dostupni su na https://github.com/Power2All/nanotorrent
+
+Softver se pruža "takav kakav jeste", bez ikakve garancije, izričite ili podrazumijevane. Komponente trećih strana zadržavaju vlastite licence, koje su navedene u izvornom repozitorijumu.
+
+NanoTorrent je alat za prenos datoteka opšte namjene. Ne hostuje, ne indeksira, ne isporučuje, ne preporučuje i ne podržava bilo kakav sadržaj. Vi ste odgovorni da osigurate da vaša upotreba bude u skladu sa zakonom tamo gdje živite i sa pravima nosilaca autorskih prava.
+
+NanoTorrent se razvija pretežno uz pomoć vještačke inteligencije pod ljudskim nadzorom, kako je navedeno u AI-DECLARATION.md u izvornom repozitorijumu.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

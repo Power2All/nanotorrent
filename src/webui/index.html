@@ -512,7 +512,7 @@ th .arrow { opacity: .75; font-size: .8em; }
   <span class="stat">&darr; <b id="dl">0 B/s</b></span>
   <span class="stat">&uarr; <b id="ul">0 B/s</b></span>
   <span class="stat">DHT <b id="dht">-</b></span>
-  <span class="stat"><b id="count">0</b> torrents</span>
+  <span class="stat"><b id="count">0</b></span>
   <span class="stat link" id="link" title="{{connecting}}"><span class="dot"></span><b id="clients"></b></span>
   <select id="theme" title="{{theme}}" aria-label="{{theme}}">
     <option value="auto">{{theme_system}}</option>
@@ -575,7 +575,7 @@ th .arrow { opacity: .75; font-size: .8em; }
 <aside id="drawer" aria-hidden="true" aria-label="{{preferences}}">
   <header>
     <h2>{{preferences}}</h2>
-    <button type="button" id="drawer-close" aria-label="Close">&times;</button>
+    <button type="button" id="drawer-close" aria-label="{{close}}">&times;</button>
   </header>
   <div id="drawer-body"></div>
   <div id="drawer-foot">
@@ -660,7 +660,7 @@ th .arrow { opacity: .75; font-size: .8em; }
       </label>
       <div class="row">
         <label>{{save_to}}
-          <input type="text" id="add-path" placeholder="server default">
+          <input type="text" id="add-path" placeholder="{{server_default}}">
         </label>
         <button type="button" id="add-browse">{{browse_folder}}</button>
       </div>
@@ -731,7 +731,7 @@ th .arrow { opacity: .75; font-size: .8em; }
   <div class="dlg-body">
     <div id="browser-path"></div>
     <div class="row">
-      <button type="button" id="browser-up">Up</button>
+      <button type="button" id="browser-up">{{parent_folder}}</button>
       <button type="button" id="browser-mkdir">{{new_folder}}</button>
     </div>
     <div id="browser-list"></div>
@@ -880,21 +880,21 @@ function renderRows(all) {
     box.className = "actions";
     box.append(
       t.paused
-        ? actionButton("Resume", "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/resume`)))
-        : actionButton("Pause", "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/pause`))),
+        ? actionButton(T.resume, "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/resume`)))
+        : actionButton(T.pause, "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/pause`))),
       // Points the torrent at data that has already been moved; it does not
       // move anything. The browser opens at the current save path because the
       // new location is usually a sibling of the old one.
-      actionButton("Location", "", () => {
+      actionButton(T.set_location, "", () => {
         openBrowser(t.save_path || null, (path) => {
           act(() => api("POST", `/api/torrents/${t.info_hash}/location`, { path }));
         });
       }),
       actionButton(T.details, "", () => openDetails(t)),
-      actionButton("Remove", "danger", () => {
+      actionButton(T.remove, "danger", () => {
         // Two questions, because the second one is unrecoverable.
-        if (!confirm(`Remove "${t.name}" from NanoTorrent?`)) return;
-        const withData = confirm("Also DELETE the downloaded files from disk?\n\nOK = delete files, Cancel = keep them.");
+        if (!confirm(T.confirm_remove_torrents.replace("{0}", `"${t.name}"`))) return;
+        const withData = confirm(T.confirm_delete_files);
         act(() => api("DELETE", `/api/torrents/${t.info_hash}?delete_files=${withData}`));
       }),
     );
@@ -1113,7 +1113,9 @@ function applySnapshot(info, list, errors) {
   $("dl").textContent = speed(info.download_rate);
   $("ul").textContent = speed(info.upload_rate);
   $("dht").textContent = info.dht_nodes === null ? "-" : info.dht_nodes;
-  $("count").textContent = info.torrents;
+  // "{0} torrent(s)" - the number is not always first, so the whole
+  // phrase is built from the template rather than concatenated.
+  $("count").textContent = T.num_torrents.replace("{0}", info.torrents);
   pushRates(info.download_rate, info.upload_rate);
   // The schedule can turn the alternative limits on without anyone touching
   // the button, so the state comes from the server rather than from the last
@@ -1224,14 +1226,14 @@ $("browser-up").addEventListener("click", (e) => {
   if (parent) browseTo(parent);
 });
 $("browser-mkdir").addEventListener("click", async () => {
-  const name = prompt("Name for the new folder:");
+  const name = prompt(T.new_folder_name);
   if (!name) return;
   try {
     const sep = browsingPath.includes("\\") ? "\\" : "/";
     const target = browsingPath.replace(/[\\/]$/, "") + sep + name;
     const listing = await api("POST", "/api/fs/mkdir", { path: target });
     await browseTo(listing.path);
-    toast("Created " + listing.path, "info");
+    toast(T.folder_created.replace("{0}", listing.path), "info");
   } catch (e) { toast(e.message); }
 });
 $("browser-cancel").addEventListener("click", () => $("browser").close());
@@ -1258,7 +1260,8 @@ const readAsBase64 = (file) => new Promise((resolve, reject) => {
   const r = new FileReader();
   // The data: URL carries a "...;base64," prefix the API must not receive.
   r.onload = () => resolve(String(r.result).split(",", 2)[1]);
-  r.onerror = () => reject(new Error("could not read " + file.name));
+  r.onerror = () =>
+    reject(new Error(T.could_not_read_file.replace("{0}", file.name)));
   r.readAsDataURL(file);
 });
 
@@ -1413,8 +1416,8 @@ $("add").addEventListener("close", async () => {
     const n = items.length;
     toast(
       magnets.length
-        ? `${n} magnet${n > 1 ? "s" : ""} queued - resolving metadata...`
-        : `${n} torrent${n > 1 ? "s" : ""} added.`,
+        ? T.magnets_queued.replace("{0}", n)
+        : T.torrents_added.replace("{0}", n),
       "info",
     );
     await refresh();
@@ -1746,9 +1749,11 @@ $("tb-remove").onclick = () => {
   if (!picked.length) return;
   // Same two prompts the row's own Remove button asks, rather than a third
   // wording for the same act.
-  const what = picked.length === 1 ? `"${picked[0].name}"` : picked.length + " torrents";
-  if (!confirm(`Remove ${what} from NanoTorrent?`)) return;
-  const withData = confirm("Also DELETE the downloaded files from disk?\n\nOK = delete files, Cancel = keep them.");
+  const what = picked.length === 1
+    ? `"${picked[0].name}"`
+    : T.num_torrents.replace("{0}", picked.length);
+  if (!confirm(T.confirm_remove_torrents.replace("{0}", what))) return;
+  const withData = confirm(T.confirm_delete_files);
   act(() => Promise.all(picked.map((t) =>
     api("DELETE", `/api/torrents/${t.info_hash}?delete_files=${withData}`))));
 };
@@ -2128,12 +2133,12 @@ loadColumns();
 function plugNote(p) {
   if (p.error) return ["err", p.error];
   if (p.needs_approval) {
-    return ["warn", (T.plugins_needs_approval || "Waiting for approval") +
+    return ["warn", T.plugins_needs_approval +
       (p.permissions.length ? " - " + p.permissions.join(", ") : "")];
   }
-  if (!p.enabled) return ["", T.disabled || "Off"];
+  if (!p.enabled) return ["", T.off];
   if (p.permissions.length) {
-    return ["", (T.plugins_access || "Access") + ": " + p.permissions.join(", ")];
+    return ["", T.plugins_access + ": " + p.permissions.join(", ")];
   }
   return ["", ""];
 }
@@ -2151,7 +2156,7 @@ async function drawPlugList() {
   if (!list.length) {
     const p = document.createElement("div");
     p.className = "pl-note";
-    p.textContent = T.plugins_none || "No plugins installed.";
+    p.textContent = T.plugins_none;
     box.append(p);
     return;
   }
@@ -2163,7 +2168,7 @@ async function drawPlugList() {
     const on = document.createElement("input");
     on.type = "checkbox";
     on.checked = p.enabled;
-    on.title = T.plugins || "Plugins";
+    on.title = T.plugins;
     on.onchange = async () => {
       on.disabled = true;
       try {
@@ -2199,7 +2204,7 @@ async function drawPlugList() {
     if (p.has_window) {
       const open = document.createElement("button");
       open.type = "button";
-      open.textContent = T.open || "Open";
+      open.textContent = T.open;
       open.onclick = () => { $("plugs").close(); plugOpen(p.name); };
       row.append(open);
     }
@@ -2311,7 +2316,7 @@ loadCharts();
     const dropped = [...e.dataTransfer.files]
       .filter((f) => f.name.toLowerCase().endsWith(".torrent"));
     if (!dropped.length) {
-      toast(T.give_magnet_or_file || "Drop .torrent files.");
+      toast(T.give_magnet_or_file);
       return;
     }
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Latviešu (Latvija) - Partner Center: Latvian (Latvia) (lv-LV)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Varat arī veidot savus torrentus, tostarp BitTorrent v2 un hibrīdos.
 
 Dalībnieku valstu karogi nāk no datubāzes, kas glabājas jūsu datorā. Neviena adrese nekad netiek meklēta tīklā.
 
-Pieejams 41 valodā, ar gaišu un tumšu motīvu, kas seko Windows.
+Pieejams 76 valodā, ar gaišu un tumšu motīvu, kas seko Windows.
 
 NanoTorrent ir Viktora Elofsona PicoTorrent pārnesums uz Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versija 0.3.7
+Versija 0.3.8
 
-- Kopīgošanas ierobežojumi: pārtraukt izplatīšanu pie noteiktas attiecības, pēc noteikta laika vai atkarībā no tā, kas iestājas pirmais, un pēc tam apturēt vai noņemt torrentu.
-- Alternatīvi ātruma ierobežojumi — pēc grafika vai pārslēgti ar roku no rīkjoslas.
-- Rindas secība no rīkjoslas, atsevišķu failu prioritātes un birkas.
-- Novērota mape, kas pievieno katru tajā ievietoto .torrent failu.
-- Torrenta izsekotāju pievienošana, rediģēšana un noņemšana pa paziņošanas līmeņiem.
-- Iestatījumu datubāzi var šifrēt bez paroles, kas jāievada, un iestatījumus eksportēt un importēt JSON formātā.
-- Tīmekļa saskarne iegūst rindas secību, ātruma slēdzi un paneli katram torrentam ar failiem, izsekotājiem, birkām un ierobežojumiem.
-- Daļas, kas ir nedaudziem dalībniekiem, tiek pieprasītas vispirms, un BitTorrent v2 torrentus tagad var izplatīt citiem.
-- Magnet saites tagad atver pievienošanas logu tāpat kā .torrent faili, ja vien neesat izvēlējies to izlaist.
-- Torrents ar vairākiem failiem tiek ievietots mapē ar tā nosaukumu, nevis izkaisīts saglabāšanas mapē.
-- Mazāks procesora un atmiņas patēriņš, kamēr logs ir atvērts.
+- 35 valodas vairāk, pavisam 76, pievienotas Eiropā, Dienvidāzijā, Dienvidaustrumāzijā, Vidusāzijā un Āfrikā.
+- Pabeigtās lejupielādes vairs nepaliek bloķētas. Torrents, kas bija pabeigts vai pauzēts, turēja savus failus atvērtus rakstīšanai, un operētājsistēmā Windows jau tas vien ir pietiekami, lai citai programmai neļautu tos atvērt: arhīvu vai video lejupielāžu mapē nevarēja atvērt, kamēr NanoTorrent netika aizvērts. Faili tagad tiek atkārtoti atvērti tikai lasīšanai, tiklīdz vairs nekas netiks rakstīts, un rakstīšanas piekļuve tiek automātiski atgūta, ja tā atkal nepieciešama.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Pilna komandrinda skriptiem un ierīcēm bez ekrāna
 Marķējumi un filtri uztur kārtību garā sarakstā
 Dalībnieku valstu karogi tiek noteikti jūsu datorā
 Gaišs un tumšs motīvs, kas seko Windows
-Pieejams 41 valodā
+Pieejams 76 valodā
 Atvērtais pirmkods ar MIT licenci
 
 

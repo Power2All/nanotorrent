@@ -141,7 +141,7 @@ the UI shows one row per URL.
 > `status` stays **empty** until the first announce settles. Don't be tempted to
 > seed it with `"Updating..."`: `tracker_rows` turns a missing/empty status into
 > its own `tracker_updating` string, so an English placeholder here would show
-> untranslated in all 41 languages. `"Working"` is the one literal the UI
+> untranslated in all 76 languages. `"Working"` is the one literal the UI
 > matches on and translates; anything else passes through as an error message.
 
 `0005-tracker-stats.patch` (**librqbit**) adds a
@@ -908,3 +908,90 @@ The folder is left alone when it is already named after the torrent, whether
 because the user picked that folder or because the torrent is being re-added
 after this happened once. Without that check the data would sink a level deeper
 every time, into `Season 1/Season 1/Season 1`.
+
+## 0021 - finished and paused torrents let go of their files
+
+A download that had finished could not be opened by anything else until
+NanoTorrent exited: the archive was there, and the archiver said it was in use.
+
+`FilesystemStorage::init` opens every file `.read(true).write(true)` and keeps
+that handle for as long as the torrent exists, in every state. Rust's own handle
+is permissive - `CreateFileW` with `FILE_SHARE_READ | WRITE | DELETE` - so the
+problem is not what we forbid, it is what we hold: another program that opens
+the file with `dwShareMode = FILE_SHARE_READ`, which is what archivers and media
+players overwhelmingly use, is saying "others may read this, nobody may write
+it", and our `GENERIC_WRITE` handle contradicts that. `CreateFileW` fails their
+open with `ERROR_SHARING_VIOLATION`. Nothing is locked in any byte-range sense;
+a write handle simply exists and is enough.
+
+`take()` looks like the escape hatch and is not. It moves the open handles into
+a replacement object (`OpenedFile::take_clone` does `std::mem::take` on the
+`Option<File>`) and that object is what `TorrentStatePaused` holds - so pausing
+moves the handles, it does not close them. Which is why the symptom survived
+stopping the torrent as well as seeding it.
+
+So the handles are given up when they are not needed, and taken back when they
+are:
+
+- `TorrentStorage::release_write_access`, default no-op, forwarded through
+  `Box<U>` and the three middleware wrappers. Not `take()`: the storage stays
+  fully usable, and writing again is allowed.
+- `FilesystemStorage` implements it by reopening each file `.read(true)`, which
+  drops the read-write handle. It keeps going past a failure and reports the
+  last one, so one unreadable path cannot strand the rest.
+- `OpenedFile::lock_for_write` replaces upstream's `try_mark_sparse` as the
+  single accessor on the write path (`pwrite_all`, `pwrite_all_vectored`,
+  `ensure_file_length` - `set_len` is a write too). It still does the windows
+  sparse marking, and on top of that reopens read-write if write access was
+  released. Because every write goes through it, nothing has to predict whether
+  a released file will be written to again - a re-check finding corruption, a
+  newly selected file, a stream of an unselected file all just work.
+
+Three callers release:
+
+- `TorrentStateLive::on_piece_completed`, once the chunk tracker reports
+  finished. Deliberately after the state lock is dropped: it opens files, and
+  that lock is on the hot path.
+- `TorrentStateLive::new`, when the chunk tracker says the torrent was already
+  complete. A torrent resumed complete never completes a piece, so nothing else
+  would ever release what `init()` opened.
+- `TorrentStateLive::pause`, on the storage `take()` just returned. Resuming
+  goes straight from Paused to Live without re-initializing the storage, so the
+  first write after a resume is what reopens read-write.
+
+Release is **per file**, which is what upstream's stale comment in
+`on_piece_completed` - "if we have all the pieces of the file, reopen it read
+only" - has always asked for, above a loop that discarded the per-file remaining
+count. The count is now read: at zero that file will not be written again, so it
+alone is released. A finished episode in a season pack stops being held open
+while the rest of the pack is still downloading.
+
+Which is why `release_write_access` takes `Option<usize>` - `Some(id)` for one
+file, `None` for all of them - and why there are three triggers rather than one:
+
+- `on_piece_completed` releases the file whose last byte just landed.
+- `TorrentStateLive::new` releases every file already complete when the torrent
+  starts. A resume, or a check that found data, completes no pieces, so the first
+  trigger would never reach those; `ChunkTracker::new` has already filled in
+  `per_file_have_bytes` by then, which is exactly the question.
+- `pause` releases all of them, because a paused torrent writes nothing.
+
+The whole-torrent sweep on finishing is kept as a belt. Every selected file was
+released as it completed, so it is nearly always redundant - it costs one sweep
+at a single event per torrent, and the alternative to redundancy here is a file
+left write-open for the rest of the session.
+
+Two tests. The one in `storage/filesystem/opened_file.rs` lives with the code it
+tests and does **not** run under this repo's `cargo test`: librqbit is a
+`[patch.crates-io]` path dependency, not a workspace member, and cannot compile
+standalone because its sibling crates are patched too.
+
+The one that does run is
+`bittorrent::session::tests::a_complete_file_stops_being_held_open_for_writing`,
+in the NanoTorrent crate, going through a real `Session`: a two-file torrent with
+file 0's data already on disk and file 1 absent, asserting that file 0 becomes
+openable with `dwShareMode = FILE_SHARE_READ` and that file 1 does not. Confirmed
+to fail with the per-file release disabled - its first version passed either way,
+because it probed `<dir>/pair/a.bin` on the assumption that the torrent name
+becomes a containing directory. It does not: that is patch 0020's opt-in
+`output_folder_subfolder`, which the test does not set.

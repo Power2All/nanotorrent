@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Azərbaycan dili (Azərbaycan) - Partner Center: Azerbaijani (Azerbaijan) (az-Latn-AZ)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > az-Latn-AZ. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent yolunuzu kəsməyən kiçik və sürətli bir BitTorrent müştərisidir.
+
+O, pəncərədəki veb səhifə deyil, Rust ilə yazılmış doğma bir tətbiqdir. Dərhal işə düşür və adi müasir müştərinin tələb etdiyi yaddaşın yalnız kiçik bir hissəsini istifadə edir.
+
+Hesab yoxdur. Reklam yoxdur. Telemetriya, analitika, qəza hesabatı yoxdur. Nə sizin haqqınızda, nə də yüklədikləriniz haqqında heç nə toplanmır. NanoTorrent MIT lisenziyası altında açıq mənbəlidir, deməli bu, inanmalı olduğunuz bir şey deyil, yoxlaya biləcəyiniz bir şeydir.
+
+Torrentləri fayllardan və ya maqnit keçidlərindən əlavə edin, onları sıralaya, etiketləyə və süzgəcdən keçirə biləcəyiniz siyahıda görün və fayllar, tərəf-müqabillər və izləyicilər üçün təfərrüat panelini açın. DHT, tərəf-müqabil mübadiləsi, çoxsaylı izləyici pilləsi, UDP izləyiciləri və şəxsi torrentlər dəstəklənir və bağlantılar şifrələnə bilər, istəsəniz şifrələnməmiş hər şey rədd edilə bilər.
+
+Onu idarə etməyin bir neçə yolu var. Masaüstü pəncərəsi açıq olanıdır. İlkin olaraq söndürülmüş və parolla qorunan isteğe bağlı veb interfeysi işləyən müştərini başqa bir maşındaki brauzerdən idarə etməyə imkan verir. Və hər parametr əmr sətrindən əlçatandır, bu da NanoTorrent-i skript yazıla bilən və ekranı olmayan maşında istifadə oluna bilən edir.
+
+Siz həmçinin BitTorrent v2 və hibrid daxil olmaqla torrent yarada bilərsiniz.
+
+Tərəf-müqabil ölkə bayraqları öz kompüterinizdə saxlanılan verilənlər bazasından gəlir. Heç bir ünvan şəbəkə üzərindən axtarılmır.
+
+76 dildə əlçatandır, Windows-u izləyən işıqlı və qaranlıq mövzularla.
+
+NanoTorrent, Viktor Elofsson-un PicoTorrent proqramının Rust versiyasıdır.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versiya 0.3.8
+
+- 35 dil daha, cəmi 76; Avropa, Cənubi Asiya, Cənub-Şərqi Asiya, Mərkəzi Asiya və Afrika üzrə əlavələr.
+- Bitmiş yükləmələr artıq kilidli qalmır. Bitmiş və ya fasiləyə verilmiş torrent fayllarını yazmaq üçün açıq saxlayırdı və Windows-da təkcə bu, başqa bir proqramın onları açmasını dayandırmağa kifayət edir: yükləmə qovluğundaki arxiv və ya video NanoTorrent bağlanana qədər açıla bilmirdi. Fayllar artıq yazılacaq heç nə qalmadığı anda yalnız oxumaq üçün yenidən açılır və yazma icazəsi yenidən lazım olarsa avtomatik geri alınır.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Doğma Rust tətbiqi: sürətli başlayır, yaddaşa yüngüldür
+Reklam yoxdur, telemetriya yoxdur, hesab yoxdur, heç vaxt
+Maqnit keçidləri və .torrent faylları
+DHT, tərəf-müqabil mübadiləsi, izləyici pillələri və UDP izləyiciləri
+Bağlantı şifrələnməsi (MSE/PE), istəsəniz məcburi
+BitTorrent v2 və hibrid daxil olmaqla torrent yaradın
+SOCKS və HTTP proksi dəstəyi
+Uzaqdan idarə üçün parolla qorunan isteğe bağlı veb interfeysi
+Skript və ekransız maşınlar üçün tam əmr sətri
+Uzun siyahını səliqəli saxlamaq üçün etiketlər və süzgəclər
+Tərəf-müqabil ölkə bayraqları öz kompüterinizdə axtarılır
+Windows-u izləyən işıqlı və qaranlıq mövzular
+76 dildə əlçatandır
+MIT lisenziyası altında açıq mənbəli
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent müştərisi
+maqnit keçidi
+p2p
+fayl paylaşma
+yükləmə menecseri
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. NanoTorrent MIT lisenziyası altında buraxılmış açıq mənbəli proqramdır.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent MIT lisenziyası altında buraxılmış azad və açıq mənbəli proqramdır. Tam lisenziya mətni və bütöv mənbə kodu https://github.com/Power2All/nanotorrent ünvanında əlçatandır
+
+Proqram heç bir növ, açıq və ya nəzərdə tutulan zəmanət olmadan "olduğu kimi" təqdim edilir. Üçüncü tərəf komponentləri mənbə deposunda siyahıya alınmış öz lisenziyalarını saxlayır.
+
+NanoTorrent ümumi məqsədli fayl köçürmə alətidir. O, heç bir məzmunu yerləşdirmir, indeksləmir, təchiz etmir, tövsiyə etmir və təsdiqləmir. İstifadənizin yaşadığınız yerin qanununa və müəllif hüququ sahiblərinin hüquqlarına uyğun olmasını təmin etmək sizin məsuliyyətinizdir.
+
+NanoTorrent mənbə deposundaki AI-DECLARATION.md sənədində bəyan edildiyi kimi, əsasən insan nəzarəti altında süni intellekt yardımı ilə hazırlanır.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Română (România) - Partner Center: Romanian (Romania) (ro-RO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Puteți crea și propriile torrente, inclusiv BitTorrent v2 și hibride.
 
 Steagurile de țară ale partenerilor provin dintr-o bază de date păstrată pe propriul calculator. Nicio adresă nu este niciodată căutată prin rețea.
 
-Disponibil în 41 de limbi, cu teme deschisă și întunecată care urmează Windows.
+Disponibil în 76 de limbi, cu teme deschisă și întunecată care urmează Windows.
 
 NanoTorrent este o portare în Rust a PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versiunea 0.3.7
+Versiunea 0.3.8
 
-- Limite de partajare: opriți seedingul la un raport, după un timp stabilit sau la primul dintre ele, apoi puneți torrentul pe pauză ori eliminați-l.
-- Limite de viteză alternative, după un program sau comutate manual din bara de instrumente.
-- Ordinea în coadă din bara de instrumente, priorități pe fișier și etichete.
-- Un dosar supravegheat care adaugă orice fișier .torrent pus în el.
-- Adăugarea, editarea și eliminarea trackerelor unui torrent, pe niveluri de anunțare.
-- Baza de date cu setări poate fi criptată, fără parolă de tastat, iar setările pot fi exportate și importate ca JSON.
-- Interfața web capătă ordinea în coadă, comutatorul de viteză și un panou per torrent pentru fișiere, trackere, etichete și limite.
-- Piesele pe care le au puțini parteneri sunt cerute primele, iar torrentele BitTorrent v2 pot fi acum partajate altora.
-- Linkurile magnet deschid acum fereastra de adăugare, la fel ca fișierele .torrent, dacă nu ați ales să fie omisă.
-- Un torent cu mai multe fișiere este pus într-un folder cu numele lui, în loc să fie împrăștiat în folderul de salvare.
-- Consum mai mic de procesor și de memorie cât timp fereastra este deschisă.
+- 35 de limbi în plus, 76 în total, adăugate în Europa, Asia de Sud, Asia de Sud-Est, Asia Centrală și Africa.
+- Descărcările încheiate nu mai rămân blocate. Un torrent încheiat sau pus pe pauză își ținea fișierele deschise pentru scriere, iar pe Windows doar atât este suficient ca un alt program să nu le poată deschide: o arhivă sau un videoclip din dosarul de descărcări nu se putea deschide până la închiderea NanoTorrent. Fișierele sunt acum redeschise doar pentru citire de îndată ce nu mai este nimic de scris, iar accesul de scriere este luat înapoi automat dacă mai este nevoie de el.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Linie de comandă completă pentru scripturi și mașini fără ecran
 Etichete și filtre pentru a ține în ordine o listă lungă
 Steagurile partenerilor sunt determinate pe propriul calculator
 Teme deschisă și întunecată care urmează Windows
-Disponibil în 41 de limbi
+Disponibil în 76 de limbi
 Sursă deschisă sub licența MIT
 
 

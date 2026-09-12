@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Português (Portugal) - Partner Center: Portuguese (Portugal) (pt-PT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Também pode criar torrents, incluindo BitTorrent v2 e híbridos.
 
 As bandeiras dos pares vêm de uma base de dados guardada no seu próprio computador. Nunca é consultado qualquer endereço através da rede.
 
-Disponível em 41 idiomas, com temas claro e escuro que acompanham o Windows.
+Disponível em 76 idiomas, com temas claro e escuro que acompanham o Windows.
 
 O NanoTorrent é uma adaptação em Rust do PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versão 0.3.7
+Versão 0.3.8
 
-- Limites de partilha: parar de semear num rácio, ao fim de um tempo definido ou o que acontecer primeiro, e depois pausar ou remover o torrent.
-- Limites de velocidade alternativos, por agendamento ou accionados à mão a partir da barra de ferramentas.
-- Ordem da fila a partir da barra de ferramentas, prioridades por ficheiro e etiquetas.
-- Uma pasta vigiada que adiciona qualquer .torrent que lá seja colocado.
-- Adicionar, editar e remover os rastreadores de um torrent, em níveis de anúncio.
-- A base de dados de definições pode ser cifrada, sem palavra-passe para escrever, e as definições exportadas e importadas em JSON.
-- A interface web ganha a ordem da fila, o interruptor de velocidade e um painel por torrent para ficheiros, rastreadores, etiquetas e limites.
-- As partes que poucos pares têm são pedidas primeiro, e os torrents BitTorrent v2 já podem ser semeados para outros.
-- As ligações magnet abrem agora a janela de adicionar torrent, tal como os ficheiros .torrent, a menos que tenha optado por ignorá-la.
-- Um torrent com vários ficheiros é colocado numa pasta com o nome dele, em vez de solto na pasta de destino.
-- Menor utilização de processador e de memória com a janela aberta.
+- 35 idiomas a mais, 76 no total, acrescentados na Europa, no sul da Ásia, no sudeste asiático, na Ásia central e em África.
+- As transferências concluídas já não ficam bloqueadas. Um torrent concluído, ou que estava em pausa, mantinha os seus ficheiros abertos para escrita, e no Windows isso só por si basta para impedir que outro programa os abra: um arquivo ou um vídeo na pasta de transferências não podia ser aberto até fechar o NanoTorrent. Os ficheiros são agora reabertos como apenas de leitura assim que nada mais seja escrito, e o acesso de escrita é retomado automaticamente se voltar a ser necessário.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Linha de comandos completa para scripts e máquinas sem ecrã
 Etiquetas e filtros para manter uma lista longa em ordem
 Bandeiras dos pares resolvidas no seu próprio computador
 Temas claro e escuro que acompanham o Windows
-Disponível em 41 idiomas
+Disponível em 76 idiomas
 Software livre sob a licença MIT
 
 

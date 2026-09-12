@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Íslenska (Ísland) - Partner Center: Icelandic (Iceland) (is-IS)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > is-IS. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent er lítill, hraður BitTorrent-biðill sem þvælist ekki fyrir þér.
+
+Hann er innbyggt forrit skrifað í Rust, ekki vefsíða í glugga. Hann ræsir samstundis og notar brot af því minni sem venjulegur nútímabiðill þarf.
+
+Enginn aðgangur. Engar auglýsingar. Engin fjarmæling, engin greining, engin hrunskýrsla. Engu er safnað um þig eða um það sem þú sækir. NanoTorrent er opinn hugbúnaður undir MIT-leyfinu, svo þetta er eitthvað sem þú getur athugað frekar en eitthvað sem þú verður að trúa.
+
+Bættu við torrentum úr skrám eða magnet-tenglum, fylgstu með þeim í lista sem þú getur raðað, merkt og síað, og opnaðu nánari upplýsingar um skrár, jafningja og rekjara. DHT, jafningjaskipti, margar rekjarasraðir, UDP-rekjarar og einkatorrentar eru öll studd, og tengingar má dulkóða og eftir atvikum hafna öllu ódulkóðuðu.
+
+Það er fleiri en ein leið til að stýra honum. Skjáborðsglugginn er sá augljósi. Valfrjálst vefviðmót, sjálfgefið slökkt og varið með lykilorði, gerir þér kleift að stjórna keyrandi biðli úr vafra á annarri vél. Og hver einasta stilling er tiltæk úr skipanalínunni, sem gerir NanoTorrent skriftanlegan og nothæfan á vél án skjás.
+
+Þú getur líka búið til torrenta, þar á meðal BitTorrent v2 og blandaða.
+
+Þjóðfánar jafningja koma úr gagnagrunni sem geymdur er á þinni eigin tölvu. Ekkert vistfang er nokkru sinni flett upp um netið.
+
+Fáanlegur á 76 tungumálum, með ljósu og dökku þema sem fylgja Windows.
+
+NanoTorrent er Rust-útfærsla af PicoTorrent eftir Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Útgáfa 0.3.8
+
+- 35 fleiri tungumál, 76 í allt, bætt við í Evrópu, Suður-Asíu, Suðaustur-Asíu, Mið-Asíu og Afríku.
+- Lokið niðurhal er ekki lengur læst. Straumur sem var lokið, eða sem var í hléi, hélt skrám sínum opnum til skriftar, og á Windows nægir það eitt til að hindra annað forrit í að opna þær: safnskrá eða myndskeið í niðurhalsmöppunni var ekki unnt að opna fyrr en NanoTorrent var lokað. Skrár eru nú opnaðar aftur í skrifvörn jafnskjótt og ekkert verður skrifað, og skrifheimild er tekin til baka sjálfkrafa ef hennar þarf á ný.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Innbyggt Rust-forrit: fljótt að ræsa og létt á minni
+Engar auglýsingar, engin fjarmæling, enginn aðgangur, aldrei
+Magnet-tenglar og .torrent-skrár
+DHT, jafningjaskipti, rekjarasraðir og UDP-rekjarar
+Dulkóðun tenginga (MSE/PE), valfrjálst skylda
+Búðu til torrenta, þar á meðal BitTorrent v2 og blandaða
+Stuðningur við SOCKS- og HTTP-milliþjóna
+Valfrjálst vefviðmót varið lykilorði til fjarstýringar
+Full skipanalína fyrir skriftun og vélar án skjás
+Merkingar og síur til að halda löngum lista í röð
+Þjóðfánar jafningja flettir upp á þinni eigin tölvu
+Ljóst og dökkt þema sem fylgja Windows
+Fáanlegur á 76 tungumálum
+Opinn hugbúnaður undir MIT-leyfinu
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent-biðill
+magnet-tengill
+p2p
+skráadeiling
+niðurhalsstjóri
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. NanoTorrent er opinn hugbúnaður, gefinn út undir MIT-leyfinu.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent er frjáls og opinn hugbúnaður, gefinn út undir MIT-leyfinu. Allur leyfistextinn og fullur frumkóði eru fáanleg á https://github.com/Power2All/nanotorrent
+
+Hugbúnaðurinn er veittur "eins og hann er", án nokkurrar ábyrgðar, hvorki beinnar né óbeinnar. Íhlutir þriðja aðila halda sínum eigin leyfum, sem talin eru upp í frumkóðasafninu.
+
+NanoTorrent er almennt skráaflutningstól. Það hýsir ekki, skráir ekki, veitir ekki, mælir ekki með og styður ekki neitt efni hvað sem er. Þú berð ábyrgð á því að notkun þín samræmist lögum þar sem þú býrð og réttindum höfundarréttarhafa.
+
+NanoTorrent er þróaður að mestu með aðstoð gervigreindar undir eftirliti manna, eins og lýst er yfir í AI-DECLARATION.md í frumkóðasafninu.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

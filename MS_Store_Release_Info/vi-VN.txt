@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Tiếng Việt (Việt Nam) - Partner Center: Vietnamese (Vietnam) (vi-VN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Bạn cũng có thể tự tạo torrent, kể cả BitTorrent v2 và loại lai
 
 Cờ quốc gia của máy ngang hàng lấy từ cơ sở dữ liệu lưu trên chính máy bạn. Không có địa chỉ nào từng được tra cứu qua mạng.
 
-Có sẵn bằng 41 ngôn ngữ, với giao diện sáng và tối đi theo Windows.
+Có sẵn bằng 76 ngôn ngữ, với giao diện sáng và tối đi theo Windows.
 
 NanoTorrent là bản chuyển sang Rust của PicoTorrent do Viktor Elofsson viết.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Phiên bản 0.3.7
+Phiên bản 0.3.8
 
-- Giới hạn chia sẻ: dừng chia sẻ ở một tỉ lệ, sau một khoảng thời gian đã đặt, hoặc điều nào đến trước, rồi tạm dừng hay gỡ bỏ torrent.
-- Giới hạn tốc độ thay thế, theo lịch hoặc bật tắt bằng tay từ thanh công cụ.
-- Thứ tự hàng đợi từ thanh công cụ, mức ưu tiên cho từng tệp và thẻ.
-- Một thư mục được theo dõi, tự thêm mọi tệp .torrent thả vào đó.
-- Thêm, sửa và gỡ các tracker của một torrent, theo từng bậc thông báo.
-- Cơ sở dữ liệu thiết lập có thể được mã hoá, không cần nhập mật khẩu, và thiết lập của bạn có thể xuất và nhập dưới dạng JSON.
-- Giao diện web có thêm thứ tự hàng đợi, công tắc tốc độ và một bảng riêng cho mỗi torrent gồm tệp, tracker, thẻ và giới hạn.
-- Những phần mà ít máy ngang hàng có sẽ được yêu cầu trước, và torrent BitTorrent v2 giờ đây có thể chia sẻ cho người khác.
-- Liên kết magnet giờ mở cửa sổ thêm torrent giống như tệp .torrent, trừ khi bạn đã chọn bỏ qua.
-- Torrent gồm nhiều tệp được đặt trong thư mục mang tên nó thay vì nằm rải rác trong thư mục lưu.
-- Giảm mức dùng bộ xử lý và bộ nhớ khi cửa sổ đang mở.
+- Thêm 35 ngôn ngữ, tổng cộng 76, bổ sung ở châu Âu, Nam Á, Đông Nam Á, Trung Á và châu Phi.
+- Các tệp tải xuống đã hoàn tất không còn bị khoá. Một torrent đã hoàn tất, hoặc đang tạm dừng, vẫn giữ các tệp của nó mở để ghi, và trên Windows chỉ riêng điều đó đã đủ để ngăn một chương trình khác mở chúng: một tệp nén hay một video trong thư mục tải xuống không thể mở được cho đến khi đóng NanoTorrent. Giờ đây các tệp được mở lại ở chế độ chỉ đọc ngay khi không còn gì cần ghi, và quyền ghi được lấy lại tự động nếu lại cần đến.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Dòng lệnh đầy đủ cho kịch bản và máy không màn hình
 Nhãn và bộ lọc giữ cho danh sách dài luôn ngăn nắp
 Cờ quốc gia của máy ngang hàng được tra trên chính máy bạn
 Giao diện sáng và tối đi theo Windows
-Có sẵn bằng 41 ngôn ngữ
+Có sẵn bằng 76 ngôn ngữ
 Mã nguồn mở theo giấy phép MIT
 
 

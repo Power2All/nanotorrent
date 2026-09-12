@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Filipino (Pilipinas) - Partner Center: Filipino (Philippines) (fil-PH)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > fil-PH. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+Ang NanoTorrent ay isang maliit at mabilis na BitTorrent client na hindi humahadlang sa iyo.
+
+Isa itong native na aplikasyon na nakasulat sa Rust, hindi web page sa loob ng bintana. Agad itong nagsisimula at gumagamit ng maliit na bahagi ng memoryang kailangan ng karaniwang modernong client.
+
+Walang account. Walang advertising. Walang telemetry, walang analytics, walang crash reporting. Walang kinokolekta tungkol sa iyo o sa kung ano ang dinadownload mo. Ang NanoTorrent ay open source sa ilalim ng MIT License, kaya iyon ay bagay na maaari mong tiyakin at hindi kailangang pagkatiwalaan lamang.
+
+Magdagdag ng torrent mula sa mga file o magnet link, tingnan ang mga ito sa listahang maaari mong ayusin, lagyan ng label at salain, at buksan ang panel ng detalye para sa mga file, peer at tracker. Suportado ang DHT, palitan ng peer, maraming antas ng tracker, UDP tracker at pribadong torrent, at maaaring i-encrypt ang mga koneksyon, na tumatanggi sa anumang hindi naka-encrypt kung gusto mo.
+
+Maraming paraan upang patakbuhin ito. Ang desktop window ang malinaw. Ang opsyonal na web interface, nakapatay bilang default at protektado ng password, ay nagbibigay-daan sa iyong kontrolin ang tumatakbong client mula sa browser sa ibang makina. At bawat setting ay makukuha mula sa command line, na ginagawang scriptable ang NanoTorrent at nagagamit sa makinang walang screen.
+
+Maaari ka ring gumawa ng torrent, kasama ang BitTorrent v2 at hybrid.
+
+Ang mga watawat ng bansa ng peer ay nagmumula sa database na nakaimbak sa sarili mong kompyuter. Walang address na hinahanap sa network kahit kailan.
+
+Makukuha sa 76 na wika, may maliwanag at madilim na tema na sumusunod sa Windows.
+
+Ang NanoTorrent ay bersyong Rust ng PicoTorrent ni Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Bersyon 0.3.8
+
+- 35 pang wika, 76 sa kabuuan, idinagdag sa Europa, Timog Asya, Timog-Silangang Asya, Gitnang Asya at Aprika.
+- Hindi na nananatiling nakasara ang mga natapos nang download. Ang torrent na natapos na, o naka-pause, ay pinananatiling bukas ang mga file nito para sulatan, at sa Windows sapat na iyon upang mahadlangan ang ibang programa na buksan ang mga ito: hindi mabuksan ang isang archive o video sa download folder hangga't hindi isinasara ang NanoTorrent. Ang mga file ay binubuksang muli bilang read-only sa sandaling wala nang isusulat, at ang pahintulot na magsulat ay kinukuhang muli nang awtomatiko kung kailanganin pa.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Native na aplikasyong Rust: mabilis magsimula at magaan sa memorya
+Walang advertising, walang telemetry, walang account, kahit kailan
+Mga magnet link at .torrent na file
+DHT, palitan ng peer, antas ng tracker at UDP tracker
+Pag-encrypt ng koneksyon (MSE/PE), sapilitan kung gusto
+Gumawa ng torrent, kasama ang BitTorrent v2 at hybrid
+Suporta sa SOCKS at HTTP proxy
+Opsyonal na web interface na protektado ng password para sa remote control
+Buong command line para sa scripting at makinang walang screen
+Mga label at filter para maayos ang mahabang listahan
+Mga watawat ng bansa ng peer na hinahanap sa sarili mong kompyuter
+Maliwanag at madilim na tema na sumusunod sa Windows
+Makukuha sa 76 na wika
+Open source sa ilalim ng MIT License
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent client
+magnet link
+p2p
+pagbabahagi ng file
+download manager
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. Ang NanoTorrent ay open source software, inilabas sa ilalim ng MIT License.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+Ang NanoTorrent ay libre at open source software, inilabas sa ilalim ng MIT License. Ang buong teksto ng lisensya at ang kumpletong source code ay makukuha sa https://github.com/Power2All/nanotorrent
+
+Ang software ay ibinibigay "as is", walang warranty ng anumang uri, tahasan o ipinahihiwatig. Ang mga third-party na komponent ay nananatili sa kanilang sariling lisensya, na nakalista sa source repository.
+
+Ang NanoTorrent ay pangkalahatang kasangkapan sa paglilipat ng file. Hindi ito nagho-host, nag-iindex, nagbibigay, nagrerekomenda o sumusuporta sa anumang nilalaman. Responsibilidad mong tiyakin na ang paggamit mo nito ay sumusunod sa batas sa lugar na tinitirhan mo at sa mga karapatan ng may-ari ng copyright.
+
+Ang NanoTorrent ay pangunahing binuo sa tulong ng artificial intelligence sa ilalim ng pagsusuri ng tao, gaya ng ipinahayag sa AI-DECLARATION.md sa source repository.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

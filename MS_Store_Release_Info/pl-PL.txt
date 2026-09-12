@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Polski (Polska) - Partner Center: Polish (Poland) (pl-PL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Możesz również tworzyć własne torrenty, w tym BitTorrent v2 i hybrydowe.
 
 Flagi krajów peerów pochodzą z bazy danych przechowywanej na Twoim komputerze. Żaden adres nigdy nie jest sprawdzany przez sieć.
 
-Dostępny w 41 językach, z jasnym i ciemnym motywem podążającym za Windows.
+Dostępny w 76 językach, z jasnym i ciemnym motywem podążającym za Windows.
 
 NanoTorrent to port PicoTorrenta autorstwa Viktora Elofssona na język Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Wersja 0.3.7
+Wersja 0.3.8
 
-- Limity udostępniania: zakończ seedowanie przy danym współczynniku, po ustalonym czasie lub gdy nastąpi pierwsze z nich, a następnie wstrzymaj lub usuń torrent.
-- Alternatywne limity prędkości, według harmonogramu lub przełączane ręcznie z paska narzędzi.
-- Kolejność w kolejce z paska narzędzi, priorytety poszczególnych plików i tagi.
-- Obserwowany folder, który dodaje każdy umieszczony w nim plik .torrent.
-- Dodawanie, edytowanie i usuwanie trackerów torrenta, w poziomach anonsowania.
-- Baza danych ustawień może być szyfrowana, bez hasła do wpisywania, a ustawienia eksportowane i importowane jako JSON.
-- Interfejs webowy zyskuje kolejność w kolejce, przełącznik prędkości oraz panel każdego torrenta z plikami, trackerami, tagami i limitami.
-- Części, które ma niewielu peerów, są pobierane najpierw, a torrenty BitTorrent v2 można teraz udostępniać innym.
-- Odnośniki magnet otwierają teraz okno dodawania, tak samo jak pliki .torrent, chyba że wybrano jego pomijanie.
-- Torrent z kilkoma plikami trafia do folderu o jego nazwie, zamiast luzem do folderu zapisu.
-- Mniejsze zużycie procesora i pamięci przy otwartym oknie.
+- 35 języków więcej, 76 łącznie, dodanych w Europie, Azji Południowej, Azji Południowo-Wschodniej, Azji Środkowej i Afryce.
+- Ukończone pobierania nie pozostają już zablokowane. Torrent, który był ukończony lub wstrzymany, trzymał swoje pliki otwarte do zapisu, a w systemie Windows samo to wystarczy, by inny program nie mógł ich otworzyć: archiwum ani filmu w folderze pobierania nie dało się otworzyć, dopóki NanoTorrent nie został zamknięty. Pliki są teraz ponownie otwierane tylko do czytania, gdy tylko nic nie będzie już zapisywane, a prawo zapisu jest odbierane automatycznie, jeśli znów okaże się potrzebne.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Pełny wiersz poleceń do skryptów i maszyn bez ekranu
 Etykiety i filtry utrzymujące porządek na długiej liście
 Flagi krajów peerów ustalane na Twoim komputerze
 Jasny i ciemny motyw podążający za Windows
-Dostępny w 41 językach
+Dostępny w 76 językach
 Otwarte źródło na licencji MIT
 
 

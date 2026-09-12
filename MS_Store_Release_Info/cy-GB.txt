@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Cymraeg (Y Deyrnas Unedig) - Partner Center: Welsh (United Kingdom) (cy-GB)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > cy-GB. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+Cleient BitTorrent bach, cyflym yw NanoTorrent sy'n cadw allan o'ch ffordd.
+
+Rhaglen frodorol wedi'i hysgrifennu yn Rust ydyw, nid tudalen we mewn ffenestr. Mae'n cychwyn ar unwaith ac yn defnyddio ffracsiwn o'r cof sydd ei angen ar gleient modern nodweddiadol.
+
+Dim cyfrif. Dim hysbysebu. Dim telemetreg, dim dadansoddeg, dim adrodd damweiniau. Ni chesglir dim amdanoch chi nac am yr hyn rydych yn ei lawrlwytho. Mae NanoTorrent yn ffynhonnell agored o dan Drwydded MIT, felly mae hynny'n rhywbeth y gallwch ei wirio yn hytrach na rhywbeth y mae'n rhaid i chi ei gymryd ar ymddiriedaeth.
+
+Ychwanegwch dorentau o ffeiliau neu ddolenni magnet, gwyliwch nhw mewn rhestr y gallwch ei didoli, ei labelu a'i hidlo, ac agorwch y panel manylion ar gyfer ffeiliau, cymheiriaid a thracwyr. Cefnogir DHT, cyfnewid cymheiriaid, haenau tracwyr lluosog, tracwyr UDP a thorentau preifat, a gellir amgryptio cysylltiadau, gan wrthod unrhyw beth heb ei amgryptio os dymunwch.
+
+Mae mwy nag un ffordd o'i yrru. Y ffenestr bwrdd gwaith yw'r un amlwg. Mae rhyngwyneb gwe dewisol, wedi'i ddiffodd yn ddiofyn ac wedi'i ddiogelu gan gyfrinair, yn gadael i chi reoli cleient sy'n rhedeg o borwr ar beiriant arall. Ac mae pob gosodiad ar gael o'r llinell orchymyn, sy'n gwneud NanoTorrent yn sgriptiadwy ac yn ddefnyddiadwy ar beiriant heb sgrin.
+
+Gallwch greu torentau hefyd, gan gynnwys rhai BitTorrent v2 a hybrid.
+
+Daw baneri gwledydd cymheiriaid o gronfa ddata a gedwir ar eich cyfrifiadur eich hun. Ni chwilir am unrhyw gyfeiriad dros y rhwydwaith byth.
+
+Ar gael mewn 76 iaith, gyda themâu golau a thywyll sy'n dilyn Windows.
+
+Trosiad Rust o PicoTorrent gan Viktor Elofsson yw NanoTorrent.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Fersiwn 0.3.8
+
+- 35 iaith arall, 76 yn y cyfan, wedi'u hychwanegu ar draws Ewrop, de Asia, de-ddwyrain Asia, canolbarth Asia ac Affrica.
+- Nid yw lawrlwythiadau gorffenedig yn aros ar glo bellach. Roedd torrent a oedd wedi gorffen, neu a oedd wedi'i oedi, yn cadw ei ffeiliau ar agor i ysgrifennu, ac ar Windows mae hynny ar ei ben ei hun yn ddigon i rwystro rhaglen arall rhag eu hagor: nid oedd modd agor archif na fideo yn y ffolder lawrlwytho hyd nes i NanoTorrent gau. Mae ffeiliau'n cael eu hailagor yn ddarllen-yn-unig cyn gynted nad oes dim i'w ysgrifennu, ac mae mynediad ysgrifennu'n dod yn ôl yn awtomatig os oes ei angen eto.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Rhaglen Rust frodorol: cyflym i gychwyn ac ysgafn ar gof
+Dim hysbysebu, dim telemetreg, dim cyfrif, byth
+Dolenni magnet a ffeiliau .torrent
+DHT, cyfnewid cymheiriaid, haenau tracwyr a thracwyr UDP
+Amgryptio cysylltiadau (MSE/PE), yn orfodol os dymunwch
+Creu torentau, gan gynnwys BitTorrent v2 a hybrid
+Cefnogaeth ddirprwy SOCKS a HTTP
+Rhyngwyneb gwe dewisol wedi'i ddiogelu gan gyfrinair ar gyfer rheoli o bell
+Llinell orchymyn lawn ar gyfer sgriptio a pheiriannau heb sgrin
+Labeli a hidlyddion i gadw rhestr hir mewn trefn
+Baneri gwledydd cymheiriaid wedi'u chwilio ar eich cyfrifiadur eich hun
+Themâu golau a thywyll sy'n dilyn Windows
+Ar gael mewn 76 iaith
+Ffynhonnell agored o dan Drwydded MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+cleient torrent
+dolen magnet
+p2p
+rhannu ffeiliau
+rheolwr lawrlwytho
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. Meddalwedd ffynhonnell agored yw NanoTorrent, wedi'i ryddhau o dan Drwydded MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+Meddalwedd rydd a ffynhonnell agored yw NanoTorrent, wedi'i ryddhau o dan Drwydded MIT. Mae testun llawn y drwydded a'r cod ffynhonnell cyflawn ar gael yn https://github.com/Power2All/nanotorrent
+
+Darperir y feddalwedd "fel y mae", heb warant o unrhyw fath, boed yn benodol neu'n oblygedig. Mae cydrannau trydydd parti'n cadw eu trwyddedau eu hunain, sydd wedi'u rhestru yn y storfa ffynhonnell.
+
+Offeryn trosglwyddo ffeiliau at ddiben cyffredinol yw NanoTorrent. Nid yw'n cynnal, mynegeio, cyflenwi, argymell nac ardystio unrhyw gynnwys o gwbl. Chi sy'n gyfrifol am sicrhau bod eich defnydd ohono'n cydymffurfio â'r gyfraith lle rydych yn byw ac â hawliau deiliaid hawlfraint.
+
+Datblygir NanoTorrent yn bennaf gyda chymorth deallusrwydd artiffisial o dan adolygiad dynol, fel y datganir yn AI-DECLARATION.md yn y storfa ffynhonnell.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

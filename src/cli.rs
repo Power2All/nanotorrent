@@ -535,8 +535,9 @@ pub fn handle(args: &[String]) -> Result<bool> {
         "--list-settings" => print!("{}", list(&cfg, &tr)),
         "--get" => {
             let name = args.get(1).map(String::as_str).context(usage(&tr))?;
-            let s = find(name)
-                .with_context(|| format!("unknown setting '{name}'\n\n{}", usage(&tr)))?;
+            let s = find(name).with_context(|| {
+                format!("{}\n\n{}", tr.i18n1("cli_unknown_setting", name), usage(&tr))
+            })?;
             println!("{}", show(&cfg, s));
         }
         "--set" => {
@@ -544,11 +545,12 @@ pub fn handle(args: &[String]) -> Result<bool> {
                 (Some(n), Some(v)) => (n.as_str(), v.as_str()),
                 _ => anyhow::bail!("{}", usage(&tr)),
             };
-            let s = find(name)
-                .with_context(|| format!("unknown setting '{name}'\n\n{}", usage(&tr)))?;
+            let s = find(name).with_context(|| {
+                format!("{}\n\n{}", tr.i18n1("cli_unknown_setting", name), usage(&tr))
+            })?;
             set(&cfg, s, value, &tr)?;
             println!("{name} = {}", show(&cfg, s));
-            println!("Applies the next time NanoTorrent starts.");
+            println!("{}", tr.i18n("cli_applies_note"));
         }
         _ => unreachable!("guarded by the matches! above"),
     }

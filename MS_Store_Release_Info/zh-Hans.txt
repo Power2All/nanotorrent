@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: 简体中文 (中国) - app locale zh-CN - Partner Center: Chinese (Simplified) (zh-Hans)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ NanoTorrent 是一款小巧快速、不碍事的 BitTorrent 客户端。
 
 节点的国家/地区旗标来自保存在您自己电脑上的数据库。任何地址都不会通过网络进行查询。
 
-提供 41 种语言，浅色与深色主题跟随 Windows。
+提供 76 种语言，浅色与深色主题跟随 Windows。
 
 NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-版本 0.3.7
+版本 0.3.8
 
-- 分享限制：在达到某个分享率、经过设定时间，或两者中先到者时停止做种，随后暂停或删除该种子。
-- 备用速度限制，可按计划启用，也可从工具栏手动切换。
-- 工具栏中的队列顺序、逐文件优先级，以及标签。
-- 监视文件夹，会自动添加放入其中的任何 .torrent 文件。
-- 按announce层级添加、编辑和删除种子的Tracker。
-- 设置数据库可以加密，无需输入密码，设置也可导出和导入为 JSON。
-- 网页界面新增队列顺序、速度开关，以及每个种子的面板，包含文件、Tracker、标签和限制。
-- 优先请求较少对等端拥有的分块，BitTorrent v2 种子现在也可以向他人做种。
-- 磁力链接现在也会打开“添加种子”窗口，与 .torrent 文件一样，除非您选择跳过。
-- 包含多个文件的种子会放进以其命名的文件夹，而不再散落在保存文件夹里。
-- 窗口打开时的处理器和内存占用更低。
+- 新增 35 种语言，共 76 种，覆盖欧洲、南亚、东南亚、中亚和非洲。
+- 已完成的下载不再被锁定。已完成或已暂停的种子仍以可写方式占用着文件，在 Windows 上仅此一点就足以让别的程序无法打开它们：下载文件夹里的压缩包或视频，要等到关闭 NanoTorrent 才能打开。现在只要不再需要写入，文件就会以只读方式重新打开；若以后又需要写入，写权限会自动取回。
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ DHT、节点交换、Tracker 分层与 UDP Tracker
 标签与筛选让长列表保持条理
 节点国家/地区旗标在您自己的电脑上解析
 浅色与深色主题跟随 Windows
-提供 41 种语言
+提供 76 种语言
 基于 MIT 许可证开源
 
 

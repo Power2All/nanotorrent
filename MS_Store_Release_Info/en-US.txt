@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: English (United States) (en-US)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ You can create torrents too, including BitTorrent v2 and hybrid ones.
 
 Peer country flags come from a database kept on your own computer. No address is ever looked up over the network.
 
-Available in 41 languages, with light and dark themes that follow Windows.
+Available in 76 languages, with light and dark themes that follow Windows.
 
 NanoTorrent is a Rust port of PicoTorrent by Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.7
+Version 0.3.8
 
-- Share limits: stop seeding at a ratio, after a set time, or whichever comes first, then pause or remove the torrent.
-- Alternative speed limits, on a schedule or switched by hand from the toolbar.
-- Queue order from the toolbar, per-file priorities, and tags.
-- A watched folder that adds any .torrent dropped into it.
-- Add, edit and remove a torrent's trackers, in announce tiers.
-- The settings database can be encrypted, with no password to type, and your settings exported and imported as JSON.
-- The web interface gains queue order, the speed switch, and a per-torrent panel for files, trackers, tags and limits.
-- Pieces that few peers have are asked for first, and BitTorrent v2 torrents can now be seeded to others.
-- Magnet links now open the Add torrent window, just as .torrent files do, unless you have chosen to skip it.
-- A torrent holding several files is placed in a folder named after it, instead of loose in the save folder.
-- Lower processor and memory use while the window is open.
+- 35 more languages, 76 in all, added across Europe, South Asia, South-East Asia, Central Asia and Africa.
+- Finished downloads no longer stay locked. A torrent that had finished, or that was paused, kept its files open for writing, and on Windows that alone is enough to stop another program opening them: an archive or a video in the download folder could not be opened until NanoTorrent was closed. Files are reopened read-only as soon as nothing is going to be written, and write access is taken back automatically if it is needed again.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ A full command line for scripting and headless machines
 Labels and filters to keep a long list in order
 Peer country flags looked up on your own computer
 Light and dark themes that follow Windows
-Available in 41 languages
+Available in 76 languages
 Open source under the MIT License
 
 

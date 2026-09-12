@@ -369,7 +369,7 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   Command line** shows the same text in a window for when there is no terminal
   at hand.
 
-  `--help` is **translated**, in all 41 languages, and follows the language set
+  `--help` is **translated**, in all 76 languages, and follows the language set
   in Preferences — in the terminal as well as in that window. Flag and setting
   names stay English, because they are what you type; only the prose around
   them changes. The descriptions live in the locale files rather than in the
@@ -467,7 +467,7 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   window whether or not it had anything to forward. Launching with no arguments
   used to be a no-op, which from the outside is indistinguishable from the
   program failing to open.
-- **Translations** — all 41 languages, **complete**: every string the UI can
+- **Translations** — all 76 languages, **complete**: every string the UI can
   show is translated in every locale, compiled into the executable and picked
   from a scrollable list in Preferences, each shown by its native name
   ("Nederlands (Nederland)"). A fresh install always starts in English
@@ -621,6 +621,39 @@ one. Collected so nobody has to file them twice.
 
 ## History
 
+**v0.3.8** is most of the world, and one file handle held too long.
+
+**76 languages, up from 41.** The 35 additions are Albanian, Amharic,
+Azerbaijani, Basque, Belarusian, Bengali, Bosnian, Burmese, Filipino, Galician,
+Gujarati, Hausa, Icelandic, Irish, Kannada, Kazakh, Khmer, Lao, Macedonian,
+Malay, Malayalam, Maltese, Marathi, Mongolian, Nepali, Persian, Punjabi,
+Slovenian, Swahili, Tamil, Telugu, Thai, Urdu, Uzbek and Welsh — chosen from
+what Windows itself ships a UI in, which is the honest test of whether a
+desktop client in that language has anyone to read it. Regional variants of
+languages already present were deliberately left out: `fr-CA`, `es-MX` and
+`en-GB` would be new files saying almost exactly what `fr-FR`, `es-ES` and
+`en-US` already say, and a translation nobody maintains is worse than no
+translation. The language list is generated from `lang/`, so the picker, the
+embedded table and the MSIX manifest cannot disagree about what exists.
+
+**A finished torrent kept its files locked.** An archive or a video in the
+download folder could not be opened until NanoTorrent was closed, and stopping
+the torrent did not help. Nothing was locked in any byte-range sense; the
+engine simply opened every file for writing when the torrent started and never
+let that handle go. Our own handle is permissive, so the conflict is the other
+way round: a program that opens a file with `dwShareMode = FILE_SHARE_READ` —
+the share mode archivers and media players overwhelmingly use — is saying
+"others may read this, nobody may write it", and an existing `GENERIC_WRITE`
+handle contradicts that, so Windows fails *their* open with a sharing
+violation. Pausing looked like it should help and didn't, because the call that
+hands the storage over to the paused state **moves** the open handles into the
+new owner rather than closing them. Files are now reopened read-only the moment
+nothing is going to be written to them — on finishing, on starting up already
+complete, and on pause — and write access is taken back automatically if it
+turns out to be needed: a re-check that finds corruption, a file newly
+selected, a stream of a file that was not selected. Every write goes through
+one accessor, so nothing has to predict which of those will happen.
+
 **v0.3.7** is two bugs about where a torrent goes and who gets asked first.
 Both had the same shape: a feature that existed, was documented, and was never
 actually reached.
@@ -709,7 +742,7 @@ state the last open had left in it. They are dropped when they close, and every
 route out of a dialog goes through the same rule.
 
 Also: **Help > Plugin API documentation** now links straight to the Rhai API
-reference, in all 41 languages.
+reference, in all 76 languages.
 
 **v0.3.3** is about not leaking, and about the web interface catching up with
 the window.

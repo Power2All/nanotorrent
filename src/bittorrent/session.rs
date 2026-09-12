@@ -3587,6 +3587,117 @@ mod tests {
         assert!(created, "starting the torrent did not create its files");
     }
 
+    /// Vendored patch 0021, per-file half: a file that is already complete when
+    /// the torrent starts stops being held open for writing, and one that is
+    /// still being downloaded does not.
+    ///
+    /// Windows only because the symptom is: a `GENERIC_WRITE` handle makes any
+    /// other program's `dwShareMode = FILE_SHARE_READ` open fail with a sharing
+    /// violation, which is what stopped people opening a finished download.
+    /// Nothing is locked on unix, so there is nothing to observe there.
+    #[cfg(windows)]
+    #[test]
+    fn a_complete_file_stops_being_held_open_for_writing() {
+        use librqbit::{AddTorrent, AddTorrentOptions, AddTorrentResponse};
+        use std::os::windows::fs::OpenOptionsExt;
+
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+
+        let dir = std::env::temp_dir().join(format!("nt-perfile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Two 4 KiB files, 4 KiB pieces, so neither piece straddles a file and
+        // "file 0 is complete" is unambiguous.
+        let payload0 = vec![b'A'; 4096];
+        let payload1 = vec![b'B'; 4096];
+        let bytes = two_file_torrent(&payload0, &payload1);
+
+        // File 0 present and correct, file 1 absent, so the initial check finds
+        // exactly one complete file. Straight into the output folder: the
+        // containing-directory-named-after-the-torrent rule is patch 0020's
+        // `output_folder_subfolder`, which is opt-in and not set here.
+        std::fs::write(dir.join("a.bin"), &payload0).unwrap();
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let opened = rt.block_on(async {
+            let opts = librqbit::SessionOptions {
+                dht: None,
+                persistence: None,
+                listen: None,
+                ..Default::default()
+            };
+            let session = librqbit::Session::new_with_opts(dir.clone(), opts)
+                .await
+                .expect("session");
+            let add = AddTorrentOptions {
+                output_folder: Some(dir.to_string_lossy().into_owned()),
+                overwrite: true,
+                ..Default::default()
+            };
+            let _handle = match session
+                .add_torrent(AddTorrent::from_bytes(bytes), Some(add))
+                .await
+                .expect("add")
+            {
+                AddTorrentResponse::Added(_, h) => h,
+                _ => panic!("the torrent was not added"),
+            };
+            // The check and the transition to live both run on spawned tasks.
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+            let probe = |name: &str| {
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(FILE_SHARE_READ)
+                    .open(dir.join(name))
+                    .is_ok()
+            };
+            (probe("a.bin"), probe("b.bin"))
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
+        let (complete_openable, incomplete_openable) = opened;
+        assert!(
+            complete_openable,
+            "a.bin is complete, so its write handle should have been released"
+        );
+        assert!(
+            !incomplete_openable,
+            "b.bin is still downloading, so it should still be held open for writing"
+        );
+    }
+
+    /// A two-file torrent whose pieces are the real SHA-1 of the payloads, so
+    /// librqbit's initial check agrees about which file is complete.
+    #[cfg(windows)]
+    fn two_file_torrent(a: &[u8], b: &[u8]) -> Vec<u8> {
+        use sha1::{Digest, Sha1};
+
+        let piece = |data: &[u8]| -> [u8; 20] { Sha1::digest(data).into() };
+        let mut pieces = Vec::new();
+        pieces.extend_from_slice(&piece(a));
+        pieces.extend_from_slice(&piece(b));
+
+        let mut out = Vec::new();
+        out.extend_from_slice(b"d4:infod5:filesld6:lengthi");
+        out.extend_from_slice(a.len().to_string().as_bytes());
+        out.extend_from_slice(b"e4:pathl5:a.bineed6:lengthi");
+        out.extend_from_slice(b.len().to_string().as_bytes());
+        out.extend_from_slice(b"e4:pathl5:b.bineee4:name4:pair");
+        out.extend_from_slice(b"12:piece lengthi4096e6:pieces");
+        out.extend_from_slice(pieces.len().to_string().as_bytes());
+        out.push(b':');
+        out.extend_from_slice(&pieces);
+        out.extend_from_slice(b"ee");
+        out
+    }
+
     /// A single-file torrent whose name (and therefore info hash) varies with
     /// `n`, so a batch of them is a batch of genuinely different torrents.
     fn single_file_torrent(n: usize) -> Vec<u8> {

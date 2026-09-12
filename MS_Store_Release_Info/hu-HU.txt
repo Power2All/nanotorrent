@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Saját torrenteket is készíthet, beleértve a BitTorrent v2 és a hibrid vált
 
 A partnerek országzászlói egy, a saját számítógépén tárolt adatbázisból származnak. Egyetlen címet sem kérdezünk le soha a hálózaton keresztül.
 
-41 nyelven érhető el, világos és sötét témával, amelyek követik a Windowst.
+76 nyelven érhető el, világos és sötét témával, amelyek követik a Windowst.
 
 A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-0.3.7-es verzió
+0.3.8-as verzió
 
-- Megosztási korlátok: a megosztás leállítása adott aránynál, megadott idő után, vagy amelyik előbb bekövetkezik, majd a torrent szüneteltetése vagy eltávolítása.
-- Alternatív sebességkorlátok, ütemezés szerint vagy kézzel átkapcsolva az eszköztárról.
-- Sorrend a várólistában az eszköztárról, fájlonkénti prioritások és címkék.
-- Figyelt mappa, amely hozzáadja a bele helyezett minden .torrent fájlt.
-- Egy torrent követőinek hozzáadása, szerkesztése és eltávolítása bejelentési szintenként.
-- A beállítások adatbázisa titkosítható, beírandó jelszó nélkül, a beállítások pedig JSON formátumban exportálhatók és importálhatók.
-- A webes felület sorrendet, sebességkapcsolót és torrentenkénti panelt kap a fájlokhoz, követőkhöz, címkékhez és korlátokhoz.
-- A kevés partnernél meglévő darabokat kéri le először, és a BitTorrent v2 torrentek immár megoszthatók másokkal.
-- A magnet hivatkozások mostantól a hozzáadás ablakot nyitják meg, akárcsak a .torrent fájlok, hacsak nem kérte a kihagyását.
-- A több fájlt tartalmazó torrent a nevét viselő mappába kerül, nem pedig szétszórva a mentési mappába.
-- Kisebb processzor- és memóriahasználat, amíg az ablak nyitva van.
+- 35 további nyelv, összesen 76, Európában, Dél-Ázsiában, Délkelet-Ázsiában, Közép-Ázsiában és Afrikában.
+- A befejezett letöltések többé nem maradnak zárolva. A befejezett vagy szüneteltetett torrent írásra nyitva tartotta a fájljait, és Windowson már ez önmagában is megakadályozza, hogy más program megnyissa őket: a letöltési mappában lévő archívumot vagy videót nem lehetett megnyitni, amíg a NanoTorrent be nem zárult. A fájlok most csak olvasásra nyílnak meg újra, amint már semmi nem kerül beírásra, az írási jogot pedig automatikusan visszaveszi a program, ha újra szükség van rá.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Teljes parancssor parancsfájlokhoz és képernyő nélküli gépekhez
 Címkék és szűrők rendet tartanak a hosszú listában
 A partnerek országzászlói a saját gépén dőlnek el
 Világos és sötét téma, amely követi a Windowst
-41 nyelven érhető el
+76 nyelven érhető el
 Nyílt forráskód MIT licenc alatt
 
 

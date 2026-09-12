@@ -940,7 +940,7 @@ component PortIcon inherits Rectangle {
 //
 // The word lives in the tooltip rather than on the bar. It used to be printed
 // in full inside a fixed 150px or 190px box, which is a clipped caption in any
-// of the 41 languages whose word for "torrents" is longer than English's - and
+// of the 76 languages whose word for "torrents" is longer than English's - and
 // a number needs no fixed width at all.
 component StatusItem inherits Rectangle {
     in property <string> value;
@@ -1610,7 +1610,7 @@ export component MainWindow inherits Window {
                 }
                 LineEdit {
                     horizontal-stretch: 1;
-                    placeholder-text: "name contains \"linux\" and size > 100mb";
+                    placeholder-text: L.s(L.revision, "console_placeholder");
                     text <=> root.console-text;
                     edited => { root.console-changed(self.text); }
                 }

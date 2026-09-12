@@ -295,7 +295,7 @@ if ($KeepScreenshots) {
 }
 
 # --payload, not the JSON inline. Windows caps a command line at about 32,767
-# characters and this submission carries 41 languages of descriptions and
+# characters and this submission carries 76 languages of descriptions and
 # release notes, which is far past it - inline fails with "The filename or
 # extension is too long". The CLI's own help singles this case out.
 Invoke-Step "Send the listings back" {

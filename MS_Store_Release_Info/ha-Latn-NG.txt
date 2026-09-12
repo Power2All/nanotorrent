@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Hausa (Najeriya) - Partner Center: Hausa (Nigeria) (ha-Latn-NG)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > ha-Latn-NG. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent ƙaramin abokin harka na BitTorrent ne mai sauri wanda ba ya tsaya a hanyarka.
+
+Aikace-aikace ne na asali wanda aka rubuta da Rust, ba shafin yanar gizo a cikin taga ba. Yana tashi nan take kuma yana amfani da ɗan kaɗan daga cikin ƙwaƙwalwar da abokin harka na zamani na yau da kullum ke buƙata.
+
+Babu asusu. Babu talla. Babu telemetry, babu bincike, babu rahoton karaya. Ba a tattara wani abu game da kai ko game da abin da kake saukarwa ba. NanoTorrent tushen buɗaɗɗe ne a ƙarƙashin Lasisin MIT, don haka wannan abu ne da za ka iya tabbatarwa, ba abin da dole ka amince da shi ba.
+
+Ƙara torrent daga fayiloli ko hanyoyin maganadisu, ka gan su a cikin jerin da za ka iya tsarawa, yi masu lakabi da tacewa, sannan ka buɗe allon bayanai na fayiloli, takwarori da masu bibiya. Ana tallafawa DHT, musayar takwarori, matakan masu bibiya da yawa, masu bibiya na UDP da torrent na sirri duka, kuma ana iya ɓoye haɗin gwiwa, tare da ƙin duk wanda ba a ɓoye ba idan kana so.
+
+Akwai hanyoyi fiye da ɗaya na tuƙa shi. Tagar kwamfutar tebur ita ce bayyananna. Fuskar yanar gizo ta zaɓi, wadda aka kashe ta tsoho kuma aka kare ta da kalmar sirri, tana ba ka damar sarrafa abokin harka mai gudana daga burauza a wata injina. Kuma kowane saiti yana samuwa daga layin umarni, wanda hakan ya sa NanoTorrent ya dace da rubuta rubutun umarni kuma yana iya aiki a injina ba tare da allo ba.
+
+Za ka iya ƙirƙirar torrent kuma, har da BitTorrent v2 da haɗaka.
+
+Tutocin ƙasashen takwarori suna fitowa daga bayanan da aka ajiye a kwamfutarka kanka. Ba a taɓa neman wani adireshi a kan hanyar sadarwa ba.
+
+Yana samuwa a cikin harsuna 76, tare da jigogi masu haske da duhu waɗanda ke bin Windows.
+
+NanoTorrent shi ne sigar Rust na PicoTorrent na Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Sigar 0.3.8
+
+- Harsuna 35 ƙari, 76 gaba ɗaya, an ƙara su a Turai, Kudancin Asiya, Kudu-maso-gabashin Asiya, Tsakiyar Asiya da Afirka.
+- Saukarwar da ta kammala ba ta ƙara zama kulle. Torrent da ya kammala, ko kuma da aka dakatar, yana ci gaba da riƙe fayilolinsa a buɗe don rubutawa, kuma a Windows hakan kaɗai ya isa ya hana wata shiri buɗe su: ba a iya buɗe wani kundi ko bidiyo a cikin babban fayil na saukarwa sai an rufe NanoTorrent. Yanzu ana sake buɗe fayiloli karantawa kaɗai da zarar ba sauran abin rubutawa, kuma ana mayar da izinin rubutawa kai tsaye idan ya sake zama wajibi.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Aikace-aikacen Rust na asali: yana tashi da sauri kuma mai sauƙi ga ƙwaƙwalwa
+Babu talla, babu telemetry, babu asusu, har abada
+Hanyoyin maganadisu da fayilolin .torrent
+DHT, musayar takwarori, matakan masu bibiya da masu bibiya na UDP
+Ɓoye haɗin gwiwa (MSE/PE), wajibi idan kana so
+Ƙirƙiri torrent, har da BitTorrent v2 da haɗaka
+Tallafin proxy na SOCKS da HTTP
+Fuskar yanar gizo ta zaɓi wadda aka kare da kalmar sirri don sarrafawa daga nesa
+Cikakken layin umarni don rubutun umarni da injinan da ba su da allo
+Lakabi da tacewa don tsara dogon jeri
+Ana neman tutocin ƙasashen takwarori a kwamfutarka kanka
+Jigogi masu haske da duhu waɗanda ke bin Windows
+Yana samuwa a cikin harsuna 76
+Tushen buɗaɗɗe a ƙarƙashin Lasisin MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+abokin harkar torrent
+hanyar maganadisu
+p2p
+rabon fayil
+manajan saukarwa
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. NanoTorrent manhaja ce ta tushen buɗaɗɗe, da aka fitar a ƙarƙashin Lasisin MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent manhaja ce ta kyauta kuma ta tushen buɗaɗɗe, da aka fitar a ƙarƙashin Lasisin MIT. Cikakken rubutun lasisi da dukkan lambar tushe suna samuwa a https://github.com/Power2All/nanotorrent
+
+Ana ba da manhajar "kamar yadda take", ba tare da wata garanti ta kowane iri, bayyananna ko ɓoyayya. Sassan wasu kamfanoni suna riƙe lasisinsu, waɗanda aka jera su a cikin ma'ajin tushe.
+
+NanoTorrent kayan aiki ne na canja wurin fayil don amfani na gaba ɗaya. Ba ya karɓar baƙunci, ba ya yin ƙididdiga, ba ya samarwa, ba ya ba da shawara kuma ba ya amincewa da wani abun ciki. Alhakinka ne ka tabbatar cewa amfaninka ya bi dokar wurin da kake zama da haƙƙin masu mallakar haƙƙin mallaka.
+
+Ana haɓaka NanoTorrent galibi da taimakon basirar ɗan adam ta wucin gadi a ƙarƙashin dubawar mutum, kamar yadda aka bayyana a cikin AI-DECLARATION.md a cikin ma'ajin tushe.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

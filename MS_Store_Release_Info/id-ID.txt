@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Anda juga dapat membuat torrent sendiri, termasuk BitTorrent v2 dan hibrida.
 
 Bendera negara rekan berasal dari basis data yang disimpan di komputer Anda sendiri. Tidak ada alamat yang pernah dicari lewat jaringan.
 
-Tersedia dalam 41 bahasa, dengan tema terang dan gelap yang mengikuti Windows.
+Tersedia dalam 76 bahasa, dengan tema terang dan gelap yang mengikuti Windows.
 
 NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versi 0.3.7
+Versi 0.3.8
 
-- Batas berbagi: berhenti menyemai pada rasio tertentu, setelah waktu yang ditentukan, atau mana yang lebih dulu, lalu jeda atau hapus torrent tersebut.
-- Batas kecepatan alternatif, menurut jadwal atau dialihkan secara manual dari bilah alat.
-- Urutan antrean dari bilah alat, prioritas per berkas, dan tag.
-- Folder yang dipantau dan menambahkan setiap berkas .torrent yang diletakkan di dalamnya.
-- Menambah, menyunting, dan menghapus pelacak sebuah torrent, dalam tingkatan pengumuman.
-- Basis data pengaturan dapat dienkripsi, tanpa kata sandi yang perlu diketik, dan pengaturan Anda diekspor serta diimpor sebagai JSON.
-- Antarmuka web mendapat urutan antrean, sakelar kecepatan, dan panel per torrent untuk berkas, pelacak, tag, dan batas.
-- Bagian yang dimiliki sedikit rekan diminta lebih dulu, dan torrent BitTorrent v2 kini dapat disemai kepada orang lain.
-- Tautan magnet kini membuka jendela tambah torrent seperti berkas .torrent, kecuali Anda memilih untuk melewatinya.
-- Torrent berisi beberapa berkas ditempatkan dalam folder bernama sama, bukan berserakan di folder penyimpanan.
-- Pemakaian prosesor dan memori lebih rendah saat jendela terbuka.
+- 35 bahasa lagi, 76 seluruhnya, ditambahkan di Eropa, Asia Selatan, Asia Tenggara, Asia Tengah, dan Afrika.
+- Unduhan yang selesai tidak lagi terkunci. Torrent yang telah selesai, atau yang dijeda, tetap membuka berkasnya untuk ditulisi, dan di Windows hal itu saja sudah cukup untuk menghalangi program lain membukanya: arsip atau video di folder unduhan tidak dapat dibuka sampai NanoTorrent ditutup. Berkas kini dibuka kembali hanya-baca begitu tidak ada lagi yang akan ditulis, dan akses tulis diambil kembali secara otomatis jika memang diperlukan lagi.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Baris perintah lengkap untuk skrip dan mesin tanpa layar
 Label dan saringan menjaga daftar panjang tetap rapi
 Bendera negara rekan ditentukan di komputer Anda sendiri
 Tema terang dan gelap yang mengikuti Windows
-Tersedia dalam 41 bahasa
+Tersedia dalam 76 bahasa
 Sumber terbuka di bawah Lisensi MIT
 
 
