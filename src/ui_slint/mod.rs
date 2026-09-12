@@ -4021,7 +4021,7 @@ fn open_preferences(ui: &Rc<Ui>) {
             let done = std::fs::read_to_string(&source)
                 .map_err(anyhow::Error::from)
                 .and_then(|json| crate::core::dbexport::import(&u.db, &json))
-                .map(|report| report.summary());
+                .map(|report| report.summary(&u.tr.borrow()));
             // Re-read BEFORE reporting: the dialog is showing what was just
             // overwritten, and Ok would write those stale values straight back
             // over the import. `load_preferences` also clears the note, which

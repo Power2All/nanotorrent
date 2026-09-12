@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Voit myös luoda omia torrentteja, mukaan lukien BitTorrent v2 ja hybridit.
 
 Vertaisten maalliput tulevat tietokannasta, joka on omalla koneellasi. Yhtään osoitetta ei koskaan haeta verkon yli.
 
-Saatavilla 41 kielellä, vaalealla ja tummalla teemalla, jotka seuraavat Windowsia.
+Saatavilla 76 kielellä, vaalealla ja tummalla teemalla, jotka seuraavat Windowsia.
 
 NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versio 0.3.7
+Versio 0.3.8
 
-- Jakorajat: lopeta jakaminen tietyllä suhteella, määritetyn ajan jälkeen tai sen mukaan, kumpi täyttyy ensin, ja keskeytä tai poista torrent sen jälkeen.
-- Vaihtoehtoiset nopeusrajat, aikataulun mukaan tai käsin työkalupalkista kytkettynä.
-- Jonon järjestys työkalupalkista, tiedostokohtaiset prioriteetit ja tunnisteet.
-- Valvottu kansio, joka lisää jokaisen siihen pudotetun .torrent-tiedoston.
-- Torrentin seurantapalvelimien lisääminen, muokkaaminen ja poistaminen ilmoitustasoittain.
-- Asetustietokannan voi salata ilman kirjoitettavaa salasanaa, ja asetukset voi viedä ja tuoda JSON-muodossa.
-- Verkkokäyttöliittymä saa jonon järjestyksen, nopeuskytkimen ja torrentkohtaisen paneelin tiedostoille, seurantapalvelimille, tunnisteille ja rajoille.
-- Osia, joita on harvoilla vertaisilla, pyydetään ensin, ja BitTorrent v2 -torrentteja voi nyt jakaa muille.
-- Magnet-linkit avaavat nyt torrentin lisäysikkunan kuten .torrent-tiedostotkin, ellet ole valinnut sen ohittamista.
-- Useita tiedostoja sisältävä torrent sijoitetaan sen mukaan nimettyyn kansioon eikä hajalleen tallennuskansioon.
-- Pienempi suorittimen ja muistin käyttö ikkunan ollessa auki.
+- 35 kieltä lisää, 76 yhteensä, lisätty Euroopassa, Etelä-Aasiassa, Kaakkois-Aasiassa, Keski-Aasiassa ja Afrikassa.
+- Valmiit lataukset eivät enää jää lukkoon. Torrent, joka oli valmis tai keskeytetty, pysyi pitämässä tiedostojaan auki kirjoittamista varten, ja Windowsissa se yksin riittää estämään toisen ohjelman avaamasta niitä: latauskansion arkistoa tai videota ei voinut avata ennen kuin NanoTorrent suljettiin. Tiedostot avataan nyt uudelleen vain luku -tilassa heti kun mitään ei enää kirjoiteta, ja kirjoitusoikeus otetaan automaattisesti takaisin, jos sitä tarvitaan uudelleen.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Täysi komentorivi skripteille ja näytöttömille koneille
 Merkinnät ja suodattimet pitävät pitkän luettelon järjestyksessä
 Vertaisten maalliput haetaan omalta koneeltasi
 Vaalea ja tumma teema, jotka seuraavat Windowsia
-Saatavilla 41 kielellä
+Saatavilla 76 kielellä
 Avointa lähdekoodia MIT-lisenssillä
 
 

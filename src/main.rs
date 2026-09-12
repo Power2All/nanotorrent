@@ -124,7 +124,7 @@ pub fn help_text(tr: &Translator) -> String {
         cli::usage(tr),
         cli::settings_help(tr),
         webui::cli::usage(tr),
-        core::dbcli::usage()
+        core::dbcli::usage(tr)
     )
 }
 

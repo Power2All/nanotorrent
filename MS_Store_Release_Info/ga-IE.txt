@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Gaeilge (Éire) - Partner Center: Irish (Ireland) (ga-IE)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > ga-IE. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+Is cliant BitTorrent beag gasta é NanoTorrent nach dtéann sa bhealach ort.
+
+Is feidhmchlár dúchasach é atá scríofa i Rust, ní leathanach gréasáin i bhfuinneog. Tosaíonn sé láithreach agus baineann sé úsáid as codán den chuimhne a theastaíonn ó ghnáthchliant nua-aimseartha.
+
+Gan cuntas. Gan fógraíocht. Gan cianmhéadracht, gan anailísíocht, gan tuairisciú tuairteanna. Ní bhailítear aon rud fútsa ná faoin méid a íoslódálann tú. Tá NanoTorrent ina fhoinse oscailte faoin gCeadúnas MIT, mar sin is rud é sin ar féidir leat a sheiceáil seachas rud a chaithfidh tú a chreidiúint.
+
+Cuir torrentanna leis ó chomhaid nó ó naisc magnet, féach orthu i liosta ar féidir leat a shórtáil, a lipéadú agus a scagadh, agus oscail an painéal sonraí do chomhaid, do phiaraí agus do rianairí. Tacaítear le DHT, malartú piaraí, sraitheanna iomadúla rianairí, rianairí UDP agus torrentanna príobháideacha, agus is féidir ceangail a chriptiú, ag diúltú de rogha d'aon rud neamhchriptithe.
+
+Tá níos mó ná bealach amháin ann chun é a stiúradh. Is í fuinneog na deisce an ceann soiléir. Ligeann comhéadan gréasáin roghnach, atá múchta de réir réamhshocraithe agus cosanta le pasfhocal, duit cliant atá ag rith a rialú ó bhrabhsálaí ar mheaisín eile. Agus tá gach socrú ar fáil ón líne ordaithe, rud a fhágann go bhfuil NanoTorrent inscriptithe agus inúsáidte ar mheaisín gan scáileán ceangailte.
+
+Is féidir leat torrentanna a chruthú freisin, lena n-áirítear cinn BitTorrent v2 agus hibrideacha.
+
+Tagann bratacha tíortha na bpiaraí ó bhunachar sonraí atá coinnithe ar do ríomhaire féin. Ní chuardaítear aon seoladh riamh thar an líonra.
+
+Ar fáil i 76 teanga, le téamaí geala agus dorcha a leanann Windows.
+
+Is leagan Rust de PicoTorrent le Viktor Elofsson é NanoTorrent.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Leagan 0.3.8
+
+- 35 teanga eile, 76 san iomlán, curtha leis ar fud na hEorpa, na hÁise Theas, Oirdheisceart na hÁise, Lár na hÁise agus na hAfraice.
+- Ní fhanann íoslódálacha críochnaithe faoi ghlas a thuilleadh. Torrent a bhí críochnaithe, nó a bhí curtha ar sos, choinnigh sé a chomhaid ar oscailt le scríobh, agus ar Windows is leor sin amháin chun clár eile a stopadh ó iad a oscailt: níorbh fhéidir cartlann ná físeán sa fhillteán íoslódála a oscailt go dtí gur dúnadh NanoTorrent. Osclaítear comhaid anois mar léamh-amháin a luaithe nach scríobhfar aon rud, agus tógtar cead scríofa ar ais go huathoibríoch má bhíonn gá leis arís.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Feidhmchlár dúchasach Rust: gasta ag tosú agus éadrom ar chuimhne
+Gan fógraíocht, gan cianmhéadracht, gan cuntas, riamh
+Naisc magnet agus comhaid .torrent
+DHT, malartú piaraí, sraitheanna rianairí agus rianairí UDP
+Criptiú ceangail (MSE/PE), éigeantach de rogha
+Cruthaigh torrentanna, lena n-áirítear BitTorrent v2 agus hibrideacha
+Tacaíocht seachfhreastalaí SOCKS agus HTTP
+Comhéadan gréasáin roghnach cosanta le pasfhocal do chianrialú
+Líne ordaithe iomlán do scriptiú agus meaisíní gan scáileán
+Lipéid agus scagairí chun liosta fada a choinneáil in ord
+Bratacha tíortha na bpiaraí cuardaithe ar do ríomhaire féin
+Téamaí geala agus dorcha a leanann Windows
+Ar fáil i 76 teanga
+Foinse oscailte faoin gCeadúnas MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+cliant torrent
+nasc magnet
+p2p
+comhroinnt comhad
+bainisteoir íoslódála
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. Is bogearraí foinse oscailte é NanoTorrent, eisithe faoin gCeadúnas MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+Is bogearraí saor in aisce agus foinse oscailte é NanoTorrent, eisithe faoin gCeadúnas MIT. Tá téacs iomlán an cheadúnais agus an cód foinseach iomlán ar fáil ag https://github.com/Power2All/nanotorrent
+
+Cuirtear na bogearraí ar fáil "mar atá", gan bharánta d'aon chineál, sainráite nó intuigthe. Coinníonn comhpháirteanna tríú páirtí a gceadúnais féin, atá liostaithe sa stór foinseach.
+
+Is uirlis aistrithe comhad ilfheidhme é NanoTorrent. Ní óstálann, ní innéacsaíonn, ní sholáthraíonn, ní mholann agus ní fhormhuiníonn sé ábhar ar bith. Tá tú freagrach as a chinntiú go gcomhlíonann d'úsáid an dlí san áit a bhfuil tú i do chónaí agus cearta sealbhóirí cóipchirt.
+
+Forbraítear NanoTorrent go príomha le cúnamh intleachta saorga faoi athbhreithniú daonna, mar a dhearbhaítear in AI-DECLARATION.md sa stór foinseach.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

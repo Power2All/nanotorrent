@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Català (Espanya) - Partner Center: Catalan (Spain) (ca-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ També podeu crear torrents, inclosos els de BitTorrent v2 i híbrids.
 
 Les banderes dels parells provenen d'una base de dades desada al vostre ordinador. Mai no es consulta cap adreça per la xarxa.
 
-Disponible en 41 idiomes, amb temes clar i fosc que segueixen el Windows.
+Disponible en 76 idiomes, amb temes clar i fosc que segueixen el Windows.
 
 El NanoTorrent és una adaptació en Rust del PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versió 0.3.7
+Versió 0.3.8
 
-- Límits de compartició: deixar de compartir en una proporció, després d'un temps fixat o el que arribi primer, i després aturar o eliminar el torrent.
-- Límits de velocitat alternatius, per horari o commutats a mà des de la barra d'eines.
-- Ordre de la cua des de la barra d'eines, prioritats per fitxer i etiquetes.
-- Una carpeta vigilada que afegeix qualsevol fitxer .torrent que s'hi deixi.
-- Afegir, editar i eliminar els rastrejadors d'un torrent, en nivells d'anunci.
-- La base de dades de configuració es pot xifrar, sense cap contrasenya per escriure, i la configuració es pot exportar i importar en JSON.
-- La interfície web guanya l'ordre de la cua, el commutador de velocitat i un tauler per torrent per a fitxers, rastrejadors, etiquetes i límits.
-- Les peces que tenen pocs parells es demanen primer, i els torrents de BitTorrent v2 ja es poden compartir amb altres.
-- Els enllaços magnet ara obren la finestra d’afegir torrent, com els fitxers .torrent, tret que hàgiu triat ometre-la.
-- Un torrent amb diversos fitxers es desa en una carpeta amb el seu nom, en lloc de solt a la carpeta de destinació.
-- Menys ús de processador i de memòria mentre la finestra és oberta.
+- 35 idiomes més, 76 en total, afegits a Europa, el sud d'Àsia, el sud-est asiàtic, l'Àsia central i l'Àfrica.
+- Les baixades acabades ja no queden blocades. Un torrent que havia acabat, o que estava en pausa, mantenia els fitxers oberts per escriure-hi, i a Windows això sol ja impedeix que un altre programa els obri: un arxiu o un vídeo de la carpeta de baixades no es podia obrir fins que no es tancava el NanoTorrent. Ara els fitxers es tornen a obrir en només lectura tan bon punt no s'hi ha d'escriure res, i l'accés d'escriptura es recupera automàticament si torna a caldre.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Línia d'ordres completa per a scripts i màquines sense pantalla
 Etiquetes i filtres per mantenir ordenada una llista llarga
 Banderes dels parells resoltes al vostre ordinador
 Temes clar i fosc que segueixen el Windows
-Disponible en 41 idiomes
+Disponible en 76 idiomes
 Programari lliure amb llicència MIT
 
 

@@ -168,6 +168,23 @@ pub trait TorrentStorage: Send + Sync {
     fn on_piece_completed(&self, _piece_index: ValidPieceIndex) -> anyhow::Result<()> {
         Ok(())
     }
+
+    /// NanoTorrent addition: nothing is going to be written to this data for
+    /// now - the file has finished downloading, or the torrent was paused - so
+    /// give up any handles that hold write access to it.
+    ///
+    /// `Some(file_id)` is one file, `None` is all of them. Per-file matters for
+    /// a torrent holding many: the first episode of a season pack should stop
+    /// being held open the moment it is complete, not when the last one is.
+    ///
+    /// This is not `take()`: the storage stays usable, reads included. Writing
+    /// again is allowed, and an implementation that gave something up here has
+    /// to reacquire it on the next write rather than fail.
+    ///
+    /// Default implementation does nothing.
+    fn release_write_access(&self, _file: Option<usize>) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 impl<U: TorrentStorage + ?Sized> TorrentStorage for Box<U> {
@@ -205,5 +222,9 @@ impl<U: TorrentStorage + ?Sized> TorrentStorage for Box<U> {
 
     fn on_piece_completed(&self, piece_id: ValidPieceIndex) -> anyhow::Result<()> {
         (**self).on_piece_completed(piece_id)
+    }
+
+    fn release_write_access(&self, file: Option<usize>) -> anyhow::Result<()> {
+        (**self).release_write_access(file)
     }
 }

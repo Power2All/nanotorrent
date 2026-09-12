@@ -247,7 +247,7 @@ since replacing them sends seven pictures back through certification.
 ### The listings go up with the package
 
 `msstore publish` uploads the package and nothing else - it does not touch
-listing metadata. That is why the "What's new" text for all 41 languages used
+listing metadata. That is why the "What's new" text for all 76 languages used
 to be pasted into Partner Center by hand after every release.
 
 `msstore submission update` does take listings, but only as the *whole*
@@ -273,7 +273,7 @@ them away. Package first, metadata second, commit last.
 
 ```powershell
 msstore submission get <product> | Out-File -Encoding utf8 sub.json
-.\installer\store-whatsnew.ps1 -SubmissionPath sub.json -OutPath sub.new.json -Version 0.3.7
+.\installer\store-whatsnew.ps1 -SubmissionPath sub.json -OutPath sub.new.json -Version 0.3.8
 ```
 
 It refuses to write anything if a listing's "What's new" does not mention the

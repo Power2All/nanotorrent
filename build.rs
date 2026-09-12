@@ -184,6 +184,16 @@ fn verify_librqbit_patches() {
             "patches/0020-output-folder-subfolder.patch",
         ),
         (
+            "vendor/librqbit/src/storage/mod.rs",
+            "fn release_write_access",
+            "patches/0021-release-write-handles.patch (the trait method)",
+        ),
+        (
+            "vendor/librqbit/src/storage/filesystem/opened_file.rs",
+            "pub fn lock_for_write",
+            "patches/0021-release-write-handles.patch (without it a finished              download stays unopenable by other programs until NanoTorrent exits)",
+        ),
+        (
             "vendor/librqbit/src/session_persistence/mod.rs",
             "trackers: Some(restored)",
             "patches/0018-custom-tracker-tier.patch (restore)",

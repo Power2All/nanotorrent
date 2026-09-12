@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Shqip (Shqipëri) - Partner Center: Albanian (Albania) (sq-AL)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > sq-AL. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent është një klient BitTorrent i vogël dhe i shpejtë që nuk ju del në rrugë.
+
+Është një aplikacion vendas i shkruar në Rust, jo një faqe interneti brenda një dritareje. Niset menjëherë dhe përdor një pjesë të vogël të kujtesës që i duhet një klienti tipik modern.
+
+Pa llogari. Pa reklama. Pa telemetri, pa analitikë, pa raportim rrëzimesh. Nuk mblidhet asgjë për ju ose për atë që shkarkoni. NanoTorrent është me burim të hapur nën Licencën MIT, ndaj kjo është diçka që mund ta verifikoni, jo diçka që duhet ta besoni.
+
+Shtoni torrente nga skedarë ose lidhje magnet, shikoni ato në një listë që mund ta renditni, etiketoni dhe filtroni, dhe hapni panelin e detajeve për skedarët, bashkëmoshatarët dhe gjurmuesit. Mbështeten DHT, shkëmbimi i bashkëmoshatarëve, nivele të shumta gjurmuesish, gjurmues UDP dhe torrente private, ndërsa lidhjet mund të shifrohen, duke refuzuar sipas dëshirës çdo gjë të pashifruar.
+
+Ka më shumë se një mënyrë për ta drejtuar. Dritarja e desktopit është ajo e dukshmja. Një ndërfaqe web opsionale, e fikur si parazgjedhje dhe e mbrojtur me fjalëkalim, ju lejon të kontrolloni një klient në punë nga një shfletues në një makinë tjetër. Dhe çdo cilësim është i disponueshëm nga rreshti i komandës, gjë që e bën NanoTorrent të skriptueshëm dhe të përdorshëm në një makinë pa ekran.
+
+Mund të krijoni edhe torrente, përfshirë ato BitTorrent v2 dhe hibride.
+
+Flamujt e shteteve të bashkëmoshatarëve vijnë nga një bazë të dhënash e mbajtur në kompjuterin tuaj. Asnjë adresë nuk kërkohet ndonjëherë përmes rrjetit.
+
+I disponueshëm në 76 gjuhë, me tema të ndritura dhe të errëta që ndjekin Windows.
+
+NanoTorrent është një port në Rust i PicoTorrent nga Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versioni 0.3.8
+
+- 35 gjuhë më shumë, 76 në total, të shtuara në Evropë, Azinë e Jugut, Azinë Jugperëndimore, Azinë Qendrore dhe Afrikë.
+- Shkarkimet e përfunduara nuk mbeten më të bllokuara. Një torrent që kishte përfunduar, ose që ishte në pauzë, i mbante skedarët e tij të hapur për shkrim, dhe në Windows vetëm kjo mjafton për të ndalur një program tjetër nga hapja e tyre: një arkiv ose një video në dosjen e shkarkimeve nuk mund të hapej derisa NanoTorrent të mbyllej. Skedarët tani rihapen vetëm për lexim sapo nuk ka më asgjë për të shkruar, dhe e drejta e shkrimit merret prapa automatikisht nëse nevojitet sërish.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Aplikacion vendas në Rust: nisje e shpejtë dhe kujtesë e kursyer
+Pa reklama, pa telemetri, pa llogari, kurrë
+Lidhje magnet dhe skedarë .torrent
+DHT, shkëmbim bashkëmoshatarësh, nivele gjurmuesish dhe gjurmues UDP
+Shifrim i lidhjeve (MSE/PE), opsionalisht i detyrueshëm
+Krijoni torrente, përfshirë BitTorrent v2 dhe hibride
+Mbështetje për ndërmjetës SOCKS dhe HTTP
+Ndërfaqe web opsionale e mbrojtur me fjalëkalim për kontroll në distancë
+Rresht i plotë komande për skriptim dhe makina pa ekran
+Etiketa dhe filtra për të mbajtur rregull në një listë të gjatë
+Flamuj shtetesh të bashkëmoshatarëve gjetur në kompjuterin tuaj
+Tema të ndritura dhe të errëta që ndjekin Windows
+I disponueshëm në 76 gjuhë
+Burim i hapur nën Licencën MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+klient torrenti
+lidhje magnet
+p2p
+ndarje skedarësh
+menaxher shkarkimesh
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. NanoTorrent është softuer me burim të hapur, lëshuar nën Licencën MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent është softuer i lirë dhe me burim të hapur, lëshuar nën Licencën MIT. Teksti i plotë i licencës dhe kodi i plotë burimor janë të disponueshëm në https://github.com/Power2All/nanotorrent
+
+Sofueri ofrohet "siç është", pa asnjë garanci të çfarëdo lloji, të shprehur ose të nënkuptuar. Komponentët e palëve të treta ruajnë licencat e tyre, të cilat renditen në depon burimore.
+
+NanoTorrent është një mjet i përgjithshëm për transferim skedarësh. Ai nuk strehon, nuk indekson, nuk furnizon, nuk rekomandon dhe nuk mbështet asnjë përmbajtje çfarëdo qoftë. Ju jeni përgjegjës të siguroheni që përdorimi juaj i tij përputhet me ligjin aty ku jetoni dhe me të drejtat e mbajtësve të të drejtave të autorit.
+
+NanoTorrent zhvillohet kryesisht me ndihmën e inteligjencës artificiale nën mbikëqyrje njerëzore, siç deklarohet në AI-DECLARATION.md në depon burimore.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

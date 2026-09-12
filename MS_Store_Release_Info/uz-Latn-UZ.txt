@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Oʻzbekcha (Oʻzbekiston) - Partner Center: Uzbek (Uzbekistan) (uz-Latn-UZ)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > uz-Latn-UZ. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent — yoʻlingizni toʻsmaydigan kichik va tez BitTorrent mijozi.
+
+U oynadagi veb-sahifa emas, Rust tilida yozilgan tabiiy ilova. U darhol ishga tushadi va odatdagi zamonaviy mijoz talab qiladigan xotiraning faqat kichik bir qismini ishlatadi.
+
+Hisob yoʻq. Reklama yoʻq. Telemetriya yoʻq, tahlil yoʻq, nosozlik hisoboti yoʻq. Siz haqingizda yoki yuklab olganlaringiz haqida hech narsa toʻplanmaydi. NanoTorrent MIT litsenziyasi ostida ochiq kodli, shuning uchun bu ishonish kerak boʻlgan narsa emas, tekshirib koʻrishingiz mumkin boʻlgan narsa.
+
+Torrentlarni fayllardan yoki magnit havolalardan qoʻshing, ularni saralash, belgilash va filtrlash mumkin boʻlgan roʻyxatda koʻring, fayllar, tengdoshlar va trekerlar uchun tafsilot panelini oching. DHT, tengdoshlar almashinuvi, bir necha treker pogʻonasi, UDP trekerlari va shaxsiy torrentlar qoʻllab-quvvatlanadi, ulanishlarni shifrlash mumkin va xohlasangiz shifrlanmagan hammasini rad etish mumkin.
+
+Uni boshqarishning bir nechta yoʻli bor. Ish stoli oynasi — koʻrinib turgan yoʻl. Sukut boʻyicha oʻchirilgan va parol bilan himoyalangan ixtiyoriy veb-interfeys ishlab turgan mijozni boshqa kompyuterdagi brauzerdan boshqarishga imkon beradi. Har bir sozlama buyruq satridan mavjud, bu NanoTorrent-ni skript yozishga yaroqli va ekrani yoʻq kompyuterda ishlatishga qulay qiladi.
+
+Siz shuningdek BitTorrent v2 va gibrid kiritilgan torrent yaratishingiz mumkin.
+
+Tengdoshlarning mamlakat bayroqlari oʻz kompyuteringizda saqlanadigan maʼlumotlar bazasidan olinadi. Hech qanday manzil tarmoq orqali qidirilmaydi.
+
+76 tilda mavjud, Windows-ga ergashadigan yorugʻ va qorongʻi mavzular bilan.
+
+NanoTorrent — Viktor Elofsson yozgan PicoTorrent dasturining Rust versiyasi.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Versiya 0.3.8
+
+- 35 til koʻproq, jami 76; Yevropa, Janubiy Osiyo, Janubi-Sharqiy Osiyo, Markaziy Osiyo va Afrika boʻylab qoʻshildi.
+- Tugallangan yuklab olishlar endi qulflangan qolmaydi. Tugallangan yoki pauza qilingan torrent oʻz fayllarini yozish uchun ochiq saqlar edi, Windows-da esa shuning oʻzi boshqa programmaning ularni ochishiga toʻsqinlik qilishga yetarli: yuklab olish jildidagi arxiv yoki videoni NanoTorrent yopilmaguncha ochib boʻlmasdi. Fayllar endi yoziladigan hech narsa qolmasa, faqat oʻqish uchun qayta ochiladi, yozish huquqi esa yana kerak boʻlsa avtomatik qaytarib olinadi.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Tabiiy Rust ilovasi: tez ishga tushadi va xotiraga yengil
+Reklama yoʻq, telemetriya yoʻq, hisob yoʻq, hech qachon
+Magnit havolalar va .torrent fayllari
+DHT, tengdoshlar almashinuvi, treker pogʻonalari va UDP trekerlari
+Ulanishni shifrlash (MSE/PE), xohlasangiz majburiy
+BitTorrent v2 va gibrid kiritilgan torrent yaratish
+SOCKS va HTTP proksi qoʻllab-quvvatlashi
+Masofadan boshqarish uchun parol bilan himoyalangan ixtiyoriy veb-interfeys
+Skriptlar va ekransiz kompyuterlar uchun toʻliq buyruq satri
+Uzun roʻyxatni tartibli saqlash uchun teglar va filtrlar
+Tengdoshlarning mamlakat bayroqlari oʻz kompyuteringizda qidiriladi
+Windows-ga ergashadigan yorugʻ va qorongʻi mavzular
+76 tilda mavjud
+MIT litsenziyasi ostida ochiq kodli
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent mijozi
+magnit havola
+p2p
+fayl ulashish
+yuklab olish menejeri
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. NanoTorrent — MIT litsenziyasi ostida chiqarilgan ochiq kodli dastur.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent — MIT litsenziyasi ostida chiqarilgan erkin va ochiq kodli dastur. Litsenziyaning toʻliq matni va butun manba kodi https://github.com/Power2All/nanotorrent manzilida mavjud
+
+Dastur hech qanday aniq yoki nazarda tutilgan kafolatsiz "borligidek" taqdim etiladi. Uchinchi tomon komponentlari manba omborida sanab oʻtilgan oʻz litsenziyalarini saqlaydi.
+
+NanoTorrent — umumiy maqsadli fayl uzatish vositasi. U hech qanday mazmunni joylashtirmaydi, indekslamaydi, taʼminlamaydi, tavsiya etmaydi va tasdiqlamaydi. Foydalanishingiz yashayotgan joyingiz qonuniga va mualliflik huquqi egalarining huquqlariga muvofiq boʻlishini taʼminlash sizning javobgarligingizdir.
+
+NanoTorrent manba omboridagi AI-DECLARATION.md faylida eʼlon qilinganidek, asosan inson nazorati ostida sunʼiy intellekt yordamida ishlab chiqilgan.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

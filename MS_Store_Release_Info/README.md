@@ -4,14 +4,14 @@ One file per language, holding every text field Partner Center asks for in a
 Store listing. Paste each block into the matching field under
 **Store listings ▸ _language_**.
 
-There are 41 files, one for every locale in `lang/` — the same set the MSIX
+There are 76 files, one for every locale in `lang/` — the same set the MSIX
 manifest declares as supported languages.
 
 Plus `restricted-capability-justification.txt`, which is not a listing: it is
 the `runFullTrust` justification Partner Center asks for on every submission,
 the same text each time, and it carries no version.
 
-## You almost certainly do not need all 41
+## You almost certainly do not need all 76
 
 Partner Center only asks for a listing in languages **you add to the
 submission**. Adding a language and leaving its fields empty blocks the
@@ -22,7 +22,7 @@ English-only listing still ships to every country you have selected — listing
 language is not market availability. Languages can be added in any later
 submission at no cost, so this is not a decision you are stuck with.
 
-The other 40 are here so that adding one later is a paste rather than a
+The other 75 are here so that adding one later is a paste rather than a
 translation job.
 
 ## Field limits
@@ -54,7 +54,7 @@ Each file's header names both.
 
 ## Translation quality
 
-`en-US.txt` is the original. The other 40 are machine translations, consistent
+`en-US.txt` is the original. The other 75 are machine translations, consistent
 with how the app's own `lang/*.json` are produced and with the note in
 AI-DECLARATION.md.
 
@@ -70,7 +70,7 @@ the actual code, not written from marketing habit.
 **The Description now under-claims.** It was written when the engine had no uTP,
 no local service discovery and no web seeds; all three work as of 0.3.5, along
 with HTTP seeding (BEP 17) and v2 seeding. The copy has not been rewritten to
-say so, because doing that means retranslating a paragraph in 41 files - so if
+say so, because doing that means retranslating a paragraph in 76 files - so if
 you want the listing to claim them, the affected line is the "DHT, peer
 exchange, tracker tiers and UDP trackers" feature bullet and the corresponding
 sentence in the Description, and both need a pass in every language.
@@ -92,7 +92,7 @@ Nothing currently claimed is false. The gap is the other way round.
 ## Regenerating
 
 These were produced by scripts that no longer live in the repository. To change
-wording across all languages, edit the files directly — there are only 41, and
+wording across all languages, edit the files directly — there are only 76, and
 each is self-contained.
 
 The "What's new" block is the one field that must change every release. It is

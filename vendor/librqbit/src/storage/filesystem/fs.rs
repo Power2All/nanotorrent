@@ -118,10 +118,7 @@ impl TorrentStorage for FilesystemStorage {
 
     fn pwrite_all(&self, file_id: usize, offset: u64, buf: &[u8]) -> anyhow::Result<()> {
         let of = self.opened_files.get(file_id).context("no such file")?;
-        #[cfg(windows)]
-        return of.try_mark_sparse()?.pwrite_all(offset, buf);
-        #[cfg(not(windows))]
-        return of.lock_read()?.pwrite_all(offset, buf);
+        of.lock_for_write()?.pwrite_all(offset, buf)
     }
 
     fn pwrite_all_vectored(
@@ -131,10 +128,7 @@ impl TorrentStorage for FilesystemStorage {
         bufs: [IoSlice<'_>; 2],
     ) -> anyhow::Result<usize> {
         let of = self.opened_files.get(file_id).context("no such file")?;
-        #[cfg(windows)]
-        return of.try_mark_sparse()?.pwrite_all_vectored(offset, bufs);
-        #[cfg(not(windows))]
-        return of.lock_read()?.pwrite_all_vectored(offset, bufs);
+        of.lock_for_write()?.pwrite_all_vectored(offset, bufs)
     }
 
     fn remove_file(&self, _file_id: usize, filename: &Path) -> anyhow::Result<()> {
@@ -143,9 +137,9 @@ impl TorrentStorage for FilesystemStorage {
 
     fn ensure_file_length(&self, file_id: usize, len: u64) -> anyhow::Result<()> {
         let f = &self.opened_files.get(file_id).context("no such file")?;
-        #[cfg(windows)]
-        f.try_mark_sparse()?;
-        Ok(f.lock_read()?.set_len(len)?)
+        // set_len is a write: lock_for_write, not lock_read, or a file whose
+        // write access was released would fail here instead of being reopened.
+        Ok(f.lock_for_write()?.set_len(len)?)
     }
 
     fn take(&self) -> anyhow::Result<Box<dyn TorrentStorage>> {
@@ -157,6 +151,27 @@ impl TorrentStorage for FilesystemStorage {
                 .collect::<anyhow::Result<Vec<_>>>()?,
             output_folder: self.output_folder.clone(),
         }))
+    }
+
+    fn release_write_access(&self, file: Option<usize>) -> anyhow::Result<()> {
+        if let Some(id) = file {
+            return self
+                .opened_files
+                .get(id)
+                .context("no such file")?
+                .release_write_access();
+        }
+        let mut last_err = None;
+        for f in self.opened_files.iter() {
+            // One unreadable path must not stop the rest from being released.
+            if let Err(e) = f.release_write_access() {
+                last_err = Some(e);
+            }
+        }
+        match last_err {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 
     fn remove_directory_if_empty(&self, path: &Path) -> anyhow::Result<()> {

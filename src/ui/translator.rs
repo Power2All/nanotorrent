@@ -27,34 +27,61 @@ fn embedded(locale: &str) -> Option<&'static str> {
 /// their own language, and "Nederlands" is what they are looking for, not
 /// "Dutch" and certainly not "nl-NL". Anything not listed falls back to its
 /// locale code, so adding a lang/*.json without touching this still works.
-const ENDONYMS: [(&str, &str); 41] = [
+const ENDONYMS: [(&str, &str); 76] = [
     ("af-ZA", "Afrikaans"),
+    ("am-ET", "አማርኛ"),
     ("ar-SA", "العربية"),
+    ("az-AZ", "Azərbaycan dili"),
+    ("be-BY", "Беларуская"),
     ("bg-BG", "Български"),
+    ("bn-BD", "বাংলা"),
+    ("bs-BA", "Bosanski"),
     ("ca-ES", "Català"),
     ("cs-CZ", "Čeština"),
+    ("cy-GB", "Cymraeg"),
     ("da-DK", "Dansk"),
     ("de-DE", "Deutsch"),
     ("el-GR", "Ελληνικά"),
     ("en-US", "English"),
     ("es-ES", "Español"),
     ("et-EE", "Eesti"),
+    ("eu-ES", "Euskara"),
+    ("fa-IR", "فارسی"),
     ("fi-FI", "Suomi"),
+    ("fil-PH", "Filipino"),
     ("fr-FR", "Français"),
+    ("ga-IE", "Gaeilge"),
+    ("gl-ES", "Galego"),
+    ("gu-IN", "ગુજરાતી"),
+    ("ha-NG", "Hausa"),
     ("he-IL", "עברית"),
     ("hi-IN", "हिन्दी"),
     ("hr-HR", "Hrvatski"),
     ("hu-HU", "Magyar"),
     ("hy-AM", "Հայերեն"),
     ("id-ID", "Bahasa Indonesia"),
+    ("is-IS", "Íslenska"),
     ("it-IT", "Italiano"),
     ("ja-JP", "日本語"),
     ("ka-GE", "ქართული"),
+    ("kk-KZ", "Қазақ тілі"),
+    ("km-KH", "ខ្មែរ"),
+    ("kn-IN", "ಕನ್ನಡ"),
     ("ko-KR", "한국어"),
+    ("lo-LA", "ລາວ"),
     ("lt-LT", "Lietuvių"),
     ("lv-LV", "Latviešu"),
+    ("mk-MK", "Македонски"),
+    ("ml-IN", "മലയാളം"),
+    ("mn-MN", "Монгол"),
+    ("mr-IN", "मराठी"),
+    ("ms-MY", "Bahasa Melayu"),
+    ("mt-MT", "Malti"),
+    ("my-MM", "မြန်မာ"),
     ("nb-NO", "Norsk bokmål"),
+    ("ne-NP", "नेपाली"),
     ("nl-NL", "Nederlands"),
+    ("pa-IN", "ਪੰਜਾਬੀ"),
     ("pl-PL", "Polski"),
     ("pt-BR", "Português (Brasil)"),
     ("pt-PT", "Português (Portugal)"),
@@ -62,10 +89,18 @@ const ENDONYMS: [(&str, &str); 41] = [
     ("ru-RU", "Русский"),
     ("si-LK", "සිංහල"),
     ("sk-SK", "Slovenčina"),
+    ("sl-SI", "Slovenščina"),
+    ("sq-AL", "Shqip"),
     ("sr-SP", "Српски"),
     ("sv-SE", "Svenska"),
+    ("sw-KE", "Kiswahili"),
+    ("ta-IN", "தமிழ்"),
+    ("te-IN", "తెలుగు"),
+    ("th-TH", "ไทย"),
     ("tr-TR", "Türkçe"),
     ("uk-UA", "Українська"),
+    ("ur-PK", "اردو"),
+    ("uz-UZ", "Oʻzbekcha"),
     ("vi-VN", "Tiếng Việt"),
     ("zh-CN", "简体中文"),
     ("zh-TW", "繁體中文"),
@@ -228,24 +263,26 @@ impl Translator {
             })
     }
 
-    /// i18n with a single positional argument ({0} or {}).
-    pub fn i18n1(&self, key: &str, arg: &str) -> String {
-        let s = self.i18n(key);
-        if s.contains("{0}") {
-            s.replace("{0}", arg)
-        } else {
-            s.replacen("{}", arg, 1)
+    /// i18n with positional arguments, `{0}` upwards.
+    ///
+    /// `{0}` only: the bare `{}` form PicoTorrent used appears in none of the
+    /// 76 files, and a translation that loses its placeholder renders unchanged
+    /// either way.
+    ///
+    /// One function rather than i18n1/i18n2/i18n3 - the arity family had a
+    /// two-argument member whose only string was later deleted, and the next
+    /// need was for three.
+    pub fn i18n_args(&self, key: &str, args: &[&str]) -> String {
+        let mut s = self.i18n(key);
+        for (i, arg) in args.iter().enumerate() {
+            s = s.replace(&format!("{{{i}}}"), arg);
         }
+        s
     }
 
-    /// i18n with two positional arguments.
-    pub fn i18n2(&self, key: &str, arg0: &str, arg1: &str) -> String {
-        let s = self.i18n(key);
-        if s.contains("{0}") || s.contains("{1}") {
-            s.replace("{0}", arg0).replace("{1}", arg1)
-        } else {
-            s.replacen("{}", arg0, 1).replacen("{}", arg1, 1)
-        }
+    /// i18n with a single positional argument.
+    pub fn i18n1(&self, key: &str, arg: &str) -> String {
+        self.i18n_args(key, &[arg])
     }
 }
 
@@ -338,19 +375,27 @@ mod tests {
         assert!(embedded("en-US").is_some());
         assert_eq!(tr().languages().len(), EMBEDDED_LANGS.len());
 
-        // Every file must yield a full set of strings. af-ZA and da-DK used to
-        // be exempt - they shipped upstream as empty `{}` placeholders - and
-        // are now translated like the rest, so the carve-out is gone.
+        // Every file must carry EXACTLY en-US's keys - not merely as many.
         //
-        // Compared against en-US rather than just "> 0": a file that parses to
-        // a handful of keys is a silent English fallback for everything else,
-        // which is exactly what the empty placeholders were.
-        let expected = parse_lang(embedded("en-US").unwrap(), false).len();
+        // It used to be `>=`, which caught the empty `{}` placeholders af-ZA and
+        // da-DK once shipped as, but tolerated two quieter failures in both
+        // directions: a key added to en-US and not translated falls back to
+        // English without saying so, and a key left behind in some locales after
+        // its English side was removed sits there being shown to nobody. The
+        // files are identical sets now, so the test can say so and keep it that
+        // way; a new key has to land in all 76 or this fails.
+        let english: std::collections::BTreeSet<String> =
+            parse_lang(embedded("en-US").unwrap(), false)
+                .into_keys()
+                .collect();
         for (locale, json) in EMBEDDED_LANGS {
-            let n = parse_lang(json, true).len();
+            let keys: std::collections::BTreeSet<String> =
+                parse_lang(json, true).into_keys().collect();
+            let missing: Vec<&String> = english.difference(&keys).collect();
+            let extra: Vec<&String> = keys.difference(&english).collect();
             assert!(
-                n >= expected,
-                "{locale} has {n} strings, en-US has {expected}"
+                missing.is_empty() && extra.is_empty(),
+                "{locale} does not match en-US: missing {missing:?}, extra {extra:?}"
             );
         }
     }
@@ -411,12 +456,12 @@ mod tests {
 
     #[test]
     fn positional_args_substitute() {
+        // Against the shipped table, and at both ends of the string: a
+        // placeholder last and a placeholder first, since the substitution used
+        // to be written as if {0} were always somewhere in the middle.
         let t = tr();
         assert_eq!(t.i18n1("state_error", "boom"), "Error: boom");
-        assert_eq!(
-            t.i18n2("state_error_details", "boom", "42"),
-            "Error: boom (42)"
-        );
+        assert_eq!(t.i18n1("torrents_duplicate", "3"), "3 already in the list");
     }
 }
 

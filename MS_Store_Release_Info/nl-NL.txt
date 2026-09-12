@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Nederlands (Nederland) - Partner Center: Dutch (Netherlands) (nl-NL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Je kunt ook zelf torrents maken, inclusief BitTorrent v2 en hybride varianten.
 
 De landvlaggen bij peers komen uit een database op je eigen computer. Er wordt nooit een adres via het netwerk opgezocht.
 
-Beschikbaar in 41 talen, met een licht en donker thema die Windows volgen.
+Beschikbaar in 76 talen, met een licht en donker thema die Windows volgen.
 
 NanoTorrent is een Rust-port van PicoTorrent van Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Versie 0.3.7
+Versie 0.3.8
 
-- Deellimieten: stop met seeden bij een verhouding, na een ingestelde tijd, of wat het eerst komt, en pauzeer of verwijder de torrent daarna.
-- Alternatieve snelheidslimieten, volgens een schema of met de hand omgezet vanaf de werkbalk.
-- Wachtrijvolgorde vanaf de werkbalk, prioriteiten per bestand, en labels (tags).
-- Een bewaakte map die elke .torrent toevoegt die erin wordt gezet.
-- Trackers van een torrent toevoegen, bewerken en verwijderen, in announce-niveaus.
-- De instellingendatabase kan versleuteld worden, zonder wachtwoord om in te typen, en je instellingen kunnen als JSON worden geëxporteerd en geïmporteerd.
-- De webinterface krijgt wachtrijvolgorde, de snelheidsschakelaar, en een paneel per torrent voor bestanden, trackers, labels en limieten.
-- Stukken die weinig peers hebben worden als eerste opgevraagd, en BitTorrent v2-torrents kunnen nu aan anderen worden geseed.
-- Magneetlinks openen nu het venster Torrent toevoegen, net als .torrent-bestanden, tenzij je ervoor gekozen hebt dat over te slaan.
-- Een torrent met meerdere bestanden komt in een map met zijn eigen naam terecht, in plaats van los in de opslagmap.
-- Minder processor- en geheugengebruik terwijl het venster openstaat.
+- 35 talen meer, 76 in totaal, toegevoegd in Europa, Zuid-Azië, Zuidoost-Azië, Centraal-Azië en Afrika.
+- Voltooide downloads blijven niet meer vergrendeld. Een torrent die klaar was, of die gepauzeerd was, hield zijn bestanden open om te schrijven, en op Windows is dat alleen al genoeg om een ander programma te beletten ze te openen: een archief of een video in de downloadmap kon niet worden geopend totdat NanoTorrent werd afgesloten. Bestanden worden nu alleen-lezen heropend zodra er niets meer geschreven gaat worden, en schrijfrechten worden automatisch teruggenomen als ze opnieuw nodig zijn.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Een volledige opdrachtregel voor scripts en machines zonder scherm
 Labels en filters om een lange lijst overzichtelijk te houden
 Landvlaggen van peers, opgezocht op je eigen computer
 Licht en donker thema die Windows volgen
-Beschikbaar in 41 talen
+Beschikbaar in 76 talen
 Opensource onder de MIT-licentie
 
 

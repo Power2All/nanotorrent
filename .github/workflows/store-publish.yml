@@ -137,7 +137,7 @@ jobs:
 
       # `msstore publish` only ever uploads the package - it does not touch
       # listing metadata, which is why release notes used to have to be pasted
-      # into Partner Center by hand for all 41 languages.
+      # into Partner Center by hand for all 76 languages.
       - name: Read the draft submission
         shell: pwsh
         run: |
@@ -178,7 +178,7 @@ jobs:
             -Upload
 
       # --payload, not the JSON inline. Windows caps a command line at about
-      # 32,767 characters and this submission carries 41 languages of
+      # 32,767 characters and this submission carries 76 languages of
       # descriptions and release notes - far past it, and further now that
       # every listing also names seven screenshots. Inline fails with "The
       # filename or extension is too long"; store-submit.ps1 has always used

@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Malti (Malta) - Partner Center: Maltese (Malta) (mt-MT)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > mt-MT. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent huwa klijent BitTorrent żgħir u mgħaġġel li ma joqgħodx fi triqtek.
+
+Huwa applikazzjoni nattiva miktuba bir-Rust, mhux paġna web ġo tieqa. Jibda mill-ewwel u juża frazzjoni tal-memorja li jeħtieġ klijent modern tipiku.
+
+Ebda kont. Ebda reklamar. Ebda telemetrija, ebda analitika, ebda rapportar ta' ħabtiet. Ma jinġabar xejn dwarek jew dwar dak li tniżżel. NanoTorrent huwa b'sors miftuħ taħt il-Liċenzja MIT, mela dik hija ħaġa li tista' tiċċekkja minflok ħaġa li trid temmen.
+
+Żid torrents minn fajls jew minn links magnet, arahom f'lista li tista' ssortja, tittikketta u tiffiltra, u iftaħ il-pannell tad-dettalji għall-fajls, il-peers u t-trackers. Huma appoġġati DHT, skambju ta' peers, diversi saffi ta' trackers, trackers UDP u torrents privati, u l-konnessjonijiet jistgħu jiġu kriptati, bir-rifjut mhux obbligatorju ta' kollox mhux kriptat.
+
+Hemm aktar minn mod wieħed kif tħaddmu. It-tieqa tad-desktop hija dik ovvja. Interfaċċa web mhux obbligatorja, mitfija awtomatikament u mħarsa b'password, tħallik tikkontrolla klijent li qed jaħdem minn browser fuq magna oħra. U kull issettjar huwa disponibbli mil-linja tal-kmand, li jagħmel lil NanoTorrent skrittabbli u użabbli fuq magna mingħajr skrin imwaħħal.
+
+Tista' toħloq torrents ukoll, inklużi dawk BitTorrent v2 u ibridi.
+
+Il-bnadar tal-pajjiżi tal-peers jiġu minn database miżmuma fuq il-kompjuter tiegħek stess. L-ebda indirizz qatt ma jiġi mfittex fuq in-network.
+
+Disponibbli f'76 lingwa, b'temi ċari u skuri li jsegwu lil Windows.
+
+NanoTorrent huwa port bir-Rust ta' PicoTorrent ta' Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Verżjoni 0.3.8
+
+- 35 lingwa oħra, 76 b'kollox, miżjuda fl-Ewropa, l-Asja t'Isfel, l-Asja tal-Lbiċ, l-Asja Ċentrali u l-Afrika.
+- It-tniżżiliet lesti ma jibqgħux imsakkrin. Torrent li kien lest, jew li kien imwaqqaf, kien iżomm il-fajls tiegħu miftuħin għall-kitba, u fuq Windows dan waħdu huwa biżżejjed biex iwaqqaf programm ieħor milli jiftaħhom: arkivju jew vidjo fil-folder tat-tniżżil ma kienx jista' jinfetaħ sakemm jingħalaq NanoTorrent. Il-fajls issa jerġgħu jinfetħu għall-qari biss hekk kif ma jkunx fadal xejn x'jinkiteb, u l-aċċess għall-kitba jittieħed lura awtomatikament jekk jerġa' jkun meħtieġ.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Applikazzjoni nattiva bir-Rust: tibda malajr u ħafifa fuq il-memorja
+Ebda reklamar, ebda telemetrija, ebda kont, qatt
+Links magnet u fajls .torrent
+DHT, skambju ta' peers, saffi ta' trackers u trackers UDP
+Kriptaġġ tal-konnessjoni (MSE/PE), obbligatorju jekk trid
+Oħloq torrents, inklużi BitTorrent v2 u ibridi
+Appoġġ għal proxy SOCKS u HTTP
+Interfaċċa web mhux obbligatorja mħarsa b'password għal kontroll mill-bogħod
+Linja tal-kmand sħiħa għal skrittjar u magni mingħajr skrin
+Tikketti u filtri biex iżżomm lista twila f'ordni
+Bnadar tal-pajjiżi tal-peers imfittxija fuq il-kompjuter tiegħek stess
+Temi ċari u skuri li jsegwu lil Windows
+Disponibbli f'76 lingwa
+Sors miftuħ taħt il-Liċenzja MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+klijent torrent
+link magnet
+p2p
+qsim ta' fajls
+maniġer tat-tniżżil
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. NanoTorrent huwa softwer b'sors miftuħ, maħruġ taħt il-Liċenzja MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent huwa softwer ħieles u b'sors miftuħ, maħruġ taħt il-Liċenzja MIT. It-test sħiħ tal-liċenzja u l-kodiċi sors komplut huma disponibbli fuq https://github.com/Power2All/nanotorrent
+
+Is-softwer huwa pprovdut "kif inhu", mingħajr garanzija ta' ebda tip, espressa jew impliċita. Il-komponenti ta' partijiet terzi jżommu l-liċenzji tagħhom stess, li huma elenkati fir-repożitorju tas-sors.
+
+NanoTorrent huwa għodda ġenerali għat-trasferiment ta' fajls. Ma jospitax, ma jindiċjax, ma jforni, ma jirrakkomandax u ma japprova ebda kontenut. Int responsabbli li tiżgura li l-użu tiegħek jikkonforma mal-liġi fejn tgħix u mad-drittijiet tad-detenturi tad-drittijiet tal-awtur.
+
+NanoTorrent huwa żviluppat prinċipalment bl-għajnuna tal-intelliġenza artifiċjali taħt reviżjoni umana, kif dikjarat f'AI-DECLARATION.md fir-repożitorju tas-sors.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

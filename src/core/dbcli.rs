@@ -22,30 +22,32 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 
 use super::configuration::Configuration;
+use crate::ui::translator::Translator;
+
 use super::database::Database;
 use super::dbkey;
 use super::environment::Environment;
 
-pub fn usage() -> String {
-    String::from(
-        "Usage:\n  \
-         nanotorrent --database-status      show whether the settings database is encrypted\n  \
-         nanotorrent --encrypt-database     encrypt it, unlocking automatically from now on\n  \
-         nanotorrent --decrypt-database     write it back out in the clear\n  \
-         nanotorrent --export-settings FILE write the settings to a JSON file\n  \
-         nanotorrent --import-settings FILE read them back from one\n\n\
-         Encryption protects the database if the file leaves this machine - a backup, a\n\
-         copied profile, another account on the same computer - and any change made\n\
-         without the key is detected rather than merely hidden. It cannot protect against\n\
-         a program already running as you, which can read the key exactly as NanoTorrent\n\
-         does.\n\n\
-         An export carries the settings you have changed, plus your labels and filters.\n\
-         It deliberately leaves out the proxy password, the web interface password and\n\
-         the permissions you granted each plugin: a plain file is the wrong home for the\n\
-         first two, and a settings file that could grant plugin permissions would undo\n\
-         the reason the database can be encrypted at all.\n\n\
-         Everything except --database-status and --export-settings writes to the\n\
-         database, so close NanoTorrent first.\n",
+pub fn usage(tr: &Translator) -> String {
+    format!(
+        "{}\n  \
+         nanotorrent --database-status      {}\n  \
+         nanotorrent --encrypt-database     {}\n  \
+         nanotorrent --decrypt-database     {}\n  \
+         nanotorrent --export-settings FILE {}\n  \
+         nanotorrent --import-settings FILE {}\n\n\
+         {}\n\n\
+         {}\n\n\
+         {}\n",
+        tr.i18n("cli_db_header"),
+        tr.i18n("cli_db_flag_status"),
+        tr.i18n("cli_db_flag_encrypt"),
+        tr.i18n("cli_db_flag_decrypt"),
+        tr.i18n("cli_db_flag_export"),
+        tr.i18n("cli_db_flag_import"),
+        tr.i18n("database_explain"),
+        tr.i18n("cli_db_export_note"),
+        tr.i18n("cli_db_writes_note"),
     )
 }
 
@@ -81,55 +83,51 @@ pub fn handle(args: &[String]) -> Result<bool> {
     // about the database that exists rather than about a key beside it.
     let db = open(&env)?;
     let encrypted = db.is_encrypted();
+    let tr = crate::load_translator(&env, &Configuration::new(db.clone()));
 
     match flag {
         "--database-status" => {
-            println!("Database: {}", path.display());
+            println!("{}: {}", tr.i18n("database"), path.display());
             if encrypted {
-                println!("Encrypted: yes (XChaCha20-Poly1305, unlocked automatically)");
-                println!("Key file:  {}", key_file.display());
+                // The cipher name is not translated - it is the algorithm's name.
+                println!(
+                    "{}: {} (XChaCha20-Poly1305)",
+                    tr.i18n("database_status"),
+                    tr.i18n("database_on")
+                );
+                println!("{}: {}", tr.i18n("database_key_file"), key_file.display());
                 #[cfg(windows)]
-                println!(
-                    "The key is sealed to this Windows account, so the database cannot be\n\
-                     opened by another user or on another machine."
-                );
+                println!("{}", tr.i18n("cli_db_key_windows"));
                 #[cfg(not(windows))]
-                println!(
-                    "The key is stored with owner-only permissions. Copying the profile\n\
-                     directory copies the key with it, so it guards against other accounts\n\
-                     rather than against someone taking the whole folder."
-                );
+                println!("{}", tr.i18n("cli_db_key_unix"));
             } else {
-                println!("Encrypted: no");
-                println!("Turn it on with:  nanotorrent --encrypt-database");
+                println!("{}: {}", tr.i18n("database_status"), tr.i18n("database_off"));
+                println!("{}", tr.i18n("cli_db_turn_on_hint"));
             }
         }
 
         "--encrypt-database" => {
             if encrypted {
-                println!("The database is already encrypted. Nothing to do.");
+                println!("{}", tr.i18n("cli_db_already_encrypted"));
                 return Ok(true);
             }
             db.set_encryption(&env, true)
                 .context("the database was left unchanged")?;
             remember_asked(&db);
-            println!("Database encrypted. It unlocks automatically from now on.");
-            println!("Key file: {}", key_file.display());
-            println!(
-                "\nBack this file up with the database, not separately from it: without the\n\
-                 key the database cannot be recovered by anyone, including you."
-            );
+            println!("{}", tr.i18n("cli_db_encrypted"));
+            println!("{}: {}", tr.i18n("database_key_file"), key_file.display());
+            println!("\n{}", tr.i18n("database_backup_key"));
         }
 
         "--decrypt-database" => {
             if !encrypted {
-                println!("The database is not encrypted. Nothing to do.");
+                println!("{}", tr.i18n("cli_db_not_encrypted"));
                 return Ok(true);
             }
             db.set_encryption(&env, false)
                 .context("the database was left encrypted")?;
             remember_asked(&db);
-            println!("Database decrypted. It is now a plain SQLite file.");
+            println!("{}", tr.i18n("cli_db_decrypted"));
         }
 
         "--export-settings" => {
@@ -137,11 +135,11 @@ pub fn handle(args: &[String]) -> Result<bool> {
             let json = super::dbexport::export(&db)?;
             std::fs::write(&target, json)
                 .with_context(|| format!("writing {}", target.display()))?;
-            println!("Settings written to {}", target.display());
             println!(
-                "The proxy password, the web interface password and your plugin \
-                 permissions are not in this file."
+                "{}",
+                tr.i18n1("cli_db_settings_written", &target.display().to_string())
             );
+            println!("{}", tr.i18n("cli_db_export_omits"));
         }
 
         "--import-settings" => {
@@ -149,7 +147,7 @@ pub fn handle(args: &[String]) -> Result<bool> {
             let json = std::fs::read_to_string(&source)
                 .with_context(|| format!("reading {}", source.display()))?;
             let report = super::dbexport::import(&db, &json)?;
-            println!("{}", report.summary());
+            println!("{}", report.summary(&tr));
         }
 
         _ => unreachable!("flag list and match arms disagree"),

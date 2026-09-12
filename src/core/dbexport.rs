@@ -115,16 +115,23 @@ pub struct Report {
 }
 
 impl Report {
-    pub fn summary(&self) -> String {
-        let mut out = format!(
-            "Imported {} settings, {} labels and {} filters.",
-            self.settings, self.labels, self.filters
+    /// Takes the translator because this text is shown in both places an import
+    /// can be started from - the Preferences dialog and `--import-settings` -
+    /// and was English in both for every language until it did.
+    pub fn summary(&self, tr: &crate::ui::translator::Translator) -> String {
+        let mut out = tr.i18n_args(
+            "import_report",
+            &[
+                &self.settings.to_string(),
+                &self.labels.to_string(),
+                &self.filters.to_string(),
+            ],
         );
         if !self.skipped.is_empty() {
-            out.push_str(&format!(
-                "\nNot applied ({}): {}",
-                self.skipped.len(),
-                self.skipped.join(", ")
+            out.push('\n');
+            out.push_str(&tr.i18n_args(
+                "import_not_applied",
+                &[&self.skipped.len().to_string(), &self.skipped.join(", ")],
             ));
         }
         out

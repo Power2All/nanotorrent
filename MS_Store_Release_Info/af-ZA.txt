@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Afrikaans (Suid-Afrika) - Partner Center: Afrikaans (South Africa) (af-ZA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Jy kan ook jou eie torrents skep, insluitend BitTorrent v2 en hibriede.
 
 Die landvlae van eweknieë kom uit 'n databasis wat op jou eie rekenaar gehou word. Geen adres word ooit oor die netwerk opgesoek nie.
 
-Beskikbaar in 41 tale, met ligte en donker temas wat Windows volg.
+Beskikbaar in 76 tale, met ligte en donker temas wat Windows volg.
 
 NanoTorrent is 'n Rust-oordrag van PicoTorrent deur Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Weergawe 0.3.7
+Weergawe 0.3.8
 
-- Deelperke: hou op saai by 'n verhouding, ná 'n vasgestelde tyd, of wat ook al eerste kom, en laat die torrent daarna wag of verwyder dit.
-- Alternatiewe spoedperke, volgens 'n skedule of met die hand geskakel vanaf die nutsbalk.
-- Tou-volgorde vanaf die nutsbalk, prioriteite per lêer, en etikette.
-- 'n Dopgehoue vouer wat enige .torrent-lêer byvoeg wat daarin geplaas word.
-- Voeg 'n torrent se spoorsnyers by, wysig en verwyder hulle, in aankondigingsvlakke.
-- Die instellingsdatabasis kan geënkripteer word, sonder 'n wagwoord om te tik, en jou instellings kan as JSON uitgevoer en ingevoer word.
-- Die webkoppelvlak kry tou-volgorde, die spoedskakelaar, en 'n paneel per torrent vir lêers, spoorsnyers, etikette en perke.
-- Stukke wat min eweknieë het, word eerste aangevra, en BitTorrent v2-torrents kan nou aan ander gesaai word.
-- Magneetskakels open nou die Byvoeg-venster, net soos .torrent-lêers, tensy jy gekies het om dit oor te slaan.
-- 'n Torrent met meer as een lêer beland in 'n vouer met sy eie naam, in plaas van los in die stoorvouer.
-- Laer verwerker- en geheuegebruik terwyl die venster oop is.
+- 35 meer tale, 76 in totaal, bygevoeg oor Europa, Suid-Asië, Suidoos-Asië, Sentraal-Asië en Afrika.
+- Afgehandelde aflaaie bly nie meer gesluit nie. 'n Torrent wat klaar was, of wat onderbreek is, het sy lêers oop gehou om te skryf, en op Windows is dit alleen genoeg om 'n ander program te keer om hulle oop te maak: 'n argief of 'n video in die afleigids kon nie oopgemaak word voordat NanoTorrent toegemaak is nie. Lêers word nou slegs-lees heropen sodra niks geskryf gaan word nie, en skryftoegang word outomaties teruggeneem as dit weer nodig is.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Volledige opdraglyn vir skripte en masjiene sonder skerm
 Etikette en filters hou 'n lang lys in orde
 Eweknieë se landvlae word op jou eie rekenaar opgesoek
 Ligte en donker temas wat Windows volg
-Beskikbaar in 41 tale
+Beskikbaar in 76 tale
 Oopbron onder die MIT-lisensie
 
 

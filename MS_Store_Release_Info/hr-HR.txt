@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Hrvatski (Hrvatska) - Partner Center: Croatian (Croatia) (hr-HR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Možete i sami stvarati torrente, uključujući BitTorrent v2 i hibridne.
 
 Zastave država sudionika dolaze iz baze podataka pohranjene na vašem računalu. Nijedna se adresa nikada ne provjerava preko mreže.
 
-Dostupno na 41 jeziku, sa svijetlom i tamnom temom koje prate Windows.
+Dostupno na 76 jeziku, sa svijetlom i tamnom temom koje prate Windows.
 
 NanoTorrent je prijenos PicoTorrenta Viktora Elofssona na Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Verzija 0.3.7
+Verzija 0.3.8
 
-- Ograničenja dijeljenja: prestani sijati pri određenom omjeru, nakon zadanog vremena ili što prije nastupi, pa zatim pauziraj ili ukloni torrent.
-- Alternativna ograničenja brzine, prema rasporedu ili ručno prebačena s alatne trake.
-- Redoslijed u redu čekanja s alatne trake, prioriteti po datoteci i oznake.
-- Nadgledana mapa koja dodaje svaku .torrent datoteku stavljenu u nju.
-- Dodavanje, uređivanje i uklanjanje trackera torrenta, po razinama najave.
-- Baza podataka postavki može se šifrirati, bez lozinke koju treba upisivati, a postavke izvoziti i uvoziti kao JSON.
-- Web sučelje dobiva redoslijed u redu čekanja, prekidač brzine i ploču po torrentu za datoteke, trackere, oznake i ograničenja.
-- Dijelovi koje ima malo članova traže se prvi, a BitTorrent v2 torrenti sada se mogu dijeliti drugima.
-- Magnet poveznice sada otvaraju prozor za dodavanje, kao i .torrent datoteke, osim ako ste odabrali da se preskoči.
-- Torrent s više datoteka smješta se u mapu nazvanu po njemu umjesto raspršen po mapi za spremanje.
-- Manje opterećenje procesora i manja potrošnja memorije dok je prozor otvoren.
+- 35 jezika više, 76 ukupno, dodanih u Europi, južnoj Aziji, jugoistočnoj Aziji, srednjoj Aziji i Africi.
+- Dovršena preuzimanja više ne ostaju zaključana. Torrent koji je bio dovršen ili pauziran držao je svoje datoteke otvorenima za pisanje, a u sustavu Windows je to samo po sebi dovoljno da drugi program ne može otvoriti: arhiva ili videozapis u mapi preuzimanja nisu se mogli otvoriti dok se NanoTorrent ne zatvori. Datoteke se sada ponovno otvaraju samo za čitanje čim se više ništa ne zapisuje, a pravo pisanja automatski se vraća ako ponovno zatreba.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Potpuni naredbeni redak za skripte i računala bez zaslona
 Oznake i filtri drže dug popis urednim
 Zastave sudionika utvrđuju se na vašem računalu
 Svijetla i tamna tema koje prate Windows
-Dostupno na 41 jeziku
+Dostupno na 76 jeziku
 Otvoreni kod pod licencijom MIT
 
 

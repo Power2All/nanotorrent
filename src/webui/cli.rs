@@ -102,15 +102,11 @@ pub fn handle(args: &[String]) -> Result<bool> {
             if on && cfg.get_string("webui.password_hash").unwrap_or_default().is_empty() {
                 // Enabling without a password produces a server that refuses to
                 // listen, which looks like a bug unless you say so here.
-                println!(
-                    "Web interface enabled, but no password is set - it will not listen yet.\n\
-                     Set one with:  nanotorrent --set-web-password"
-                );
+                println!("{}", tr.i18n("cli_web_needs_password"));
             } else {
-                println!(
-                    "Web interface {}. Restart NanoTorrent for it to take effect.",
-                    if on { "enabled" } else { "disabled" }
-                );
+                let key = if on { "cli_web_turned_on" } else { "cli_web_turned_off" };
+                println!("{}", tr.i18n(key));
+                println!("{}", tr.i18n("cli_applies_note"));
             }
         }
 
@@ -127,18 +123,18 @@ pub fn handle(args: &[String]) -> Result<bool> {
                 // looks identical to the host failing to start.
                 let dir = crate::plugins::plugin_dir(&env);
                 println!(
-                    "Plugin host enabled. Put .rhai files in:\n  {}\n\n\
-                     Plugins run with the same reach over the session as the web API.\n\
-                     Restart NanoTorrent for it to take effect.",
-                    dir.display()
+                    "{}",
+                    tr.i18n1("cli_plugins_turned_on", &dir.display().to_string())
                 );
+                println!("{}", tr.i18n("cli_applies_note"));
             } else {
-                println!("Plugin host disabled. Restart NanoTorrent for it to take effect.");
+                println!("{}", tr.i18n("cli_plugins_turned_off"));
+                println!("{}", tr.i18n("cli_applies_note"));
             }
         }
 
         "--set-web-password" => {
-            let password = read_password()?;
+            let password = read_password(&tr)?;
             anyhow::ensure!(!password.is_empty(), "refusing to set an empty password");
             // No maximum, no character-class rules: length is what matters and
             // arbitrary rules only push people towards weaker, memorable ones.
@@ -149,7 +145,8 @@ pub fn handle(args: &[String]) -> Result<bool> {
 
             let hash = super::Credentials::hash_password(&password)?;
             cfg.set("webui.password_hash", &hash);
-            println!("Web interface password updated. Restart NanoTorrent for it to take effect.");
+            println!("{}", tr.i18n("cli_password_updated"));
+            println!("{}", tr.i18n("cli_applies_note"));
         }
 
         "--webui-set" => {
@@ -157,20 +154,33 @@ pub fn handle(args: &[String]) -> Result<bool> {
                 anyhow::bail!("{}", usage(&tr));
             };
             set_setting(&cfg, key, value, &tr)?;
-            println!("webui.{key} = {value}. Restart NanoTorrent for it to take effect.");
+            println!("webui.{key} = {value}");
+            println!("{}", tr.i18n("cli_applies_note"));
         }
 
         "--webui-status" => {
             let wc = super::WebConfig::load(&cfg);
-            println!("enabled      : {}", wc.enabled);
-            println!("bind address : {}", wc.bind_address);
-            println!("port         : {}", wc.port);
-            println!("username     : {}", wc.username);
-            println!(
-                "password     : {}",
-                if wc.password_hash.is_empty() { "NOT SET" } else { "set" }
-            );
-            println!("tls mode     : {:?}", wc.tls);
+            // Deliberately unaligned. The labels used to be fixed English, so
+            // padding them into a column was free; translated they are not, and
+            // there is no correct way to pad without display widths - counting
+            // chars puts the colon in the wrong place for CJK, where one
+            // character occupies two columns. unicode-width would fix it and is
+            // only in the tree via slint-build, so it would be a new dependency
+            // for the headless build, which is a lot to pay for a straight edge.
+            let rows = [
+                (tr.i18n("enabled"), wc.enabled.to_string()),
+                (tr.i18n("bind_address"), wc.bind_address.clone()),
+                (tr.i18n("port"), wc.port.to_string()),
+                (tr.i18n("username"), wc.username.clone()),
+                (
+                    tr.i18n("password"),
+                    tr.i18n(if wc.password_hash.is_empty() { "cli_not_set" } else { "cli_is_set" }),
+                ),
+                (tr.i18n("tls_mode"), format!("{:?}", wc.tls)),
+            ];
+            for (label, value) in &rows {
+                println!("{label}: {value}");
+            }
         }
 
         _ => unreachable!("guarded by the matches! above"),
@@ -235,7 +245,7 @@ pub(crate) fn set_setting(
             );
             cfg.set(&format!("webui.{key}"), &value);
         }
-        _ => anyhow::bail!("unknown setting '{key}'\n\n{}", usage(tr)),
+        _ => anyhow::bail!("{}\n\n{}", tr.i18n1("cli_unknown_setting", key), usage(tr)),
     }
     Ok(())
 }
@@ -245,15 +255,15 @@ pub(crate) fn set_setting(
 /// From stdin rather than an argument so it never lands in shell history or
 /// in another user's `ps` output. Works piped as well as typed, which is what
 /// makes the `echo -n ... |` form in the usage text possible.
-fn read_password() -> Result<String> {
+fn read_password(tr: &Translator) -> Result<String> {
     let mut stdin = std::io::stdin();
 
     if stdin.is_terminal() {
         // Suppressing terminal echo means termios on Unix and SetConsoleMode on
         // Windows - a dependency's worth of code for a path that piping avoids
         // entirely. Say so instead of pretending the input is hidden.
-        println!("Enter a new web interface password (it will be visible as you type):");
-        println!("To avoid that, pipe it instead:  echo -n 'password' | nanotorrent --set-web-password");
+        println!("{}", tr.i18n("cli_password_prompt"));
+        println!("{}", tr.i18n("cli_password_pipe_hint"));
     }
 
     let mut buf = String::new();

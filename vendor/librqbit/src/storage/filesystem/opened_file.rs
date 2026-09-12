@@ -1,5 +1,5 @@
 use std::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::IoSlice,
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -108,11 +108,29 @@ impl OurFileExt for File {
 
 #[derive(Default, Debug)]
 struct OpenedFileLocked {
-    #[allow(unused)]
     path: PathBuf,
     fd: Option<File>,
+    /// NanoTorrent addition: whether `fd` was opened with write access. Cleared
+    /// by `OpenedFile::release_write_access`, restored by `lock_for_write`.
+    writable: bool,
     #[cfg(windows)]
     tried_marking_sparse: bool,
+}
+
+impl OpenedFileLocked {
+    /// NanoTorrent addition: whether the write path has to take the *write*
+    /// lock before it can hand out the file - either to reopen it with write
+    /// access, or (windows) to mark it sparse the first time.
+    fn needs_write_lock(&self) -> bool {
+        if self.fd.is_none() {
+            // A padding file. Let the caller's mapping fail as it always has.
+            return false;
+        }
+        #[cfg(windows)]
+        return !self.writable || !self.tried_marking_sparse;
+        #[cfg(not(windows))]
+        return !self.writable;
+    }
 }
 
 impl Deref for OpenedFileLocked {
@@ -140,6 +158,7 @@ impl OpenedFile {
             file: RwLock::new(OpenedFileLocked {
                 path,
                 fd: Some(f),
+                writable: true,
                 #[cfg(windows)]
                 tried_marking_sparse: false,
             }),
@@ -172,24 +191,77 @@ impl OpenedFile {
             .ok_or(Error::FsFileIsNone)
     }
 
-    #[cfg(windows)]
-    pub fn try_mark_sparse(&self) -> crate::Result<impl Deref<Target = File>> {
+    /// NanoTorrent addition: the one accessor for the write path. Replaces
+    /// upstream's `try_mark_sparse`, which did the windows sparse marking here;
+    /// that is still done, and on top of it a file whose write access was
+    /// released is reopened read-write.
+    ///
+    /// Every write goes through this, so nothing has to track whether a
+    /// released file might be written to again: it just reopens.
+    pub fn lock_for_write(&self) -> anyhow::Result<impl Deref<Target = File>> {
         {
             let g = self.file.read();
-            if g.tried_marking_sparse {
-                return RwLockReadGuard::try_map(g, |f| f.fd.as_ref())
+            if !g.needs_write_lock() {
+                return Ok(RwLockReadGuard::try_map(g, |f| f.fd.as_ref())
                     .ok()
-                    .ok_or(Error::FsFileIsNone);
+                    .ok_or(Error::FsFileIsNone)?);
             }
         }
         let mut g = self.file.write();
+        if g.fd.is_some() && !g.writable {
+            let f = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&g.path)
+                .with_context(|| format!("error reopening {:?} read-write", g.path))?;
+            // Assigning drops the read-only handle.
+            g.fd = Some(f);
+            g.writable = true;
+        }
+        #[cfg(windows)]
         if !g.tried_marking_sparse {
             g.tried_marking_sparse = true;
             let f = g.fd.as_ref().ok_or(Error::FsFileIsNone)?;
             tracing::debug!(path=?g.path, marked=super::sparse::mark_file_sparse(f), "marking sparse");
         }
         let g = parking_lot::RwLockWriteGuard::downgrade(g);
-        Ok(RwLockReadGuard::try_map(g, |f| f.fd.as_ref()).ok().unwrap())
+        Ok(RwLockReadGuard::try_map(g, |f| f.fd.as_ref())
+            .ok()
+            .ok_or(Error::FsFileIsNone)?)
+    }
+
+    /// NanoTorrent addition: reopen the file without write access.
+    ///
+    /// A torrent that has finished downloading, or that has been paused, is not
+    /// going to write - but the handle from `init()` carries `GENERIC_WRITE`,
+    /// and on windows that alone fails any other program that opens the file
+    /// with `dwShareMode = FILE_SHARE_READ`, which is what a great many of them
+    /// use. The symptom is an archive or a video in the download folder that
+    /// cannot be opened until NanoTorrent exits.
+    ///
+    /// Seeding only reads, so the write handle is simply dropped. If a write
+    /// does turn out to be needed later - a re-check finding corruption, a file
+    /// newly selected, a stream of an unselected file - `lock_for_write`
+    /// reopens read-write on demand.
+    pub fn release_write_access(&self) -> anyhow::Result<()> {
+        {
+            let g = self.file.read();
+            if g.fd.is_none() || !g.writable {
+                return Ok(());
+            }
+        }
+        let mut g = self.file.write();
+        if g.fd.is_none() || !g.writable {
+            return Ok(());
+        }
+        let f = OpenOptions::new()
+            .read(true)
+            .open(&g.path)
+            .with_context(|| format!("error reopening {:?} read-only", g.path))?;
+        // Assigning drops the read-write handle, which is the point.
+        g.fd = Some(f);
+        g.writable = false;
+        Ok(())
     }
 }
 
@@ -227,5 +299,57 @@ mod tests {
                 assert_eq!(&tmp_buf[..bufsize], buf);
             }
         }
+    }
+
+    /// NanoTorrent patch 0021. The assertion that matters is the middle one:
+    /// before releasing write access, an open with `dwShareMode =
+    /// FILE_SHARE_READ` - what archivers and media players use - fails with a
+    /// sharing violation, and that is the reported bug.
+    #[cfg(windows)]
+    #[test]
+    fn nanotorrent_release_write_access_unblocks_other_programs() {
+        use super::OpenedFile;
+        use std::os::windows::fs::OpenOptionsExt;
+
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+
+        let td = TempDir::with_prefix("release_write_access").unwrap();
+        let path = td.path().join("payload.bin");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        let of = OpenedFile::new(path.clone(), file);
+        of.lock_for_write().unwrap().pwrite_all(0, b"hello").unwrap();
+
+        // "others may read, nobody may write" - conflicts with our GENERIC_WRITE.
+        let third_party_open = || {
+            std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(FILE_SHARE_READ)
+                .open(&path)
+        };
+        assert!(
+            third_party_open().is_err(),
+            "the write handle should still have been blocking this"
+        );
+
+        of.release_write_access().unwrap();
+        third_party_open().expect("releasing write access must unblock the file");
+
+        // Reads keep working, and a write reopens read-write on demand.
+        let mut buf = [0u8; 5];
+        of.lock_read().unwrap().pread_exact(0, &mut buf).unwrap();
+        assert_eq!(&buf, b"hello");
+        of.lock_for_write().unwrap().pwrite_all(0, b"world").unwrap();
+        of.lock_read().unwrap().pread_exact(0, &mut buf).unwrap();
+        assert_eq!(&buf, b"world");
+        assert!(
+            third_party_open().is_err(),
+            "writing again must have taken write access back"
+        );
     }
 }

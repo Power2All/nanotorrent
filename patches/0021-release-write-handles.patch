@@ -1,0 +1,215 @@
+diff --git a/src/storage/filesystem/fs.rs b/src/storage/filesystem/fs.rs
+index ad337ad..1586e0a 100644
+--- a/src/storage/filesystem/fs.rs
++++ b/src/storage/filesystem/fs.rs
+@@ -153,7 +153,14 @@ impl TorrentStorage for FilesystemStorage {
+         }))
+     }
+ 
+-    fn release_write_access(&self) -> anyhow::Result<()> {
++    fn release_write_access(&self, file: Option<usize>) -> anyhow::Result<()> {
++        if let Some(id) = file {
++            return self
++                .opened_files
++                .get(id)
++                .context("no such file")?
++                .release_write_access();
++        }
+         let mut last_err = None;
+         for f in self.opened_files.iter() {
+             // One unreadable path must not stop the rest from being released.
+diff --git a/src/storage/middleware/slow.rs b/src/storage/middleware/slow.rs
+index ff75ee4..1efcd2e 100644
+--- a/src/storage/middleware/slow.rs
++++ b/src/storage/middleware/slow.rs
+@@ -113,8 +113,8 @@ impl<U: TorrentStorage> TorrentStorage for SlowStorage<U> {
+         self.underlying.ensure_file_length(file_id, length)
+     }
+ 
+-    fn release_write_access(&self) -> anyhow::Result<()> {
+-        self.underlying.release_write_access()
++    fn release_write_access(&self, file: Option<usize>) -> anyhow::Result<()> {
++        self.underlying.release_write_access(file)
+     }
+     fn take(&self) -> anyhow::Result<Box<dyn TorrentStorage>> {
+         anyhow::bail!("not implemented")
+diff --git a/src/storage/middleware/timing.rs b/src/storage/middleware/timing.rs
+index a1e5e49..e32d2de 100644
+--- a/src/storage/middleware/timing.rs
++++ b/src/storage/middleware/timing.rs
+@@ -98,8 +98,8 @@ impl<U: TorrentStorage> TorrentStorage for TimingStorage<U> {
+         self.underlying.ensure_file_length(file_id, length)
+     }
+ 
+-    fn release_write_access(&self) -> anyhow::Result<()> {
+-        self.underlying.release_write_access()
++    fn release_write_access(&self, file: Option<usize>) -> anyhow::Result<()> {
++        self.underlying.release_write_access(file)
+     }
+     fn take(&self) -> anyhow::Result<Box<dyn TorrentStorage>> {
+         Ok(Box::new(TimingStorage {
+diff --git a/src/storage/middleware/write_through_cache.rs b/src/storage/middleware/write_through_cache.rs
+index 3f51e65..1ecb0bd 100644
+--- a/src/storage/middleware/write_through_cache.rs
++++ b/src/storage/middleware/write_through_cache.rs
+@@ -111,8 +111,8 @@ impl<U: TorrentStorage> TorrentStorage for WriteThroughCacheStorage<U> {
+         self.underlying.ensure_file_length(file_id, length)
+     }
+ 
+-    fn release_write_access(&self) -> anyhow::Result<()> {
+-        self.underlying.release_write_access()
++    fn release_write_access(&self, file: Option<usize>) -> anyhow::Result<()> {
++        self.underlying.release_write_access(file)
+     }
+     fn take(&self) -> anyhow::Result<Box<dyn TorrentStorage>> {
+         let replacement_cache = LruCache::new(NonZeroUsize::new(1).context("unreachable")?);
+diff --git a/src/storage/mod.rs b/src/storage/mod.rs
+index 83118b2..3be539d 100644
+--- a/src/storage/mod.rs
++++ b/src/storage/mod.rs
+@@ -169,16 +169,20 @@ pub trait TorrentStorage: Send + Sync {
+         Ok(())
+     }
+ 
+-    /// NanoTorrent addition: nothing is going to be written for now - the
+-    /// torrent has finished downloading, or it was paused - so give up any
+-    /// handles that hold write access to the data.
++    /// NanoTorrent addition: nothing is going to be written to this data for
++    /// now - the file has finished downloading, or the torrent was paused - so
++    /// give up any handles that hold write access to it.
++    ///
++    /// `Some(file_id)` is one file, `None` is all of them. Per-file matters for
++    /// a torrent holding many: the first episode of a season pack should stop
++    /// being held open the moment it is complete, not when the last one is.
+     ///
+     /// This is not `take()`: the storage stays usable, reads included. Writing
+     /// again is allowed, and an implementation that gave something up here has
+     /// to reacquire it on the next write rather than fail.
+     ///
+     /// Default implementation does nothing.
+-    fn release_write_access(&self) -> anyhow::Result<()> {
++    fn release_write_access(&self, _file: Option<usize>) -> anyhow::Result<()> {
+         Ok(())
+     }
+ }
+@@ -220,7 +224,7 @@ impl<U: TorrentStorage + ?Sized> TorrentStorage for Box<U> {
+         (**self).on_piece_completed(piece_id)
+     }
+ 
+-    fn release_write_access(&self) -> anyhow::Result<()> {
+-        (**self).release_write_access()
++    fn release_write_access(&self, file: Option<usize>) -> anyhow::Result<()> {
++        (**self).release_write_access(file)
+     }
+ }
+diff --git a/src/torrent_state/live/mod.rs b/src/torrent_state/live/mod.rs
+index 265da5f..c053f79 100644
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -327,10 +327,20 @@ impl TorrentStateLive {
+         let up_speed_estimator = SpeedEstimator::default();
+ 
+         let have_bytes = paused.chunk_tracker.get_hns().have_bytes;
+-        // NanoTorrent patch 0021: a torrent that was already complete when it
+-        // started never completes a piece, so on_piece_completed is not going
+-        // to be the thing that releases the write handles init() opened.
+-        let already_finished = paused.chunk_tracker.get_hns().finished();
++        // NanoTorrent patch 0021: files that are already complete when the
++        // torrent starts - a resume, or a check that found their data - never
++        // complete a piece, so the per-file release in on_piece_completed would
++        // never reach them. ChunkTracker::new has already counted the bytes each
++        // file has, which is exactly the question being asked here.
++        let complete_at_start: Vec<usize> = paused
++            .chunk_tracker
++            .per_file_have_bytes()
++            .iter()
++            .zip(paused.metadata.file_infos.iter())
++            .enumerate()
++            .filter(|(_, (have, fi))| **have >= fi.len)
++            .map(|(idx, _)| idx)
++            .collect();
+         let lengths = *paused.chunk_tracker.get_lengths();
+ 
+         // TODO: make it configurable
+@@ -396,8 +406,8 @@ impl TorrentStateLive {
+             availability: RwLock::new(vec![0; lengths.total_pieces() as usize]),
+         });
+ 
+-        if already_finished {
+-            state.release_storage_write_access();
++        for idx in complete_at_start {
++            state.release_storage_write_access(Some(idx));
+         }
+ 
+         state.spawn(
+@@ -924,7 +934,7 @@ impl TorrentStateLive {
+         // business holding its files open for writing either. Resuming goes
+         // straight from Paused to Live without re-initializing the storage, so
+         // the first write after a resume is what reopens them read-write.
+-        if let Err(e) = files.release_write_access() {
++        if let Err(e) = files.release_write_access(None) {
+             warn!(
+                 id = self.shared.id, info_hash = ?self.shared.info_hash,
+                 "error releasing write access to the files: {e:#}"
+@@ -1031,6 +1041,13 @@ impl TorrentStateLive {
+         let locked = &mut **g;
+         let pieces = locked.get_pieces_mut()?;
+ 
++        // NanoTorrent patch 0021: the remaining count below used to be discarded
++        // under this comment. A file at zero remaining will not be written again,
++        // so it can stop being held open for writing - collected here and acted
++        // on after the lock, because releasing opens files and this is the hot
++        // path.
++        let mut completed_files = Vec::new();
++
+         // if we have all the pieces of the file, reopen it read only
+         for (idx, file_info) in self
+             .metadata
+@@ -1040,7 +1057,9 @@ impl TorrentStateLive {
+             .skip_while(|(_, fi)| !fi.piece_range.contains(&id.get()))
+             .take_while(|(_, fi)| fi.piece_range.contains(&id.get()))
+         {
+-            let _remaining = pieces.update_file_have_on_piece_completed(id, idx, file_info);
++            if pieces.update_file_have_on_piece_completed(id, idx, file_info) == 0 {
++                completed_files.push(idx);
++            }
+         }
+ 
+         self.streams
+@@ -1068,12 +1087,17 @@ impl TorrentStateLive {
+                 self.disconnect_all_peers_that_have_full_torrent();
+             }
+         }
+-        // NanoTorrent patch 0021: done downloading, so stop holding the files
+-        // open for writing - on windows that is what makes a finished download
+-        // unopenable by anything else. Outside the lock above: this opens files,
+-        // and the state lock is on the hot path.
++        // NanoTorrent patch 0021: outside the lock above, because this opens
++        // files and the state lock is on the hot path.
++        for idx in completed_files {
++            self.release_storage_write_access(Some(idx));
++        }
++        // Belt for the whole torrent. Every selected file was released above as
++        // it completed, so this is mostly redundant - it costs one sweep at a
++        // single event per torrent, and catches a file the per-file path somehow
++        // missed rather than leaving it write-open for the rest of the session.
+         if finished {
+-            self.release_storage_write_access();
++            self.release_storage_write_access(None);
+         }
+         Ok(())
+     }
+@@ -1081,10 +1105,10 @@ impl TorrentStateLive {
+     /// NanoTorrent patch 0021: see `TorrentStorage::release_write_access`.
+     /// Idempotent, and a failure is only worth a log line - the torrent is
+     /// perfectly usable with the write handles it already has.
+-    pub(crate) fn release_storage_write_access(&self) {
+-        if let Err(e) = self.files.release_write_access() {
++    pub(crate) fn release_storage_write_access(&self, file: Option<usize>) {
++        if let Err(e) = self.files.release_write_access(file) {
+             warn!(
+-                id = self.shared.id, info_hash = ?self.shared.info_hash,
++                id = self.shared.id, info_hash = ?self.shared.info_hash, ?file,
+                 "error releasing write access to the files: {e:#}"
+             );
+         }

@@ -111,6 +111,9 @@ impl<U: TorrentStorage> TorrentStorage for WriteThroughCacheStorage<U> {
         self.underlying.ensure_file_length(file_id, length)
     }
 
+    fn release_write_access(&self, file: Option<usize>) -> anyhow::Result<()> {
+        self.underlying.release_write_access(file)
+    }
     fn take(&self) -> anyhow::Result<Box<dyn TorrentStorage>> {
         let replacement_cache = LruCache::new(NonZeroUsize::new(1).context("unreachable")?);
         let lru = std::mem::replace(&mut *self.lru.write(), replacement_cache);

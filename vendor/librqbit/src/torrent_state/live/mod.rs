@@ -327,6 +327,20 @@ impl TorrentStateLive {
         let up_speed_estimator = SpeedEstimator::default();
 
         let have_bytes = paused.chunk_tracker.get_hns().have_bytes;
+        // NanoTorrent patch 0021: files that are already complete when the
+        // torrent starts - a resume, or a check that found their data - never
+        // complete a piece, so the per-file release in on_piece_completed would
+        // never reach them. ChunkTracker::new has already counted the bytes each
+        // file has, which is exactly the question being asked here.
+        let complete_at_start: Vec<usize> = paused
+            .chunk_tracker
+            .per_file_have_bytes()
+            .iter()
+            .zip(paused.metadata.file_infos.iter())
+            .enumerate()
+            .filter(|(_, (have, fi))| **have >= fi.len)
+            .map(|(idx, _)| idx)
+            .collect();
         let lengths = *paused.chunk_tracker.get_lengths();
 
         // TODO: make it configurable
@@ -391,6 +405,10 @@ impl TorrentStateLive {
             ratelimits,
             availability: RwLock::new(vec![0; lengths.total_pieces() as usize]),
         });
+
+        for idx in complete_at_start {
+            state.release_storage_write_access(Some(idx));
+        }
 
         state.spawn(
             debug_span!(parent: state.shared.span.clone(), "speed_estimator_updater"),
@@ -911,10 +929,22 @@ impl TorrentStateLive {
         // into_chunks() will requeue any in-flight pieces
         let chunk_tracker = piece_tracker.into_chunks();
 
+        let files = self.files.take()?;
+        // NanoTorrent patch 0021: a paused torrent writes nothing, so it has no
+        // business holding its files open for writing either. Resuming goes
+        // straight from Paused to Live without re-initializing the storage, so
+        // the first write after a resume is what reopens them read-write.
+        if let Err(e) = files.release_write_access(None) {
+            warn!(
+                id = self.shared.id, info_hash = ?self.shared.info_hash,
+                "error releasing write access to the files: {e:#}"
+            );
+        }
+
         Ok(TorrentStatePaused {
             shared: self.shared.clone(),
             metadata: self.metadata.clone(),
-            files: self.files.take()?,
+            files,
             chunk_tracker,
             streams: self.streams.clone(),
             // It was live, so its files are open. Resuming it must not
@@ -1011,6 +1041,13 @@ impl TorrentStateLive {
         let locked = &mut **g;
         let pieces = locked.get_pieces_mut()?;
 
+        // NanoTorrent patch 0021: the remaining count below used to be discarded
+        // under this comment. A file at zero remaining will not be written again,
+        // so it can stop being held open for writing - collected here and acted
+        // on after the lock, because releasing opens files and this is the hot
+        // path.
+        let mut completed_files = Vec::new();
+
         // if we have all the pieces of the file, reopen it read only
         for (idx, file_info) in self
             .metadata
@@ -1020,7 +1057,9 @@ impl TorrentStateLive {
             .skip_while(|(_, fi)| !fi.piece_range.contains(&id.get()))
             .take_while(|(_, fi)| fi.piece_range.contains(&id.get()))
         {
-            let _remaining = pieces.update_file_have_on_piece_completed(id, idx, file_info);
+            if pieces.update_file_have_on_piece_completed(id, idx, file_info) == 0 {
+                completed_files.push(idx);
+            }
         }
 
         self.streams
@@ -1032,7 +1071,8 @@ impl TorrentStateLive {
         }
 
         let chunks = locked.get_chunks()?;
-        if chunks.is_finished() {
+        let finished = chunks.is_finished();
+        if finished {
             if chunks.get_selected_pieces()[id.get_usize()] {
                 locked.try_flush_bitv(&self.shared, false);
                 info!(id=self.shared.id, info_hash=?self.shared.info_hash, "torrent finished downloading");
@@ -1047,7 +1087,31 @@ impl TorrentStateLive {
                 self.disconnect_all_peers_that_have_full_torrent();
             }
         }
+        // NanoTorrent patch 0021: outside the lock above, because this opens
+        // files and the state lock is on the hot path.
+        for idx in completed_files {
+            self.release_storage_write_access(Some(idx));
+        }
+        // Belt for the whole torrent. Every selected file was released above as
+        // it completed, so this is mostly redundant - it costs one sweep at a
+        // single event per torrent, and catches a file the per-file path somehow
+        // missed rather than leaving it write-open for the rest of the session.
+        if finished {
+            self.release_storage_write_access(None);
+        }
         Ok(())
+    }
+
+    /// NanoTorrent patch 0021: see `TorrentStorage::release_write_access`.
+    /// Idempotent, and a failure is only worth a log line - the torrent is
+    /// perfectly usable with the write handles it already has.
+    pub(crate) fn release_storage_write_access(&self, file: Option<usize>) {
+        if let Err(e) = self.files.release_write_access(file) {
+            warn!(
+                id = self.shared.id, info_hash = ?self.shared.info_hash, ?file,
+                "error releasing write access to the files: {e:#}"
+            );
+        }
     }
 
     fn disconnect_all_peers_that_have_full_torrent(&self) {

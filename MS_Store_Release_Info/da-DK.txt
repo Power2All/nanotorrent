@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.7 - Microsoft Store listing
+NanoTorrent 0.3.8 - Microsoft Store listing
 Language: Dansk (Danmark) - Partner Center: Danish (Denmark) (da-DK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -22,26 +22,17 @@ Du kan også selv oprette torrents, herunder BitTorrent v2 og hybride.
 
 Modparternes landeflag kommer fra en database, der ligger på din egen computer. Ingen adresse slås nogensinde op over netværket.
 
-Fås på 41 sprog, med lyst og mørkt tema, der følger Windows.
+Fås på 76 sprog, med lyst og mørkt tema, der følger Windows.
 
 NanoTorrent er en Rust-portering af PicoTorrent af Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 
-Version 0.3.7
+Version 0.3.8
 
-- Delingsgrænser: stop med at seede ved et forhold, efter en fastsat tid eller det, der indtræffer først, og sæt derefter torrenten på pause eller fjern den.
-- Alternative hastighedsgrænser, efter en tidsplan eller slået til i hånden fra værktøjslinjen.
-- Køorden fra værktøjslinjen, prioriteter pr. fil og tags.
-- En overvåget mappe, der tilføjer enhver .torrent, der lægges i den.
-- Tilføj, rediger og fjern en torrents trackere, i annonceringsniveauer.
-- Indstillingsdatabasen kan krypteres, uden en adgangskode at taste, og dine indstillinger eksporteres og importeres som JSON.
-- Webgrænsefladen får køorden, hastighedskontakten og et panel pr. torrent til filer, trackere, tags og grænser.
-- Dele, som få peers har, hentes først, og BitTorrent v2-torrents kan nu seedes til andre.
-- Magnetlinks åbner nu vinduet Tilføj torrent ligesom .torrent-filer, medmindre du har valgt at springe det over.
-- En torrent med flere filer lægges i en mappe med dens eget navn i stedet for løst i destinationsmappen.
-- Lavere processor- og hukommelsesforbrug, mens vinduet er åbent.
+- 35 flere sprog, 76 i alt, tilføjet i Europa, Sydasien, Sydøstasien, Centralasien og Afrika.
+- Færdige downloads er ikke længere låst. En torrent, der var færdig eller sat på pause, holdt sine filer åbne til skrivning, og på Windows er det alene nok til at forhindre et andet program i at åbne dem: et arkiv eller en video i downloadmappen kunne ikke åbnes, før NanoTorrent blev lukket. Filer genåbnes nu skrivebeskyttet, så snart der ikke skal skrives mere, og skriveadgang tages automatisk tilbage, hvis den bliver nødvendig igen.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
@@ -57,7 +48,7 @@ Fuld kommandolinje til scripts og maskiner uden skærm
 Mærkater og filtre holder styr på en lang liste
 Modparternes landeflag slås op på din egen computer
 Lyst og mørkt tema, der følger Windows
-Fås på 41 sprog
+Fås på 76 sprog
 Open source under MIT-licensen
 
 

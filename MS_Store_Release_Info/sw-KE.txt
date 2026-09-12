@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Kiswahili (Kenya) - Partner Center: Swahili (Kenya) (sw-KE)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > sw-KE. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent ni kiteja cha BitTorrent kidogo na cha haraka ambacho hakikuzuii njia yako.
+
+Ni programu halisi iliyoandikwa kwa Rust, si ukurasa wa wavuti ndani ya dirisha. Huanza mara moja na hutumia sehemu ndogo tu ya kumbukumbu ambayo kiteja cha kisasa cha kawaida hudai.
+
+Hakuna akaunti. Hakuna matangazo. Hakuna telemetri, hakuna uchanganuzi, hakuna ripoti za hitilafu. Hakuna kinachokusanywa kukuhusu au kuhusu unachopakua. NanoTorrent ni chanzo huria chini ya Leseni ya MIT, kwa hivyo hilo ni jambo unaloweza kuthibitisha, si jambo unalopaswa kuamini.
+
+Ongeza torrent kutoka faili au viungo vya sumaku, viangalie katika orodha unayoweza kupanga, kuweka lebo na kuchuja, na fungua kidirisha cha maelezo kwa faili, wenzi na vifuatiliaji. DHT, kubadilishana wenzi, viwango vingi vya vifuatiliaji, vifuatiliaji vya UDP na torrent za kibinafsi zote zinaungwa mkono, na miunganisho inaweza kusimbwa kwa njia fiche, ikikataa chochote kisichosimbwa ikiwa unataka.
+
+Kuna njia zaidi ya moja ya kuiendesha. Dirisha la eneo-kazi ni njia iliyo dhahiri. Kiolesura cha wavuti cha hiari, kilichozimwa kwa chaguo-msingi na kinacholindwa na nenosiri, hukuruhusu kudhibiti kiteja kinachoendeshwa kutoka kivinjari kwenye mashine nyingine. Na kila mpangilio unapatikana kutoka kwa mstari wa amri, ambayo hufanya NanoTorrent iwe ya kuandikiwa hati na kutumika kwenye mashine isiyo na skrini.
+
+Unaweza kuunda torrent pia, ikiwemo BitTorrent v2 na mseto.
+
+Bendera za nchi za wenzi hutoka kwenye hifadhidata iliyowekwa kwenye kompyuta yako mwenyewe. Hakuna anwani inayotafutwa mtandaoni kamwe.
+
+Inapatikana katika lugha 76, na mandhari nyepesi na nyeusi zinazofuata Windows.
+
+NanoTorrent ni toleo la Rust la PicoTorrent ya Viktor Elofsson.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+Toleo 0.3.8
+
+- Lugha 35 zaidi, 76 kwa jumla, zikiongezwa kote Ulaya, Asia Kusini, Asia ya Kusini-Mashariki, Asia ya Kati na Afrika.
+- Upakuaji uliokamilika haubaki umefungwa tena. Torrent iliyokamilika, au iliyosimamishwa, iliendelea kuweka faili zake wazi kwa kuandika, na kwenye Windows hilo peke yake linatosha kuzuia programu nyingine kuzifungua: kumbukumbu au video katika folda ya upakuaji haikuweza kufunguliwa hadi NanoTorrent ifungwe. Faili sasa zinafunguliwa tena kwa kusoma tu mara tu hakuna kitu kitakachoandikwa, na ruhusa ya kuandika inachukuliwa tena kiotomatiki ikihitajika.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Programu halisi ya Rust: huanza haraka na ni nyepesi kwa kumbukumbu
+Hakuna matangazo, hakuna telemetri, hakuna akaunti, kamwe
+Viungo vya sumaku na faili za .torrent
+DHT, kubadilishana wenzi, viwango vya vifuatiliaji na vifuatiliaji vya UDP
+Usimbaji fiche wa miunganisho (MSE/PE), wa lazima ikiwa unataka
+Unda torrent, ikiwemo BitTorrent v2 na mseto
+Usaidizi wa proksi ya SOCKS na HTTP
+Kiolesura cha wavuti cha hiari kinacholindwa na nenosiri kwa udhibiti wa mbali
+Mstari kamili wa amri kwa hati na mashine zisizo na skrini
+Lebo na vichujio kuweka orodha ndefu nadhifu
+Bendera za nchi za wenzi hutafutwa kwenye kompyuta yako mwenyewe
+Mandhari nyepesi na nyeusi zinazofuata Windows
+Inapatikana katika lugha 76
+Chanzo huria chini ya Leseni ya MIT
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+kiteja cha torrent
+kiungo cha sumaku
+p2p
+kushiriki faili
+kidhibiti cha upakuaji
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. NanoTorrent ni programu ya chanzo huria, iliyotolewa chini ya Leseni ya MIT.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent ni programu huru na ya chanzo huria, iliyotolewa chini ya Leseni ya MIT. Maandishi kamili ya leseni na msimbo wote wa chanzo unapatikana kwenye https://github.com/Power2All/nanotorrent
+
+Programu hutolewa "kama ilivyo", bila dhamana ya aina yoyote, ya wazi au ya kudokezwa. Vijenzi vya wahusika wengine vinabakia na leseni zao, ambazo zimeorodheshwa katika hazina ya chanzo.
+
+NanoTorrent ni chombo cha kuhamisha faili cha matumizi ya jumla. Haihifadhi, haiorodheshi, haitoi, haipendekezi na haiidhinishi maudhui yoyote. Ni jukumu lako kuhakikisha kuwa matumizi yako yanafuata sheria ya mahali unapoishi na haki za wenye hakimiliki.
+
+NanoTorrent hutengenezwa kwa kiasi kikubwa kwa msaada wa akili bandia chini ya ukaguzi wa mwanadamu, kama ilivyotangazwa katika AI-DECLARATION.md katika hazina ya chanzo.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All

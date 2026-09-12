@@ -1,0 +1,84 @@
+================================================================================
+NanoTorrent 0.3.8 - Microsoft Store listing
+Language: Euskara (Espainia) - Partner Center: Basque (Spain) (eu-ES)
+================================================================================
+Paste each block into the matching field in Partner Center, under
+Store listings > eu-ES. The character limits shown are Microsoft's.
+
+
+--- DESCRIPTION (max 10,000 characters) ----------------------------------------
+
+NanoTorrent BitTorrent bezero txiki eta azkar bat da, bidean traba egiten ez dizuna.
+
+Rust-en idatzitako aplikazio natiboa da, ez leiho bateko web orri bat. Berehala abiarazten da eta bezero moderno tipiko batek behar duen memoriaren zati txiki bat erabiltzen du.
+
+Konturik ez. Iragarkirik ez. Telemetriarik ez, analitikarik ez, kraskadura-txostenik ez. Ez da ezer biltzen zutaz, ezta deskargatzen duzunaz ere. NanoTorrent kode irekikoa da MIT lizentziapean, beraz egiazta dezakezun zerbait da, ez fedez onartu beharreko zerbait.
+
+Gehitu torrentak fitxategietatik edo magnet esteketatik, ikusi itzazu ordenatu, etiketatu eta iragazi dezakezun zerrenda batean, eta ireki xehetasunen panela fitxategi, kide eta aztarnarientzat. DHT, kideen trukea, hainbat aztarnari maila, UDP aztarnariak eta torrent pribatuak onartzen dira, eta konexioak zifra daitezke, nahi izanez gero zifratu gabeko oro ukatuz.
+
+Modu bat baino gehiago dago hura gidatzeko. Mahaigaineko leihoa da nabaria. Aukerako web interfazeak, lehenetsita itzalita eta pasahitzez babestuta, martxan dagoen bezero bat beste makina bateko nabigatzaile batetik kontrolatzeko aukera ematen dizu. Eta ezarpen guztiak komando-lerrotik eskuragarri daude, eta horrek NanoTorrent script-garria eta pantailarik gabeko makina batean erabilgarria egiten du.
+
+Torrentak ere sor ditzakezu, BitTorrent v2 eta hibridoak barne.
+
+Kideen herrialdeen banderak zure ordenagailuan gordetako datu-base batetik datoz. Inoiz ez da helbiderik sarearen bidez bilatzen.
+
+76 hizkuntzatan eskuragarri, Windows jarraitzen duten gai argi eta ilunekin.
+
+NanoTorrent Viktor Elofsson-en PicoTorrent-en Rust portua da.
+
+
+--- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+
+0.3.8 bertsioa
+
+- 35 hizkuntza gehiago, 76 guztira, Europan, Hego Asian, Hego-ekialdeko Asian, Erdialdeko Asian eta Afrikan gehituta.
+- Amaitutako deskargak ez dira jada blokeatuta geratzen. Amaituta edo pausatuta zegoen torrent batek bere fitxategiak idazteko irekita mantentzen zituen, eta Windows-en hori bera nahikoa da beste programa batek irekitzea eragozteko: deskarga-karpetako artxibo edo bideo bat ezin zen ireki NanoTorrent itxi arte. Orain fitxategiak irakurtzeko soilik irekitzen dira berriro, ezer idatzi behar ez den bezain laster, eta idazteko baimena automatikoki berreskuratzen da berriro behar izanez gero.
+
+--- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
+
+Rust aplikazio natiboa: azkar abiarazten da eta memoria gutxi darabil
+Iragarkirik ez, telemetriarik ez, konturik ez, inoiz
+Magnet estekak eta .torrent fitxategiak
+DHT, kideen trukea, aztarnari mailak eta UDP aztarnariak
+Konexioen zifratzea (MSE/PE), nahi izanez gero derrigorrezkoa
+Sortu torrentak, BitTorrent v2 eta hibridoak barne
+SOCKS eta HTTP proxy euskarria
+Aukerako web interfazea pasahitzez babestua urrutiko kontrolerako
+Komando-lerro osoa script-etarako eta pantailarik gabeko makinetarako
+Etiketak eta iragazkiak zerrenda luzea ordenatuta edukitzeko
+Kideen herrialdeen banderak zure ordenagailuan bilatuta
+Windows jarraitzen duten gai argi eta ilunak
+76 hizkuntzatan eskuragarri
+Kode irekia MIT lizentziapean
+
+
+--- SEARCH TERMS (up to 7 terms, max 30 characters each; one per line) ---------
+
+torrent
+bittorrent
+torrent bezeroa
+magnet esteka
+p2p
+fitxategi partekatzea
+deskarga kudeatzailea
+
+
+--- COPYRIGHT AND TRADEMARK INFO (max 200 characters) --------------------------
+
+(c) 2026 Power2All. NanoTorrent kode irekiko softwarea da, MIT lizentziapean argitaratua.
+
+
+--- ADDITIONAL LICENSE TERMS (max 10,000 characters) ---------------------------
+
+NanoTorrent software librea eta kode irekikoa da, MIT lizentziapean argitaratua. Lizentziaren testu osoa eta iturburu-kode osoa hemen daude eskuragarri: https://github.com/Power2All/nanotorrent
+
+Softwarea "dagoen bezala" ematen da, inolako bermerik gabe, ez esplizitu ez inplizitu. Hirugarrenen osagaiek beren lizentziak mantentzen dituzte, eta iturburu-biltegian zerrendatuta daude.
+
+NanoTorrent helburu orokorreko fitxategi-transferentzia tresna bat da. Ez du inolako edukirik ostatatzen, indexatzen, hornitzen, gomendatzen ez babesten. Zure erantzukizuna da ziurtatzea zure erabilera bat datorrela bizi zaren lekuko legearekin eta egile-eskubideen titularren eskubideekin.
+
+NanoTorrent nagusiki adimen artifizialaren laguntzarekin garatzen da giza gainbegiratzepean, iturburu-biltegiko AI-DECLARATION.md fitxategian adierazi bezala.
+
+
+--- DEVELOPED BY (max 255 characters) ------------------------------------------
+
+Power2All
