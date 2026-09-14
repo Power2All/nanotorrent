@@ -70,6 +70,15 @@ export struct FileEntryRow {
     path: string,
     /// Whether this folder is showing its contents. Always false on a file row.
     expanded: bool,
+    /// Which ancestor columns carry a guide line through this row: bit `l` set
+    /// means the folder at level `l` has entries below this one. Read a bit at
+    /// a time by TreeGuides - the markup has no bit operators.
+    guides: int,
+    /// Last entry in its folder, so its connector is an elbow, not a tee.
+    last: bool,
+    /// Which icon to draw, from the file's extension - see FileKind in
+    /// mod.rs, which owns the numbering. 0 on a folder row.
+    kind: int,
 }
 
 export struct PeerEntryRow {
@@ -183,6 +192,297 @@ component DCell inherits Rectangle {
         font-size: 12px;
         font-weight: root.bold ? 700 : 400;
         horizontal-alignment: root.align;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+/// A folder, for a tree row that holds others.
+component FolderGlyph inherits Rectangle {
+    in property <brush> ink;
+    width: 16px;
+    height: 16px;
+    // The tab along the back edge, then the body in front of it.
+    Rectangle { x: 1px; y: 3px; width: 7px; height: 2.5px; border-radius: 1px; background: root.ink; }
+    Rectangle {
+        x: 1px; y: 5px; width: 14px; height: 8.5px;
+        border-radius: 1.5px;
+        border-width: 1.5px;
+        border-color: root.ink;
+    }
+}
+
+/// The fold marker on a folder row.
+///
+/// Drawn rather than typed. The obvious "▸" and "▾" (U+25B8, U+25BE) are not
+/// in Segoe UI - they come back from the shaper as the empty .notdef box, so
+/// the row looks as though it has no marker at all. A Path has no such
+/// opinion, and it is what every other icon here already does.
+component ChevronGlyph inherits Rectangle {
+    in property <brush> ink;
+    in property <bool> down;
+    width: 14px;
+    height: 14px;
+    Path {
+        width: 14px;
+        height: 14px;
+        viewbox-width: 14;
+        viewbox-height: 14;
+        fill: root.ink;
+        commands: root.down
+            ? "M 3.5 5.5 L 10.5 5.5 L 7 10 Z"
+            : "M 5.5 3.5 L 10 7 L 5.5 10.5 Z";
+    }
+}
+
+/// A leaf's icon, picked from its extension.
+///
+/// `kind` is FileKind in mod.rs, which owns the numbering - the two must be
+/// changed together. Everything is drawn on a 16x16 grid rather than set in a
+/// font, both because the shapes are not in one and because a Path is sharp at
+/// any scaling.
+component FileGlyph inherits Rectangle {
+    in property <brush> ink;
+    in property <int> kind;
+    width: 16px;
+    height: 16px;
+
+    // 0 generic and 6 document share a sheet with a folded corner; the
+    // document gets lines of text on top of it.
+    if root.kind == 0 || root.kind == 6: Rectangle {
+        width: 16px; height: 16px;
+        Path {
+            width: 16px; height: 16px; viewbox-width: 16; viewbox-height: 16;
+            stroke: root.ink; stroke-width: 1.5px;
+            commands: "M 3.5 2 L 9.5 2 L 12.5 5 L 12.5 14 L 3.5 14 Z";
+        }
+        Path {
+            width: 16px; height: 16px; viewbox-width: 16; viewbox-height: 16;
+            stroke: root.ink; stroke-width: 1.5px;
+            commands: "M 9.5 2 L 9.5 5 L 12.5 5";
+        }
+    }
+    if root.kind == 6: Rectangle {
+        width: 16px; height: 16px;
+        Rectangle { x: 5.4px; y: 7.4px; width: 5.4px; height: 1.2px; background: root.ink; }
+        Rectangle { x: 5.4px; y: 10px; width: 5.4px; height: 1.2px; background: root.ink; }
+    }
+
+    // 1 video: a screen with a play mark.
+    if root.kind == 1: Rectangle {
+        width: 16px; height: 16px;
+        Rectangle {
+            x: 2px; y: 3.5px; width: 12px; height: 9px;
+            border-radius: 2px; border-width: 1.5px; border-color: root.ink;
+        }
+        Path {
+            width: 16px; height: 16px; viewbox-width: 16; viewbox-height: 16;
+            fill: root.ink;
+            commands: "M 6.3 6 L 10.3 8 L 6.3 10 Z";
+        }
+    }
+
+    // 2 audio: a note.
+    if root.kind == 2: Rectangle {
+        width: 16px; height: 16px;
+        Rectangle { x: 2.9px; y: 9.1px; width: 5px; height: 5px; border-radius: 2.5px; background: root.ink; }
+        Rectangle { x: 7.2px; y: 3.2px; width: 1.5px; height: 8.4px; background: root.ink; }
+        Path {
+            width: 16px; height: 16px; viewbox-width: 16; viewbox-height: 16;
+            fill: root.ink;
+            commands: "M 7.2 3.2 L 12.4 4.6 L 12.4 6.4 L 7.2 5 Z";
+        }
+    }
+
+    // 3 image: a frame with a sun over hills.
+    if root.kind == 3: Rectangle {
+        width: 16px; height: 16px;
+        Rectangle {
+            x: 2px; y: 3.5px; width: 12px; height: 9px;
+            border-radius: 2px; border-width: 1.5px; border-color: root.ink;
+        }
+        Rectangle { x: 4.3px; y: 5.3px; width: 2.6px; height: 2.6px; border-radius: 1.3px; background: root.ink; }
+        Path {
+            width: 16px; height: 16px; viewbox-width: 16; viewbox-height: 16;
+            fill: root.ink;
+            commands: "M 3.2 12 L 6.6 8.2 L 8.8 10.4 L 10.6 8.6 L 13 12 Z";
+        }
+    }
+
+    // 4 archive: a lidded box with a clasp.
+    if root.kind == 4: Rectangle {
+        width: 16px; height: 16px;
+        Rectangle {
+            x: 2.5px; y: 2.5px; width: 11px; height: 11px;
+            border-radius: 1.5px; border-width: 1.5px; border-color: root.ink;
+        }
+        Rectangle { x: 2.5px; y: 5.85px; width: 11px; height: 1.5px; background: root.ink; }
+        Rectangle { x: 6.7px; y: 5.1px; width: 2.6px; height: 3.2px; background: root.ink; }
+    }
+
+    // 5 disc: a platter with a hub.
+    if root.kind == 5: Rectangle {
+        width: 16px; height: 16px;
+        Rectangle {
+            x: 2.2px; y: 2.2px; width: 11.6px; height: 11.6px;
+            border-radius: 5.8px; border-width: 1.5px; border-color: root.ink;
+        }
+        Rectangle { x: 6.3px; y: 6.3px; width: 3.4px; height: 3.4px; border-radius: 1.7px; background: root.ink; }
+    }
+
+    // 7 subtitle: a caption box.
+    if root.kind == 7: Rectangle {
+        width: 16px; height: 16px;
+        Rectangle {
+            x: 2px; y: 3.5px; width: 12px; height: 9px;
+            border-radius: 2px; border-width: 1.5px; border-color: root.ink;
+        }
+        Rectangle { x: 4.2px; y: 9px; width: 5.2px; height: 1.4px; background: root.ink; }
+        Rectangle { x: 10.2px; y: 9px; width: 2.4px; height: 1.4px; background: root.ink; }
+    }
+
+    // 8 program: a window with a title bar.
+    if root.kind == 8: Rectangle {
+        width: 16px; height: 16px;
+        Rectangle {
+            x: 2px; y: 3px; width: 12px; height: 10px;
+            border-radius: 2px; border-width: 1.5px; border-color: root.ink;
+        }
+        Rectangle { x: 2px; y: 3px; width: 12px; height: 3.2px; background: root.ink; }
+    }
+
+    // 9 code: angle brackets.
+    if root.kind == 9: Rectangle {
+        width: 16px; height: 16px;
+        Path {
+            width: 16px; height: 16px; viewbox-width: 16; viewbox-height: 16;
+            stroke: root.ink; stroke-width: 1.5px;
+            commands: "M 6.2 3.6 L 2.6 8 L 6.2 12.4";
+        }
+        Path {
+            width: 16px; height: 16px; viewbox-width: 16; viewbox-height: 16;
+            stroke: root.ink; stroke-width: 1.5px;
+            commands: "M 9.8 3.6 L 13.4 8 L 9.8 12.4";
+        }
+    }
+}
+
+/// The connector gutter down the left of a file-tree row.
+///
+/// One 16px column per ancestor level. The columns to the left carry a
+/// straight line where that folder still has entries below this row; the
+/// column immediately to the left carries this row's own elbow.
+///
+/// Slint has no tree widget and no bit operators, so the guide mask arrives as
+/// an int and each column reads its own bit back out with a divide.
+component TreeGuides inherits Rectangle {
+    in property <int> depth;
+    in property <int> guides;
+    in property <bool> last;
+    in property <brush> ink;
+    width: root.depth * 16px;
+
+    for l in root.depth: Rectangle {
+        x: l * 16px;
+        width: 16px;
+        height: parent.height;
+
+        // An ancestor's line, running the full height of the row.
+        if l < root.depth - 1
+            && Math.mod(Math.floor(root.guides / Math.pow(2, l)), 2) == 1: Rectangle {
+            x: 7px; width: 1px;
+            y: 0px; height: parent.height;
+            background: root.ink;
+        }
+
+        // This row's own connector, drawn in its parent's column: down from
+        // the row above, across to the glyph, and on down to the next sibling
+        // unless this is the last of them.
+        if l == root.depth - 1: Rectangle {
+            Rectangle {
+                x: 7px; width: 1px;
+                y: 0px; height: parent.height / 2;
+                background: root.ink;
+            }
+            if !root.last: Rectangle {
+                x: 7px; width: 1px;
+                y: parent.height / 2; height: parent.height / 2;
+                background: root.ink;
+            }
+            Rectangle {
+                x: 7px; width: 9px;
+                y: parent.height / 2; height: 1px;
+                background: root.ink;
+            }
+        }
+    }
+}
+
+/// A file-tree row's name cell: connector gutter, expander, icon, then the
+/// name itself.
+///
+/// Width is left to the caller - the details Files tab gives it a fixed column,
+/// the Add dialog lets it stretch - so this sets no width of its own and lays
+/// its parts out in absolute x, the way DCell does.
+component TreeNameCell inherits Rectangle {
+    in property <int> depth;
+    in property <int> guides;
+    in property <bool> last;
+    /// Folder rows get the expander and the folder glyph; files get neither,
+    /// but the expander's slot is still reserved so names line up whether or
+    /// not a row's siblings happen to fold.
+    in property <bool> folder;
+    in property <bool> expanded;
+    /// Which file icon to draw - see FileKind in mod.rs. Ignored on a folder.
+    in property <int> kind;
+    in property <string> text;
+    in property <brush> fg: Palette.foreground;
+
+    // Guides are structure rather than content, so they sit well back from the
+    // text. Mixed toward the background rather than a fixed grey, so they read
+    // the same on both palettes - the trick DCell's `dim` uses.
+    property <brush> guide-ink: root.fg.mix(Palette.background, 0.55);
+    property <length> gutter: root.depth * 16px;
+    // 14px expander + 16px glyph, then a gap before the name.
+    property <length> text-x: 6px + root.gutter + 34px;
+
+    TreeGuides {
+        x: 6px;
+        y: 0px;
+        height: parent.height;
+        depth: root.depth;
+        guides: root.guides;
+        last: root.last;
+        ink: root.guide-ink;
+    }
+
+    if root.folder: ChevronGlyph {
+        x: 6px + root.gutter;
+        y: (parent.height - 14px) / 2;
+        down: root.expanded;
+        ink: root.fg;
+    }
+
+    if root.folder: FolderGlyph {
+        x: 6px + root.gutter + 14px;
+        y: (parent.height - 16px) / 2;
+        ink: root.fg;
+    }
+    if !root.folder: FileGlyph {
+        x: 6px + root.gutter + 14px;
+        y: (parent.height - 16px) / 2;
+        kind: root.kind;
+        ink: root.fg.mix(Palette.background, 0.25);
+    }
+
+    Text {
+        x: root.text-x;
+        width: root.width - root.text-x - 6px;
+        height: parent.height;
+        text: root.text;
+        color: root.fg;
+        font-size: 12px;
+        font-weight: root.folder ? 700 : 400;
         vertical-alignment: center;
         overflow: elide;
     }
@@ -2497,21 +2797,19 @@ export component MainWindow inherits Window {
                                         }
                                     }
                                     HorizontalLayout {
-                                        // Indentation is the tree: Slint has no
-                                        // tree widget, so depth becomes an
-                                        // indent inside the name cell - it used
-                                        // to be the row layout's padding, which
-                                        // a fixed-width column cannot carry.
-                                        DCell {
-                                            w: DCols.files[0];
-                                            // Which way the next click goes.
-                                            // Glyphs, not words - nothing here
-                                            // needs translating.
-                                            text: f.index < 0
-                                                ? (f.expanded ? "▾ " : "▸ ") + f.name
-                                                : f.name;
-                                            bold: f.index < 0;
-                                            indent: f.depth * 16px;
+                                        // The tree lives inside the name cell,
+                                        // not in the row layout's padding,
+                                        // which a fixed-width column cannot
+                                        // carry.
+                                        TreeNameCell {
+                                            width: DCols.files[0];
+                                            depth: f.depth;
+                                            guides: f.guides;
+                                            last: f.last;
+                                            folder: f.index < 0;
+                                            expanded: f.expanded;
+                                            kind: f.kind;
+                                            text: f.name;
                                             fg: i == root.file-row
                                                 ? Palette.selection-foreground
                                                 : Palette.foreground;
@@ -3261,6 +3559,14 @@ export struct FileRow {
     path: string,
     /// Whether this folder is showing its contents. Always false on a file row.
     expanded: bool,
+    /// See FileEntryRow: which ancestor columns carry a guide line through this
+    /// row, one bit per level.
+    guides: int,
+    /// Last entry in its folder, so its connector is an elbow, not a tee.
+    last: bool,
+    /// Which icon to draw, from the file's extension - see FileKind in
+    /// mod.rs, which owns the numbering. 0 on a folder row.
+    kind: int,
 }
 
 // Add-torrent dialog: parsed file list, save path, label and start toggle.
@@ -3450,9 +3756,11 @@ export component AddTorrentDialog inherits Window {
                             clicked => { root.toggle-folder(f.path); }
                         }
                         HorizontalLayout {
-                            // Depth becomes indentation, the same tree the
-                            // details Files tab draws.
-                            padding-left: 8px + f.depth * 16px;
+                            // The indent belongs to the name cell, not to the
+                            // row: indenting the row used to carry the include
+                            // checkboxes right along with it, so a nested file
+                            // put its box in a column of its own.
+                            padding-left: 8px;
                             padding-right: 8px;
                             spacing: 12px;
                             // Folder rows have nothing to include: their
@@ -3465,12 +3773,15 @@ export component AddTorrentDialog inherits Window {
                                 toggled => { root.toggle-file(f.index); }
                             }
                             if f.index < 0: Rectangle { width: 70px; }
-                            DataText {
-                                text: f.index < 0
-                                    ? (f.expanded ? "▾ " : "▸ ") + f.name
-                                    : f.name;
+                            TreeNameCell {
                                 horizontal-stretch: 1;
-                                bold: f.index < 0;
+                                depth: f.depth;
+                                guides: f.guides;
+                                last: f.last;
+                                folder: f.index < 0;
+                                expanded: f.expanded;
+                                kind: f.kind;
+                                text: f.name;
                             }
                             DataText { text: f.size; width: 100px; align: right; }
                         }

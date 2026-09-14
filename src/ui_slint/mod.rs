@@ -1808,6 +1808,20 @@ struct TreeRow<'a> {
     /// and because the details panel rebuilds this list once a second, so a
     /// folder has to be recognisable across a rebuild to stay open.
     path: String,
+    /// Which ancestor columns still have a guide line running through this
+    /// row: bit `l` set means the folder at level `l` has more entries below
+    /// this one, so its line carries on down past it.
+    ///
+    /// A bitmask rather than a `Vec<bool>` per row because this list is
+    /// rebuilt once a second and handed straight to the markup, which has no
+    /// bit operators and reads it back with a divide - one int marshals far
+    /// more cheaply than a nested model would.
+    ///
+    /// Filled by [`connectors`], not by the tree walk.
+    guides: u32,
+    /// Last entry in its folder, so its connector is an elbow rather than a
+    /// tee and the guide stops at it. Filled by [`connectors`].
+    last: bool,
 }
 
 /// Group torrent file paths into a directory tree, flattened back out into
@@ -1840,6 +1854,8 @@ fn file_tree<'a>(paths: impl Iterator<Item = &'a str>) -> Vec<TreeRow<'a>> {
                 depth,
                 name,
                 path: dir[..=depth].join("/"),
+                guides: 0,
+                last: false,
             });
         }
         for (index, leaf) in entries {
@@ -1848,11 +1864,129 @@ fn file_tree<'a>(paths: impl Iterator<Item = &'a str>) -> Vec<TreeRow<'a>> {
                 depth: dir.len(),
                 name: leaf,
                 path: String::new(),
+                guides: 0,
+                last: false,
             });
         }
         open_dirs = dir;
     }
+    connectors(&mut rows);
     rows
+}
+
+/// Which icon a file row draws, chosen from its extension.
+///
+/// Kept in step with `FileGlyph` in app.slint, which draws one shape per
+/// value. The matching lives here rather than in the markup because Slint has
+/// no string handling worth the name - the answer crosses as an int, and these
+/// discriminants are that int, so they must not be renumbered on one side
+/// only.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(i32)]
+enum FileKind {
+    Generic = 0,
+    Video = 1,
+    Audio = 2,
+    Image = 3,
+    Archive = 4,
+    Disc = 5,
+    Document = 6,
+    Subtitle = 7,
+    Program = 8,
+    Code = 9,
+}
+
+/// Pick a file's icon from the end of its name.
+///
+/// A name with no dot, or a dotfile like `.gitignore` whose whole name is the
+/// "extension", falls through to [`FileKind::Generic`] rather than being
+/// matched on something that is not a type.
+fn file_kind(name: &str) -> FileKind {
+    let Some((stem, ext)) = name.rsplit_once('.') else {
+        return FileKind::Generic;
+    };
+    if stem.is_empty() {
+        return FileKind::Generic;
+    }
+    match ext.to_ascii_lowercase().as_str() {
+        // `ts` is a transport stream here, not TypeScript: this list is read
+        // against what actually turns up inside torrents.
+        "mkv" | "mp4" | "avi" | "mov" | "wmv" | "m4v" | "mpg" | "mpeg" | "flv" | "webm" | "ts"
+        | "m2ts" | "mts" | "vob" | "ogv" | "divx" | "rm" | "rmvb" | "asf" | "3gp" => {
+            FileKind::Video
+        }
+        "mp3" | "flac" | "wav" | "aac" | "ogg" | "oga" | "opus" | "m4a" | "wma" | "alac" | "ape"
+        | "aiff" | "aif" | "mid" | "midi" | "mka" | "wv" | "dsf" => FileKind::Audio,
+        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" | "tif" | "tiff" | "svg" | "heic"
+        | "avif" | "jxl" | "psd" => FileKind::Image,
+        "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" | "zst" | "tgz" | "tbz" | "cab"
+        | "arj" | "ace" | "lzh" | "r00" | "r01" => FileKind::Archive,
+        "iso" | "img" | "bin" | "cue" | "mdf" | "mds" | "nrg" | "ccd" => FileKind::Disc,
+        "pdf" | "epub" | "mobi" | "azw" | "azw3" | "djvu" | "cbz" | "cbr" | "doc" | "docx"
+        | "odt" | "rtf" | "txt" | "md" | "nfo" | "log" | "xls" | "xlsx" | "ods" | "ppt"
+        | "pptx" | "odp" => FileKind::Document,
+        "srt" | "sub" | "idx" | "ass" | "ssa" | "vtt" | "sup" | "smi" => FileKind::Subtitle,
+        "exe" | "msi" | "msix" | "appx" | "bat" | "cmd" | "ps1" | "sh" | "apk" | "dmg" | "deb"
+        | "rpm" | "appimage" | "jar" => FileKind::Program,
+        "json" | "xml" | "html" | "htm" | "css" | "js" | "py" | "rs" | "c" | "cpp" | "cc" | "h"
+        | "hpp" | "java" | "cs" | "go" | "rb" | "php" | "sql" | "yml" | "yaml" | "toml" | "ini"
+        | "cfg" | "conf" | "csv" | "tsv" | "db" | "sqlite" => FileKind::Code,
+        _ => FileKind::Generic,
+    }
+}
+
+/// Deepest level that still gets a guide line drawn.
+///
+/// The mask is 32 bits and a torrent nesting deeper than this has bigger
+/// problems than its indentation; rows past it keep their ancestors' lines and
+/// simply stop gaining new ones, which beats shifting off the end of the int.
+const MAX_GUIDE_DEPTH: usize = 31;
+
+/// Work out each row's connector: which ancestor columns carry a line through
+/// it, and whether it is the last of its siblings.
+///
+/// Both are properties of the whole tree, so this runs before [`prune`] and
+/// survives it: folding a folder removes its children from the list but
+/// changes nothing about who its own next sibling is, and a row whose ancestor
+/// is folded is not on screen to be drawn.
+fn connectors(rows: &mut [TreeRow<'_>]) {
+    // Backwards: a row has a later sibling if another row at the same depth
+    // follows it before anything shallower does. `resize` on the way past is
+    // what scopes that to one folder - stepping out to depth d throws away
+    // everything deeper, which belonged to the row being left.
+    let mut later = vec![false; rows.len()];
+    let mut seen: Vec<bool> = Vec::new();
+    for (i, row) in rows.iter().enumerate().rev() {
+        let depth = row.depth.min(MAX_GUIDE_DEPTH);
+        seen.resize(depth + 1, false);
+        later[i] = seen[depth];
+        seen[depth] = true;
+    }
+
+    // Forwards, carrying the mask down: a row inherits its ancestors' columns,
+    // then records its own for the rows beneath it.
+    let mut mask: u32 = 0;
+    for (i, row) in rows.iter_mut().enumerate() {
+        let depth = row.depth.min(MAX_GUIDE_DEPTH) as u32;
+        // Shifted down one, because a column belongs to the node whose elbow
+        // is drawn in it: column `l` carries the chain of the ancestor at depth
+        // `l + 1`, and the row's own column, `depth - 1`, is the elbow itself
+        // and comes from `last` instead. Reading the ancestor at depth `l`
+        // there instead is off by one and shows a folder's line continuing
+        // down past its own last child.
+        row.guides = match depth {
+            0 => 0,
+            _ => (mask >> 1) & ((1u32 << (depth - 1)) - 1),
+        };
+        row.last = !later[i];
+        if later[i] {
+            mask |= 1u32 << depth;
+        } else {
+            mask &= !(1u32 << depth);
+        }
+        // Deeper bits belonged to the subtree just left behind.
+        mask &= (1u32 << depth).wrapping_mul(2).wrapping_sub(1);
+    }
 }
 
 /// Drop every row under a folder that is shut.
@@ -1924,6 +2058,8 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                     depth,
                     name,
                     path,
+                    guides,
+                    last,
                 } = row;
                 match index {
                     Some(index) => {
@@ -1948,6 +2084,9 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                             priority_name: ui_string(&tr, priority_key(level)),
                             path: SharedString::new(),
                             expanded: false,
+                            guides: guides as i32,
+                            last,
+                            kind: file_kind(name) as i32,
                         }
                     }
                     None => FileEntryRow {
@@ -1961,6 +2100,9 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                         priority_name: SharedString::new(),
                         expanded: !collapsed.contains(&path),
                         path: path.into(),
+                        guides: guides as i32,
+                        last,
+                        kind: 0,
                     },
                 }
             })
@@ -3116,6 +3258,9 @@ fn show_next_pending(ui: &Rc<Ui>) {
                         included: !out.contains(&shown[at].index),
                         path: SharedString::new(),
                         expanded: false,
+                        guides: row.guides as i32,
+                        last: row.last,
+                        kind: file_kind(row.name) as i32,
                     },
                     None => FileRow {
                         index: -1,
@@ -3124,6 +3269,9 @@ fn show_next_pending(ui: &Rc<Ui>) {
                         size: SharedString::new(),
                         included: true,
                         expanded: !folded.contains(&row.path),
+                        guides: row.guides as i32,
+                        last: row.last,
+                        kind: 0,
                         path: row.path.into(),
                     },
                 })
@@ -5845,6 +5993,29 @@ mod file_tree_tests {
         paths.iter().map(|p| (*p).to_owned()).collect()
     }
 
+    /// Draw the rows the way the markup draws them, so the connector maths can
+    /// be checked as the picture it is supposed to produce rather than as a
+    /// column of integers. ASCII stands in for the box-drawing glyphs.
+    fn art(rows: &[TreeRow<'_>]) -> String {
+        rows.iter()
+            .map(|r| {
+                let mut line = String::new();
+                for level in 0..r.depth {
+                    if level + 1 == r.depth {
+                        line.push_str(if r.last { "`- " } else { "|- " });
+                    } else if r.guides & (1 << level) != 0 {
+                        line.push_str("|  ");
+                    } else {
+                        line.push_str("   ");
+                    }
+                }
+                line.push_str(r.name);
+                line
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     const SHOW: [&str; 4] = [
         "Season 1/ep01.mkv",
         "Season 1/subs/en.srt",
@@ -5873,6 +6044,157 @@ mod file_tree_tests {
                 (None, 0, "Season 2", "Season 2"),
                 (Some(2), 1, "ep01.mkv", ""),
             ]
+        );
+    }
+
+    /// The icon comes off the extension, case and all.
+    #[test]
+    fn an_extension_picks_the_icon() {
+        use super::{FileKind, file_kind};
+        for (name, want) in [
+            ("The.Show.S01E01.1080p.mkv", FileKind::Video),
+            ("01 - track.FLAC", FileKind::Audio),
+            ("cover.JPG", FileKind::Image),
+            ("scans.part1.rar", FileKind::Archive),
+            ("disc.iso", FileKind::Disc),
+            ("manual.pdf", FileKind::Document),
+            ("The.Show.S01E01.en.srt", FileKind::Subtitle),
+            ("setup.exe", FileKind::Program),
+            ("config.json", FileKind::Code),
+            ("data.bin.unknownext", FileKind::Generic),
+        ] {
+            assert_eq!(file_kind(name), want, "{name}");
+        }
+    }
+
+    /// Three names that have no extension to speak of, and must not be matched
+    /// on one: a dotfile is all "extension", a folder-ish name has no dot, and
+    /// a name ending in a dot has an empty one.
+    #[test]
+    fn a_name_without_an_extension_stays_generic() {
+        use super::{FileKind, file_kind};
+        for name in ["README", ".gitignore", "trailing.", "no_dot_at_all"] {
+            assert_eq!(file_kind(name), FileKind::Generic, "{name}");
+        }
+    }
+
+    /// `.ts` is a transport stream in a torrent, not TypeScript. Worth pinning:
+    /// it is the one extension in the table where the obvious reading is wrong.
+    #[test]
+    fn ts_is_video_here() {
+        use super::{FileKind, file_kind};
+        assert_eq!(file_kind("episode.ts"), FileKind::Video);
+    }
+
+    /// The discriminants cross into the markup as plain ints, so they are not
+    /// free to be renumbered on one side.
+    #[test]
+    fn the_kind_numbering_matches_the_markup() {
+        use super::FileKind;
+        assert_eq!(
+            [
+                FileKind::Generic as i32,
+                FileKind::Video as i32,
+                FileKind::Audio as i32,
+                FileKind::Image as i32,
+                FileKind::Archive as i32,
+                FileKind::Disc as i32,
+                FileKind::Document as i32,
+                FileKind::Subtitle as i32,
+                FileKind::Program as i32,
+                FileKind::Code as i32,
+            ],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        );
+        // Every one of those numbers is drawn by FileGlyph in app.slint.
+        //
+        // The next character must not be a digit, or looking for kind 5 would
+        // be satisfied by a branch on 55 - and the generic sheet is written
+        // `== 0 || root.kind == 6`, so it cannot simply demand a trailing `:`.
+        let markup = include_str!("app.slint");
+        let draws = |kind: i32| {
+            let needle = format!("root.kind == {kind}");
+            markup.match_indices(&needle).any(|(at, _)| {
+                markup[at + needle.len()..]
+                    .chars()
+                    .next()
+                    .is_none_or(|c| !c.is_ascii_digit())
+            })
+        };
+        for kind in 0..=9 {
+            assert!(draws(kind), "FileGlyph draws nothing for kind {kind}");
+        }
+    }
+
+    /// The connectors, read back as the tree they draw.
+    ///
+    /// The line under `Season 1` carries on past `ep01.mkv` because `subs`
+    /// follows it, and stops at `subs`, which is last. `en.srt` sits under a
+    /// last child, so its column 0 is blank - a guide there would be a line
+    /// hanging off the bottom of a folder that has nothing left in it.
+    #[test]
+    fn rows_carry_the_connectors_that_draw_the_tree() {
+        // A joined array, not one literal: a `\`-continuation in a Rust string
+        // swallows the next line's leading whitespace, which is precisely what
+        // this test is measuring.
+        assert_eq!(
+            art(&file_tree(SHOW.iter().copied())),
+            [
+                "readme.txt",
+                "Season 1",
+                "|- ep01.mkv",
+                "`- subs",
+                "   `- en.srt",
+                "Season 2",
+                "`- ep01.mkv",
+            ]
+            .join("\n")
+        );
+    }
+
+    /// The same tree one level deeper, where a guide has to pass through a
+    /// folder that is NOT last and keep going.
+    #[test]
+    fn a_guide_runs_on_through_a_folder_with_more_to_come() {
+        let paths = [
+            "show/s1/e1.mkv",
+            "show/s1/subs/en.srt",
+            "show/s2/e1.mkv",
+            "show/readme.txt",
+        ];
+        assert_eq!(
+            art(&file_tree(paths.iter().copied())),
+            [
+                "show",
+                "|- readme.txt",
+                "|- s1",
+                "|  |- e1.mkv",
+                "|  `- subs",
+                "|     `- en.srt",
+                "`- s2",
+                "   `- e1.mkv",
+            ]
+            .join("\n")
+        );
+    }
+
+    /// Folding changes which rows are on screen, never the shape of the ones
+    /// that remain: `connectors` runs on the whole tree, before `prune`.
+    #[test]
+    fn folding_does_not_disturb_the_connectors() {
+        let rows = prune(file_tree(SHOW.iter().copied()), &shut(&["Season 1/subs"]));
+        assert_eq!(
+            art(&rows),
+            [
+                "readme.txt",
+                "Season 1",
+                "|- ep01.mkv",
+                // Still the elbow it had with en.srt showing under it.
+                "`- subs",
+                "Season 2",
+                "`- ep01.mkv",
+            ]
+            .join("\n")
         );
     }
 
