@@ -245,6 +245,11 @@ winapi = { version = "0.3.9", features = ["winuser", "windef", "winreg", "fileap
 # StartupWMClass must match slint::set_xdg_app_id - that chain is what gives
 # the window its icon on Wayland, which has no protocol for a client to set one
 # itself.
+#
+# It is `res/app-256.png`, NOT the 2048px `res/app.png`: a file in the 256x256
+# directory has to BE 256x256. linuxdeploy refuses anything that is not one of
+# the standard icon sizes outright, and 2048 is not one of them, so the master
+# fails the AppImage build rather than merely being mis-scaled by a desktop.
 
 [package.metadata.deb]
 maintainer = "Power2All <power2all@users.noreply.github.com>"
@@ -258,14 +263,14 @@ extended-description = """A tiny, hackable BitTorrent client - a Rust port of Pi
 assets = [
     ["target/release/nanotorrent-gui", "usr/bin/nanotorrent", "755"],
     ["packaging/linux/org.nanotorrent.NanoTorrent.desktop", "usr/share/applications/", "644"],
-    ["res/app.png", "usr/share/icons/hicolor/256x256/apps/org.nanotorrent.NanoTorrent.png", "644"],
+    ["res/app-256.png", "usr/share/icons/hicolor/256x256/apps/org.nanotorrent.NanoTorrent.png", "644"],
 ]
 
 [package.metadata.generate-rpm]
 assets = [
     { source = "target/release/nanotorrent-gui", dest = "/usr/bin/nanotorrent", mode = "755" },
     { source = "packaging/linux/org.nanotorrent.NanoTorrent.desktop", dest = "/usr/share/applications/org.nanotorrent.NanoTorrent.desktop", mode = "644" },
-    { source = "res/app.png", dest = "/usr/share/icons/hicolor/256x256/apps/org.nanotorrent.NanoTorrent.png", mode = "644" },
+    { source = "res/app-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/org.nanotorrent.NanoTorrent.png", mode = "644" },
 ]
 
 [patch.crates-io]

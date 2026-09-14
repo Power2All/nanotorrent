@@ -18,7 +18,7 @@ ICONS="$HOME/.local/share/icons/hicolor/256x256/apps"
 mkdir -p "$APPS" "$ICONS"
 
 install -m 0644 packaging/linux/org.nanotorrent.NanoTorrent.desktop "$APPS/org.nanotorrent.NanoTorrent.desktop"
-install -m 0644 res/app.png "$ICONS/org.nanotorrent.NanoTorrent.png"
+install -m 0644 res/app-256.png "$ICONS/org.nanotorrent.NanoTorrent.png"
 
 # Exec=nanotorrent only resolves if the binary is on PATH; point the entry at
 # wherever it actually is otherwise.
