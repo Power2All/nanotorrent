@@ -33,9 +33,7 @@ Sürüm 0.4.0
 - Videoyu indirilirken izleyin. Bir torrentin ayrıntılarında ya da web arayüzünde bir dosyaya sağ tıklayın; VLC, mpv veya her zamanki oynatıcınızda açılsın - oynatma, indirme bitmeden başlar.
 - Daha iyi bir dosya listesi: dosyaları fareyle ya da ok tuşlarıyla seçin, sağ tıklayıp açın ve şu an bakmadığınız klasörleri katlayın. Uygulamada da web arayüzünde de.
 - Eklentiler bir dosyanın menüsüne öğe ekleyebilir, sade bir dille gösterilip sizin onayladığınız yeni "execute" izniyle program başlatabilir ve kendi çevirilerini taşıyabilir. On beş işlev daha, web arayüzünün zaten yapabildiklerini eklentilere de verir.
-- 35 dil daha, toplam 76: Avrupa, Güney Asya, Güneydoğu Asya, Orta Asya ve Afrika.
-- Web arayüzünde ve torrent dosya yollarının işlenmesinde güvenlik düzeltmeleri.
-- Biten ve duraklatılan indirmeler artık dosyalarını kilitli tutmuyor; indirme klasöründeki bir arşiv ya da video NanoTorrent çalışırken açılıyor.
+- Güvenlik düzeltmeleri: başka bir site artık web arayüzü üzerinden hiçbir şeyi değiştiremez, bir torrent artık bir Windows sürücüsünü klasör olarak adlandıramaz veya çalma listesine satır ekleyemez ve başarısız oturum açma kilitleri artık parola denemeyen istekleri saymaz.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

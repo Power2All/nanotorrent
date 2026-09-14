@@ -33,9 +33,7 @@ Verzija 0.4.0
 - Gledajte video dok se preuzima. Desnom tipkom kliknite datoteku u pojedinostima torrenta ili u web sučelju i otvorit će se u VLC-u, mpv-u ili vašem uobičajenom playeru - reprodukcija počinje prije nego što preuzimanje završi.
 - Bolji popis datoteka: birajte datoteke mišem ili strelicama, otvorite jednu desnim klikom i sklopite mape koje trenutačno ne gledate. I u aplikaciji i u web sučelju.
 - Dodaci mogu dodavati stavke u izbornik datoteke, pokretati programe uz novo dopuštenje "execute" koje odobravate jednostavnim jezikom, i nositi vlastite prijevode. Još petnaest funkcija daje im ono što je web sučelje već moglo.
-- 35 jezika više, 76 ukupno, dodanih u Europi, južnoj Aziji, jugoistočnoj Aziji, središnjoj Aziji i Africi.
-- Sigurnosni popravci web sučelja i rukovanja putanjama datoteka iz torrenta.
-- Dovršena i pauzirana preuzimanja više ne drže svoje datoteke zaključanima, pa se arhiva ili video iz mape preuzimanja otvara dok NanoTorrent radi.
+- Sigurnosni popravci: druga stranica više ne može ništa promijeniti putem web sučelja, torrent više ne može imenovati Windows pogon kao mapu niti dodati redak u popis za reprodukciju, a zaključavanja nakon neuspjelih prijava više ne broje zahtjeve koji nisu pokušali lozinku.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

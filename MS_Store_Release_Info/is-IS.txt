@@ -33,9 +33,7 @@ NanoTorrent er Rust-útfærsla af PicoTorrent eftir Viktor Elofsson.
 - Horfðu á myndskeið meðan það hleðst niður. Hægrismelltu á skrá í smáatriðum straums, eða í vefviðmótinu, og hún opnast í VLC, mpv eða þínum venjulega spilara - spilun hefst áður en niðurhalinu lýkur.
 - Betri skráalisti: veldu skrár með músinni eða örvatökkunum, opnaðu eina með hægrismelli og felldu saman möppur sem þú ert ekki að skoða. Bæði í forritinu og í vefviðmótinu.
 - Viðbætur geta bætt atriðum við valmynd skráar, ræst forrit undir nýrri heimild "execute" sem þú samþykkir á skýru máli, og borið með sér eigin þýðingar. Fimmtán köll til viðbótar gefa þeim það sem vefviðmótið gat þegar.
-- 35 tungumálum fleira, 76 alls, bætt við í Evrópu, Suður-Asíu, Suðaustur-Asíu, Mið-Asíu og Afríku.
-- Öryggislagfæringar í vefviðmótinu og í meðhöndlun skráaslóða úr straumum.
-- Lokið og stöðvað niðurhal heldur ekki lengur skrám sínum læstum, svo safnskrá eða myndskeið í niðurhalsmöppunni opnast meðan NanoTorrent keyrir.
+- Öryggislagfæringar: annað vefsvæði getur ekki lengur breytt neinu í gegnum vefviðmótið, torrent getur ekki lengur nefnt Windows-drif sem möppu eða bætt línu við spilunarlista, og lokanir eftir misheppnaðar innskráningar telja ekki lengur beiðnir sem reyndu aldrei lykilorð.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

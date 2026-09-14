@@ -33,9 +33,7 @@ Weergawe 0.4.0
 - Stroom 'n video terwyl dit aflaai. Regskliek 'n lêer in 'n torrent se besonderhede, of in die webkoppelvlak, en dit open in VLC, mpv of jou gewone speler - die weergawe begin voordat die aflaai klaar is.
 - 'n Beter lêerlys: kies lêers met die muis of die pyltjiesleutels, open een met 'n regskliek, en vou die vouers toe waarna jy nie kyk nie. In die program sowel as in die webkoppelvlak.
 - Inproppe kan items by 'n lêer se kieslys voeg, programme begin onder 'n nuwe "execute"-toestemming wat jy in gewone taal goedkeur, en hul eie vertalings saambring. Vyftien verdere funksies gee hulle wat die webkoppelvlak reeds kon doen.
-- 35 tale meer, 76 altesaam, bygevoeg in Europa, Suid-Asië, Suidoos-Asië, Sentraal-Asië en Afrika.
-- Sekuriteitsregstellings aan die webkoppelvlak en aan die hantering van torrents se lêerpaaie.
-- Voltooide en gepouseerde aflaaie hou nie meer hul lêers gesluit nie, so 'n argief of video in die aflaaivouer open terwyl NanoTorrent nog loop.
+- Sekuriteitsregstellings: 'n ander werf kan niks meer deur die webkoppelvlak verander nie, 'n torrent kan nie meer 'n Windows-skyf as 'n vouer benoem of 'n reël by 'n speellys voeg nie, en aanmeldsluitings tel nie meer versoeke wat nooit 'n wagwoord probeer het nie.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

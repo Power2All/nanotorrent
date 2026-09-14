@@ -33,9 +33,7 @@ Leagan 0.4.0
 - Féach ar fhíseán agus é á íoslódáil. Deaschliceáil ar chomhad i sonraí torrent, nó sa chomhéadan gréasáin, agus osclóidh sé in VLC, in mpv nó sa seinnteoir is gnách leat - tosaíonn an seinm sula gcríochnaíonn an íoslódáil.
 - Liosta comhad níos fearr: roghnaigh comhaid leis an luch nó leis na saigheada, oscail ceann le deaschliceáil, agus fill na fillteáin nach bhfuil tú ag féachaint orthu. San fheidhmchlár agus sa chomhéadan gréasáin araon.
 - Is féidir le breiseáin míreanna a chur le roghchlár comhaid, cláir a thosú faoi chead nua "execute" a cheadaíonn tú i dteanga shoiléir, agus a n-aistriúcháin féin a iompar. Tugann cúig ghlao dhéag eile dóibh an rud a bhí ar chumas an chomhéadain ghréasáin cheana.
-- 35 teanga sa bhreis, 76 ar fad, curtha leis san Eoraip, san Áise Theas, in Oirdheisceart na hÁise, i Lár na hÁise agus san Afraic.
-- Ceartúcháin slándála sa chomhéadan gréasáin agus i láimhseáil chonairí comhad ó thorrents.
-- Ní choinníonn íoslódálacha críochnaithe ná ar sos a gcomhaid faoi ghlas a thuilleadh, mar sin osclaíonn cartlann nó físeán san fhillteán íoslódála agus NanoTorrent fós ag rith.
+- Ceartúcháin slándála: ní féidir le suíomh eile aon rud a athrú tríd an gcomhéadan gréasáin a thuilleadh, ní féidir le torrent tiomántán Windows a ainmniú mar fhillteán ná líne a chur le seinmliosta, agus ní chomhaireann glasálacha logála isteach teipthe iarratais nár bhain triail as pasfhocal.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

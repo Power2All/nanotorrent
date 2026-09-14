@@ -33,9 +33,7 @@ Version 0.4.0
 - Ein Video schon während des Downloads abspielen. Rechtsklick auf eine Datei in den Details eines Torrents oder in der Weboberfläche, und sie öffnet sich in VLC, mpv oder Ihrem gewohnten Player - die Wiedergabe beginnt, bevor der Download fertig ist.
 - Eine bessere Dateiliste: Dateien mit der Maus oder den Pfeiltasten auswählen, per Rechtsklick öffnen und Ordner zuklappen, die Sie gerade nicht brauchen. In der App wie in der Weboberfläche.
 - Plugins können Einträge im Menü einer Datei hinzufügen, Programme unter einer neuen Berechtigung "execute" starten, die Sie in klarer Sprache genehmigen, und eigene Übersetzungen mitbringen. Fünfzehn weitere Aufrufe geben Plugins das, was die Weboberfläche längst konnte.
-- 35 weitere Sprachen, 76 insgesamt, ergänzt in Europa, Südasien, Südostasien, Zentralasien und Afrika.
-- Sicherheitskorrekturen an der Weboberfläche und am Umgang mit Dateipfaden aus Torrents.
-- Fertige und pausierte Downloads sperren ihre Dateien nicht mehr, sodass ein Archiv oder ein Video im Downloadordner sich öffnen lässt, während NanoTorrent noch läuft.
+- Sicherheitskorrekturen: Eine andere Website kann über die Weboberfläche nichts mehr ändern, ein Torrent kann kein Windows-Laufwerk mehr als Ordner benennen oder eine Zeile in eine Wiedergabeliste einfügen, und Sperren nach fehlgeschlagenen Anmeldungen zählen keine Anfragen mehr, die nie ein Passwort versucht haben.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

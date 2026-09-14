@@ -33,9 +33,7 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 - Nézze a videót letöltés közben. Kattintson jobb gombbal egy fájlra a torrent részleteiben vagy a webes felületen, és megnyílik a VLC-ben, az mpv-ben vagy a szokásos lejátszójában - a lejátszás azelőtt elindul, hogy a letöltés befejeződne.
 - Jobb fájllista: válasszon fájlokat egérrel vagy a nyílbillentyűkkel, nyisson meg egyet jobb gombbal, és csukja össze azokat a mappákat, amelyeket épp nem néz. Az alkalmazásban és a webes felületen egyaránt.
 - A bővítmények elemeket adhatnak egy fájl menüjéhez, programokat indíthatnak egy új "execute" engedély alatt, amelyet közérthető nyelven hagy jóvá, és saját fordításokat hozhatnak magukkal. További tizenöt függvény megadja nekik azt, amit a webes felület már tudott.
-- 35 további nyelv, összesen 76, Európában, Dél-Ázsiában, Délkelet-Ázsiában, Közép-Ázsiában és Afrikában.
-- Biztonsági javítások a webes felületen és a torrentek fájlútvonalainak kezelésében.
-- A befejezett és szüneteltetett letöltések már nem tartják zárolva a fájljaikat, így a letöltési mappában lévő archívum vagy videó futó NanoTorrent mellett is megnyitható.
+- Biztonsági javítások: egy másik oldal többé nem változtathat semmit a webes felületen keresztül, egy torrent többé nem nevezhet el Windows-meghajtót mappaként, és nem fűzhet sort egy lejátszási listához, a sikertelen bejelentkezések miatti zárolások pedig már nem számítják a jelszót meg sem kísérlő kéréseket.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

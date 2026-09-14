@@ -33,9 +33,7 @@ Versão 0.4.0
 - Veja um vídeo enquanto está a ser transferido. Clique com o botão direito num ficheiro nos detalhes do torrent, ou na interface web, e abre no VLC, no mpv ou no seu leitor habitual: a reprodução começa antes de a transferência terminar.
 - Uma lista de ficheiros melhor: escolha ficheiros com o rato ou as setas, abra um com o botão direito e recolha as pastas que não está a ver. Na aplicação e na interface web.
 - Os plugins podem acrescentar itens ao menu de um ficheiro, iniciar programas ao abrigo de uma nova permissão "execute" que aprova em linguagem simples, e trazer as suas próprias traduções. Mais quinze funções dão-lhes o que a interface web já conseguia.
-- 35 idiomas a mais, 76 no total, acrescentados na Europa, Sul da Ásia, Sudeste Asiático, Ásia Central e África.
-- Correções de segurança na interface web e no tratamento dos caminhos de ficheiro dos torrents.
-- As transferências concluídas ou em pausa já não mantêm os ficheiros bloqueados, pelo que um arquivo ou um vídeo na pasta de transferências abre com o NanoTorrent ainda a correr.
+- Correções de segurança: outro site já não pode alterar nada através da interface web, um torrent já não pode dar a uma unidade do Windows o nome de pasta nem acrescentar uma linha a uma lista de reprodução, e os bloqueios após inícios de sessão falhados já não contam os pedidos que nunca tentaram uma palavra-passe.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

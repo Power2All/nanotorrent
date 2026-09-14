@@ -33,9 +33,7 @@ Toleo 0.4.0
 - Tazama video wakati bado inapakuliwa. Bofya kulia faili katika maelezo ya torrent, au katika kiolesura cha wavuti, nayo itafunguka katika VLC, mpv au kichezaji chako cha kawaida - uchezaji huanza kabla upakuaji haujakamilika.
 - Orodha bora ya faili: chagua faili kwa kipanya au vitufe vya mishale, fungua moja kwa kubofya kulia, na ukunje folda usizoziangalia. Katika programu na katika kiolesura cha wavuti.
 - Programu-jalizi zinaweza kuongeza vipengee kwenye menyu ya faili, kuanzisha programu chini ya ruhusa mpya ya "execute" unayoidhinisha kwa lugha rahisi, na kubeba tafsiri zao wenyewe. Miito kumi na tano zaidi huwapa kile ambacho kiolesura cha wavuti kiliweza tayari.
-- Lugha 35 zaidi, 76 kwa jumla, zilizoongezwa Ulaya, Asia Kusini, Asia ya Kusini-Mashariki, Asia ya Kati na Afrika.
-- Marekebisho ya usalama kwenye kiolesura cha wavuti na katika kushughulikia njia za faili za torrent.
-- Upakuaji uliokamilika na uliositishwa hauzuii tena faili zake, hivyo kumbukumbu au video katika folda ya upakuaji hufunguka NanoTorrent ikiwa bado inaendeshwa.
+- Marekebisho ya usalama: tovuti nyingine haiwezi tena kubadilisha chochote kupitia kiolesura cha wavuti, torrent haiwezi tena kuita diski ya Windows kama folda au kuongeza mstari kwenye orodha ya kucheza, na kufungiwa baada ya kuingia kushindwa hakuhesabu tena maombi ambayo hayakujaribu nenosiri.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

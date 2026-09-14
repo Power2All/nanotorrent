@@ -33,9 +33,7 @@ Bersyon 0.4.0
 - Manood ng video habang dina-download. I-right-click ang isang file sa mga detalye ng torrent, o sa web interface, at bubuksan ito sa VLC, mpv o sa karaniwan mong player - nagsisimula ang playback bago pa matapos ang download.
 - Mas magandang listahan ng file: pumili ng file gamit ang mouse o ang arrow keys, buksan ang isa sa pamamagitan ng right-click, at itiklop ang mga folder na hindi mo tinitingnan. Sa app at sa web interface.
 - Makakapagdagdag ang mga plugin ng item sa menu ng isang file, makakapagpatakbo ng programa sa ilalim ng bagong pahintulot na "execute" na inaaprubahan mo sa malinaw na wika, at makakapagdala ng sariling salin. Labinlimang karagdagang tawag ang nagbibigay sa kanila ng kaya nang gawin ng web interface.
-- 35 pang wika, 76 lahat-lahat, idinagdag sa Europa, Timog Asya, Timog-Silangang Asya, Gitnang Asya at Aprika.
-- Mga pag-aayos sa seguridad ng web interface at ng paghawak sa mga path ng file mula sa torrent.
-- Hindi na kinakandado ng tapos at naka-pause na download ang kanilang mga file, kaya nabubuksan ang archive o video sa download folder habang tumatakbo pa ang NanoTorrent.
+- Mga pag-aayos sa seguridad: hindi na makakapagbago ang ibang site sa pamamagitan ng web interface, hindi na mapapangalanan ng torrent ang isang Windows drive bilang folder o makakadagdag ng linya sa playlist, at hindi na binibilang ng mga lockout sa nabigong pag-login ang mga kahilingang walang sinubukang password.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

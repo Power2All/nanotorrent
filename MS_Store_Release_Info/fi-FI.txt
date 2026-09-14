@@ -33,9 +33,7 @@ Versio 0.4.0
 - Katso videota jo latauksen aikana. Napsauta tiedostoa hiiren oikealla painikkeella torrentin tiedoissa tai selainkäyttöliittymässä, niin se avautuu VLC:ssä, mpv:ssä tai tavallisessa soittimessasi - toisto alkaa ennen kuin lataus on valmis.
 - Parempi tiedostoluettelo: valitse tiedostoja hiirellä tai nuolinäppäimillä, avaa oikealla painikkeella ja taita kokoon kansiot, joita et juuri katso. Sekä sovelluksessa että selainkäyttöliittymässä.
 - Lisäosat voivat lisätä kohteita tiedoston valikkoon, käynnistää ohjelmia uudella "execute"-oikeudella, jonka hyväksyt selkokielellä, ja kuljettaa omia käännöksiään. Viisitoista uutta kutsua antaa lisäosille sen, mihin selainkäyttöliittymä pystyi jo.
-- 35 kieltä lisää, 76 kaikkiaan, Euroopassa, Etelä-Aasiassa, Kaakkois-Aasiassa, Keski-Aasiassa ja Afrikassa.
-- Tietoturvakorjauksia selainkäyttöliittymään ja torrenttien tiedostopolkujen käsittelyyn.
-- Valmiit ja keskeytetyt lataukset eivät enää pidä tiedostojaan lukittuina, joten latauskansion arkisto tai video aukeaa NanoTorrentin ollessa käynnissä.
+- Tietoturvakorjauksia: toinen sivusto ei voi enää muuttaa mitään verkkokäyttöliittymän kautta, torrent ei voi enää nimetä Windows-asemaa kansioksi tai lisätä riviä soittolistaan, eivätkä epäonnistuneiden kirjautumisten lukitukset laske enää pyyntöjä, jotka eivät kokeilleet salasanaa.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -33,9 +33,7 @@ Versioni 0.4.0
 - Shikoni një video ndërsa shkarkohet. Klikoni me të djathtën mbi një skedar te detajet e një torrenti, ose te ndërfaqja e uebit, dhe hapet në VLC, mpv ose te luajtësi juaj i zakonshëm - luajtja fillon para se shkarkimi të përfundojë.
 - Një listë skedarësh më e mirë: zgjidhni skedarë me miun ose me shigjetat, hapni një me klik të djathtë, dhe paloseni dosjet që nuk po i shihni. Si në aplikacion, ashtu edhe te ndërfaqja e uebit.
 - Shtojcat mund të shtojnë zëra te menyja e një skedari, të nisin programe nën një leje të re "execute" që e miratoni me gjuhë të thjeshtë, dhe të mbartin përkthimet e veta. Pesëmbëdhjetë thirrje të tjera u japin atë që ndërfaqja e uebit e bënte tashmë.
-- 35 gjuhë të tjera, 76 gjithsej, të shtuara në Evropë, Azinë Jugore, Azinë Juglindore, Azinë Qendrore dhe Afrikë.
-- Rregullime sigurie te ndërfaqja e uebit dhe te trajtimi i shtigjeve të skedarëve të torrentit.
-- Shkarkimet e përfunduara dhe ato në pauzë nuk i mbajnë më skedarët e tyre të kyçur, kështu që një arkiv ose video në dosjen e shkarkimeve hapet ndërsa NanoTorrent punon.
+- Rregullime sigurie: një sajt tjetër nuk mund të ndryshojë më asgjë përmes ndërfaqes së uebit, një torrent nuk mund ta emërtojë më një disk Windows si dosje as të shtojë një rresht në një listë luajtjeje, dhe bllokimet pas hyrjeve të dështuara nuk numërojnë më kërkesat që nuk provuan kurrë fjalëkalim.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

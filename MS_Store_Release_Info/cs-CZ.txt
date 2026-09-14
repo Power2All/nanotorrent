@@ -33,9 +33,7 @@ Verze 0.4.0
 - Přehrajte video už během stahování. Klepněte pravým tlačítkem na soubor v podrobnostech torrentu nebo ve webovém rozhraní a otevře se ve VLC, mpv nebo ve vašem obvyklém přehrávači - přehrávání začíná dřív, než je stahování hotové.
 - Lepší seznam souborů: vybírejte myší nebo šipkami, otevřete pravým tlačítkem a sbalte složky, na které se právě nedíváte. V aplikaci i ve webovém rozhraní.
 - Zásuvné moduly mohou přidávat položky do nabídky souboru, spouštět programy pod novým oprávněním "execute", které schvalujete srozumitelným jazykem, a nést vlastní překlady. Dalších patnáct funkcí jim dává to, co webové rozhraní umělo už dřív.
-- O 35 jazyků víc, celkem 76, v Evropě, jižní Asii, jihovýchodní Asii, střední Asii a Africe.
-- Bezpečnostní opravy webového rozhraní a zacházení s cestami k souborům z torrentů.
-- Dokončená a pozastavená stahování už nedrží své soubory zamčené, takže archiv nebo video ve složce stahování otevřete i za běhu NanoTorrentu.
+- Bezpečnostní opravy: jiný web už nemůže nic změnit přes webové rozhraní, torrent už nemůže pojmenovat disk Windows jako složku ani přidat řádek do playlistu a blokování po neúspěšných přihlášeních už nepočítá požadavky, které heslo nezkusily.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

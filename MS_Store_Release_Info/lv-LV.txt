@@ -33,9 +33,7 @@ Versija 0.4.0
 - Skatieties video, kamēr tas lejupielādējas. Ar peles labo pogu noklikšķiniet uz faila torenta detaļās vai tīmekļa saskarnē, un tas atvērsies VLC, mpv vai jūsu parastajā atskaņotājā - atskaņošana sākas, pirms lejupielāde ir pabeigta.
 - Labāks failu saraksts: izvēlieties failus ar peli vai bultiņām, atveriet ar labo pogu un salokiet mapes, kuras pašlaik neskatāties. Gan lietotnē, gan tīmekļa saskarnē.
 - Spraudņi var pievienot vienumus faila izvēlnē, palaist programmas ar jaunu atļauju "execute", ko apstiprināt vienkāršā valodā, un nest savus tulkojumus. Vēl piecpadsmit funkcijas dod tiem to, ko tīmekļa saskarne jau prata.
-- Par 35 valodām vairāk, kopā 76, pievienotas Eiropā, Dienvidāzijā, Dienvidaustrumāzijā, Centrālāzijā un Āfrikā.
-- Drošības labojumi tīmekļa saskarnē un torentu failu ceļu apstrādē.
-- Pabeigtās un apturētās lejupielādes vairs netur savus failus bloķētus, tāpēc arhīvu vai video lejupielāžu mapē var atvērt, kamēr NanoTorrent darbojas.
+- Drošības labojumi: cita vietne vairs nevar neko mainīt caur tīmekļa saskarni, torrents vairs nevar nosaukt Windows disku par mapi vai pievienot rindu atskaņošanas sarakstam, un bloķēšana pēc neveiksmīgām pieteikšanām vairs neskaita pieprasījumus, kas nekad nav mēģinājuši paroli.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

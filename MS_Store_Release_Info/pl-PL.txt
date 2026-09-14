@@ -33,9 +33,7 @@ Wersja 0.4.0
 - Oglądaj wideo już w trakcie pobierania. Kliknij plik prawym przyciskiem w szczegółach torrenta albo w interfejsie webowym, a otworzy się w VLC, mpv lub twoim zwykłym odtwarzaczu - odtwarzanie zaczyna się, zanim pobieranie się skończy.
 - Lepsza lista plików: wybieraj myszą lub strzałkami, otwieraj prawym przyciskiem i zwijaj foldery, na które akurat nie patrzysz. W aplikacji i w interfejsie webowym.
 - Wtyczki mogą dodawać pozycje do menu pliku, uruchamiać programy w ramach nowego uprawnienia "execute", które zatwierdzasz prostym językiem, i nieść własne tłumaczenia. Kolejnych piętnaście funkcji daje im to, co interfejs webowy potrafił już wcześniej.
-- 35 języków więcej, 76 łącznie, dodanych w Europie, Azji Południowej, Azji Południowo-Wschodniej, Azji Środkowej i Afryce.
-- Poprawki bezpieczeństwa w interfejsie webowym i w obsłudze ścieżek plików z torrentów.
-- Ukończone i wstrzymane pobrania nie blokują już swoich plików, więc archiwum albo film w folderze pobierania otworzysz przy działającym NanoTorrencie.
+- Poprawki bezpieczeństwa: inna witryna nie może już niczego zmienić przez interfejs sieciowy, torrent nie może już nazwać dysku Windows folderem ani dodać wiersza do playlisty, a blokady po nieudanych logowaniach nie liczą już żądań, które nigdy nie próbowały hasła.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -33,9 +33,7 @@ Versión 0.4.0
 - Reproduce un vídeo mientras se descarga. Haz clic derecho en un archivo en los detalles de un torrent, o en la interfaz web, y se abrirá en VLC, mpv o tu reproductor habitual: la reproducción empieza antes de que termine la descarga.
 - Una lista de archivos mejor: elígelos con el ratón o las flechas, ábrelos con clic derecho y pliega las carpetas que no estés mirando. Tanto en la aplicación como en la interfaz web.
 - Los complementos pueden añadir elementos al menú de un archivo, iniciar programas bajo un nuevo permiso "execute" que apruebas en lenguaje claro, y traer sus propias traducciones. Quince funciones más les dan lo que la interfaz web ya podía hacer.
-- 35 idiomas más, 76 en total, añadidos en Europa, Asia meridional, Sudeste Asiático, Asia Central y África.
-- Correcciones de seguridad en la interfaz web y en el manejo de las rutas de archivo de los torrents.
-- Las descargas terminadas o en pausa ya no bloquean sus archivos, así que un archivo comprimido o un vídeo de la carpeta de descargas se abre con NanoTorrent aún en marcha.
+- Correcciones de seguridad: otro sitio ya no puede cambiar nada a través de la interfaz web, un torrent ya no puede nombrar una unidad de Windows como carpeta ni añadir una línea a una lista de reproducción, y los bloqueos por inicios de sesión fallidos ya no cuentan las solicitudes que nunca probaron una contraseña.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

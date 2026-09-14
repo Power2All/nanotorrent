@@ -33,9 +33,7 @@ NanoTorrent Viktor Elofsson-en PicoTorrent-en Rust portua da.
 - Ikusi bideoa deskargatzen ari den bitartean. Egin eskuin-klik torrentaren xehetasunetako fitxategi batean, edo web interfazean, eta VLCn, mpv-n edo zure ohiko erreproduzitzailean irekiko da: erreprodukzioa deskarga amaitu baino lehen hasten da.
 - Fitxategi-zerrenda hobea: aukeratu fitxategiak saguarekin edo gezi-teklekin, ireki bat eskuin-klikarekin, eta tolestu begiratzen ari ez zaren karpetak. Aplikazioan zein web interfazean.
 - Pluginek fitxategi baten menuan elementuak gehitu ditzakete, programak abiarazi "execute" baimen berriaren pean (hizkera argian onartzen duzuna), eta beren itzulpenak ekarri. Beste hamabost funtziok web interfazeak lehendik egin zezakeena ematen diete.
-- 35 hizkuntza gehiago, 76 guztira, Europan, Hego Asian, Hego-ekialdeko Asian, Erdialdeko Asian eta Afrikan.
-- Segurtasun-konponketak web interfazean eta torrenten fitxategi-bideak erabiltzean.
-- Amaitutako eta pausatutako deskargek ez dituzte jada fitxategiak blokeatzen, beraz deskarga-karpetako artxibo bat edo bideo bat NanoTorrent martxan dagoela ireki daiteke.
+- Segurtasun konponketak: beste gune batek ezin du jada ezer aldatu web interfazearen bidez, torrent batek ezin du jada Windows unitate bat karpeta gisa izendatu ez erreprodukzio-zerrenda bati lerro bat gehitu, eta saio-hasiera hutsegiteen blokeoek ez dituzte jada pasahitzik saiatu ez duten eskaerak zenbatzen.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

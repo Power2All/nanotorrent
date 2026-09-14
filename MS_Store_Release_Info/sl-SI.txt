@@ -33,9 +33,7 @@ Različica 0.4.0
 - Video si oglejte že med prenosom. Z desno tipko kliknite datoteko v podrobnostih torrenta ali v spletnem vmesniku in odprla se bo v VLC, mpv ali vašem običajnem predvajalniku - predvajanje se začne, preden je prenos končan.
 - Boljši seznam datotek: izbirajte datoteke z miško ali s puščicami, odprite jo z desnim klikom in zložite mape, ki jih trenutno ne gledate. V aplikaciji in v spletnem vmesniku.
 - Vtičniki lahko dodajajo vnose v meni datoteke, zaganjajo programe pod novim dovoljenjem "execute", ki ga odobrite v razumljivem jeziku, in prinesejo svoje prevode. Nadaljnjih petnajst funkcij jim da to, kar je spletni vmesnik že znal.
-- 35 jezikov več, skupaj 76, dodanih v Evropi, južni Aziji, jugovzhodni Aziji, osrednji Aziji in Afriki.
-- Varnostni popravki spletnega vmesnika in ravnanja s potmi datotek iz torrentov.
-- Končani in zaustavljeni prenosi ne zaklepajo več svojih datotek, zato se arhiv ali video v mapi prenosov odpre, medtem ko NanoTorrent teče.
+- Varnostni popravki: drugo mesto ne more več ničesar spremeniti prek spletnega vmesnika, torrent ne more več poimenovati pogona Windows kot mape ali dodati vrstice na seznam predvajanja, zaklepanja po neuspelih prijavah pa ne štejejo več zahtev, ki gesla niso nikoli poskusile.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

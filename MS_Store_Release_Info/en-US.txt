@@ -33,9 +33,7 @@ Version 0.4.0
 - Stream a video while it downloads. Right-click a file in a torrent's details, or in the web interface, and it opens in VLC, mpv or your usual player - playback starts before the download has finished.
 - A better file list: pick files with the mouse or the arrow keys, right-click one to open it, and fold away the folders you are not looking at. In the app and in the web interface alike.
 - Plugins can add items to a file's menu, start programs under a new "execute" permission you approve in plain language, and carry their own translations. Fifteen more calls give plugins what the web interface could already do.
-- 35 more languages, 76 in all, added across Europe, South Asia, South-East Asia, Central Asia and Africa.
-- Security fixes to the web interface and to the handling of torrent file paths.
-- Finished and paused downloads no longer keep their files locked, so an archive or a video in the download folder opens while NanoTorrent is still running.
+- Security fixes: another site can no longer change anything through the web interface, a torrent can no longer name a Windows drive as a folder or add a line to a playlist, and failed-login lockouts no longer count requests that never tried a password.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

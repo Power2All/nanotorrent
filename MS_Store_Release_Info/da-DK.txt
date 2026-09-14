@@ -33,9 +33,7 @@ Version 0.4.0
 - Stream en video, mens den hentes. Højreklik på en fil i en torrents detaljer eller i webgrænsefladen, og den åbnes i VLC, mpv eller din sædvanlige afspiller - afspilningen begynder, før overførslen er færdig.
 - En bedre filliste: vælg filer med musen eller piletasterne, åbn en med højreklik, og klap de mapper sammen, du ikke kigger på. Både i appen og i webgrænsefladen.
 - Plugins kan tilføje punkter til en fils menu, starte programmer under en ny "execute"-tilladelse, som du godkender i almindeligt sprog, og medbringe deres egne oversættelser. Femten flere kald giver plugins det, webgrænsefladen allerede kunne.
-- 35 flere sprog, 76 i alt, tilføjet i Europa, Sydasien, Sydøstasien, Centralasien og Afrika.
-- Sikkerhedsrettelser i webgrænsefladen og i håndteringen af torrentfilernes stier.
-- Færdige og satte-på-pause overførsler låser ikke længere deres filer, så et arkiv eller en video i downloadmappen kan åbnes, mens NanoTorrent kører.
+- Sikkerhedsrettelser: et andet websted kan ikke længere ændre noget via webgrænsefladen, en torrent kan ikke længere navngive et Windows-drev som en mappe eller tilføje en linje til en afspilningsliste, og låsninger efter mislykkede logins tæller ikke længere anmodninger uden adgangskode.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

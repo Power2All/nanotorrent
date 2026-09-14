@@ -33,9 +33,7 @@ Versi 0.4.0
 - Putar video sambil diunduh. Klik kanan sebuah berkas di detail torrent, atau di antarmuka web, dan berkas itu terbuka di VLC, mpv, atau pemutar yang biasa Anda pakai - pemutaran dimulai sebelum unduhan selesai.
 - Daftar berkas yang lebih baik: pilih berkas dengan tetikus atau tombol panah, buka satu dengan klik kanan, dan lipat folder yang tidak sedang Anda lihat. Di aplikasi maupun di antarmuka web.
 - Plugin dapat menambahkan item ke menu sebuah berkas, menjalankan program di bawah izin baru "execute" yang Anda setujui dengan bahasa sederhana, dan membawa terjemahannya sendiri. Lima belas fungsi tambahan memberi plugin apa yang sudah bisa dilakukan antarmuka web.
-- 35 bahasa lagi, 76 semuanya, ditambahkan di Eropa, Asia Selatan, Asia Tenggara, Asia Tengah, dan Afrika.
-- Perbaikan keamanan pada antarmuka web dan pada penanganan jalur berkas dari torrent.
-- Unduhan yang selesai maupun yang dijeda tidak lagi mengunci berkasnya, sehingga arsip atau video di folder unduhan bisa dibuka saat NanoTorrent masih berjalan.
+- Perbaikan keamanan: situs lain tidak lagi dapat mengubah apa pun melalui antarmuka web, torrent tidak lagi dapat menamai drive Windows sebagai folder atau menambahkan baris ke daftar putar, dan penguncian setelah login gagal tidak lagi menghitung permintaan yang tidak pernah mencoba kata sandi.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -33,9 +33,7 @@ Versioon 0.4.0
 - Vaadake videot juba allalaadimise ajal. Tehke torrenti üksikasjades või veebiliideses failil paremklõps ja see avaneb VLC-s, mpv-s või teie tavalises mängijas - taasesitus algab enne, kui allalaadimine on lõppenud.
 - Parem faililoend: valige faile hiire või nooleklahvidega, avage paremklõpsuga ja voltige kokku kaustad, mida parasjagu ei vaata. Nii rakenduses kui veebiliideses.
 - Pluginad saavad lisada kirjeid faili menüüsse, käivitada programme uue õiguse "execute" alusel, mille kiidate heaks lihtsas keeles, ja kanda kaasas oma tõlkeid. Veel viisteist funktsiooni annavad neile selle, mida veebiliides juba oskas.
-- 35 keelt rohkem, kokku 76, lisatud Euroopas, Lõuna-Aasias, Kagu-Aasias, Kesk-Aasias ja Aafrikas.
-- Turvaparandused veebiliideses ja torrentide failiteede käsitlemisel.
-- Lõpetatud ja peatatud allalaadimised ei hoia enam oma faile lukus, nii et arhiivi või video allalaadimiskaustas saab avada töötava NanoTorrenti kõrval.
+- Turvaparandused: teine sait ei saa enam veebiliidese kaudu midagi muuta, torrent ei saa enam nimetada Windowsi ketast kaustaks ega lisada esitusloendisse rida ning ebaõnnestunud sisselogimiste lukustused ei loe enam päringuid, mis parooli ei proovinud.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

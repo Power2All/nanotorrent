@@ -33,9 +33,7 @@ Sigar 0.4.0
 - Kalli bidiyo yayin da yake saukewa. Danna fayil da maɓallin dama a cikin bayanan torrent, ko a cikin hanyar yanar gizo, sai ya buɗe a VLC, mpv ko na'urar kunnawa da ka saba - kunnawa yana farawa kafin saukewar ta ƙare.
 - Jerin fayiloli mafi kyau: zaɓi fayiloli da linzami ko maɓallan kibiya, buɗe ɗaya da dannawa ta dama, kuma naɗe manyan fayilolin da ba ka kallo. A cikin manhaja da kuma a hanyar yanar gizo.
 - Plugins na iya ƙara abubuwa cikin menu na fayil, fara shirye-shirye ƙarƙashin sabon izini na "execute" wanda ka amince da shi a sarari, da kuma ɗauko fassarorinsu. Ƙarin kira goma sha biyar suna ba su abin da hanyar yanar gizo ta riga ta iya yi.
-- Ƙarin harsuna 35, 76 gaba ɗaya, an ƙara a Turai, Kudancin Asiya, Kudu maso Gabashin Asiya, Tsakiyar Asiya da Afirka.
-- Gyaran tsaro a hanyar yanar gizo da kuma a yadda ake sarrafa hanyoyin fayil na torrent.
-- Saukewa da aka gama da wanda aka dakatar ba sa ƙulle fayilolinsu, don haka ana iya buɗe kayan tarihi ko bidiyo a cikin babban fayil na saukewa yayin da NanoTorrent ke gudana.
+- Gyaran tsaro: wani shafi ba zai iya canza komai ta hanyar hanyar sadarwar yanar gizo ba, torrent ba zai iya sanya sunan faifan Windows a matsayin babban fayil ko ƙara layi a jerin kunnawa ba, kuma kullewar shiga da ta gaza ba ta ƙidaya buƙatun da ba su gwada kalmar sirri ba.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

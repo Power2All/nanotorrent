@@ -33,9 +33,7 @@ Versione 0.4.0
 - Guarda un video mentre viene scaricato. Fai clic destro su un file nei dettagli di un torrent, o nell'interfaccia web, e si apre in VLC, mpv o nel tuo lettore abituale: la riproduzione parte prima che il download sia finito.
 - Un elenco file migliore: scegli i file con il mouse o le frecce, aprine uno con il clic destro e richiudi le cartelle che non stai guardando. Nell'app come nell'interfaccia web.
 - I plugin possono aggiungere voci al menu di un file, avviare programmi sotto un nuovo permesso "execute" che approvi in parole chiare, e portare le proprie traduzioni. Altre quindici funzioni danno loro ciò che l'interfaccia web già sapeva fare.
-- 35 lingue in più, 76 in tutto, aggiunte in Europa, Asia meridionale, Sud-est asiatico, Asia centrale e Africa.
-- Correzioni di sicurezza nell'interfaccia web e nella gestione dei percorsi dei file dei torrent.
-- I download completati o in pausa non tengono più bloccati i loro file: un archivio o un video nella cartella dei download si apre mentre NanoTorrent è ancora in esecuzione.
+- Correzioni di sicurezza: un altro sito non può più modificare nulla tramite l'interfaccia web, un torrent non può più chiamare cartella un'unità Windows né aggiungere una riga a una playlist, e i blocchi dopo accessi falliti non contano più le richieste che non hanno mai provato una password.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

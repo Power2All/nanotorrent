@@ -33,9 +33,7 @@ Versió 0.4.0
 - Reprodueix un vídeo mentre es baixa. Feu clic dret en un fitxer als detalls d'un torrent, o a la interfície web, i s'obre al VLC, a l'mpv o al vostre reproductor habitual: la reproducció comença abans que la baixada hagi acabat.
 - Una llista de fitxers millor: trieu-los amb el ratolí o amb les fletxes, obriu-ne un amb clic dret i plegueu les carpetes que no mireu. Tant a l'aplicació com a la interfície web.
 - Els connectors poden afegir elements al menú d'un fitxer, iniciar programes sota un nou permís "execute" que aproveu en llenguatge clar, i portar les seves pròpies traduccions. Quinze funcions més els donen allò que la interfície web ja podia fer.
-- 35 llengües més, 76 en total, afegides a Europa, Àsia meridional, Sud-est asiàtic, Àsia central i Àfrica.
-- Correccions de seguretat a la interfície web i en el tractament dels camins de fitxer dels torrents.
-- Les baixades acabades o en pausa ja no bloquegen els seus fitxers, així que un arxiu o un vídeo de la carpeta de baixades s'obre amb el NanoTorrent en marxa.
+- Correccions de seguretat: un altre lloc ja no pot canviar res a través de la interfície web, un torrent ja no pot anomenar una unitat de Windows com a carpeta ni afegir una línia a una llista de reproducció, i els bloquejos per inicis de sessió fallits ja no compten les sol·licituds que no han provat cap contrasenya.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

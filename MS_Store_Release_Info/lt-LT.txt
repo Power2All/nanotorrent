@@ -33,9 +33,7 @@ Versija 0.4.0
 - Žiūrėkite vaizdo įrašą jam dar atsisiunčiant. Dešiniuoju pelės mygtuku spustelėkite failą torento informacijoje arba saityno sąsajoje, ir jis atsidarys VLC, mpv ar jūsų įprastame grotuve - atkūrimas prasideda nelaukiant, kol atsisiuntimas baigsis.
 - Geresnis failų sąrašas: rinkitės failus pele arba rodyklėmis, atverkite dešiniuoju mygtuku ir suskleiskite aplankus, į kuriuos dabar nežiūrite. Ir programoje, ir saityno sąsajoje.
 - Papildiniai gali įtraukti elementų į failo meniu, paleisti programas su nauju leidimu "execute", kurį patvirtinate aiškia kalba, ir turėti savo vertimus. Dar penkiolika funkcijų suteikia jiems tai, ką saityno sąsaja jau mokėjo.
-- 35 kalbomis daugiau, iš viso 76, pridėta Europoje, Pietų Azijoje, Pietryčių Azijoje, Vidurio Azijoje ir Afrikoje.
-- Saugumo pataisos saityno sąsajoje ir tvarkant failų kelius iš torentų.
-- Baigti ir pristabdyti atsisiuntimai nebelaiko savo failų užrakintų, tad archyvas ar vaizdo įrašas atsisiuntimų aplanke atsidaro veikiant NanoTorrent.
+- Saugumo pataisymai: kita svetainė nebegali nieko pakeisti per žiniatinklio sąsają, torentas nebegali pavadinti „Windows“ disko aplanku ar pridėti eilutės į grojaraštį, o užraktai po nesėkmingų prisijungimų nebeskaičiuoja užklausų, kurios niekada nebandė slaptažodžio.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -33,9 +33,7 @@ Versiya 0.4.0
 - Videonu yüklənərkən izləyin. Torrentin təfərrüatlarında və ya veb interfeysdə fayla sağ klikləyin, o da VLC, mpv və ya adi oynadıcınızda açılsın - oxutma yükləmə bitməzdən əvvəl başlayır.
 - Daha yaxşı fayl siyahısı: faylları siçanla və ya ox düymələri ilə seçin, birini sağ klikləyərək açın və baxmadığınız qovluqları yığın. Həm tətbiqdə, həm də veb interfeysdə.
 - Plaginlər faylın menyusuna elementlər əlavə edə, aydın dillə təsdiqlədiyiniz yeni "execute" icazəsi altında proqramlar işə sala və öz tərcümələrini gətirə bilər. Daha on beş funksiya onlara veb interfeysin artıq bacardığını verir.
-- Daha 35 dil, cəmi 76, Avropada, Cənubi Asiyada, Cənub-Şərqi Asiyada, Mərkəzi Asiyada və Afrikada.
-- Veb interfeysdə və torrent fayl yollarının idarə edilməsində təhlükəsizlik düzəlişləri.
-- Bitmiş və dayandırılmış yükləmələr artıq fayllarını kilidli saxlamır, ona görə də yükləmə qovluğundakı arxiv və ya video NanoTorrent işləyərkən açılır.
+- Təhlükəsizlik düzəlişləri: başqa sayt artıq veb interfeys vasitəsilə heç nəyi dəyişə bilməz, torrent artıq Windows diskini qovluq kimi adlandıra və ya pleylistə sətir əlavə edə bilməz, uğursuz giriş bloklamaları isə parol sınamayan sorğuları saymır.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

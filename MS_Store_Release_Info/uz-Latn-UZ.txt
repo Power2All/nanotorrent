@@ -33,9 +33,7 @@ Versiya 0.4.0
 - Videoni yuklab olinayotgan paytda ko'ring. Torrent tafsilotlarida yoki veb-interfeysda faylni sichqonchaning o'ng tugmasi bilan bosing, u VLC, mpv yoki odatdagi pleyeringizda ochiladi - ijro yuklab olish tugashidan oldin boshlanadi.
 - Yaxshiroq fayl ro'yxati: fayllarni sichqoncha yoki o'q tugmalari bilan tanlang, o'ng tugma bilan bittasini oching va qaramayotgan papkalaringizni yig'ing. Ilovada ham, veb-interfeysda ham.
 - Plaginlar fayl menyusiga bandlar qo'shishi, siz sodda tilda tasdiqlaydigan yangi "execute" ruxsati ostida dasturlarni ishga tushirishi va o'z tarjimalarini olib yurishi mumkin. Yana o'n beshta funksiya ularga veb-interfeys allaqachon qila olganini beradi.
-- Yana 35 til, jami 76, Yevropa, Janubiy Osiyo, Janubi-Sharqiy Osiyo, Markaziy Osiyo va Afrikada.
-- Veb-interfeysda va torrent fayl yo'llarini qayta ishlashda xavfsizlik tuzatishlari.
-- Tugagan va to'xtatilgan yuklab olishlar endi fayllarini qulflab turmaydi, shuning uchun yuklamalar papkasidagi arxiv yoki video NanoTorrent ishlab turganda ham ochiladi.
+- Xavfsizlik tuzatishlari: boshqa sayt endi veb-interfeys orqali hech narsani o'zgartira olmaydi, torrent endi Windows diskini papka deb nomlay yoki ijro ro'yxatiga satr qo'sha olmaydi, muvaffaqiyatsiz kirishlardan keyingi bloklashlar esa parol sinalmagan so'rovlarni sanamaydi.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

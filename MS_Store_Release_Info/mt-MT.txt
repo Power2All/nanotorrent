@@ -33,9 +33,7 @@ Verżjoni 0.4.0
 - Ara vidjow waqt li qed jitniżżel. Ikklikkja bil-lemin fajl fid-dettalji ta' torrent, jew fl-interfaċċa tal-web, u jinfetaħ f'VLC, f'mpv jew fil-plejer tas-soltu tiegħek - id-daqq jibda qabel ma jitlesta t-tniżżil.
 - Lista ta' fajls aħjar: agħżel fajls bil-maws jew bil-vleġeġ, iftaħ wieħed b'klikk tal-lemin, u aqfel il-folders li mhux qed tħares lejhom. Fl-app u fl-interfaċċa tal-web.
 - Il-plaggins jistgħu jżidu elementi mal-menu ta' fajl, jibdew programmi taħt permess ġdid "execute" li tapprova b'lingwaġġ ċar, u jġorru t-traduzzjonijiet tagħhom stess. Ħmistax-il funzjoni oħra jagħtuhom dak li l-interfaċċa tal-web diġà setgħet tagħmel.
-- 35 lingwa oħra, 76 b'kollox, miżjuda fl-Ewropa, fl-Asja t'Isfel, fix-Xlokk tal-Asja, fl-Asja Ċentrali u fl-Afrika.
-- Tiswijiet ta' sigurtà fl-interfaċċa tal-web u fit-trattament tal-mogħdijiet tal-fajls mit-torrents.
-- It-tniżżil lest u dak imwaqqaf ma jżommux aktar il-fajls imsakkra, għalhekk arkivju jew vidjow fil-folder tat-tniżżil jinfetaħ waqt li NanoTorrent għadu jaħdem.
+- Tiswijiet ta' sigurtà: sit ieħor ma jistax jibdel xejn permezz tal-interface tal-web, torrent ma jistax jsemmi drive tal-Windows bħala folder jew iżid linja ma' playlist, u l-illokkjar wara login falluti ma jgħoddx aktar talbiet li qatt ma ppruvaw password.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
