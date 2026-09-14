@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Afrikaans (Suid-Afrika) - Partner Center: Afrikaans (South Africa) (af-ZA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent is 'n Rust-oordrag van PicoTorrent deur Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Weergawe 0.4.0
 
-Weergawe 0.3.8
-
-- 35 meer tale, 76 in totaal, bygevoeg oor Europa, Suid-Asië, Suidoos-Asië, Sentraal-Asië en Afrika.
-- Afgehandelde aflaaie bly nie meer gesluit nie. 'n Torrent wat klaar was, of wat onderbreek is, het sy lêers oop gehou om te skryf, en op Windows is dit alleen genoeg om 'n ander program te keer om hulle oop te maak: 'n argief of 'n video in die afleigids kon nie oopgemaak word voordat NanoTorrent toegemaak is nie. Lêers word nou slegs-lees heropen sodra niks geskryf gaan word nie, en skryftoegang word outomaties teruggeneem as dit weer nodig is.
+- Stroom 'n video terwyl dit aflaai. Regskliek 'n lêer in 'n torrent se besonderhede, of in die webkoppelvlak, en dit open in VLC, mpv of jou gewone speler - die weergawe begin voordat die aflaai klaar is.
+- 'n Beter lêerlys: kies lêers met die muis of die pyltjiesleutels, open een met 'n regskliek, en vou die vouers toe waarna jy nie kyk nie. In die program sowel as in die webkoppelvlak.
+- Inproppe kan items by 'n lêer se kieslys voeg, programme begin onder 'n nuwe "execute"-toestemming wat jy in gewone taal goedkeur, en hul eie vertalings saambring. Vyftien verdere funksies gee hulle wat die webkoppelvlak reeds kon doen.
+- 35 tale meer, 76 altesaam, bygevoeg in Europa, Suid-Asië, Suidoos-Asië, Sentraal-Asië en Afrika.
+- Sekuriteitsregstellings aan die webkoppelvlak en aan die hantering van torrents se lêerpaaie.
+- Voltooide en gepouseerde aflaaie hou nie meer hul lêers gesluit nie, so 'n argief of video in die aflaaivouer open terwyl NanoTorrent nog loop.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

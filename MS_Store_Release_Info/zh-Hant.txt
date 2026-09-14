@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: 繁體中文 (台灣) - app locale zh-TW - Partner Center: Chinese (Traditional) (zh-Hant)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+版本 0.4.0
 
-版本 0.3.8
-
+- 邊下載邊播放影片。在種子詳情或網頁介面中對檔案按右鍵，即可用 VLC、mpv 或你慣用的播放器開啟，下載還沒完成就能開始播放。
+- 更好用的檔案清單：用滑鼠或方向鍵選取檔案，按右鍵開啟，並收合你此刻不關心的資料夾。應用程式與網頁介面皆然。
+- 外掛可以在檔案選單中加入項目，在新的 "execute" 權限下啟動程式（該權限以淺白文字呈現並由你核准），還可以自帶翻譯。另外十五個函式讓外掛也能做網頁介面早已能做的事。
 - 新增 35 種語言，共 76 種，涵蓋歐洲、南亞、東南亞、中亞與非洲。
-- 已完成的下載不再被鎖住。已完成或已暫停的種子仍以可寫入的方式占用著檔案，在 Windows 上僅此一點就足以讓其他程式無法開啟它們：下載資料夾裡的壓縮檔或影片，要等到關閉 NanoTorrent 才能開啟。現在只要不再需要寫入，檔案就會以唯讀方式重新開啟；若日後又需要寫入，寫入權限會自動取回。
+- 網頁介面以及種子檔案路徑處理方面的安全修正。
+- 已完成與已暫停的下載不再鎖住檔案，因此在 NanoTorrent 仍在執行時也能開啟下載資料夾裡的壓縮檔或影片。
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -141,6 +141,44 @@ impl ManagedTorrentOptions {
     }
 }
 
+/// Build a torrent file's path from its components, refusing anything that is
+/// not a plain name.
+///
+/// `ValidatedTorrentMetaV1Info` already rejects "..", "/" and "\\" inside a
+/// component, which is the whole story on Unix. On Windows it is not: a
+/// component may carry a DRIVE PREFIX, and `PathBuf::push` DISCARDS everything
+/// built so far when the pushed component has one. So
+///
+///     Path::new(r"D:\Downloads\t").join("C:")   ->  "C:"
+///
+/// and a torrent whose first component is `C:` is written to `C:Windows\...`,
+/// outside the download folder, without containing any of the three strings
+/// that validation looks for.
+///
+/// Rather than enumerate the shapes that do this - drive prefixes, UNC and
+/// verbatim prefixes, roots, `.`, `..` - every component is required to parse
+/// as exactly one `Component::Normal`. Anything else is refused, on every
+/// platform, and stays refused as new prefix forms appear.
+///
+/// Refused, not sanitised: a torrent that names `C:` is not a torrent with a
+/// typo in it, and quietly writing it somewhere else would hide that.
+fn safe_relative_path<'a>(
+    components: impl Iterator<Item = std::borrow::Cow<'a, str>>,
+) -> anyhow::Result<PathBuf> {
+    let mut out = PathBuf::new();
+    for bit in components {
+        let mut parsed = Path::new(&*bit).components();
+        match (parsed.next(), parsed.next()) {
+            (Some(std::path::Component::Normal(one)), None) => out.push(one),
+            _ => bail!("refusing torrent: {bit:?} is not a plain file name"),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        bail!("refusing torrent: a file has no name");
+    }
+    Ok(out)
+}
+
 // Torrent bencodee "info" + some precomputed fields based on it for frequent access.
 pub struct TorrentMetadata {
     pub info: ValidatedTorrentMetaV1Info<ByteBufOwned>,
@@ -159,7 +197,9 @@ impl TorrentMetadata {
             .iter_file_details_ext()
             .map(|fd| {
                 Ok::<_, anyhow::Error>(FileInfo {
-                    relative_filename: fd.details.filename.to_pathbuf(),
+                    relative_filename: safe_relative_path(
+                        fd.details.filename.iter_components(),
+                    )?,
                     offset_in_torrent: fd.offset,
                     piece_range: fd.pieces,
                     len: fd.details.len,

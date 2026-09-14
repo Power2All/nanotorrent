@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.3.8"
+version = "0.4.0"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -178,6 +178,9 @@ serde_json = "1.0.151"
 # minor bump is breaking in semver, so moving to 0.42 does not upgrade the
 # shared copy - it compiles a second one alongside it. Bump this when the
 # vendored librqbit moves, not before.
+# 0.42, not the 0.41 librqbit-upnp pins, so two versions are compiled. Tried
+# pinning down to match and 0.41 has a different BytesText API - rewriting a
+# working parser to save one crate from the build is the wrong trade.
 quick-xml = "0.42"
 # The UI toolkit. Optional so --no-default-features gives a headless daemon.
 # Decoding res/flags/*.png into Slint images for the peers list. Already in the

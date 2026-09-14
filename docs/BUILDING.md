@@ -105,7 +105,7 @@ Built and run on 2026-08-23 against Ubuntu 24.04 under WSL2 with WSLg:
 
 - `cargo build --release` — clean, ~5 min cold.
 - `cargo test --release` — 87 passed. **A count from that day, not a target.**
-  The suite grows; on Windows it is 296 passed and 7 ignored as of 2026-09-12.
+  The suite grows; on Windows it is 333 passed and 7 ignored as of 2026-09-14.
   Several tests are `#[cfg(windows)]`, so the two platforms will never agree on
   the number — compare against what your own run reports, not against either
   figure written here.

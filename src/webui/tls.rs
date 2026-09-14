@@ -62,11 +62,21 @@ pub fn self_signed(data_dir: &Path) -> Result<ServerConfig> {
 /// it - that is inherent to self-signing - but the traffic is still encrypted,
 /// which is what stops Basic credentials crossing the network in clear text.
 fn generate(cert_path: &PathBuf, key_path: &PathBuf) -> Result<()> {
-    // SANs cover the names this is actually reached by. An IP-address SAN
-    // cannot be predicted here (the LAN address changes), so reaching it by IP
-    // will warn even after the certificate is trusted - use the hostname.
+    // SANs cover the names this is actually reached by. The LAN address still
+    // cannot be predicted - it changes - so reaching the interface by its LAN IP
+    // warns even after the certificate is trusted, and the hostname is the
+    // answer there. The LOOPBACK addresses are predictable, though, and they are
+    // the ones a media player on this machine is handed: without them VLC
+    // refuses a stream URL with "the name in the certificate does not match the
+    // expected" on top of the usual untrusted-issuer complaint, and accepting
+    // the certificate permanently does not clear a name mismatch.
+    //
+    // rcgen turns an entry that parses as an IP address into an IP SAN and the
+    // rest into DNS SANs, so this list needs no further ceremony.
     let names = vec![
         String::from("localhost"),
+        String::from("127.0.0.1"),
+        String::from("::1"),
         hostname().unwrap_or_else(|| String::from("nanotorrent")),
     ];
     let key = rcgen::generate_simple_self_signed(names)
@@ -206,6 +216,60 @@ mod tests {
 
         assert!(fingerprint(&cert_path(&dir)).is_some_and(|f| f.contains(':')));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The certificate has to name the loopback addresses, not just `localhost`.
+    ///
+    /// A media player handed a stream URL is the reason. Without an IP SAN, VLC
+    /// refuses `https://127.0.0.1/...` with "the name in the certificate does not
+    /// match the expected" *on top of* the untrusted-issuer complaint - and
+    /// accepting the certificate permanently clears the issuer, never the name.
+    /// The LAN address genuinely cannot be predicted here; the loopback ones can.
+    #[test]
+    fn the_certificate_covers_the_loopback_addresses() {
+        let dir = std::env::temp_dir().join(format!("nt-tls-san-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        self_signed(&dir).expect("generate");
+
+        let pem = std::fs::read_to_string(dir.join(CERT_FILE)).unwrap();
+        let der = pem
+            .lines()
+            .filter(|l| !l.starts_with("-----"))
+            .collect::<String>();
+        let der = base64_decode(&der).expect("the certificate is base64 PEM");
+
+        // Read the SANs out of the DER rather than adding an X.509 parser: an
+        // IP SAN is a 4-byte (or 16-byte) octet string, and 127.0.0.1 is the
+        // exact byte sequence 7F 00 00 01 sitting behind tag 0x87 (context 7).
+        let v4 = [0x87u8, 4, 127, 0, 0, 1];
+        assert!(
+            der.windows(v4.len()).any(|w| w == v4),
+            "no IP SAN for 127.0.0.1 - VLC will reject a stream URL by IP"
+        );
+        assert!(
+            String::from_utf8_lossy(&der).contains("localhost"),
+            "no DNS SAN for localhost"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Minimal base64 for the test above, so this does not reach for a crate.
+    fn base64_decode(s: &str) -> Option<Vec<u8>> {
+        const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = Vec::new();
+        let mut acc = 0u32;
+        let mut bits = 0u32;
+        for c in s.bytes().filter(|c| !c.is_ascii_whitespace() && *c != b'=') {
+            let v = A.iter().position(|&a| a == c)? as u32;
+            acc = (acc << 6) | v;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                out.push((acc >> bits) as u8);
+            }
+        }
+        Some(out)
     }
 
     #[test]

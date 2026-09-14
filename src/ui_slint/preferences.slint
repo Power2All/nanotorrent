@@ -175,7 +175,7 @@ component Labelled inherits HorizontalLayout {
 }
 
 export component PreferencesDialog inherits Window {
-    icon: @image-url("../../res/app.png");
+    icon: @image-url("../../res/app-256.png");
     title: L.s(L.revision, "preferences");
     // Width is pinned - nothing here reflows horizontally. Height is NOT:
     // the window takes its content's natural height, so it opens exactly
@@ -445,14 +445,6 @@ export component PreferencesDialog inherits Window {
     // field to 0 mid-edit, and 0 is a meaningful value for two of them.
     // Rust parses and clamps on save.
     in-out property <bool> web-advanced;
-    in-out property <string> web-req-timeout;
-    in-out property <string> web-disconnect-timeout;
-    in-out property <string> web-keep-alive;
-    in-out property <string> web-max-connections;
-    in-out property <string> web-max-conn-rate;
-    in-out property <string> web-workers;
-    in-out property <string> web-shutdown-timeout;
-    in-out property <string> web-max-body;
     in-out property <string> web-auth-max-failures;
     in-out property <string> web-auth-window;
     in-out property <string> web-auth-block;
@@ -999,88 +991,6 @@ export component PreferencesDialog inherits Window {
                                 font-size: 12px;
                                 color: #888;
                                 wrap: word-wrap;
-                            }
-                            Labelled {
-                                label: "    " + L.s(L.revision, "web_request_timeout");
-                                LineEdit {
-                                    text <=> root.web-req-timeout;
-                                    horizontal-stretch: 1;
-                                    input-type: number;
-                                    enabled: root.web-enabled;
-                                    edited => { root.web-changed(); }
-                                }
-                            }
-                            Labelled {
-                                label: "    " + L.s(L.revision, "web_disconnect_timeout");
-                                LineEdit {
-                                    text <=> root.web-disconnect-timeout;
-                                    horizontal-stretch: 1;
-                                    input-type: number;
-                                    enabled: root.web-enabled;
-                                    edited => { root.web-changed(); }
-                                }
-                            }
-                            Labelled {
-                                label: "    " + L.s(L.revision, "web_keep_alive");
-                                hint: L.s(L.revision, "hint_keep_alive");
-                                LineEdit {
-                                    text <=> root.web-keep-alive;
-                                    horizontal-stretch: 1;
-                                    input-type: number;
-                                    enabled: root.web-enabled;
-                                    edited => { root.web-changed(); }
-                                }
-                            }
-                            Labelled {
-                                label: "    " + L.s(L.revision, "web_shutdown_timeout");
-                                LineEdit {
-                                    text <=> root.web-shutdown-timeout;
-                                    horizontal-stretch: 1;
-                                    input-type: number;
-                                    enabled: root.web-enabled;
-                                    edited => { root.web-changed(); }
-                                }
-                            }
-                            Labelled {
-                                label: "    " + L.s(L.revision, "web_max_connections");
-                                LineEdit {
-                                    text <=> root.web-max-connections;
-                                    horizontal-stretch: 1;
-                                    input-type: number;
-                                    enabled: root.web-enabled;
-                                    edited => { root.web-changed(); }
-                                }
-                            }
-                            Labelled {
-                                label: "    " + L.s(L.revision, "web_max_conn_rate");
-                                LineEdit {
-                                    text <=> root.web-max-conn-rate;
-                                    horizontal-stretch: 1;
-                                    input-type: number;
-                                    enabled: root.web-enabled;
-                                    edited => { root.web-changed(); }
-                                }
-                            }
-                            Labelled {
-                                label: "    " + L.s(L.revision, "web_workers");
-                                LineEdit {
-                                    text <=> root.web-workers;
-                                    horizontal-stretch: 1;
-                                    input-type: number;
-                                    enabled: root.web-enabled;
-                                    edited => { root.web-changed(); }
-                                }
-                            }
-                            Labelled {
-                                label: "    " + L.s(L.revision, "web_max_body");
-                                hint: L.s(L.revision, "hint_max_body");
-                                LineEdit {
-                                    text <=> root.web-max-body;
-                                    horizontal-stretch: 1;
-                                    input-type: number;
-                                    enabled: root.web-enabled;
-                                    edited => { root.web-changed(); }
-                                }
                             }
                             Text {
                                 text: L.s(L.revision, "auth_lockout");

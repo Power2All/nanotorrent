@@ -189,6 +189,18 @@ fn verify_librqbit_patches() {
             "patches/0021-release-write-handles.patch (the trait method)",
         ),
         (
+            "vendor/librqbit/Cargo.toml",
+            "librqbit-dualstack-sockets/axum",
+            "patches/0023-axum-only-under-http-api.patch (without it axum, 
+             axum-extra and four more crates are compiled into a build 
+             that never serves an axum route)",
+        ),
+        (
+            "vendor/librqbit/src/torrent_state/mod.rs",
+            "fn safe_relative_path",
+            "patches/0022-refuse-prefixed-path-components.patch (SECURITY, \n             with 0015 - without it `relative_filename` may carry a Windows \n             drive prefix, and every reader outside the storage layer joins \n             it unguarded)",
+        ),
+        (
             "vendor/librqbit/src/storage/filesystem/opened_file.rs",
             "pub fn lock_for_write",
             "patches/0021-release-write-handles.patch (without it a finished              download stays unopenable by other programs until NanoTorrent exits)",

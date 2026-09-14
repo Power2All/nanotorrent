@@ -91,6 +91,12 @@ pub struct PluginUi {
     /// a title that opens onto nothing.
     pub menu_items: Vec<(String, String)>,
 
+    // ---- its items on the file context menu ----------------------------
+    /// `(id, label)` pairs offered when a file is right-clicked in a torrent's
+    /// details panel. Empty means the plugin adds nothing there, which is the
+    /// default and what every plugin written before this did.
+    pub file_menu: Vec<(String, String)>,
+
     // ---- its settings --------------------------------------------------
     /// The plugin says it needs setting up before it will do anything useful,
     /// so Preferences offers a Configure button on its row.
@@ -112,6 +118,17 @@ pub enum UiEvent {
     Button { plugin: String, id: String, input: String },
     /// An item in the plugin's own menu-bar dropdown.
     Menu { plugin: String, id: String },
+    /// One of the plugin's items on a file's context menu, with the file it
+    /// was used on. The plugin is told what was clicked AND what it was
+    /// clicked on, so it needs no state between drawing the menu and the
+    /// click landing.
+    FileMenu {
+        plugin: String,
+        id: String,
+        hash: String,
+        index: i64,
+        name: String,
+    },
     /// A form was saved. `values` is field id to value; a checkbox is "1" or
     /// the empty string, so every value is a string and a plugin reads them
     /// the same way whatever the control was.
@@ -250,6 +267,39 @@ pub fn menus() -> Vec<(String, String)> {
 }
 
 /// The items in one plugin's dropdown, as `(id, label)`.
+/// A plugin's name as it belongs in a menu.
+///
+/// The name is the file stem, so it is whatever the author called the file -
+/// `player`, `rss`. Shown raw it reads as a typo next to NanoTorrent's own
+/// captions. Only the first letter is touched: `my-tool` stays `My-tool`
+/// rather than being guessed at, because a name is the author's to spell.
+pub fn display_name(plugin: &str) -> String {
+    let mut chars = plugin.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Every plugin's file-menu items, flattened into `(plugin, id, label)`.
+///
+/// Ordered by plugin name so the menu does not reshuffle itself between
+/// right-clicks - a menu whose items move is a menu that gets misclicked.
+pub fn file_menu_items() -> Vec<(String, String, String)> {
+    let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
+    let mut out: Vec<(String, String, String)> = reg
+        .plugins
+        .iter()
+        .flat_map(|(plugin, ui)| {
+            ui.file_menu
+                .iter()
+                .map(move |(id, label)| (plugin.clone(), id.clone(), label.clone()))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
 pub fn menu_items(plugin: &str) -> Vec<(String, String)> {
     registry()
         .lock()
@@ -314,6 +364,23 @@ pub fn clear() {
 
 #[cfg(test)]
 mod tests {
+    /// A plugin's name is a file stem, so it is however the author spelled it.
+    /// Only the first letter is ours to change.
+    #[test]
+    fn a_plugin_is_named_for_a_menu_without_being_rewritten() {
+        assert_eq!(display_name("player"), "Player");
+        assert_eq!(display_name("rss"), "Rss");
+        assert_eq!(display_name("My-Tool"), "My-Tool", "already capitalised");
+        assert_eq!(display_name("my-tool"), "My-tool", "the rest is left alone");
+        assert_eq!(display_name(""), "");
+        // Not every script HAS an upper case, and a name in one must come back
+        // whole rather than empty.
+        assert_eq!(display_name("\u{4e2d}\u{6587}"), "\u{4e2d}\u{6587}");
+        // One lower-case letter can become two upper-case ones, which is why
+        // this cannot be a single-byte swap.
+        assert_eq!(display_name("\u{df}tool"), "SStool");
+    }
+
     use super::*;
 
     // The registry is process-wide and the test harness is threaded, so these

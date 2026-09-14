@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Bahasa Melayu (Malaysia) - Partner Center: Malay (Malaysia) (ms-MY)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent ialah versi Rust bagi PicoTorrent oleh Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versi 0.4.0
 
-Versi 0.3.8
-
+- Tonton video sambil ia dimuat turun. Klik kanan pada fail dalam butiran torrent, atau dalam antara muka web, dan ia akan dibuka dalam VLC, mpv atau pemain biasa anda - main balik bermula sebelum muat turun selesai.
+- Senarai fail yang lebih baik: pilih fail dengan tetikus atau kekunci anak panah, buka satu dengan klik kanan, dan lipat folder yang tidak sedang anda lihat. Dalam aplikasi mahupun dalam antara muka web.
+- Pemalam boleh menambah item pada menu fail, memulakan program di bawah kebenaran baharu "execute" yang anda luluskan dalam bahasa mudah, dan membawa terjemahan mereka sendiri. Lima belas panggilan tambahan memberi mereka apa yang sudah boleh dilakukan oleh antara muka web.
 - 35 bahasa lagi, 76 kesemuanya, ditambah di Eropah, Asia Selatan, Asia Tenggara, Asia Tengah dan Afrika.
-- Muat turun yang selesai tidak lagi kekal terkunci. Torrent yang telah selesai, atau yang dijeda, mengekalkan failnya terbuka untuk ditulis, dan pada Windows itu sendiri sudah cukup untuk menghalang program lain membukanya: arkib atau video dalam folder muat turun tidak dapat dibuka sehingga NanoTorrent ditutup. Fail kini dibuka semula baca sahaja sebaik sahaja tiada apa-apa yang akan ditulis, dan akses tulis diambil semula secara automatik jika diperlukan lagi.
+- Pembaikan keselamatan pada antara muka web dan pada pengendalian laluan fail torrent.
+- Muat turun yang selesai dan yang dijeda tidak lagi mengunci failnya, jadi arkib atau video dalam folder muat turun boleh dibuka semasa NanoTorrent masih berjalan.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

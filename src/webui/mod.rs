@@ -30,6 +30,7 @@
 mod auth;
 pub mod cli;
 mod fs;
+pub mod streamtoken;
 pub mod tls;
 
 use std::collections::HashMap;
@@ -84,21 +85,15 @@ pub struct WebConfig {
 /// count or a zero connection limit is a server that binds and then answers
 /// nothing, which looks like a crash and is far harder to diagnose than a
 /// value that quietly refused to apply.
+/// Request body ceiling, in megabytes.
+///
+/// Actix's default is 2 KB, which rejects any real `.torrent` upload - one with
+/// thousands of files runs to a few MB once base64'd. Still a cap, because an
+/// unbounded body is free memory for anyone holding the password.
+const MAX_BODY_MB: usize = 8;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Advanced {
-    /// Seconds a client may take to send its request headers.
-    pub client_request_timeout: u64,
-    /// Seconds a client that stopped reading may hold its worker slot.
-    pub client_disconnect_timeout: u64,
-    /// Seconds an idle connection is kept open. Zero disables keep-alive.
-    pub keep_alive: u64,
-    pub max_connections: usize,
-    /// TLS handshakes in flight - the expensive half of a connection flood.
-    pub max_connection_rate: usize,
-    pub workers: usize,
-    pub shutdown_timeout: u64,
-    /// Request body ceiling in MEGABYTES, as typed; `build` converts.
-    pub max_body_size: usize,
     /// Failed logins from one address that trip the lockout. Zero disables it.
     pub auth_max_failures: u32,
     /// Seconds over which those failures are counted.
@@ -110,14 +105,6 @@ pub struct Advanced {
 impl Default for Advanced {
     fn default() -> Self {
         Advanced {
-            client_request_timeout: 5,
-            client_disconnect_timeout: 5,
-            keep_alive: 30,
-            max_connections: 256,
-            max_connection_rate: 64,
-            workers: 2,
-            shutdown_timeout: 5,
-            max_body_size: 8,
             // Five tries a minute, then an hour out. Deliberately strict: this
             // guards one password on a machine its owner can always reach by
             // other means, so the cost of being wrong is small and the cost of
@@ -138,8 +125,6 @@ impl Advanced {
     /// preferences field should be able to stop the interface coming up.
     pub fn load(cfg: &Configuration) -> Advanced {
         let d = Advanced::default();
-        // Named closures over `cfg` so each line below reads as the range it
-        // allows rather than as three lines of Option plumbing.
         let secs = |key: &str, lo: u64, hi: u64, fallback: u64| -> u64 {
             cfg.get_int(key)
                 .map_or(fallback, |v| (v.max(0) as u64).clamp(lo, hi))
@@ -150,31 +135,6 @@ impl Advanced {
         };
 
         Advanced {
-            // At least a second: a zero timeout would cut off every request
-            // before it arrived. The hour ceiling is arbitrary but finite -
-            // "no timeout" is the one setting that must not be reachable.
-            client_request_timeout: secs("webui.client_request_timeout", 1, 3600, d.client_request_timeout),
-            client_disconnect_timeout: secs(
-                "webui.client_disconnect_timeout",
-                1,
-                3600,
-                d.client_disconnect_timeout,
-            ),
-            // Zero is meaningful here, and only here: actix reads it as
-            // "close after every response".
-            keep_alive: secs("webui.keep_alive", 0, 86400, d.keep_alive),
-            max_connections: count("webui.max_connections", 1, 100_000, d.max_connections),
-            max_connection_rate: count("webui.max_connection_rate", 1, 100_000, d.max_connection_rate),
-            // Capped well under any real core count: each worker is a thread,
-            // and this serves one person.
-            workers: count("webui.workers", 1, 64, d.workers),
-            // Zero means "drop connections at once on shutdown", which is a
-            // legitimate choice for a desktop app being closed.
-            shutdown_timeout: secs("webui.shutdown_timeout", 0, 3600, d.shutdown_timeout),
-            // Below 1 MB would reject ordinary .torrent uploads; the ceiling
-            // keeps an unbounded body from being free memory for anyone
-            // holding the password.
-            max_body_size: count("webui.max_body_size", 1, 1024, d.max_body_size),
             // Zero is meaningful: it switches the lockout off. Anything above
             // it is clamped to something a person could plausibly mean.
             auth_max_failures: count("webui.auth_max_failures", 0, 1000, d.auth_max_failures as usize)
@@ -250,6 +210,9 @@ struct AppState {
     /// shared queue, which meant whichever polled first won and the other
     /// silently lost the error.
     errors: Arc<std::sync::Mutex<std::sync::mpsc::Receiver<SessionEvent>>>,
+    /// Capability tokens for the streaming endpoint - the one way in that is
+    /// not the web interface's password. See [`streamtoken`].
+    stream_tokens: Arc<streamtoken::StreamTokens>,
 }
 
 impl AppState {
@@ -465,7 +428,7 @@ async fn h_favicon() -> impl Responder {
     HttpResponse::Ok()
         .content_type("image/png")
         .insert_header(("Cache-Control", "public, max-age=86400"))
-        .body(&include_bytes!("../../res/app.png")[..])
+        .body(&include_bytes!("../../res/app-256.png")[..])
 }
 
 async fn h_index(state: web::Data<AppState>) -> impl Responder {
@@ -988,6 +951,15 @@ async fn h_reannounce(
     with_torrent(&state, hash.into_inner(), |s, h| s.reannounce(h)).await
 }
 
+/// One peer, for `GET /api/torrents/{hash}/peers`.
+#[derive(Serialize)]
+struct PeerRow {
+    addr: String,
+    state: String,
+    fetched_bytes: u64,
+    pieces: u32,
+}
+
 #[derive(Serialize)]
 struct FileRow {
     index: usize,
@@ -997,6 +969,342 @@ struct FileRow {
     /// 0 skip, 1 normal, 2 high, 3 maximum - the same scale the database and
     /// the desktop's Files tab use.
     priority: i64,
+}
+
+/// A `Range: bytes=...` header as an inclusive (start, end), given the length.
+///
+/// Only the single-range forms a media player actually sends: `bytes=a-b`,
+/// `bytes=a-` and the suffix form `bytes=-n`. A multi-range request would need a
+/// multipart reply, which no player asks for, so it is refused rather than
+/// half-answered. `None` means the header was absent or unusable and the whole
+/// file should be sent.
+/// The whole file as an inclusive byte range, or `None` if there is no byte in
+/// it to name.
+///
+/// `(0, len - 1)` written out, because `len - 1` on a u64 is not a small
+/// mistake: at `len == 0` it panics in a debug build and wraps to 18 exabytes
+/// in a release one, and a zero-length file is an ordinary thing for a torrent
+/// to contain. `parse_range` already refuses every range against an empty file
+/// through the same `checked_sub`; this is the path that had no header to
+/// parse.
+fn whole_file_range(len: u64) -> Option<(u64, u64)> {
+    Some((0, len.checked_sub(1)?))
+}
+
+fn parse_range(header: &str, len: u64) -> Option<(u64, u64)> {
+    let spec = header.trim().strip_prefix("bytes=")?.trim();
+    if spec.contains(',') {
+        return None;
+    }
+    let (from, to) = spec.split_once('-')?;
+    let last = len.checked_sub(1)?;
+
+    if from.is_empty() {
+        // bytes=-n - the final n bytes.
+        let n: u64 = to.parse().ok()?;
+        if n == 0 {
+            return None;
+        }
+        return Some((len.saturating_sub(n), last));
+    }
+
+    let start: u64 = from.parse().ok()?;
+    if start > last {
+        return None;
+    }
+    let end = if to.is_empty() {
+        last
+    } else {
+        to.parse::<u64>().ok()?.min(last)
+    };
+    if start > end { None } else { Some((start, end)) }
+}
+
+/// A torrent filename, safe to put in a header or a playlist.
+///
+/// Two separate problems, one answer:
+///
+/// * A header value may not contain a control character. `insert_header`
+///   does not panic on one - it stores the error and the response becomes a
+///   500 - so a torrent with a `\x01` in a filename turned the whole stream
+///   into a server error instead of a download.
+/// * `"` and `\` end the quoting in `Content-Disposition`, and CR/LF would
+///   split the header outright.
+///
+/// Everything below `0x20`, plus DEL, plus the three quoting characters,
+/// becomes `_`. Bytes above 0x7F are left alone: they are legal in a header
+/// value as obs-text, and stripping them would mangle every non-Latin
+/// filename there is.
+fn safe_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '"' | '\\' | '\x7f' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect()
+}
+
+/// A content type a media player will accept, from the file's extension.
+///
+/// Hand-rolled rather than a mime database: the list that matters for streaming
+/// is short, and `application/octet-stream` is a fine answer for the rest -
+/// players sniff the container anyway. `video/x-matroska` is the one worth
+/// getting right, because browsers use it to decide they cannot play a file.
+fn stream_content_type(name: &str) -> &'static str {
+    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("mp4") | Some("m4v") => "video/mp4",
+        Some("mkv") => "video/x-matroska",
+        Some("webm") => "video/webm",
+        Some("avi") => "video/x-msvideo",
+        Some("mov") => "video/quicktime",
+        Some("wmv") => "video/x-ms-wmv",
+        Some("flv") => "video/x-flv",
+        Some("mpg") | Some("mpeg") => "video/mpeg",
+        Some("ts") | Some("m2ts") | Some("mts") => "video/mp2t",
+        Some("ogv") => "video/ogg",
+        Some("mp3") => "audio/mpeg",
+        Some("flac") => "audio/flac",
+        Some("aac") => "audio/aac",
+        Some("m4a") => "audio/mp4",
+        Some("opus") => "audio/opus",
+        Some("ogg") | Some("oga") => "audio/ogg",
+        Some("wav") => "audio/wav",
+        Some("srt") => "application/x-subrip",
+        Some("vtt") => "text/vtt",
+        _ => "application/octet-stream",
+    }
+}
+
+/// `GET /api/torrents/{hash}/files/{index}/playlist.m3u` - a playlist the
+/// operating system will open in a media player.
+///
+/// The browser downloads this; the OS opens it. NanoTorrent launches nothing,
+/// which is why this works from the web interface at all, and why it works the
+/// same from another machine.
+async fn h_playlist(
+    req: actix_web::HttpRequest,
+    state: web::Data<AppState>,
+    path: web::Path<(String, usize)>,
+) -> actix_web::Result<HttpResponse> {
+    let (hash, index) = path.into_inner();
+
+    // Opened only to learn the name and to be sure the file is really there -
+    // a playlist pointing at a 404 is worse than a refusal.
+    let probe = state
+        .session
+        .stream_file(&hash, index, None)
+        .ok_or_else(|| ErrorNotFound("no such torrent, file, or metadata not resolved yet"))?;
+    let name = probe.name.clone();
+    drop(probe);
+
+    let token = state
+        .stream_tokens
+        .issue(&hash, index)
+        .ok_or_else(|| ErrorBadRequest("that is not an info hash"))?;
+
+    // The client's own view of how it reached us. Host is client-supplied, but
+    // this URL is going straight back to that same client, so a spoofed one
+    // only misdirects the spoofer.
+    let info = req.connection_info();
+    let base = format!("{}://{}", info.scheme(), info.host());
+    let url = format!("{base}/api/torrents/{hash}/files/{index}/stream?token={token}");
+
+    // Sanitised for the BODY as much as for the header. An .m3u is
+    // line-oriented, so a newline in a torrent's filename appends a line of the
+    // torrent author's choosing to the playlist - including another URL, which
+    // the media player would then go and fetch. The header was already being
+    // cleaned; the body was not, which is the half that mattered.
+    let safe = safe_filename(&name);
+
+    // #EXTINF gives the player something to show instead of the URL. -1 because
+    // the duration is not knowable from here, which players accept.
+    let body = format!("#EXTM3U\n#EXTINF:-1,{safe}\n{url}\n");
+    Ok(HttpResponse::Ok()
+        .content_type("audio/x-mpegurl")
+        .insert_header((
+            "Content-Disposition",
+            format!("attachment; filename=\"{safe}.m3u\""),
+        ))
+        // A playlist carrying a token has no business in a shared cache, or in
+        // the browser's back/forward cache after the token dies.
+        .insert_header(("Cache-Control", "no-store"))
+        .body(body))
+}
+
+/// `GET|HEAD /api/torrents/{hash}/files/{index}/stream` - the file's bytes,
+/// while it is still downloading.
+///
+/// This is what makes "watch it now" possible without NanoTorrent launching
+/// anything: point VLC, mpv or a browser at this URL and the player does the
+/// playing. librqbit's reader blocks on a piece it does not have yet and asks
+/// for it, so seeking works on an incomplete file.
+///
+/// `Accept-Ranges` and 206 are not optional here. Players open the URL, read the
+/// container header, and immediately seek - usually to the end, for the index of
+/// an MP4 written that way. Answering 200-and-the-whole-file to every request
+/// makes a player appear to hang while it downloads a film to reach the part you
+/// asked for.
+async fn h_stream(
+    req: actix_web::HttpRequest,
+    state: web::Data<AppState>,
+    path: web::Path<(String, usize)>,
+) -> actix_web::Result<HttpResponse> {
+    let (hash, index) = path.into_inner();
+
+    let range_header = req
+        .headers()
+        .get(actix_web::http::header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+
+    // Opened before the range is known to be satisfiable, because the file
+    // length comes from the torrent. A HEAD gets the same open and drops it.
+    let probe = state
+        .session
+        .stream_file(&hash, index, None)
+        .ok_or_else(|| ErrorNotFound("no such torrent, file, or metadata not resolved yet"))?;
+    let file_len = probe.file_len;
+    let name = probe.name.clone();
+    drop(probe);
+
+    let range = match range_header.as_deref() {
+        Some(h) => match parse_range(h, file_len) {
+            Some(r) => Some(r),
+            // A range header we understood but cannot satisfy. 416 with the real
+            // length is what tells a player to ask again sensibly.
+            None => {
+                return Ok(HttpResponse::RangeNotSatisfiable()
+                    .insert_header(("Content-Range", format!("bytes */{file_len}")))
+                    .insert_header(("Accept-Ranges", "bytes"))
+                    .finish());
+            }
+        },
+        None => None,
+    };
+
+    let content_type = stream_content_type(&name);
+
+    // See `whole_file_range`: an empty file has no last byte, and answering
+    // with nothing is the honest reply rather than an underflow.
+    if whole_file_range(file_len).is_none() {
+        return Ok(HttpResponse::Ok()
+            .insert_header(("Accept-Ranges", "bytes"))
+            .insert_header((
+                "Content-Disposition",
+                format!("inline; filename=\"{}\"", safe_filename(&name)),
+            ))
+            .content_type(content_type)
+            .body(actix_web::body::SizedStream::new(
+                0,
+                futures::stream::empty::<Result<actix_web::web::Bytes, std::io::Error>>(),
+            )));
+    }
+
+    let (start, end) = match range.or_else(|| whole_file_range(file_len)) {
+        Some(r) => r,
+        None => return Ok(HttpResponse::NoContent().finish()),
+    };
+    let length = end - start + 1;
+
+    let mut res = if range.is_some() {
+        let mut r = HttpResponse::PartialContent();
+        r.insert_header(("Content-Range", format!("bytes {start}-{end}/{file_len}")));
+        r
+    } else {
+        HttpResponse::Ok()
+    };
+    res.insert_header(("Accept-Ranges", "bytes"))
+        .insert_header(("Content-Length", length.to_string()))
+        // inline, so a browser plays it rather than offering to save it. The
+        // name is quoted and its own quotes stripped - torrent filenames are
+        // hostile input and this one ends up in a header.
+        .insert_header((
+            "Content-Disposition",
+            format!("inline; filename=\"{}\"", safe_filename(&name)),
+        ))
+        .content_type(content_type);
+
+    if req.method() == actix_web::http::Method::HEAD {
+        // SizedStream, not finish(): actix derives Content-Length from the body,
+        // so an empty HEAD body answers `content-length: 0` and a player that
+        // probes with HEAD first reads that as an empty file. SizedStream
+        // declares the length the matching GET would send, and sends nothing.
+        return Ok(res.body(actix_web::body::SizedStream::new(
+            length,
+            futures::stream::empty::<Result<actix_web::web::Bytes, std::io::Error>>(),
+        )));
+    }
+
+    let open = state
+        .session
+        .stream_file(&hash, index, range)
+        .ok_or_else(|| ErrorNotFound("the torrent went away while opening the stream"))?;
+
+    let body = futures::stream::unfold(open.chunks, |mut rx| async move {
+        rx.recv()
+            .await
+            .map(|chunk| (chunk.map(actix_web::web::Bytes::from), rx))
+    });
+    Ok(res.streaming(body))
+}
+
+/// `GET /api/torrents/{hash}/peers` - who this torrent is talking to.
+///
+/// The desktop's Peers tab has always had this; the web API could describe a
+/// torrent but not its swarm, which left a third-party dashboard unable to show
+/// the one thing that explains a slow download.
+async fn h_peers(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+) -> actix_web::Result<HttpResponse> {
+    let st = state.clone();
+    let hash = hash.into_inner();
+    let rows = web::block(move || {
+        if !st.session.exists(&hash) {
+            return None;
+        }
+        Some(
+            st.session
+                .peers(&hash)
+                .into_iter()
+                .map(|p| PeerRow {
+                    addr: p.addr,
+                    state: p.state,
+                    fetched_bytes: p.fetched_bytes,
+                    pieces: p.pieces,
+                })
+                .collect::<Vec<_>>(),
+        )
+    })
+    .await?
+    .ok_or_else(|| ErrorNotFound("no torrent with that info hash"))?;
+
+    Ok(HttpResponse::Ok().json(rows))
+}
+
+/// `GET /api/torrents/{hash}/magnet` - a magnet link for a torrent already here.
+///
+/// For exporting, or handing the same torrent to something else. Built from the
+/// info hash and display name, which is all a magnet needs to be resolvable.
+async fn h_magnet(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+) -> actix_web::Result<HttpResponse> {
+    let st = state.clone();
+    let hash = hash.into_inner();
+    let uri = web::block(move || {
+        st.session
+            .torrents(&std::collections::HashMap::new())
+            .into_iter()
+            .find(|t| t.info_hash == hash)
+            .map(|t| st.session.magnet_uri(&hash, &t.name))
+    })
+    .await?
+    .ok_or_else(|| ErrorNotFound("no torrent with that info hash"))?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "magnet": uri })))
 }
 
 /// `GET /api/torrents/{hash}/files` - the file list with its priorities.
@@ -1443,119 +1751,6 @@ struct SettingDto {
 
 // --- column widths ---------------------------------------------------------
 //
-// Stored in the same `column_state` table the desktop list uses, under its own
-// list id. Server-side rather than in localStorage so the widths follow the
-// person rather than the browser - the same reason the desktop keeps them in
-// the database instead of a config file next to the window.
-//
-// The desktop list has sixteen columns and this one has nine, so they cannot
-// share rows; what they do share is the designed widths for the columns that
-// mean the same thing.
-pub const WEB_LIST: &str = "webui";
-
-#[derive(Deserialize)]
-struct ColumnWidth {
-    column: i64,
-    width: f32,
-}
-
-/// `GET /api/columns` - the stored widths, as `{ "0": 260.0, ... }`.
-async fn h_columns(state: web::Data<AppState>) -> actix_web::Result<HttpResponse> {
-    let widths: std::collections::BTreeMap<String, f32> = state
-        .cfg
-        .get_column_widths(WEB_LIST)
-        .into_iter()
-        .map(|(id, w)| (id.to_string(), w))
-        .collect();
-    Ok(HttpResponse::Ok().json(widths))
-}
-
-/// `POST /api/columns` - remember one column's width.
-///
-/// Clamped rather than rejected: a width is a preference, and the only values
-/// worth refusing are the ones that would make a column unusable or push the
-/// table past any screen.
-async fn h_set_column(
-    state: web::Data<AppState>,
-    body: web::Json<ColumnWidth>,
-) -> actix_web::Result<HttpResponse> {
-    let body = body.into_inner();
-    if !(0..64).contains(&body.column) || !body.width.is_finite() {
-        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
-            "error": "column out of range, or width is not a number"
-        })));
-    }
-    state
-        .cfg
-        .set_column_width(WEB_LIST, body.column, body.width.clamp(40.0, 1200.0));
-    Ok(HttpResponse::NoContent().finish())
-}
-
-// --- chart widths ----------------------------------------------------------
-//
-// The SAME two keys the desktop toolbar uses, and the same 48-320 range its
-// drag clamps to, so the charts are literally the same width in both places
-// rather than merely similar. Stored through `persistent_object` because these
-// are window geometry, not settings anyone would look for in Preferences.
-const CHART_KEYS: [&str; 2] = ["ui.chart_down_width", "ui.chart_up_width"];
-const CHART_DEFAULT: f32 = 96.0;
-const CHART_MIN: f32 = 48.0;
-const CHART_MAX: f32 = 320.0;
-
-#[derive(Deserialize)]
-struct ChartWidth {
-    /// "down" or "up".
-    which: String,
-    width: f32,
-}
-
-fn chart_key(which: &str) -> Option<&'static str> {
-    match which {
-        "down" => Some(CHART_KEYS[0]),
-        "up" => Some(CHART_KEYS[1]),
-        _ => None,
-    }
-}
-
-/// `GET /api/charts` - `{ "down": 96.0, "up": 96.0 }`, with the same bounds
-/// check the desktop applies when restoring them.
-async fn h_charts(state: web::Data<AppState>) -> actix_web::Result<HttpResponse> {
-    let read = |key: &str| -> f32 {
-        state
-            .cfg
-            .get_persistent(key)
-            .and_then(|v| v.parse::<f32>().ok())
-            .filter(|v| v.is_finite() && (CHART_MIN..=CHART_MAX).contains(v))
-            .unwrap_or(CHART_DEFAULT)
-    };
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "down": read(CHART_KEYS[0]),
-        "up": read(CHART_KEYS[1]),
-        "min": CHART_MIN,
-        "max": CHART_MAX,
-        "default": CHART_DEFAULT,
-    })))
-}
-
-/// `POST /api/charts` - remember one chart's width.
-async fn h_set_chart(
-    state: web::Data<AppState>,
-    body: web::Json<ChartWidth>,
-) -> actix_web::Result<HttpResponse> {
-    let body = body.into_inner();
-    let Some(key) = chart_key(&body.which) else {
-        return Ok(HttpResponse::BadRequest()
-            .json(serde_json::json!({ "error": "which must be \"down\" or \"up\"" })));
-    };
-    if !body.width.is_finite() {
-        return Ok(HttpResponse::BadRequest()
-            .json(serde_json::json!({ "error": "width is not a number" })));
-    }
-    state
-        .cfg
-        .set_persistent(key, &body.width.clamp(CHART_MIN, CHART_MAX).to_string());
-    Ok(HttpResponse::NoContent().finish())
-}
 
 // --- plugins ---------------------------------------------------------------
 //
@@ -1674,6 +1869,16 @@ enum PluginEventBody {
     },
     /// A form dismissed without saving.
     FormCancel { id: String },
+    /// One of the plugin's items on a file's context menu. The file is named
+    /// in the request because the browser knows which row was clicked and the
+    /// host does not - there is no "current torrent" on this side.
+    FileMenu {
+        id: String,
+        hash: String,
+        index: i64,
+        #[serde(default)]
+        name: String,
+    },
     Configure,
 }
 
@@ -1684,6 +1889,10 @@ enum PluginEventBody {
 /// like one that simply had nothing on its surface.
 fn known_plugin(name: &str) -> bool {
     crate::plugins::ui::windows().iter().any(|(n, _, _)| n == name)
+        // A plugin may offer items on a file's context menu and have no window
+        // at all - handing a file to a media player needs no window. Its
+        // clicks still have to reach it.
+        || crate::plugins::ui::file_menu_items().iter().any(|(n, _, _)| n == name)
 }
 
 /// `GET /api/plugins` - every plugin in the folder, running or not.
@@ -1718,6 +1927,29 @@ async fn h_plugins(state: web::Data<AppState>) -> actix_web::Result<HttpResponse
 #[derive(Deserialize)]
 struct EnabledBody {
     enabled: bool,
+}
+
+/// `GET /api/plugins/file-menu` - what plugins offer on a file's context menu.
+///
+/// Flat, across every plugin, because that is how it is drawn: one menu on one
+/// file, not a menu per plugin. Empty for a session with no plugins, which is
+/// the usual one, and the browser then draws no menu at all.
+async fn h_plugin_file_menu() -> actix_web::Result<HttpResponse> {
+    let items: Vec<serde_json::Value> = crate::plugins::ui::file_menu_items()
+        .into_iter()
+        .map(|(plugin, id, label)| {
+            serde_json::json!({
+                // `plugin` addresses it, `title` is the same name as it should
+                // be read - computed here rather than in the browser so both
+                // surfaces spell a plugin's name the same way.
+                "title": crate::plugins::ui::display_name(&plugin),
+                "plugin": plugin,
+                "id": id,
+                "label": label,
+            })
+        })
+        .collect();
+    Ok(HttpResponse::Ok().json(items))
 }
 
 /// `POST /api/plugins/{name}/enabled` - switch one plugin on or off.
@@ -1804,6 +2036,18 @@ async fn h_plugin_event(
         PluginEventBody::Form { id, values } => UiEvent::Form { plugin, id, values },
         PluginEventBody::FormCancel { id } => UiEvent::FormCancelled { plugin, id },
         PluginEventBody::Configure => UiEvent::Configure { plugin },
+        PluginEventBody::FileMenu {
+            id,
+            hash,
+            index,
+            name,
+        } => UiEvent::FileMenu {
+            plugin,
+            id,
+            hash,
+            index,
+            name,
+        },
     });
     Ok(HttpResponse::Accepted().finish())
 }
@@ -1957,6 +2201,9 @@ async fn h_fs_mkdir(body: web::Json<fs::PathRequest>) -> actix_web::Result<impl 
 /// request in flight when someone presses Ok in Preferences finishes rather
 /// than being cut.
 pub fn stop(handle: ServerHandle) {
+    // No server, no tokens: a plugin asking for a stream URL after this gets
+    // "" back rather than a URL into a closed port.
+    streamtoken::unpublish();
     std::thread::Builder::new()
         .name(String::from("nt-webui-stop"))
         .spawn(move || {
@@ -2090,11 +2337,19 @@ fn build(
     // per-request subscription would only ever see events raised while that
     // one request was in flight.
     let errors = Arc::new(std::sync::Mutex::new(session.subscribe()));
+    // One store for every worker, like `attempts` below: a per-worker map would
+    // mean a token minted on one connection and used on the next was unknown.
+    let stream_tokens = Arc::new(streamtoken::StreamTokens::default());
+    // Published so a plugin can mint a token without going through HTTP - see
+    // `stream_url` in the plugin API. Replaced on every start, so a token from
+    // a previous run of the server is not honoured by this one.
+    streamtoken::publish(stream_tokens.clone());
     let state = web::Data::new(AppState {
         session,
         cfg,
         env,
         errors,
+        stream_tokens: stream_tokens.clone(),
     });
     let creds = web::Data::new(creds);
     // Built out here, not in the factory closure: the closure runs once per
@@ -2106,22 +2361,19 @@ fn build(
         block: std::time::Duration::from_secs(advanced.auth_block),
     }));
 
-    // Megabytes in the setting, bytes here. Computed outside the factory
-    // closure, which runs per worker and cannot borrow `advanced` - it is
-    // moved into the builder calls below.
-    let body_limit = advanced.max_body_size * 1024 * 1024;
-    // Zero is not "no keep-alive" to actix's Duration form, it is a zero-length
-    // one; KeepAlive::Disabled is the setting the field actually offers.
-    let keep_alive = match advanced.keep_alive {
-        0 => actix_web::http::KeepAlive::Disabled,
-        secs => actix_web::http::KeepAlive::Timeout(Duration::from_secs(secs)),
-    };
+    let body_limit = MAX_BODY_MB * 1024 * 1024;
 
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
             .app_data(creds.clone())
             .app_data(attempts.clone())
+            // On every response, not just the page: the stream endpoint serves
+            // bytes out of a stranger's torrent under a content type this
+            // server chose, and "the browser will not sniff past it" should not
+            // depend on which handler answered.
+            .wrap(actix_web::middleware::DefaultHeaders::new()
+                .add(("X-Content-Type-Options", "nosniff")))
             .wrap(from_fn(auth::require_auth))
             // A .torrent with thousands of files runs to a few MB once
             // base64'd; actix's 2 KB default would reject them. Still a cap,
@@ -2145,7 +2397,21 @@ fn build(
                     .route("/torrents/{hash}/recheck", web::post().to(h_recheck))
                     .route("/torrents/{hash}/queue", web::post().to(h_queue))
                     .route("/torrents/{hash}/reannounce", web::post().to(h_reannounce))
+                    .route("/torrents/{hash}/peers", web::get().to(h_peers))
+                    .route("/torrents/{hash}/magnet", web::get().to(h_magnet))
                     .route("/torrents/{hash}/files", web::get().to(h_files))
+                    .route(
+                        "/torrents/{hash}/files/{index}/playlist.m3u",
+                        web::get().to(h_playlist),
+                    )
+                    .route(
+                        "/torrents/{hash}/files/{index}/stream",
+                        web::get().to(h_stream),
+                    )
+                    .route(
+                        "/torrents/{hash}/files/{index}/stream",
+                        web::head().to(h_stream),
+                    )
                     .route("/torrents/{hash}/files", web::post().to(h_set_file_priority))
                     .route("/torrents/{hash}/trackers", web::get().to(h_trackers))
                     .route("/torrents/{hash}/trackers", web::post().to(h_add_tracker))
@@ -2155,11 +2421,10 @@ fn build(
                     .route("/torrents/{hash}/tags", web::post().to(h_set_tags))
                     .route("/torrents/{hash}/limits", web::post().to(h_limits))
                     .route("/speed/alt", web::post().to(h_alt_speed))
-                    .route("/columns", web::get().to(h_columns))
-                    .route("/columns", web::post().to(h_set_column))
-                    .route("/charts", web::get().to(h_charts))
-                    .route("/charts", web::post().to(h_set_chart))
                     .route("/plugins", web::get().to(h_plugins))
+                    // Before `/plugins/{name}`, or the literal is swallowed
+                    // by the parameter - actix matches in registration order.
+                    .route("/plugins/file-menu", web::get().to(h_plugin_file_menu))
                     .route("/plugins/{name}/enabled", web::post().to(h_plugin_enabled))
                     .route("/plugins/{name}", web::get().to(h_plugin))
                     .route("/plugins/{name}/event", web::post().to(h_plugin_event))
@@ -2176,25 +2441,30 @@ fn build(
     })
     // Actix's defaults are tuned for a public server; these are for a personal
     // client, and every one of them is a cheap bound on a misbehaving or
-    // hostile peer. All of them come from Preferences > Web interface >
-    // Advanced, defaulting to the values that used to be written here.
+    // hostile peer.
     //
-    // client_request_timeout defaults to 5s already and is the slowloris
+    // Constants, not settings. They were settings for one release and nobody
+    // has a reason to move them: a worker count and a handshake rate are not
+    // decisions a person using a torrent client makes, and offering them cost
+    // a field in Preferences, a row in the web drawer, a CLI flag and a
+    // description in 76 languages each.
+    //
+    // client_request_timeout is actix's own default and is the slowloris
     // guard - restated so it is visible rather than inherited silently.
-    .client_request_timeout(Duration::from_secs(advanced.client_request_timeout))
+    .client_request_timeout(Duration::from_secs(5))
     // Defaults to ZERO, i.e. disabled: a client that stops reading mid-response
     // would otherwise hold its worker slot indefinitely.
-    .client_disconnect_timeout(Duration::from_secs(advanced.client_disconnect_timeout))
-    .keep_alive(keep_alive)
+    .client_disconnect_timeout(Duration::from_secs(5))
+    .keep_alive(Duration::from_secs(30))
     // 25600 per worker by default. A handful of browser tabs need double
     // digits; this is the cheapest bound on connection flooding.
-    .max_connections(advanced.max_connections)
+    .max_connections(256)
     // Caps TLS handshakes in flight. Handshakes are the expensive half, so
     // this is what stops a flood costing far more CPU than bandwidth.
-    .max_connection_rate(advanced.max_connection_rate)
+    .max_connection_rate(64)
     // One per core by default. This serves one person, not a load test.
-    .workers(advanced.workers)
-    .shutdown_timeout(advanced.shutdown_timeout);
+    .workers(2)
+    .shutdown_timeout(5);
 
     let server = match tls_config {
         Some(config) => server
@@ -2229,30 +2499,19 @@ mod tests {
 
         assert_eq!(super::Advanced::load(&cfg), super::Advanced::default());
 
-        // Zero workers or zero connections is the dangerous case: actix accepts
-        // both and the result is a server that listens and serves nothing.
-        cfg.set("webui.workers", &0i64);
-        cfg.set("webui.max_connections", &0i64);
-        cfg.set("webui.client_request_timeout", &0i64);
-        // Negative reaches the same floor rather than wrapping to a huge usize.
-        cfg.set("webui.max_body_size", &-5i64);
+        // Zero is legitimate for the failure count and only for that: it is how
+        // the lockout is switched off. Negative reaches the same floor rather
+        // than wrapping to a huge usize.
+        cfg.set("webui.auth_max_failures", &0i64);
+        cfg.set("webui.auth_window", &-5i64);
         let adv = super::Advanced::load(&cfg);
-        assert_eq!(adv.workers, 1);
-        assert_eq!(adv.max_connections, 1);
-        assert_eq!(adv.client_request_timeout, 1);
-        assert_eq!(adv.max_body_size, 1);
+        assert_eq!(adv.auth_max_failures, 0, "zero switches the lockout off");
+        assert_eq!(adv.auth_window, 1, "but a zero window would never trip");
 
-        // Absurdly large is capped, not accepted: 64 threads is already far
-        // more than this serves.
-        cfg.set("webui.workers", &10_000i64);
-        assert_eq!(super::Advanced::load(&cfg).workers, 64);
-
-        // Zero is legitimate for exactly these two and must survive the clamp.
-        cfg.set("webui.keep_alive", &0i64);
-        cfg.set("webui.shutdown_timeout", &0i64);
-        let adv = super::Advanced::load(&cfg);
-        assert_eq!(adv.keep_alive, 0);
-        assert_eq!(adv.shutdown_timeout, 0);
+        // Absurdly large is capped rather than accepted. A block nobody can
+        // wait out is a way to lock yourself out of your own client.
+        cfg.set("webui.auth_block", &10_000_000i64);
+        assert_eq!(super::Advanced::load(&cfg).auth_block, 604_800);
     }
 
     /// The web remote shows a file list only if inspection returns the same
@@ -2381,6 +2640,99 @@ mod tests {
         assert!(!TorrentDto::from(sample_status()).availability.is_sign_negative());
     }
 
+    /// A zero-length file is legal in a torrent and used to underflow: the
+    /// whole-file range was written `(0, file_len - 1)`, which panics on a
+    /// debug build and wraps to 18 exabytes on a release one.
+    #[test]
+    fn an_empty_file_has_no_range_rather_than_a_huge_one() {
+        use super::{parse_range, whole_file_range};
+
+        assert_eq!(whole_file_range(0), None, "nothing to name");
+        assert_eq!(whole_file_range(1), Some((0, 0)), "one byte is byte zero");
+        assert_eq!(whole_file_range(4096), Some((0, 4095)));
+        assert_eq!(whole_file_range(u64::MAX), Some((0, u64::MAX - 1)));
+
+        // The header path already refused these; the point is that both paths
+        // now agree rather than one of them wrapping.
+        for header in ["bytes=0-", "bytes=-1", "bytes=0-0"] {
+            assert_eq!(parse_range(header, 0), None, "{header} against an empty file");
+        }
+    }
+
+    /// A torrent filename reaches a header AND the body of a playlist, and
+    /// both were wrong in different ways: the header turned a control
+    /// character into a 500, and the playlist let a newline append a line of
+    /// the torrent author's choosing - with a URL on it, which a media player
+    /// would then fetch.
+    #[test]
+    fn a_filename_is_made_safe_for_a_header_and_for_a_playlist() {
+        use super::safe_filename;
+
+        // The playlist injection. Without the newline gone, the m3u below
+        // gains an #EXTINF and a URL nobody here wrote.
+        let hostile = "ep01.mkv\n#EXTINF:-1,pwned\nhttp://attacker.example/x";
+        let safe = safe_filename(hostile);
+        assert!(!safe.contains('\n'), "no newline survives: {safe:?}");
+        assert!(!safe.contains('\r'));
+        assert_eq!(safe.matches('_').count(), 2, "one per newline, nothing else");
+
+        // The 500. These are legal in a torrent path and illegal in a header
+        // value, and actix answers an illegal one with a server error.
+        for bad in ['\u{1}', '\u{8}', '\u{b}', '\u{c}', '\u{1f}', '\u{7f}'] {
+            let out = safe_filename(&format!("a{bad}b"));
+            assert_eq!(out, "a_b", "control char {:#x} must go", bad as u32);
+        }
+
+        // Header quoting.
+        assert_eq!(safe_filename(r#"a"b\c"#), "a_b_c");
+
+        // Left alone: anything a real filename is made of. Non-ASCII is legal
+        // in a header value as obs-text, and stripping it would mangle every
+        // filename that is not English.
+        for ok in ["Ubuntu 24.04.iso", "Сезон 1.mkv", "日本語.mp4", "a b (1) [x].bin"] {
+            assert_eq!(safe_filename(ok), ok, "{ok} must survive untouched");
+        }
+    }
+
+    /// `nosniff` used to be set by the page handler alone, so every API
+    /// response - including the stream, which serves a stranger's bytes under
+    /// a content type this server picked - went out without it.
+    ///
+    /// Through `init_service`, which builds the real middleware stack in
+    /// process: no listener, no port, nothing left running.
+    #[actix_web::test]
+    async fn every_response_carries_nosniff_not_just_the_page() {
+        use actix_web::{App, HttpResponse, middleware::DefaultHeaders, test, web};
+
+        let app = test::init_service(
+            App::new()
+                .wrap(DefaultHeaders::new().add(("X-Content-Type-Options", "nosniff")))
+                .route("/api/health", web::get().to(|| async { HttpResponse::Ok().finish() }))
+                // Stands in for the stream: a handler that sets its own content
+                // type and its own headers, which is where a DefaultHeaders
+                // that only applied "if absent" could have been fooled.
+                .route(
+                    "/api/stream",
+                    web::get().to(|| async {
+                        HttpResponse::Ok()
+                            .content_type("video/x-matroska")
+                            .insert_header(("Accept-Ranges", "bytes"))
+                            .body("bytes")
+                    }),
+                ),
+        )
+        .await;
+
+        for path in ["/api/health", "/api/stream"] {
+            let res = test::call_service(&app, test::TestRequest::get().uri(path).to_request()).await;
+            assert_eq!(
+                res.headers().get("X-Content-Type-Options").map(|v| v.to_str().unwrap()),
+                Some("nosniff"),
+                "{path} must carry it"
+            );
+        }
+    }
+
     #[test]
     fn state_names_are_stable_and_distinct() {
         let all = [
@@ -2426,6 +2778,63 @@ mod tests {
             total_wanted_remaining: 0,
             upload_payload_rate: 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::{parse_range, stream_content_type};
+
+    /// 1000 bytes, so byte indices and the length never look interchangeable.
+    const LEN: u64 = 1000;
+
+    #[test]
+    fn the_forms_players_actually_send() {
+        // An opening probe: the first bytes, for the container header.
+        assert_eq!(parse_range("bytes=0-1023", LEN), Some((0, 999)), "clamped to the file");
+        assert_eq!(parse_range("bytes=0-99", LEN), Some((0, 99)));
+        // A seek: from here to the end.
+        assert_eq!(parse_range("bytes=500-", LEN), Some((500, 999)));
+        // The MP4 index at the end of the file, which is why suffix ranges exist.
+        assert_eq!(parse_range("bytes=-200", LEN), Some((800, 999)));
+        assert_eq!(parse_range("bytes=-5000", LEN), Some((0, 999)), "longer than the file");
+        // One byte, the degenerate case a few players use to test for ranges.
+        assert_eq!(parse_range("bytes=999-999", LEN), Some((999, 999)));
+        // Whitespace and casing of the unit are not worth rejecting over.
+        assert_eq!(parse_range("  bytes=10-20  ", LEN), Some((10, 20)));
+    }
+
+    #[test]
+    fn what_has_to_be_refused() {
+        // Past the end: 416, not a clamp. A player asking beyond the file has
+        // stale length information and should be told.
+        assert_eq!(parse_range("bytes=1000-1001", LEN), None);
+        assert_eq!(parse_range("bytes=1000-", LEN), None);
+        // Backwards.
+        assert_eq!(parse_range("bytes=300-200", LEN), None);
+        // Multi-range needs a multipart reply, which nothing here writes.
+        assert_eq!(parse_range("bytes=0-99,200-299", LEN), None);
+        // Not bytes, not a range, not a number.
+        assert_eq!(parse_range("items=0-99", LEN), None);
+        assert_eq!(parse_range("bytes=abc-def", LEN), None);
+        assert_eq!(parse_range("bytes=", LEN), None);
+        assert_eq!(parse_range("bytes=-0", LEN), None);
+        // A zero-length file has no satisfiable range at all.
+        assert_eq!(parse_range("bytes=0-0", 0), None);
+    }
+
+    #[test]
+    fn containers_browsers_judge_by_type() {
+        assert_eq!(stream_content_type("Show.S01E01.mp4"), "video/mp4");
+        assert_eq!(stream_content_type("Show.S01E01.MKV"), "video/x-matroska");
+        assert_eq!(stream_content_type("clip.webm"), "video/webm");
+        assert_eq!(stream_content_type("track.flac"), "audio/flac");
+        assert_eq!(stream_content_type("subs.srt"), "application/x-subrip");
+        // No extension, or one nobody streams.
+        assert_eq!(stream_content_type("README"), "application/octet-stream");
+        assert_eq!(stream_content_type("disk.iso"), "application/octet-stream");
+        // A dot in a directory name must not be read as an extension.
+        assert_eq!(stream_content_type("Show.S01.1080p.mkv"), "video/x-matroska");
     }
 }
 

@@ -58,6 +58,24 @@ pub fn to_human_speed(bytes_per_second: i64) -> String {
     format!("{}/s", to_human_file_size(bytes_per_second))
 }
 
+/// Hand a URL, file or folder to whatever the desktop opens it with.
+///
+/// The association is the user's and was made long before NanoTorrent existed,
+/// which is what makes this useful to a plugin: it reaches "the player they
+/// chose" without being told which one that is, and without naming a program.
+///
+/// Returns whether the handler could be started - not whether it did anything.
+/// Nothing here can see what happens after the shell takes over.
+pub fn open_target(target: &str) -> bool {
+    match open::that_detached(target) {
+        Ok(()) => true,
+        Err(err) => {
+            tracing::warn!("could not open {target:?}: {err}");
+            false
+        }
+    }
+}
+
 /// Show a downloaded torrent's folder in the desktop's file manager.
 ///
 /// Port of Utils::openAndSelect. Windows selects the folder inside its parent,

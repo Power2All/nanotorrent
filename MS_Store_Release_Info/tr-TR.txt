@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Türkçe (Türkiye) - Partner Center: Turkish (Turkey) (tr-TR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent, Viktor Elofsson'ın PicoTorrent uygulamasının Rust'a aktarımıd�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Sürüm 0.4.0
 
-Sürüm 0.3.8
-
-- 35 dil daha, toplam 76; Avrupa, Güney Asya, Güneydoğu Asya, Orta Asya ve Afrika'dan eklemeler.
-- Biten indirmeler artık kilitli kalmıyor. Biten ya da duraklatılan bir torrent dosyalarını yazmak için açık tutuyordu ve Windows'ta bu tek başına başka bir programın onları açmasını engellemeye yeter: indirme klasöründeki bir arşiv ya da video, NanoTorrent kapatılana kadar açılamıyordu. Dosyalar artık yazılacak bir şey kalmadığı anda salt okunur olarak yeniden açılıyor ve yazma erişimi yeniden gerekirse kendiliğinden geri alınıyor.
+- Videoyu indirilirken izleyin. Bir torrentin ayrıntılarında ya da web arayüzünde bir dosyaya sağ tıklayın; VLC, mpv veya her zamanki oynatıcınızda açılsın - oynatma, indirme bitmeden başlar.
+- Daha iyi bir dosya listesi: dosyaları fareyle ya da ok tuşlarıyla seçin, sağ tıklayıp açın ve şu an bakmadığınız klasörleri katlayın. Uygulamada da web arayüzünde de.
+- Eklentiler bir dosyanın menüsüne öğe ekleyebilir, sade bir dille gösterilip sizin onayladığınız yeni "execute" izniyle program başlatabilir ve kendi çevirilerini taşıyabilir. On beş işlev daha, web arayüzünün zaten yapabildiklerini eklentilere de verir.
+- 35 dil daha, toplam 76: Avrupa, Güney Asya, Güneydoğu Asya, Orta Asya ve Afrika.
+- Web arayüzünde ve torrent dosya yollarının işlenmesinde güvenlik düzeltmeleri.
+- Biten ve duraklatılan indirmeler artık dosyalarını kilitli tutmuyor; indirme klasöründeki bir arşiv ya da video NanoTorrent çalışırken açılıyor.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

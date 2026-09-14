@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versio 0.4.0
 
-Versio 0.3.8
-
-- 35 kieltä lisää, 76 yhteensä, lisätty Euroopassa, Etelä-Aasiassa, Kaakkois-Aasiassa, Keski-Aasiassa ja Afrikassa.
-- Valmiit lataukset eivät enää jää lukkoon. Torrent, joka oli valmis tai keskeytetty, pysyi pitämässä tiedostojaan auki kirjoittamista varten, ja Windowsissa se yksin riittää estämään toisen ohjelman avaamasta niitä: latauskansion arkistoa tai videota ei voinut avata ennen kuin NanoTorrent suljettiin. Tiedostot avataan nyt uudelleen vain luku -tilassa heti kun mitään ei enää kirjoiteta, ja kirjoitusoikeus otetaan automaattisesti takaisin, jos sitä tarvitaan uudelleen.
+- Katso videota jo latauksen aikana. Napsauta tiedostoa hiiren oikealla painikkeella torrentin tiedoissa tai selainkäyttöliittymässä, niin se avautuu VLC:ssä, mpv:ssä tai tavallisessa soittimessasi - toisto alkaa ennen kuin lataus on valmis.
+- Parempi tiedostoluettelo: valitse tiedostoja hiirellä tai nuolinäppäimillä, avaa oikealla painikkeella ja taita kokoon kansiot, joita et juuri katso. Sekä sovelluksessa että selainkäyttöliittymässä.
+- Lisäosat voivat lisätä kohteita tiedoston valikkoon, käynnistää ohjelmia uudella "execute"-oikeudella, jonka hyväksyt selkokielellä, ja kuljettaa omia käännöksiään. Viisitoista uutta kutsua antaa lisäosille sen, mihin selainkäyttöliittymä pystyi jo.
+- 35 kieltä lisää, 76 kaikkiaan, Euroopassa, Etelä-Aasiassa, Kaakkois-Aasiassa, Keski-Aasiassa ja Afrikassa.
+- Tietoturvakorjauksia selainkäyttöliittymään ja torrenttien tiedostopolkujen käsittelyyn.
+- Valmiit ja keskeytetyt lataukset eivät enää pidä tiedostojaan lukittuina, joten latauskansion arkisto tai video aukeaa NanoTorrentin ollessa käynnissä.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

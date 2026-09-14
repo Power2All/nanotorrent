@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Français (France) - Partner Center: French (France) (fr-FR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent est un portage en Rust de PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Version 0.4.0
 
-Version 0.3.8
-
-- 35 langues de plus, 76 au total, ajoutées en Europe, en Asie du Sud, en Asie du Sud-Est, en Asie centrale et en Afrique.
-- Les téléchargements terminés ne restent plus verrouillés. Un torrent terminé, ou mis en pause, gardait ses fichiers ouverts en écriture, et sous Windows cela suffit à empêcher un autre programme de les ouvrir : une archive ou une vidéo du dossier de téléchargement ne pouvait pas être ouverte avant la fermeture de NanoTorrent. Les fichiers sont désormais réouverts en lecture seule dès que rien ne sera plus écrit, et l'accès en écriture est repris automatiquement s'il redevient nécessaire.
+- Lire une vidéo pendant son téléchargement. Faites un clic droit sur un fichier dans les détails d'un torrent, ou dans l'interface web, et il s'ouvre dans VLC, mpv ou votre lecteur habituel : la lecture commence avant la fin du téléchargement.
+- Une meilleure liste de fichiers : choisissez-les à la souris ou aux flèches, ouvrez-en un d'un clic droit, et repliez les dossiers que vous ne regardez pas. Dans l'application comme dans l'interface web.
+- Les extensions peuvent ajouter des entrées au menu d'un fichier, lancer des programmes sous une nouvelle permission « execute » que vous approuvez en langage clair, et apporter leurs propres traductions. Quinze appels supplémentaires leur donnent ce que l'interface web savait déjà faire.
+- 35 langues de plus, 76 au total, ajoutées en Europe, Asie du Sud, Asie du Sud-Est, Asie centrale et Afrique.
+- Corrections de sécurité dans l'interface web et dans le traitement des chemins de fichiers des torrents.
+- Les téléchargements terminés ou en pause ne verrouillent plus leurs fichiers : une archive ou une vidéo du dossier de téléchargement s'ouvre pendant que NanoTorrent tourne.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

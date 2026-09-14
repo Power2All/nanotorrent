@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Bosanski (Bosna i Hercegovina) - Partner Center: Bosnian (Bosnia and Herzegovina) (bs-Latn-BA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent je Rust port PicoTorrenta autora Viktora Elofssona.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Verzija 0.4.0
 
-Verzija 0.3.8
-
-- 35 jezika više, ukupno 76, dodanih u Evropi, južnoj Aziji, jugoistočnoj Aziji, srednjoj Aziji i Africi.
-- Završena preuzimanja više ne ostaju zaključana. Torrent koji je bio završen ili pauziran držao je svoje datoteke otvorenima za pisanje, a na Windowsu je već to dovoljno da drugi program ne može da ih otvori: arhiva ili video u folderu za preuzimanje nisu se mogli otvoriti dok se NanoTorrent ne zatvori. Datoteke se sada ponovo otvaraju samo za čitanje čim se više ništa ne bude zapisivalo, a pravo pisanja se automatski vraća ako ponovo zatreba.
+- Gledajte video dok se preuzima. Desnim klikom na fajl u detaljima torenta, ili u web sučelju, otvorite ga u VLC-u, mpv-u ili svom uobičajenom plejeru - reprodukcija počinje prije nego što se preuzimanje završi.
+- Bolji spisak fajlova: birajte fajlove mišem ili strelicama, otvorite jedan desnim klikom i sklopite foldere koje trenutno ne gledate. I u aplikaciji i u web sučelju.
+- Dodaci mogu dodavati stavke u meni fajla, pokretati programe uz novu dozvolu "execute" koju odobravate jednostavnim jezikom, i nositi vlastite prijevode. Još petnaest funkcija daje im ono što je web sučelje već moglo.
+- Još 35 jezika, ukupno 76, dodanih u Evropi, južnoj Aziji, jugoistočnoj Aziji, centralnoj Aziji i Africi.
+- Sigurnosne ispravke web sučelja i rukovanja putanjama fajlova iz torenta.
+- Završena i pauzirana preuzimanja više ne drže svoje fajlove zaključanim, pa se arhiva ili video iz foldera za preuzimanje otvara dok NanoTorrent radi.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

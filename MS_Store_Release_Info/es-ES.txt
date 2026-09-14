@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Español (España) - Partner Center: Spanish (Spain) (es-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent es una adaptación a Rust de PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versión 0.4.0
 
-Versión 0.3.8
-
-- 35 idiomas más, 76 en total, añadidos en Europa, el sur de Asia, el sudeste asiático, Asia central y África.
-- Las descargas terminadas ya no quedan bloqueadas. Un torrent que había terminado, o que estaba en pausa, mantenía sus archivos abiertos para escritura, y en Windows eso solo basta para impedir que otro programa los abra: un archivo comprimido o un vídeo de la carpeta de descargas no se podía abrir hasta cerrar NanoTorrent. Ahora los archivos se vuelven a abrir en modo de solo lectura en cuanto no hay nada que escribir, y el acceso de escritura se recupera automáticamente si vuelve a hacer falta.
+- Reproduce un vídeo mientras se descarga. Haz clic derecho en un archivo en los detalles de un torrent, o en la interfaz web, y se abrirá en VLC, mpv o tu reproductor habitual: la reproducción empieza antes de que termine la descarga.
+- Una lista de archivos mejor: elígelos con el ratón o las flechas, ábrelos con clic derecho y pliega las carpetas que no estés mirando. Tanto en la aplicación como en la interfaz web.
+- Los complementos pueden añadir elementos al menú de un archivo, iniciar programas bajo un nuevo permiso "execute" que apruebas en lenguaje claro, y traer sus propias traducciones. Quince funciones más les dan lo que la interfaz web ya podía hacer.
+- 35 idiomas más, 76 en total, añadidos en Europa, Asia meridional, Sudeste Asiático, Asia Central y África.
+- Correcciones de seguridad en la interfaz web y en el manejo de las rutas de archivo de los torrents.
+- Las descargas terminadas o en pausa ya no bloquean sus archivos, así que un archivo comprimido o un vídeo de la carpeta de descargas se abre con NanoTorrent aún en marcha.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

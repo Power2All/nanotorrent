@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Malti (Malta) - Partner Center: Maltese (Malta) (mt-MT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent huwa port bir-Rust ta' PicoTorrent ta' Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Verżjoni 0.4.0
 
-Verżjoni 0.3.8
-
-- 35 lingwa oħra, 76 b'kollox, miżjuda fl-Ewropa, l-Asja t'Isfel, l-Asja tal-Lbiċ, l-Asja Ċentrali u l-Afrika.
-- It-tniżżiliet lesti ma jibqgħux imsakkrin. Torrent li kien lest, jew li kien imwaqqaf, kien iżomm il-fajls tiegħu miftuħin għall-kitba, u fuq Windows dan waħdu huwa biżżejjed biex iwaqqaf programm ieħor milli jiftaħhom: arkivju jew vidjo fil-folder tat-tniżżil ma kienx jista' jinfetaħ sakemm jingħalaq NanoTorrent. Il-fajls issa jerġgħu jinfetħu għall-qari biss hekk kif ma jkunx fadal xejn x'jinkiteb, u l-aċċess għall-kitba jittieħed lura awtomatikament jekk jerġa' jkun meħtieġ.
+- Ara vidjow waqt li qed jitniżżel. Ikklikkja bil-lemin fajl fid-dettalji ta' torrent, jew fl-interfaċċa tal-web, u jinfetaħ f'VLC, f'mpv jew fil-plejer tas-soltu tiegħek - id-daqq jibda qabel ma jitlesta t-tniżżil.
+- Lista ta' fajls aħjar: agħżel fajls bil-maws jew bil-vleġeġ, iftaħ wieħed b'klikk tal-lemin, u aqfel il-folders li mhux qed tħares lejhom. Fl-app u fl-interfaċċa tal-web.
+- Il-plaggins jistgħu jżidu elementi mal-menu ta' fajl, jibdew programmi taħt permess ġdid "execute" li tapprova b'lingwaġġ ċar, u jġorru t-traduzzjonijiet tagħhom stess. Ħmistax-il funzjoni oħra jagħtuhom dak li l-interfaċċa tal-web diġà setgħet tagħmel.
+- 35 lingwa oħra, 76 b'kollox, miżjuda fl-Ewropa, fl-Asja t'Isfel, fix-Xlokk tal-Asja, fl-Asja Ċentrali u fl-Afrika.
+- Tiswijiet ta' sigurtà fl-interfaċċa tal-web u fit-trattament tal-mogħdijiet tal-fajls mit-torrents.
+- It-tniżżil lest u dak imwaqqaf ma jżommux aktar il-fajls imsakkra, għalhekk arkivju jew vidjow fil-folder tat-tniżżil jinfetaħ waqt li NanoTorrent għadu jaħdem.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

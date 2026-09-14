@@ -14,6 +14,7 @@
 // blocks or spins cannot stall the session, the UI or a web request.
 
 mod api;
+pub mod strings;
 pub mod ui;
 
 use std::collections::BTreeSet;
@@ -235,10 +236,22 @@ pub enum Permission {
     /// so a plugin cannot put up something that looks like NanoTorrent asking
     /// for a password.
     Ui,
+    /// run
+    ///
+    /// The one that is not like the others. Every permission above bounds what
+    /// a script may do to the session; this one hands over the account. A
+    /// program started by a plugin is a program started by the user: it can
+    /// read their files, reach their network and outlive NanoTorrent, and no
+    /// permission here constrains it once it is running.
+    ///
+    /// Granting it is a decision about the plugin's author, not about the
+    /// plugin - which is why it sits last in `ALL`, reads last in the approval
+    /// prompt, and is described as what it means rather than what it calls.
+    Execute,
 }
 
 impl Permission {
-    pub const ALL: [Permission; 10] = [
+    pub const ALL: [Permission; 11] = [
         Permission::Read,
         Permission::Control,
         Permission::Add,
@@ -249,6 +262,10 @@ impl Permission {
         Permission::Network,
         Permission::Data,
         Permission::Ui,
+        // Last on purpose: the approval prompt lists these in order, and the
+        // one that matters most should be the one still on screen when someone
+        // reaches for the button.
+        Permission::Execute,
     ];
 
     /// The word used in a script's header and in the stored grant.
@@ -264,6 +281,7 @@ impl Permission {
             Permission::Network => "network",
             Permission::Data => "data",
             Permission::Ui => "ui",
+            Permission::Execute => "execute",
         }
     }
 
@@ -286,6 +304,7 @@ impl Permission {
             Permission::Network => "perm_network",
             Permission::Data => "perm_data",
             Permission::Ui => "perm_ui",
+            Permission::Execute => "perm_execute",
         }
     }
 }
@@ -421,9 +440,9 @@ pub fn seed_examples(dir: &Path, cfg: &Configuration) {
         offered.insert(String::from("example"));
     }
 
-    let pending: Vec<(&str, &str)> = EXAMPLES
+    let pending: Vec<(&str, &str, Option<&str>)> = EXAMPLES
         .iter()
-        .filter(|(name, _)| !offered.contains(*name))
+        .filter(|(name, _, _)| !offered.contains(*name))
         .copied()
         .collect();
     if pending.is_empty() {
@@ -435,7 +454,7 @@ pub fn seed_examples(dir: &Path, cfg: &Configuration) {
         return;
     }
 
-    for (name, source) in pending {
+    for (name, source, catalogue) in pending {
         let path = dir.join(format!("{name}.rhai"));
         // Recorded as offered either way: a file already there is someone
         // else's, possibly edited, and must not be overwritten.
@@ -448,7 +467,20 @@ pub fn seed_examples(dir: &Path, cfg: &Configuration) {
                 set_enabled(cfg, name, false);
                 tracing::info!("wrote the {name} plugin to {} (switched off)", path.display());
             }
-            Err(err) => tracing::warn!("could not write {}: {err}", path.display()),
+            Err(err) => {
+                tracing::warn!("could not write {}: {err}", path.display());
+                continue;
+            }
+        }
+
+        // The strings, if this example has any. Written only when the script
+        // was: a catalogue beside no script is litter, and `t()` falls back to
+        // its keys anyway if this fails.
+        if let Some(text) = catalogue {
+            let json = strings::catalogue_path(&path);
+            if let Err(err) = std::fs::write(&json, text) {
+                tracing::warn!("could not write {}: {err}", json.display());
+            }
         }
     }
 
@@ -461,12 +493,34 @@ pub fn seed_examples(dir: &Path, cfg: &Configuration) {
 /// The examples this build ships, embedded so they travel with the binary
 /// rather than needing the installer to place files.
 ///
-/// One that only watches, and one that does something with every subsystem the
+/// One that only watches, one that does something with every subsystem the
 /// host has - the second is the answer to "what can a plugin actually do?",
-/// which the first does not really show.
-const EXAMPLES: &[(&str, &str)] = &[
-    ("example", include_str!("../../docs/plugins/example.rhai")),
-    ("rss", include_str!("../../docs/plugins/rss.rhai")),
+/// which the first does not really show - and one that is a feature people ask
+/// for rather than a demonstration.
+///
+/// All three arrive switched OFF. `player` asks for `execute`, which nobody
+/// should get by having installed NanoTorrent.
+/// Name, script, and the translations that go beside it.
+///
+/// All three carry one. None of them has an English string left inline, which
+/// is the example worth setting: a plugin that shows a person any text at all
+/// should be translatable, and the way to do that is a file next to the script.
+const EXAMPLES: &[(&str, &str, Option<&str>)] = &[
+    (
+        "example",
+        include_str!("../../docs/plugins/example.rhai"),
+        Some(include_str!("../../docs/plugins/example_translations.json")),
+    ),
+    (
+        "rss",
+        include_str!("../../docs/plugins/rss.rhai"),
+        Some(include_str!("../../docs/plugins/rss_translations.json")),
+    ),
+    (
+        "player",
+        include_str!("../../docs/plugins/player.rhai"),
+        Some(include_str!("../../docs/plugins/player_translations.json")),
+    ),
 ];
 
 /// Which examples have already been offered, so a new one added in a later
@@ -612,8 +666,8 @@ fn run(
     dir: PathBuf,
     wake_rx: std::sync::mpsc::Receiver<Wake>,
 ) {
-    let engines = |name: &str, perms: &BTreeSet<Permission>| {
-        build_engine(session.clone(), cfg.clone(), name, perms)
+    let engines = |name: &str, perms: &BTreeSet<Permission>, strings: strings::Strings| {
+        build_engine(session.clone(), cfg.clone(), name, perms, strings)
     };
 
     let mut plugins = load(engines, &cfg, &enabled_scripts(&dir, &cfg));
@@ -678,10 +732,11 @@ fn build_engine(
     cfg: Arc<Configuration>,
     name: &str,
     perms: &BTreeSet<Permission>,
+    strings: strings::Strings,
 ) -> Engine {
     let mut engine = Engine::new();
     apply_limits(&mut engine);
-    api::register(&mut engine, session, cfg, name, perms);
+    api::register(&mut engine, session, cfg, name, perms, strings);
     engine
 }
 
@@ -719,7 +774,7 @@ fn apply_limits(engine: &mut Engine) {
 /// A script that fails to compile is dropped with a log line rather than
 /// taking the host down with it.
 fn load(
-    make_engine: impl Fn(&str, &BTreeSet<Permission>) -> Engine,
+    make_engine: impl Fn(&str, &BTreeSet<Permission>, strings::Strings) -> Engine,
     cfg: &Configuration,
     scripts: &[PathBuf],
 ) -> Vec<Plugin> {
@@ -771,7 +826,11 @@ fn load(
             tracing::info!("plugin {name} asks for a window, but this build has no UI");
         }
 
-        let engine = make_engine(&name, &wants);
+        // Read here rather than in `api::register`, which never sees a path.
+        // A plugin with no `.json` beside it gets an empty catalogue and `t()`
+        // answers with its keys - see `strings`.
+        let catalogue = strings::Strings::load(path, Arc::new(cfg.clone()));
+        let engine = make_engine(&name, &wants, catalogue);
         let ast = match engine.compile_file(path.clone()) {
             Ok(ast) => ast,
             Err(err) => {
@@ -819,6 +878,33 @@ fn deliver_ui(plugins: &mut [Plugin], event: ui::UiEvent) {
         ui::UiEvent::Group { plugin, id } => (plugin, "on_ui_group", vec![id]),
         ui::UiEvent::Button { plugin, id, input } => (plugin, "on_ui_button", vec![id, input]),
         ui::UiEvent::Menu { plugin, id } => (plugin, "on_ui_menu", vec![id]),
+        // Four arguments, one of them a number, so it does not fit the
+        // strings-only path below either.
+        ui::UiEvent::FileMenu {
+            plugin,
+            id,
+            hash,
+            index,
+            name,
+        } => {
+            let Some(target) = plugins.iter_mut().find(|p| p.name == plugin) else {
+                return;
+            };
+            if !target.handles("on_file_menu", 4) {
+                return;
+            }
+            let result = target.engine.call_fn::<rhai::Dynamic>(
+                &mut target.scope,
+                &target.ast,
+                "on_file_menu",
+                (id, hash, index, name),
+            );
+            if let Err(err) = result {
+                tracing::error!("plugin {}: on_file_menu failed: {err}", target.name);
+                ui::report_failure(&target.name, "on_file_menu", &err.to_string());
+            }
+            return;
+        }
         ui::UiEvent::FormCancelled { plugin, id } => (plugin, "on_ui_form_cancel", vec![id]),
         ui::UiEvent::Configure { plugin } => (plugin, "on_ui_configure", Vec::new()),
         ui::UiEvent::Opened { plugin } => (plugin, "on_ui_open", Vec::new()),
@@ -981,7 +1067,7 @@ mod tests {
         assert_eq!(scripts.len(), 3, "every .rhai file is discovered");
 
         let log2 = seen.clone();
-        let mut plugins = load(|_, _| recording_engine_shared(log2.clone()), &test_cfg(), &scripts);
+        let mut plugins = load(|_, _, _| recording_engine_shared(log2.clone()), &test_cfg(), &scripts);
         assert_eq!(plugins.len(), 3, "every script compiles and loads");
 
         dispatch(
@@ -1015,7 +1101,7 @@ mod tests {
 
         let seen = recorder();
         let log2 = seen.clone();
-        let mut plugins = load(|_, _| recording_engine_shared(log2.clone()), &test_cfg(), &discover(&dir).unwrap());
+        let mut plugins = load(|_, _, _| recording_engine_shared(log2.clone()), &test_cfg(), &discover(&dir).unwrap());
         assert_eq!(plugins.len(), 1, "only the valid script loads");
 
         dispatch(&mut plugins, SessionEvent::Error("disk full".into()));
@@ -1035,7 +1121,7 @@ mod tests {
 
         let seen = recorder();
         let log2 = seen.clone();
-        let mut plugins = load(|_, _| recording_engine_shared(log2.clone()), &test_cfg(), &discover(&dir).unwrap());
+        let mut plugins = load(|_, _, _| recording_engine_shared(log2.clone()), &test_cfg(), &discover(&dir).unwrap());
 
         dispatch(
             &mut plugins,
@@ -1077,6 +1163,191 @@ mod tests {
                 plugin.handles(handler, arity),
                 "the example should define {handler}/{arity}"
             );
+        }
+    }
+
+    /// A click on a plugin's file-menu item reaches that plugin, with the file
+    /// it was used on, and reaches nobody else.
+    #[test]
+    fn a_file_menu_click_carries_the_file_to_one_plugin() {
+        let dir = folder(
+            "filemenu",
+            &[
+                (
+                    "mine.rhai",
+                    r#"fn on_file_menu(id, hash, index, name) {
+                           record(id + "|" + hash + "|" + index + "|" + name);
+                       }"#,
+                ),
+                // Same handler, not addressed: a second plugin must not see it.
+                (
+                    "other.rhai",
+                    r#"fn on_file_menu(id, hash, index, name) { record("other"); }"#,
+                ),
+            ],
+        );
+
+        let seen = recorder();
+        let scripts = discover(&dir).unwrap();
+        let log2 = seen.clone();
+        let mut plugins = load(|_, _, _| recording_engine_shared(log2.clone()), &test_cfg(), &scripts);
+
+        deliver_ui(
+            &mut plugins,
+            ui::UiEvent::FileMenu {
+                plugin: "mine".into(),
+                id: "play".into(),
+                hash: "abc".into(),
+                index: 2,
+                name: "ep01.mkv".into(),
+            },
+        );
+
+        assert_eq!(*seen.lock().unwrap(), vec!["play|abc|2|ep01.mkv"]);
+
+        // A plugin that never declared the handler is not an error, and a name
+        // nobody has is not a panic.
+        deliver_ui(
+            &mut plugins,
+            ui::UiEvent::FileMenu {
+                plugin: "nobody".into(),
+                id: "play".into(),
+                hash: "abc".into(),
+                index: 0,
+                name: "x.mkv".into(),
+            },
+        );
+        assert_eq!(seen.lock().unwrap().len(), 1, "nothing else ran");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The player example is the first thing anyone will copy for "run a
+    /// program from a plugin", so it has to compile and to declare the
+    /// handlers the file menu actually calls.
+    #[test]
+    fn the_player_example_compiles_and_handles_the_file_menu() {
+        let source = include_str!("../../docs/plugins/player.rhai");
+        let engine = Engine::new();
+        let ast = engine
+            .compile(source)
+            .expect("docs/plugins/player.rhai must compile");
+
+        let plugin = Plugin {
+            name: "player".into(),
+            engine: Engine::new(),
+            ast,
+            scope: Scope::new(),
+        };
+
+        for (handler, arity) in [
+            ("on_session_start", 0),
+            ("on_file_menu", 4),
+            ("on_ui_configure", 0),
+            ("on_ui_form", 2),
+        ] {
+            assert!(
+                plugin.handles(handler, arity),
+                "the player example should define {handler}/{arity}"
+            );
+        }
+
+        // It cannot work without `execute`, and asking for more than it uses
+        // is the thing the permission prompt exists to make visible.
+        let (asked, unknown) = declared(source);
+        assert!(unknown.is_empty(), "its header has no typo in it");
+        assert_eq!(
+            asked,
+            [
+                Permission::Read,
+                Permission::Notify,
+                Permission::Data,
+                Permission::Ui,
+                Permission::Execute,
+            ]
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        );
+    }
+
+    /// Every `t("key")` in every shipped plugin has a string, and no language
+    /// carries a key nothing asks for.
+    ///
+    /// Silent otherwise: a missing key renders as the key, which looks like a
+    /// typo in the plugin rather than a gap in its translations.
+    #[test]
+    fn the_shipped_plugins_match_their_catalogues() {
+        use std::collections::BTreeSet;
+
+        // (name, script, catalogue, keys the scan cannot see whole)
+        let shipped: [(&str, &str, &str, &[&str]); 3] = [
+            (
+                "example",
+                include_str!("../../docs/plugins/example.rhai"),
+                include_str!("../../docs/plugins/example_translations.json"),
+                &[],
+            ),
+            (
+                "rss",
+                include_str!("../../docs/plugins/rss.rhai"),
+                include_str!("../../docs/plugins/rss_translations.json"),
+                &[],
+            ),
+            (
+                // `t("player_" + id)` is built at run time, so the scan sees
+                // only the prefix - the four ids are named here instead.
+                "player",
+                include_str!("../../docs/plugins/player.rhai"),
+                include_str!("../../docs/plugins/player_translations.json"),
+                &["player_system", "player_vlc", "player_mpv", "player_custom"],
+            ),
+        ];
+
+        for (name, source, json, extra) in shipped {
+            let catalogue: super::strings::Catalog =
+                serde_json::from_str(json).unwrap_or_else(|e| panic!("{name}: {e}"));
+
+            let mut wanted: BTreeSet<String> = extra.iter().map(|k| (*k).to_owned()).collect();
+            let bytes = source.as_bytes();
+            let mut rest = source;
+            while let Some(at) = rest.find("t(\"") {
+                let absolute = rest.as_ptr() as usize - source.as_ptr() as usize + at;
+                // `split("` also ends in `t("`. The character before has to be
+                // one a name cannot end with.
+                let part_of_a_name = absolute > 0
+                    && (bytes[absolute - 1].is_ascii_alphanumeric() || bytes[absolute - 1] == b'_');
+                let tail = &rest[at + 3..];
+                let Some(end) = tail.find('"') else { break };
+                if !part_of_a_name {
+                    wanted.insert(tail[..end].to_owned());
+                }
+                rest = &tail[end..];
+            }
+            // Fragments of a built key, and the empty string from `t("")`-shaped
+            // noise, are not keys.
+            wanted.retain(|k| !k.is_empty() && !k.ends_with('_'));
+
+            let english: BTreeSet<String> = catalogue
+                .get("en-US")
+                .unwrap_or_else(|| panic!("{name} has no en-US"))
+                .keys()
+                .cloned()
+                .collect();
+
+            let missing: Vec<&String> = wanted.difference(&english).collect();
+            assert!(missing.is_empty(), "{name}: en-US has no string for {missing:?}");
+
+            let unused: Vec<&String> = english.difference(&wanted).collect();
+            assert!(unused.is_empty(), "{name}: en-US carries {unused:?}, unused");
+
+            // Other languages are checked against en-US, not against the script:
+            // a half-translated plugin falls back and is fine, but a key
+            // MISSPELLED in one language is a string that silently never shows.
+            for (locale, strings) in &catalogue {
+                let strays: Vec<&String> =
+                    strings.keys().filter(|k| !english.contains(*k)).collect();
+                assert!(strays.is_empty(), "{name}/{locale} carries {strays:?}, not in en-US");
+            }
         }
     }
 
@@ -1136,6 +1407,40 @@ mod tests {
         assert!(disabled(&cfg).contains("a,b"));
     }
 
+    /// Every permission round-trips through its tag and has a description key.
+    ///
+    /// A permission missing from `ALL` is invisible to the approval prompt but
+    /// still grantable by a stored tag, which would be a silent grant. A
+    /// missing description key shows the user a humanised key name where the
+    /// sentence explaining the risk should be.
+    #[test]
+    fn every_permission_is_listed_named_and_described() {
+        for p in Permission::ALL {
+            assert_eq!(Permission::parse(p.tag()), Some(p), "{p:?} does not round-trip");
+            assert!(!p.describe_key().is_empty(), "{p:?} has no description key");
+            assert!(
+                p.describe_key().starts_with("perm_"),
+                "{p:?} description key is not a perm_ key"
+            );
+        }
+        // Tags are unique, or two permissions would grant each other.
+        let tags: BTreeSet<&str> = Permission::ALL.iter().map(|p| p.tag()).collect();
+        assert_eq!(tags.len(), Permission::ALL.len(), "two permissions share a tag");
+
+        assert_eq!(Permission::parse("EXECUTE"), Some(Permission::Execute), "case");
+        assert_eq!(Permission::parse("  execute "), Some(Permission::Execute), "spacing");
+        assert_eq!(Permission::parse("exec"), None, "not an abbreviation");
+
+        // `execute` is last so it is the line still on screen when someone
+        // reaches for Approve. If that ordering is ever changed, change the
+        // reasoning in the enum with it.
+        assert_eq!(
+            Permission::ALL.last(),
+            Some(&Permission::Execute),
+            "execute must read last in the approval prompt"
+        );
+    }
+
     /// The header is read without running anything, and a plugin that asks for
     /// something is held until the user has approved exactly that.
     #[test]
@@ -1170,7 +1475,7 @@ fn on_session_start() { }"),
         let cfg = test_cfg();
         let scripts = discover(&dir).unwrap();
         let load_now = |cfg: &Configuration| {
-            load(|_, _| Engine::new(), cfg, &scripts)
+            load(|_, _, _| Engine::new(), cfg, &scripts)
                 .into_iter()
                 .map(|p| p.name)
                 .collect::<Vec<_>>()

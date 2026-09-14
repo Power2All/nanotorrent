@@ -243,6 +243,13 @@ textarea { resize: vertical; min-height: 2.4rem; }
 .f-item:nth-child(odd) { background: var(--panel); }
 .f-item .f-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .f-item .f-size { color: var(--muted); font-size: .72rem; white-space: nowrap; }
+/* A folder row, in either list. The whole row folds - there is nothing else on
+   it to click, so a twisty would only be a smaller target for the same act. */
+.f-dir, .lrow.f-dir { cursor: pointer; font-weight: 600; }
+.f-dir:hover, .lrow.f-dir:hover { background: var(--bar-bg); }
+/* Indentation is the tree. A span rather than the row, so the size and the
+   buttons on the right stay in their column. */
+.f-name, .lrow .grow { min-width: 0; }
 
 /* Narrow screens: the two panes stack rather than squeezing the file names
    into nothing. */
@@ -343,6 +350,20 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
 }
 .lrow .num { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .lrow select { flex: 0 0 auto; }
+
+/* A plugin's items on a file. Absolute inside the details dialog rather than
+   fixed on the page: a dialog opened with showModal() sits in the top layer,
+   and an element outside it cannot draw over it however high its z-index. */
+.ctxmenu {
+  position: absolute; z-index: 20; min-width: 12rem; padding: .25rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  display: grid; gap: .1rem; box-shadow: 0 6px 20px #0006;
+}
+.ctxmenu button {
+  text-align: left; font: inherit; color: inherit; cursor: pointer;
+  background: none; border: 0; padding: .4rem .6rem; border-radius: 6px;
+}
+.ctxmenu button:hover { background: var(--bar-bg); }
 .trk-tier { font-weight: 600; color: var(--muted); }
 .trk-src { color: var(--muted); font-style: italic; }
 /* Tags are checkboxes in a row, so `label`'s global grid has to be undone. */
@@ -570,7 +591,7 @@ th .arrow { opacity: .75; font-size: .8em; }
           aria-controls="drawer" aria-expanded="false">&#9776;</button>
 </header>
 
-<div id="drop" aria-hidden="true"><span>{{add_torrent_s}}</span></div>
+<div id="drop" aria-hidden="true"><span>{{add_torrent_s}}</span></div>
 <div id="scrim"></div>
 <aside id="drawer" aria-hidden="true" aria-label="{{preferences}}">
   <header>
@@ -607,7 +628,7 @@ th .arrow { opacity: .75; font-size: .8em; }
     <button type="button" id="page-last">&raquo;</button>
     <span class="grow"></span>
     <span id="page-total"></span>
-  </div>
+  </div>
   <div class="empty" id="empty" hidden>{{no_torrents_yet}}</div>
 </main>
 
@@ -628,8 +649,8 @@ th .arrow { opacity: .75; font-size: .8em; }
       <button value="cancel">{{close}}</button>
     </div>
   </form>
-</dialog>
-
+</dialog>
+
 <dialog id="plug">
   <form method="dialog">
     <div class="dlg-head" id="plug-title">{{plugins}}</div>
@@ -777,6 +798,78 @@ function toast(message, kind) {
   el.textContent = message;                       // never innerHTML - see header
   $("toasts").append(el);
   setTimeout(() => el.remove(), 8000);
+}
+
+// --- file trees ---------------------------------------------------------------
+// Torrent paths are "folder/sub/name.ext". Both file lists draw them as a tree
+// whose folders fold, which is the same thing the desktop does and for the same
+// reason: a season of episodes in one folder is otherwise a wall of rows to
+// scroll past to reach the next folder.
+//
+// Rows come out FLAT, because a flat list is what both lists already draw. A
+// folder row carries its full path - not its leaf, which repeats - as the key
+// its folded state is remembered under.
+
+function fileTree(paths) {
+  const entries = paths.map((path, index) => ({ index, parts: String(path).split(/[/\\]/) }));
+  // Sorted by folder so siblings group, with root-level files first: an empty
+  // folder path sorts before any named one. Ties keep the torrent's own order,
+  // which is the order the files will be written in.
+  entries.sort((a, b) => {
+    const ad = a.parts.slice(0, -1).join("\u0000");
+    const bd = b.parts.slice(0, -1).join("\u0000");
+    return ad < bd ? -1 : ad > bd ? 1 : a.index - b.index;
+  });
+
+  const rows = [];
+  let prev = [];
+  for (const e of entries) {
+    const dir = e.parts.slice(0, -1);
+    let shared = 0;
+    while (shared < dir.length && shared < prev.length && dir[shared] === prev[shared]) shared++;
+    // Only the components this path does not already share with the row above,
+    // so a deep tree does not repeat its parents.
+    for (let d = shared; d < dir.length; d++) {
+      rows.push({ index: -1, depth: d, name: dir[d], path: dir.slice(0, d + 1).join("/") });
+    }
+    rows.push({ index: e.index, depth: dir.length, name: e.parts[e.parts.length - 1], path: "" });
+    prev = dir;
+  }
+  return rows;
+}
+
+// Drop every row under a folder that is shut. The folder row itself stays - it
+// is what you click to get the rest back.
+function pruneTree(rows, folded) {
+  const out = [];
+  let hideBelow = -1;
+  for (const r of rows) {
+    if (hideBelow >= 0) {
+      if (r.depth > hideBelow) continue;
+      hideBelow = -1;
+    }
+    out.push(r);
+    if (r.index < 0 && folded.has(r.path)) hideBelow = r.depth;
+  }
+  return out;
+}
+
+// A folder row for either list. `cls` is the row class that list uses.
+function folderRow(row, folded, cls, onToggle) {
+  const el = document.createElement("div");
+  el.className = `${cls} f-dir`;
+  const name = document.createElement("span");
+  name.className = cls === "lrow" ? "grow" : "f-name";
+  name.style.paddingLeft = `${row.depth * 1.1}rem`;
+  // Never innerHTML: a folder name comes out of the torrent.
+  name.textContent = `${folded.has(row.path) ? "\u25B8" : "\u25BE"} ${row.name}`;
+  name.title = row.path;
+  el.append(name);
+  el.addEventListener("click", () => {
+    if (!folded.delete(row.path)) folded.add(row.path);
+    onToggle();
+  });
+  return el;
 }
 
 // --- api --------------------------------------------------------------------
@@ -1311,6 +1404,11 @@ function renderQueue() {
   });
 }
 
+// Folders shut in the two lists, by full path. Module-level so the details
+// panel's one-second refresh cannot spring them open again.
+const addFolded = new Set();
+const detFolded = new Set();
+
 function renderFiles() {
   const t = inspected[selected];
   const list = $("add-files");
@@ -1321,28 +1419,37 @@ function renderFiles() {
   $("add-fhead").textContent =
     `${t.name} - ${bytes(t.total_size)}, ${on}/${t.files.length} file${t.files.length > 1 ? "s" : ""}`;
 
-  t.files.forEach((f, i) => {
+  // `included` stays indexed by position in t.files, so folding a folder
+  // cannot lose a tick: what is on screen and what will be added are two
+  // different things, and only the first one folds.
+  for (const r of pruneTree(fileTree(t.files.map(f => f.path)), addFolded)) {
+    if (r.index < 0) {
+      list.append(folderRow(r, addFolded, "f-item", renderFiles));
+      continue;
+    }
+    const f = t.files[r.index];
     const row = document.createElement("div");
     row.className = "f-item";
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.checked = t.included[i];
+    cb.checked = t.included[r.index];
     cb.addEventListener("change", () => {
-      t.included[i] = cb.checked;
+      t.included[r.index] = cb.checked;
       // Re-render for the count in the header; the list is small enough that
       // rebuilding it is cheaper to write than to patch in place.
       renderFiles();
     });
     const name = document.createElement("span");
     name.className = "f-name";
-    name.textContent = f.path;                    // attacker-controlled
+    name.style.paddingLeft = `${r.depth * 1.1}rem`;
+    name.textContent = r.name;                    // attacker-controlled
     name.title = f.path;
     const size = document.createElement("span");
     size.className = "f-size";
     size.textContent = bytes(f.size);
     row.append(cb, name, size);
     list.append(row);
-  });
+  }
 }
 
 $("add-file").addEventListener("change", async () => {
@@ -1798,6 +1905,7 @@ function minutesLabel(m) {
 }
 
 async function openDetails(t) {
+  closeFileMenu();   // a menu left over from the last torrent is not this one's
   detHash = t.info_hash;
   $("tdet-name").textContent = t.name;          // never innerHTML - hostile input
   $("tdet").showModal();
@@ -1809,11 +1917,15 @@ async function drawDetails() {
   try {
     // One round trip each, in parallel: they are independent and the panel is
     // not usable until all three have arrived anyway.
-    const [files, trackers, meta] = await Promise.all([
+    const [files, trackers, meta, menu] = await Promise.all([
       api("GET", `/api/torrents/${detHash}/files`),
       api("GET", `/api/torrents/${detHash}/trackers`),
       api("GET", `/api/torrents/${detHash}/tags`),
+      // Refetched with the panel rather than cached: a plugin can be enabled,
+      // or change what it offers, while the panel is open.
+      api("GET", "/api/plugins/file-menu"),
     ]);
+    fileMenu = menu;
     drawFiles(files);
     drawTrackers(trackers);
     drawTags(meta);
@@ -1821,15 +1933,79 @@ async function drawDetails() {
   } catch (e) { toast(e.message); }
 }
 
+// --- streaming ---------------------------------------------------------------
+// The server can serve byte ranges out of a file that is still downloading, so a
+// player can start before the torrent finishes. NanoTorrent launches nothing:
+// the URL goes to whatever plays it.
+
+const STREAMABLE = /\.(mp4|m4v|mkv|webm|avi|mov|wmv|flv|mpe?g|m2ts|mts|ts|ogv|mp3|flac|aac|m4a|opus|ogg|oga|wav)$/i;
+
+const streamable = (name) => STREAMABLE.test(name);
+
+const streamUrl = (hash, index) =>
+  `/api/torrents/${encodeURIComponent(hash)}/files/${index}/stream`;
+
+// --- plugin items on a file --------------------------------------------------
+// A plugin may add items to a file's context menu, the same ones the desktop
+// details panel shows. NanoTorrent does not know what they do: it lists what
+// the plugin offered and posts back which item was used on which file.
+
+let fileMenu = [];   // [{ plugin, id, label }]
+
+function closeFileMenu() {
+  const open = $("file-ctx");
+  if (open) open.remove();
+}
+
+function showFileMenu(x, y, f) {
+  closeFileMenu();
+  if (!fileMenu.length) return;
+
+  const menu = document.createElement("div");
+  menu.className = "ctxmenu";
+  menu.id = "file-ctx";
+  for (const item of fileMenu) {
+    const b = document.createElement("button");
+    b.type = "button";                            // inside a method="dialog" form
+    // The plugin's name is part of the label, not a tooltip: an item reading
+    // "Verify your password" must be visibly somebody's, and a tooltip is not
+    // visible. Never innerHTML - this is the plugin author's text.
+    b.textContent = `${item.title}: ${item.label}`;
+    b.addEventListener("click", () => {
+      closeFileMenu();
+      api("POST", `/api/plugins/${encodeURIComponent(item.plugin)}/event`, {
+        kind: "filemenu", id: item.id, hash: detHash, index: f.index, name: f.name,
+      }).catch(e => toast(e.message));
+    });
+    menu.append(b);
+  }
+
+  const dlg = $("tdet");
+  dlg.append(menu);
+  // Clamped to the dialog, so an item opened near an edge is still on screen.
+  const box = dlg.getBoundingClientRect();
+  menu.style.left = `${Math.max(0, Math.min(x - box.left, box.width - menu.offsetWidth - 4))}px`;
+  menu.style.top = `${Math.max(0, Math.min(y - box.top, box.height - menu.offsetHeight - 4))}px`;
+  // Next pointer down anywhere closes it. Deferred by a tick or the click that
+  // opened it would close it again on the way back up.
+  setTimeout(() => document.addEventListener("pointerdown", closeFileMenu, { once: true }), 0);
+}
+
 function drawFiles(files) {
   const box = $("tdet-files");
   box.textContent = "";
-  for (const f of files) {
+  for (const r of pruneTree(fileTree(files.map(f => f.name)), detFolded)) {
+    if (r.index < 0) {
+      box.append(folderRow(r, detFolded, "lrow", () => drawFiles(files)));
+      continue;
+    }
+    const f = files[r.index];
     const row = document.createElement("div");
     row.className = "lrow";
     const name = document.createElement("span");
     name.className = "grow";
-    name.textContent = f.name;                  // attacker-controlled
+    name.style.paddingLeft = `${r.depth * 1.1}rem`;
+    name.textContent = r.name;                  // attacker-controlled
     name.title = f.name;
     const size = document.createElement("span");
     size.className = "num";
@@ -1844,6 +2020,63 @@ function drawFiles(files) {
         priority: Number(pick.value),
       })));
     row.append(name, size, pick);
+
+    // Streaming, for the files there is any point streaming. The server serves
+    // byte ranges out of a partial download, so these work before it finishes.
+    if (streamable(f.name)) {
+      const url = streamUrl(detHash, f.index);
+      // A real link, so middle-click and "open in new tab" behave: the browser
+      // is the player here, and for a container it cannot decode the user wants
+      // to reach for the address bar.
+      const play = document.createElement("a");
+      play.className = "btn";
+      play.textContent = T.play;
+      play.title = T.play_in_browser;
+      play.href = url;
+      play.target = "_blank";
+      play.rel = "noopener";
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "btn";
+      copy.textContent = T.copy_stream_url;
+      copy.title = T.copy_stream_url_hint;
+      copy.addEventListener("click", async () => {
+        // Absolute, because it is going into another application.
+        const abs = new URL(url, location.href).href;
+        try {
+          await navigator.clipboard.writeText(abs);
+          toast(T.copied_to_clipboard);
+        } catch (e) {
+          // No clipboard permission, or an insecure context. Showing the URL is
+          // still useful - it can be selected out of the prompt.
+          prompt(T.copy_stream_url, abs);
+        }
+      });
+      row.append(play, copy);
+    }
+
+    // Only when a plugin has actually offered something. No plugins is the
+    // usual case and draws nothing at all.
+    if (fileMenu.length) {
+      row.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        showFileMenu(e.clientX, e.clientY, f);
+      });
+      // And a button, because a phone has no right mouse button.
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "btn";
+      more.textContent = "\u22EF";               // midline horizontal ellipsis
+      more.title = T.actions;
+      more.setAttribute("aria-label", T.actions);
+      more.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const at = more.getBoundingClientRect();
+        showFileMenu(at.left, at.bottom, f);
+      });
+      row.append(more);
+    }
+
     box.append(row);
   }
 }
@@ -2073,13 +2306,31 @@ function pushRates(down, up) {
 // columns of whitespace. A width the user drags onto it wins, as it should.
 const COL_DEFAULTS = [null, 90, 130, 110, 90, 90, 80, 60, 250];
 
-async function loadColumns() {
-  let saved = {};
-  try {
-    saved = (await api("GET", "/api/columns")) || {};
-  } catch (e) {
-    // A width is a preference; failing to read one is not worth a toast.
-  }
+// Widths live in this browser, not on the server.
+//
+// They used to be a pair of API endpoints, on the reasoning that a preference
+// should follow the person rather than the machine. That holds for a save path
+// or a language; it does not hold for a pixel width dragged with a mouse. A
+// phone and a desktop want different columns and the server could only ever
+// remember one answer - so the one place that can give both the right answer is
+// the browser doing the asking.
+//
+// Wrapped because localStorage throws in a private window rather than being
+// absent, and a width nobody can save is not worth an error.
+const store = {
+  get(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : JSON.parse(raw);
+    } catch (e) { return fallback; }
+  },
+  set(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+  },
+};
+
+function loadColumns() {
+  const saved = store.get("cols", {});
   const cg = $("cols");
   cg.textContent = "";
   COL_DEFAULTS.forEach((def, i) => {
@@ -2113,10 +2364,9 @@ function installGrips() {
         document.removeEventListener("mousemove", move);
         document.removeEventListener("mouseup", up);
         document.body.classList.remove("resizing");
-        api("POST", "/api/columns", {
-          column: i,
-          width: Math.round(cols[i].getBoundingClientRect().width),
-        }).catch(() => {});
+        const saved = store.get("cols", {});
+        saved[i] = Math.round(cols[i].getBoundingClientRect().width);
+        store.set("cols", saved);
       };
       document.addEventListener("mousemove", move);
       document.addEventListener("mouseup", up);
@@ -2215,18 +2465,16 @@ async function drawPlugList() {
 // --- chart geometry ---------------------------------------------------------
 // Shares the desktop's two keys and its 48-320 range, so a chart is the same
 // width in both places rather than merely a similar size.
-let CHART_LIMITS = { min: 48, max: 320, default: 96 };
+// The same bounds the desktop applies, stated here rather than fetched: they
+// are two numbers that have never changed, and a round trip to learn them is a
+// round trip to learn a constant.
+const CHART_LIMITS = { min: 48, max: 320, default: 96 };
 
-async function loadCharts() {
-  let c;
-  try {
-    c = await api("GET", "/api/charts");
-  } catch (e) {
-    return;
-  }
-  CHART_LIMITS = { min: c.min, max: c.max, default: c.default };
-  $("ch-dl").style.width = c.down + "px";
-  $("ch-ul").style.width = c.up + "px";
+function loadCharts() {
+  const clamp = (w) =>
+    Math.min(CHART_LIMITS.max, Math.max(CHART_LIMITS.min, Number(w) || CHART_LIMITS.default));
+  $("ch-dl").style.width = clamp(store.get("chart.down", CHART_LIMITS.default)) + "px";
+  $("ch-ul").style.width = clamp(store.get("chart.up", CHART_LIMITS.default)) + "px";
   installChartGrip("ch-dl", "down");
   installChartGrip("ch-ul", "up");
 }
@@ -2258,10 +2506,7 @@ function installChartGrip(svgId, which) {
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up);
       document.body.classList.remove("resizing");
-      api("POST", "/api/charts", {
-        which,
-        width: Math.round(svg.getBoundingClientRect().width),
-      }).catch(() => {});
+      store.set(`chart.${which}`, Math.round(svg.getBoundingClientRect().width));
     };
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseup", up);
@@ -2271,7 +2516,7 @@ function installChartGrip(svgId, which) {
   svg.addEventListener("dblclick", () => {
     svg.style.width = CHART_LIMITS.default + "px";
     place();
-    api("POST", "/api/charts", { which, width: CHART_LIMITS.default }).catch(() => {});
+    store.set(`chart.${which}`, CHART_LIMITS.default);
   });
 
   box.append(grip);

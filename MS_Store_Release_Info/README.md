@@ -58,6 +58,15 @@ Each file's header names both.
 with how the app's own `lang/*.json` are produced and with the note in
 AI-DECLARATION.md.
 
+## my-MM is here but not submitted
+
+The Store does not accept listings in Burmese: `submission update` answers
+`InvalidParameterValue ... "Language codes: my-mm not supported"`, and because
+one bad language fails the PUT for every language, `store-whatsnew.ps1` skips
+this file by name. It is kept because the app itself ships Burmese and the MSIX
+declares it as a resource language - if Microsoft adds it, the text is already
+written and only the skip list changes.
+
 Store listings are read by human reviewers, unlike UI strings, so have a native
 speaker glance over any language before you publish it. This matters more for
 the Description than for the feature bullets.

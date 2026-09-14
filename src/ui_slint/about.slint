@@ -4,7 +4,7 @@ import { ScrollView, Button, Palette } from "std-widgets.slint";
 import { L } from "globals.slint";
 
 export component AboutDialog inherits Window {
-    icon: @image-url("../../res/app.png");
+    icon: @image-url("../../res/app-256.png");
     title: L.s(L.revision, "about_nanotorrent");
     // Width is pinned - nothing here reflows horizontally. Height is NOT:
     // the window takes its content's natural height, so it opens exactly
@@ -42,21 +42,50 @@ export component AboutDialog inherits Window {
             padding: 20px;
             spacing: 8px;
 
-            Text {
-                text: "NanoTorrent";
-                font-size: 26px;
-                font-weight: 700;
-                color: Palette.foreground;
-            }
-            Text {
-                text: L.s(L.revision, "version") + " " + root.version;
-                font-size: 13px;
-                color: Palette.foreground;
-            }
-            Text {
-                text: L.s(L.revision, "build") + " " + root.build-stamp;
-                font-size: 12px;
-                color: #888;
+            HorizontalLayout {
+                spacing: 14px;
+                alignment: start;
+
+                // The 256px derivative, not the 2048px master: this is drawn
+                // at 64 and the master exists for the Store's scaling. See
+                // res/README.md.
+                //
+                // A fixed square rather than a stretched one - the layout
+                // would otherwise give it whatever height the text block
+                // came to, and a 26px title plus two small lines is not
+                // square.
+                Image {
+                    source: @image-url("../../res/app-256.png");
+                    width: 64px;
+                    height: 64px;
+                    image-fit: contain;
+                }
+
+                // Its own layout with tighter spacing than the 8px outside:
+                // these three lines are one block about the build, and at
+                // 8px apart they read as three separate things standing next
+                // to a picture.
+                VerticalLayout {
+                    spacing: 2px;
+                    alignment: center;
+
+                    Text {
+                        text: "NanoTorrent";
+                        font-size: 26px;
+                        font-weight: 700;
+                        color: Palette.foreground;
+                    }
+                    Text {
+                        text: L.s(L.revision, "version") + " " + root.version;
+                        font-size: 13px;
+                        color: Palette.foreground;
+                    }
+                    Text {
+                        text: L.s(L.revision, "build") + " " + root.build-stamp;
+                        font-size: 12px;
+                        color: #888;
+                    }
+                }
             }
 
             Rectangle { height: 6px; }

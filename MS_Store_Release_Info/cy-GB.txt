@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Cymraeg (Y Deyrnas Unedig) - Partner Center: Welsh (United Kingdom) (cy-GB)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ Trosiad Rust o PicoTorrent gan Viktor Elofsson yw NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Fersiwn 0.4.0
 
-Fersiwn 0.3.8
-
-- 35 iaith arall, 76 yn y cyfan, wedi'u hychwanegu ar draws Ewrop, de Asia, de-ddwyrain Asia, canolbarth Asia ac Affrica.
-- Nid yw lawrlwythiadau gorffenedig yn aros ar glo bellach. Roedd torrent a oedd wedi gorffen, neu a oedd wedi'i oedi, yn cadw ei ffeiliau ar agor i ysgrifennu, ac ar Windows mae hynny ar ei ben ei hun yn ddigon i rwystro rhaglen arall rhag eu hagor: nid oedd modd agor archif na fideo yn y ffolder lawrlwytho hyd nes i NanoTorrent gau. Mae ffeiliau'n cael eu hailagor yn ddarllen-yn-unig cyn gynted nad oes dim i'w ysgrifennu, ac mae mynediad ysgrifennu'n dod yn ôl yn awtomatig os oes ei angen eto.
+- Ffrydiwch fideo wrth iddo lawrlwytho. De-gliciwch ffeil ym manylion torrent, neu yn y rhyngwyneb gwe, ac fe agorith yn VLC, mpv neu eich chwaraewr arferol - mae'r chwarae'n dechrau cyn i'r lawrlwythiad orffen.
+- Rhestr ffeiliau well: dewiswch ffeiliau gyda'r llygoden neu'r bysellau saeth, agorwch un gyda de-glic, a phlygwch y ffolderi nad ydych yn edrych arnynt. Yn yr ap ac yn y rhyngwyneb gwe fel ei gilydd.
+- Gall ategion ychwanegu eitemau at ddewislen ffeil, cychwyn rhaglenni o dan ganiatâd newydd "execute" rydych chi'n ei gymeradwyo mewn iaith glir, a chario eu cyfieithiadau eu hunain. Mae pymtheg galwad arall yn rhoi iddynt yr hyn y gallai'r rhyngwyneb gwe ei wneud eisoes.
+- 35 iaith yn fwy, 76 i gyd, wedi'u hychwanegu yn Ewrop, De Asia, De-ddwyrain Asia, Canolbarth Asia ac Affrica.
+- Cywiriadau diogelwch yn y rhyngwyneb gwe ac yn y modd y trinnir llwybrau ffeiliau torrent.
+- Nid yw lawrlwythiadau gorffenedig nac wedi'u hoedi yn cadw eu ffeiliau ar glo mwyach, felly mae archif neu fideo yn y ffolder lawrlwytho'n agor tra bo NanoTorrent yn rhedeg.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

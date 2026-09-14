@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Oʻzbekcha (Oʻzbekiston) - Partner Center: Uzbek (Uzbekistan) (uz-Latn-UZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent — Viktor Elofsson yozgan PicoTorrent dasturining Rust versiyasi.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versiya 0.4.0
 
-Versiya 0.3.8
-
-- 35 til koʻproq, jami 76; Yevropa, Janubiy Osiyo, Janubi-Sharqiy Osiyo, Markaziy Osiyo va Afrika boʻylab qoʻshildi.
-- Tugallangan yuklab olishlar endi qulflangan qolmaydi. Tugallangan yoki pauza qilingan torrent oʻz fayllarini yozish uchun ochiq saqlar edi, Windows-da esa shuning oʻzi boshqa programmaning ularni ochishiga toʻsqinlik qilishga yetarli: yuklab olish jildidagi arxiv yoki videoni NanoTorrent yopilmaguncha ochib boʻlmasdi. Fayllar endi yoziladigan hech narsa qolmasa, faqat oʻqish uchun qayta ochiladi, yozish huquqi esa yana kerak boʻlsa avtomatik qaytarib olinadi.
+- Videoni yuklab olinayotgan paytda ko'ring. Torrent tafsilotlarida yoki veb-interfeysda faylni sichqonchaning o'ng tugmasi bilan bosing, u VLC, mpv yoki odatdagi pleyeringizda ochiladi - ijro yuklab olish tugashidan oldin boshlanadi.
+- Yaxshiroq fayl ro'yxati: fayllarni sichqoncha yoki o'q tugmalari bilan tanlang, o'ng tugma bilan bittasini oching va qaramayotgan papkalaringizni yig'ing. Ilovada ham, veb-interfeysda ham.
+- Plaginlar fayl menyusiga bandlar qo'shishi, siz sodda tilda tasdiqlaydigan yangi "execute" ruxsati ostida dasturlarni ishga tushirishi va o'z tarjimalarini olib yurishi mumkin. Yana o'n beshta funksiya ularga veb-interfeys allaqachon qila olganini beradi.
+- Yana 35 til, jami 76, Yevropa, Janubiy Osiyo, Janubi-Sharqiy Osiyo, Markaziy Osiyo va Afrikada.
+- Veb-interfeysda va torrent fayl yo'llarini qayta ishlashda xavfsizlik tuzatishlari.
+- Tugagan va to'xtatilgan yuklab olishlar endi fayllarini qulflab turmaydi, shuning uchun yuklamalar papkasidagi arxiv yoki video NanoTorrent ishlab turganda ham ochiladi.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

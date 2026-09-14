@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Íslenska (Ísland) - Partner Center: Icelandic (Iceland) (is-IS)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent er Rust-útfærsla af PicoTorrent eftir Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Útgáfa 0.4.0
 
-Útgáfa 0.3.8
-
-- 35 fleiri tungumál, 76 í allt, bætt við í Evrópu, Suður-Asíu, Suðaustur-Asíu, Mið-Asíu og Afríku.
-- Lokið niðurhal er ekki lengur læst. Straumur sem var lokið, eða sem var í hléi, hélt skrám sínum opnum til skriftar, og á Windows nægir það eitt til að hindra annað forrit í að opna þær: safnskrá eða myndskeið í niðurhalsmöppunni var ekki unnt að opna fyrr en NanoTorrent var lokað. Skrár eru nú opnaðar aftur í skrifvörn jafnskjótt og ekkert verður skrifað, og skrifheimild er tekin til baka sjálfkrafa ef hennar þarf á ný.
+- Horfðu á myndskeið meðan það hleðst niður. Hægrismelltu á skrá í smáatriðum straums, eða í vefviðmótinu, og hún opnast í VLC, mpv eða þínum venjulega spilara - spilun hefst áður en niðurhalinu lýkur.
+- Betri skráalisti: veldu skrár með músinni eða örvatökkunum, opnaðu eina með hægrismelli og felldu saman möppur sem þú ert ekki að skoða. Bæði í forritinu og í vefviðmótinu.
+- Viðbætur geta bætt atriðum við valmynd skráar, ræst forrit undir nýrri heimild "execute" sem þú samþykkir á skýru máli, og borið með sér eigin þýðingar. Fimmtán köll til viðbótar gefa þeim það sem vefviðmótið gat þegar.
+- 35 tungumálum fleira, 76 alls, bætt við í Evrópu, Suður-Asíu, Suðaustur-Asíu, Mið-Asíu og Afríku.
+- Öryggislagfæringar í vefviðmótinu og í meðhöndlun skráaslóða úr straumum.
+- Lokið og stöðvað niðurhal heldur ekki lengur skrám sínum læstum, svo safnskrá eða myndskeið í niðurhalsmöppunni opnast meðan NanoTorrent keyrir.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

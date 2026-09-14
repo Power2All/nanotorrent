@@ -70,7 +70,12 @@ fn on_torrent_completed(hash, name) {
     log("finished: " + name + " (" + completed_this_run + " this run)");
 
     // `notify`: the same desktop notification a finished download uses.
-    notify("Download complete", name);
+    //
+    // `t` reads example_translations.json, beside this file. It needs no
+    // permission - it is your own file - and a key with no translation falls
+    // back to English and then to the key itself, so it is safe to write
+    // before anybody has translated anything.
+    notify(t("complete_title"), name);
 }
 
 fn on_torrent_removed(hash, name) {

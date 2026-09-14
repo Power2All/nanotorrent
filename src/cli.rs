@@ -34,8 +34,19 @@ pub enum Kind {
     },
     /// Free text. An empty value clears it.
     Text,
+    /// Free text that is never read back - see [`SECRET_SET`].
+    ///
+    /// For a value the program has to keep in the clear because it replays it
+    /// to somebody else (a SOCKS password), and which therefore cannot be
+    /// hashed. Writing works exactly as `Text` does; reading reports only
+    /// whether there is one.
+    Secret,
     /// A filesystem path that has to exist as a directory.
     Dir,
+    /// A filesystem path that has to exist as a file. The sibling of `Dir`,
+    /// for the TLS certificate and key: a typo in either would otherwise only
+    /// show up as the interface not coming back after a restart.
+    File,
     /// One of a fixed set, stored as the string itself.
     Choice(&'static [&'static str]),
     /// One of a fixed set, stored as its **index** - which is how the original
@@ -48,9 +59,13 @@ pub enum Kind {
     /// Held in the `listen_interface` table rather than in `setting`.
     ListenAddress,
     ListenPort,
-    /// Delegated to [`crate::webui::cli::set_setting`] under the name given,
-    /// so the web settings keep their one validation path - including the
-    /// warnings it prints about non-loopback binds and TLS being off.
+    /// Delegated to [`crate::webui::cli::set_setting`] under the name given.
+    ///
+    /// Only for the two that say something back: `bind_address` warns when it
+    /// is not loopback, and `username` refuses to be blank. Everything else in
+    /// the web section is an ordinary `Int`, `Choice` or `File` - it was all
+    /// routed through here once, which meant four shapes `Kind` already had
+    /// were spelled twice, in two different match statements.
     Web(&'static str),
 }
 
@@ -80,6 +95,14 @@ const PROXY_TYPES: &[&str] = &[
     "http",
     "http-password",
 ];
+
+/// What a secret reads back as when one is set.
+///
+/// Deliberately not a row of asterisks: a mask that looks like a value invites
+/// a client to send it back, and this one is refused on the way in precisely
+/// so that a round-trip cannot overwrite the real password with the mask.
+/// `(unset)` beside it is the convention the rest of this file already uses.
+pub const SECRET_SET: &str = "(set)";
 
 /// Every preference reachable from the command line.
 ///
@@ -162,10 +185,11 @@ pub const SETTINGS: &[Setting] = &[
     Setting { name: "proxy-host", key: "libtorrent.proxy_host", section: "proxy", kind: Kind::Text },
     Setting { name: "proxy-port", key: "libtorrent.proxy_port", section: "proxy", kind: Kind::Int { lo: 1, hi: 65535, unit: "" } },
     Setting { name: "proxy-username", key: "libtorrent.proxy_username", section: "proxy", kind: Kind::Text },
-    // Plain text, like the value in the database - a SOCKS password has to be
-    // replayed to the proxy, so there is nothing to hash it into. It prints
-    // like any other setting; treat the settings database as a secret.
-    Setting { name: "proxy-password", key: "libtorrent.proxy_password", section: "proxy", kind: Kind::Text },
+    // Stored in the clear, because a SOCKS password has to be replayed to the
+    // proxy and there is nothing to hash it into - but never READ back, so it
+    // does not travel to a browser on every settings load. Treat the settings
+    // database itself as a secret.
+    Setting { name: "proxy-password", key: "libtorrent.proxy_password", section: "proxy", kind: Kind::Secret },
     Setting { name: "proxy-hostnames", key: "libtorrent.proxy_hostnames", section: "proxy", kind: Kind::Bool },
     Setting { name: "proxy-peers", key: "libtorrent.proxy_peers", section: "proxy", kind: Kind::Bool },
     Setting { name: "proxy-trackers", key: "libtorrent.proxy_trackers", section: "proxy", kind: Kind::Bool },
@@ -175,24 +199,16 @@ pub const SETTINGS: &[Setting] = &[
     // the same code and cannot validate differently.
     Setting { name: "web-enabled", key: "webui.enabled", section: "web_interface", kind: Kind::Bool },
     Setting { name: "web-bind", key: "webui.bind_address", section: "web_interface", kind: Kind::Web("bind_address") },
-    Setting { name: "web-port", key: "webui.port", section: "web_interface", kind: Kind::Web("port") },
+    Setting { name: "web-port", key: "webui.port", section: "web_interface", kind: Kind::Int { lo: 1, hi: 65535, unit: "" } },
     Setting { name: "web-username", key: "webui.username", section: "web_interface", kind: Kind::Web("username") },
-    Setting { name: "web-tls-mode", key: "webui.tls_mode", section: "web_interface", kind: Kind::Web("tls_mode") },
-    Setting { name: "web-cert", key: "webui.tls_cert_path", section: "web_interface", kind: Kind::Web("tls_cert_path") },
-    Setting { name: "web-key", key: "webui.tls_key_path", section: "web_interface", kind: Kind::Web("tls_key_path") },
+    Setting { name: "web-tls-mode", key: "webui.tls_mode", section: "web_interface", kind: Kind::Choice(TLS_MODES) },
+    Setting { name: "web-cert", key: "webui.tls_cert_path", section: "web_interface", kind: Kind::File },
+    Setting { name: "web-key", key: "webui.tls_key_path", section: "web_interface", kind: Kind::File },
     Setting { name: "web-auth-max-failures", key: "webui.auth_max_failures", section: "web_interface", kind: Kind::Int { lo: 0, hi: 1000, unit: "attempts" } },
     Setting { name: "web-auth-window", key: "webui.auth_window", section: "web_interface", kind: Kind::Int { lo: 1, hi: 86400, unit: "seconds" } },
     Setting { name: "web-auth-block", key: "webui.auth_block", section: "web_interface", kind: Kind::Int { lo: 1, hi: 604800, unit: "seconds" } },
 
     // Advanced. Ranges match Advanced::load, which clamps on the way out too.
-    Setting { name: "web-request-timeout", key: "webui.client_request_timeout", section: "web_interface", kind: Kind::Int { lo: 1, hi: 3600, unit: "s" } },
-    Setting { name: "web-disconnect-timeout", key: "webui.client_disconnect_timeout", section: "web_interface", kind: Kind::Int { lo: 1, hi: 3600, unit: "s" } },
-    Setting { name: "web-keep-alive", key: "webui.keep_alive", section: "web_interface", kind: Kind::Int { lo: 0, hi: 86400, unit: "s" } },
-    Setting { name: "web-max-connections", key: "webui.max_connections", section: "web_interface", kind: Kind::Int { lo: 1, hi: 100_000, unit: "" } },
-    Setting { name: "web-max-connection-rate", key: "webui.max_connection_rate", section: "web_interface", kind: Kind::Int { lo: 1, hi: 100_000, unit: "/s" } },
-    Setting { name: "web-workers", key: "webui.workers", section: "web_interface", kind: Kind::Int { lo: 1, hi: 64, unit: "threads" } },
-    Setting { name: "web-shutdown-timeout", key: "webui.shutdown_timeout", section: "web_interface", kind: Kind::Int { lo: 0, hi: 3600, unit: "s" } },
-    Setting { name: "web-max-body", key: "webui.max_body_size", section: "web_interface", kind: Kind::Int { lo: 1, hi: 1024, unit: "MB" } },
 ];
 
 /// The `--set` / `--get` half of `--help`, in the configured language.
@@ -301,7 +317,7 @@ pub fn field(s: &Setting) -> Field {
     match &s.kind {
         Kind::Bool => plain("bool"),
         Kind::Int { lo, hi, unit } => int(*lo, *hi, unit),
-        Kind::Text => plain("text"),
+        Kind::Text | Kind::Secret => plain("text"),
         Kind::Dir => plain("dir"),
         Kind::Choice(v) | Kind::Index(v) | Kind::Persist(v) => choice(v),
         // The picker is worth more than free text here: a typo in a locale
@@ -324,9 +340,7 @@ pub fn field(s: &Setting) -> Field {
         },
         Kind::ListenAddress => plain("text"),
         Kind::ListenPort => int(1, 65535, ""),
-        Kind::Web("port") => int(1, 65535, ""),
-        Kind::Web("tls_mode") => choice(TLS_MODES),
-        Kind::Web("tls_cert_path" | "tls_key_path") => plain("text"),
+        Kind::File => plain("text"),
         Kind::Web(_) => plain("text"),
     }
 }
@@ -350,16 +364,22 @@ pub fn show(cfg: &Configuration, s: &Setting) -> String {
             .get_int(s.key)
             .map(|v| v.to_string())
             .unwrap_or_else(|| String::from("(unset)")),
-        // The one delegated setting that is stored as a number. Read as a
-        // string it parses as nothing and reported as "(unset)", while
-        // --webui-status showed the real port.
-        Kind::Web("port") => cfg
-            .get_int(s.key)
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| String::from("(unset)")),
-        Kind::Text | Kind::Dir | Kind::Locale | Kind::Choice(_) | Kind::Web(_) => {
+        Kind::Text
+        | Kind::Dir
+        | Kind::File
+        | Kind::Locale
+        | Kind::Choice(_)
+        | Kind::Web(_) => {
             let v = cfg.get_string(s.key).unwrap_or_default();
             if v.is_empty() { String::from("(unset)") } else { v }
+        }
+        // Whether there is one, and nothing more. This is the only reader -
+        // the desktop's Preferences dialog fills its field from the
+        // configuration directly, so it still shows the real value to someone
+        // already sitting at the machine.
+        Kind::Secret => {
+            let v = cfg.get_string(s.key).unwrap_or_default();
+            String::from(if v.is_empty() { "(unset)" } else { SECRET_SET })
         }
         Kind::Index(names) => {
             let i = cfg.get_int(s.key).unwrap_or(0).max(0) as usize;
@@ -393,14 +413,13 @@ fn accepts(s: &Setting, tr: &Translator) -> String {
                 format!("{lo}-{hi} {unit}")
             }
         }
-        Kind::Text => tr.i18n("cli_accepts_text"),
+        Kind::Text | Kind::Secret => tr.i18n("cli_accepts_text"),
         Kind::Dir => tr.i18n("cli_accepts_dir"),
         Kind::Locale => tr.i18n("cli_accepts_locale"),
         Kind::Choice(v) | Kind::Index(v) | Kind::Persist(v) => v.join("|"),
         Kind::ListenAddress => tr.i18n("cli_accepts_address"),
         Kind::ListenPort => String::from("1-65535"),
-        Kind::Web("port") => String::from("1-65535"),
-        Kind::Web("tls_mode") => TLS_MODES.join("|"),
+        Kind::File => tr.i18n("cli_accepts_file"),
         Kind::Web(_) => tr.i18n("cli_accepts_text"),
     }
 }
@@ -425,6 +444,14 @@ pub fn set(cfg: &Configuration, s: &Setting, value: &str, tr: &Translator) -> Re
             cfg.set(s.key, &v);
         }
         Kind::Text => cfg.set(s.key, &value),
+        Kind::Secret => {
+            // The mask is not a password. Sending back what `show` printed is
+            // what a client replaying a whole settings blob does, and it must
+            // leave the stored value alone rather than replace it with "(set)".
+            if value != SECRET_SET {
+                cfg.set(s.key, &value);
+            }
+        }
         Kind::Dir => {
             // Empty clears it, the same way Kind::Text does. Without this there
             // was no way to unset an optional folder - the watched folder and
@@ -435,6 +462,15 @@ pub fn set(cfg: &Configuration, s: &Setting, value: &str, tr: &Translator) -> Re
                 // Checked now rather than at startup, where a typo would show
                 // up as torrents landing somewhere unexpected.
                 "{value} is not an existing directory"
+            );
+            cfg.set(s.key, &value);
+        }
+        Kind::File => {
+            // Now rather than at startup, where a typo would only show up as
+            // the interface silently not coming back after a restart.
+            anyhow::ensure!(
+                std::path::Path::new(value).is_file(),
+                "{value} is not an existing file"
             );
             cfg.set(s.key, &value);
         }
@@ -561,6 +597,45 @@ pub fn handle(args: &[String]) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The proxy password is stored in the clear - it is replayed to the
+    /// proxy, so there is nothing to hash it into - but it is never read back
+    /// through `show`, which is what `GET /api/settings` serves to a browser.
+    #[test]
+    fn a_secret_setting_writes_but_does_not_read_back() {
+        let db = std::sync::Arc::new(crate::core::database::Database::open_in_memory().unwrap());
+        db.migrate().unwrap();
+        let cfg = crate::core::configuration::Configuration::new(db);
+
+        let secret = SETTINGS
+            .iter()
+            .find(|s| s.name == "proxy-password")
+            .expect("proxy-password is a setting");
+        assert!(matches!(secret.kind, Kind::Secret), "and it is a secret");
+
+        assert_eq!(show(&cfg, secret), "(unset)", "nothing set yet");
+
+        let tr = Translator::load(std::path::Path::new("does-not-exist"), crate::DEFAULT_LOCALE);
+        set(&cfg, secret, "hunter2", &tr).expect("writes");
+        assert_eq!(
+            cfg.get_string(secret.key).unwrap_or_default(),
+            "hunter2",
+            "the proxy still gets the real password"
+        );
+        assert_eq!(show(&cfg, secret), SECRET_SET, "but nobody reads it back");
+
+        // The round trip a client makes when it saves every field it loaded.
+        set(&cfg, secret, SECRET_SET, &tr).expect("accepted");
+        assert_eq!(
+            cfg.get_string(secret.key).unwrap_or_default(),
+            "hunter2",
+            "sending the mask back must not overwrite the password with it"
+        );
+
+        // Clearing still works: empty is a value, the mask is not.
+        set(&cfg, secret, "", &tr).expect("clears");
+        assert_eq!(show(&cfg, secret), "(unset)");
+    }
 
     /// A setting whose description was never added to en-US shows up in
     /// `--help` as a humanised key ("Cli set web max body"), which is ugly but

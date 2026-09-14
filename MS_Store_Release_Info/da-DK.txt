@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Dansk (Danmark) - Partner Center: Danish (Denmark) (da-DK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent er en Rust-portering af PicoTorrent af Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Version 0.4.0
 
-Version 0.3.8
-
+- Stream en video, mens den hentes. Højreklik på en fil i en torrents detaljer eller i webgrænsefladen, og den åbnes i VLC, mpv eller din sædvanlige afspiller - afspilningen begynder, før overførslen er færdig.
+- En bedre filliste: vælg filer med musen eller piletasterne, åbn en med højreklik, og klap de mapper sammen, du ikke kigger på. Både i appen og i webgrænsefladen.
+- Plugins kan tilføje punkter til en fils menu, starte programmer under en ny "execute"-tilladelse, som du godkender i almindeligt sprog, og medbringe deres egne oversættelser. Femten flere kald giver plugins det, webgrænsefladen allerede kunne.
 - 35 flere sprog, 76 i alt, tilføjet i Europa, Sydasien, Sydøstasien, Centralasien og Afrika.
-- Færdige downloads er ikke længere låst. En torrent, der var færdig eller sat på pause, holdt sine filer åbne til skrivning, og på Windows er det alene nok til at forhindre et andet program i at åbne dem: et arkiv eller en video i downloadmappen kunne ikke åbnes, før NanoTorrent blev lukket. Filer genåbnes nu skrivebeskyttet, så snart der ikke skal skrives mere, og skriveadgang tages automatisk tilbage, hvis den bliver nødvendig igen.
+- Sikkerhedsrettelser i webgrænsefladen og i håndteringen af torrentfilernes stier.
+- Færdige og satte-på-pause overførsler låser ikke længere deres filer, så et arkiv eller en video i downloadmappen kan åbnes, mens NanoTorrent kører.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

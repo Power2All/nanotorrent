@@ -1,4 +1,4 @@
-# NanoTorrent
+# <img src="res/app-256.png" alt="" width="42" align="top"> NanoTorrent
 
 NanoTorrent is a tiny, hackable BitTorrent client for **Windows, Linux and
 macOS** — a Rust 2024 port of
@@ -409,13 +409,16 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   //! permissions: read, control, notify
   ```
 
-  Ten permissions — `read`, `control`, `add`, `labels`, `storage`, `remove`,
-  `notify`, `network`, `data`, `ui` — deliberately coarse, because *"remove
-  torrents and delete their files"* is a decision someone can actually make and
-  a list of sixteen function names is not. `network` is the one that changes
-  what the others mean: held together with `read` it turns "see your torrents"
-  into "tell anyone about your torrents", which is why approval is asked for
-  the whole set at once rather than a line at a time. The header is read from the source text **without
+  Eleven permissions — `read`, `control`, `add`, `labels`, `storage`,
+  `remove`, `notify`, `network`, `data`, `ui`, `execute` — deliberately coarse,
+  because *"remove torrents and delete their files"* is a decision someone can
+  actually make and a list of forty function names is not. `network` is the one
+  that changes what the others mean: held together with `read` it turns "see
+  your torrents" into "tell anyone about your torrents", which is why approval
+  is asked for the whole set at once rather than a line at a time. `execute` is
+  the largest and reads last: it starts programs as you, and it is bounded by
+  your account and nothing else. Every use of it is logged with the program and
+  its arguments before the process starts. The header is read from the source text **without
   running the script**, since the whole point is knowing what it wants before
   any of it executes; only the leading comment block counts, so a
   `permissions:` line further down or inside a string cannot quietly widen the
@@ -473,6 +476,64 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   ("Nederlands (Nederland)"). A fresh install always starts in English
   (the OS locale is deliberately not consulted) and English is the first entry.
   **Changing the language applies immediately** — no restart.
+- **Stream to a player while it downloads** — the web interface serves byte
+  ranges out of a file that has not finished, at
+  `GET /api/torrents/{hash}/files/{index}/stream`. The Files tab of a torrent's
+  panel grows a **Play** button (the browser's own player) and **Copy stream
+  URL** for the ones worth streaming, so a container a browser cannot decode
+  goes to VLC or mpv instead:
+
+  ```
+  vlc  "http://127.0.0.1:8443/api/torrents/<hash>/files/0/stream"
+  mpv  "http://127.0.0.1:8443/api/torrents/<hash>/files/0/stream"
+  ```
+
+  NanoTorrent launches nothing — the URL goes to whatever plays it. Seeking
+  works on an incomplete file: the reader blocks on the piece under the read
+  head and the engine goes and fetches it, so dragging the scrubber pulls the
+  pieces it needs rather than waiting for the ones before them. The web
+  interface has to be switched on, and its password applies — VLC prompts for
+  it, while mpv wants it inline:
+  `mpv "http://user:pass@127.0.0.1:8443/api/..."`.
+
+  On the default `tls_mode=self-signed` the two players differ, tested rather
+  than assumed. **mpv plays it as-is** — ffmpeg, which mpv uses for HTTPS, does
+  not verify by default (`--tls-verify=yes` makes it refuse). **VLC refuses
+  until the certificate is accepted once**, which its dialog offers and
+  remembers. The generated certificate names `localhost`, `127.0.0.1` and `::1`,
+  so accepting it sticks for a loopback URL; a *LAN* address cannot be predicted
+  when the certificate is written, so reach it by hostname from another machine.
+  For a player on this machine, `tls_mode=off` bound to loopback is simpler than
+  any of that and gives up nothing — TLS here exists to keep Basic credentials
+  off the wire, and on 127.0.0.1 there is no wire.
+
+- **Right-click a file, play it in VLC or mpv** — the shipped
+  [`player.rhai`](docs/plugins/player.rhai) puts a *Play* item on the context
+  menu of a file in a torrent's details panel, and on the same file's row in
+  the web interface. It asks NanoTorrent for a URL for that one file and hands
+  it to the player you picked in its settings: system default, VLC, mpv, or a
+  program and arguments of your own. Playback starts while the torrent is still
+  downloading.
+
+  It is a plugin rather than a feature, and everything it uses is in the plugin
+  API: `ui_file_menu` for the item, `on_file_menu` for the click, `stream_url`
+  for the URL, `run` for the player. It arrives **switched off**, asks for
+  `execute` in plain language, and does nothing at all until you approve that —
+  the same as any script you write yourself.
+
+  The URL it hands over carries a **capability token**, not your password: good
+  for that one file, dead half an hour after its last use, never written to
+  disk. A plugin cannot read the web interface's password, and a token cannot
+  reach anything but the bytes it was minted for.
+
+- **An API a third party can build on** — the web interface's routes are the
+  integration surface, and the gaps against what the desktop can do are closed:
+  `GET /api/torrents/{hash}/peers` for the swarm and
+  `GET /api/torrents/{hash}/magnet` to export a torrent already added. Plugins
+  reach the same capabilities through Rhai, under the permissions in
+  [docs/PLUGINS.md](docs/PLUGINS.md) — the rule being that anything the web
+  interface can do with its password, a plugin can do with a granted permission.
+
 - **Update check** — asks GitHub for this repo's latest release
   (`/releases/latest`, so never a draft or prerelease) and opens a window when
   its tag beats the running version, offering the release page or **Ignore this
@@ -621,7 +682,8 @@ one. Collected so nobody has to file them twice.
 
 ## History
 
-**v0.3.8** is most of the world, and one file handle held too long.
+**v0.4.0** is most of the world, one file handle held too long, and plugins
+that can finally do something with a file.
 
 **76 languages, up from 41.** The 35 additions are Albanian, Amharic,
 Azerbaijani, Basque, Belarusian, Bengali, Bosnian, Burmese, Filipino, Galician,
@@ -635,6 +697,100 @@ languages already present were deliberately left out: `fr-CA`, `es-MX` and
 `en-US` already say, and a translation nobody maintains is worse than no
 translation. The language list is generated from `lang/`, so the picker, the
 embedded table and the MSIX manifest cannot disagree about what exists.
+
+**Plugins can draw on a file, and start a program.** The API grew the fifteen
+calls it was missing against what the web interface could already do — the file
+list, the peer list, trackers and tracker editing, share limits, queue moves,
+per-file priorities, `set_location`, `add_torrent_file`, `dht_nodes`,
+`listen_port`, `magnet_uri` — on the rule that anything an authenticated web
+client can do, a plugin can do under a granted permission. Then two things that
+were not on that list at all.
+
+`ui_file_menu` lets a plugin put items on the context menu of a *file*, in the
+details panel and in the browser alike, with `on_file_menu(id, hash, index,
+name)` telling it which item was used and what it was used on. It is the only
+place a plugin draws outside its own window, and it is the smallest shape that
+works: items, no submenus, no icons, no say in where they go, each labelled
+with the plugin's name so an item reading "Verify your password" is visibly
+somebody's.
+
+`execute` is `run` and `open`, and the documentation used to say it would never
+exist — that no prompt makes "execute arbitrary programs" a decision anyone can
+sensibly consent to. What changed is not that argument but who is being asked.
+A permission declared in the header, read without running the script, shown in
+plain language, held until approved, held again when the script edits its own
+header, and logged on every use is the same consent the other ten rest on.
+Refusing it did not make plugins safer: it made the useful ones impossible and
+pushed people to run their scripts outside NanoTorrent, where nothing is
+declared, approved or logged at all. Nothing is shelled out — the program and
+each argument are passed separately — so a filename out of a torrent cannot
+become a second command however it is spelled. File reading and file writing
+are still not offered.
+
+`stream_url(hash, index)` is what makes the pair useful together: a plugin with
+`execute` could start VLC but had nothing to give it — it cannot read the web
+interface's port, cannot tell whether it is switched on, and must never be
+handed the password. The host builds the URL and mints a token scoped to one
+file; the plugin passes the string along. It returns `""` when the web
+interface is off, which is the honest answer and the one to check.
+
+**Security fixes.** Cross-site requests can no longer change anything; a torrent
+naming a Windows drive prefix as a folder is refused; a filename can no longer
+inject a line into a playlist; the login lockout counts guesses rather than any
+request without credentials; the proxy password is no longer read back over
+HTTP. `cargo audit` runs clean - the one ignored advisory says why in
+`.cargo/audit.toml`.
+
+**Plugins bring their own translations.** A plugin's strings live in
+`<plugin>_translations.json` beside its script, read by `t("key")` - no
+permission, because it is the plugin's own file. Falls back to English and then
+to the key, so a half-translated plugin shows no blank controls, and the
+language is read per call so a plugin follows Preferences without reloading.
+Messages take `{0}` and `{1}` rather than being concatenated, because word order
+is exactly what differs between languages. All three shipped examples have no
+English left in their scripts and each carries a catalogue for all 76 languages.
+
+**Leaner.** axum was being compiled in although no axum route was ever served -
+six crates gone. Eight web-interface tunables that were constants for a reason
+are constants again. The browser remembers its own column and chart widths
+rather than asking the server to.
+
+**The Files tab has a selection, a keyboard and a menu of its own.** Clicking a
+file selects it - one at a time, because the two things a file row does, its
+priority and its include tick, are per-file already and a multi-selection would
+have nothing to act on. Up and Down walk the list, Home and End jump to its ends,
+Enter or Space folds the folder under the cursor. It is a second focus scope
+rather than an extension of the torrent list's: both lists are on screen at once,
+so the arrow keys belong to whichever was last clicked in.
+
+Right-clicking a file always opens a menu now. It starts with **Open file**,
+which hands the file to whatever this system opens it with, and plugin items
+follow under a separator - previously the menu existed only if a plugin had put
+something in it, so on a stock install a right-click did nothing. Plugin items
+also read "Player: Play" rather than "player: Play": the name is a file stem and
+the menu is not the place to show one raw.
+
+**Folders fold in both file lists.** The details panel's Files tab and the Add
+torrent dialog both built a tree already and neither could close one, so a
+season of episodes in a folder was a wall of rows between you and the next
+folder. Clicking a folder row now folds it, in the window and in the browser -
+where the two lists were not trees at all, only full paths, and now are.
+
+The state moved out of the widget to do it. The Add dialog kept its include
+ticks in the Slint model and read them back when you pressed Add, which worked
+exactly as long as every file had a row: fold a folder and every file inside it
+would have been dropped from the torrent. The ticks and the folds are Rust's
+now, and the model is what it should always have been - a picture of that, redrawn
+whenever it changes. Folding is a view and nothing else: a file inside a shut
+folder keeps its priority, its tick, and its place in what gets added.
+
+**The torrent list takes the keyboard.** Up and Down move the selection a row at
+a time, Home and End jump to its ends, and the list scrolls to follow - a
+ListView does not chase a selection it did not make, so that last part is
+arithmetic off a fixed row height rather than something the widget offers.
+Clamped rather than wrapped at both ends: a list that jumps from the last row to
+the first loses the user's place, and holding Down to reach the bottom is the
+ordinary way to use it.
 
 **A finished torrent kept its files locked.** An archive or a video in the
 download folder could not be opened until NanoTorrent was closed, and stopping

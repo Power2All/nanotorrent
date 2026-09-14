@@ -130,6 +130,14 @@ struct Ui {
     /// tick can tell "same torrent, new numbers" from "a different torrent was
     /// selected" - only the second needs the loading veil.
     detail_hash: RefCell<Option<String>>,
+    /// Folders shut in the details Files tab, by full path.
+    ///
+    /// Here rather than in the model because that list is rebuilt from the
+    /// session once a second, and a fold kept in it would spring open on the
+    /// next tick. Not cleared when the selected torrent changes: the key is a
+    /// path, and two torrents that share a folder name are far more likely to
+    /// be two seasons of the same thing than a coincidence worth guarding.
+    detail_collapsed: RefCell<HashSet<String>>,
     /// One minute of `(down, up)` samples for the toolbar chart, oldest
     /// first. Filled by the same one-second tick that refreshes the list,
     /// so the chart costs no timer of its own.
@@ -330,6 +338,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         tr: RefCell::new(ctx.translator.clone()),
         selected: RefCell::new(HashSet::new()),
         anchor: RefCell::new(0),
+        detail_collapsed: RefCell::new(HashSet::new()),
         sort: RefCell::new(None),
         active_filter: RefCell::new(None),
         console_filter: RefCell::new(None),
@@ -1781,13 +1790,29 @@ fn drain_notifications(window: &MainWindow, ui: &Rc<Ui>) {
     }
 }
 
+/// One row of a flattened file tree.
+struct TreeRow<'a> {
+    /// Position in the list of paths handed in, or `None` for a folder row.
+    /// Only real files map back to the torrent's file list, which is what the
+    /// include checkboxes and the priority column act on.
+    index: Option<usize>,
+    /// Nesting level, drawn as indentation - Slint has no tree widget.
+    depth: usize,
+    /// The leaf: a file name, or the last component of a folder.
+    name: &'a str,
+    /// A folder's full path, and the key under which "this one is shut" is
+    /// remembered. Empty on a file row.
+    ///
+    /// The full path rather than the leaf, because leaf names repeat - two
+    /// seasons each holding a `Subs` folder would otherwise fold together -
+    /// and because the details panel rebuilds this list once a second, so a
+    /// folder has to be recognisable across a rebuild to stay open.
+    path: String,
+}
+
 /// Group torrent file paths into a directory tree, flattened back out into
-/// rows: `(file index or None for a folder, depth, leaf name)`.
-///
-/// Slint has no tree widget, so the tree is expressed as indentation. Folder
-/// rows carry no index because only real files map back to the torrent's file
-/// list, which is what the include checkboxes act on.
-fn file_tree<'a>(paths: impl Iterator<Item = &'a str>) -> Vec<(Option<usize>, usize, &'a str)> {
+/// rows.
+fn file_tree<'a>(paths: impl Iterator<Item = &'a str>) -> Vec<TreeRow<'a>> {
     // A BTreeMap so sibling folders come out sorted rather than in whatever
     // order the metainfo happened to use. The empty path sorts first, which
     // puts root-level files above the folders.
@@ -1810,14 +1835,49 @@ fn file_tree<'a>(paths: impl Iterator<Item = &'a str>) -> Vec<(Option<usize>, us
             .take_while(|(a, b)| a == b)
             .count();
         for (depth, name) in dir.iter().enumerate().skip(shared) {
-            rows.push((None, depth, *name));
+            rows.push(TreeRow {
+                index: None,
+                depth,
+                name,
+                path: dir[..=depth].join("/"),
+            });
         }
         for (index, leaf) in entries {
-            rows.push((Some(index), dir.len(), leaf));
+            rows.push(TreeRow {
+                index: Some(index),
+                depth: dir.len(),
+                name: leaf,
+                path: String::new(),
+            });
         }
         open_dirs = dir;
     }
     rows
+}
+
+/// Drop every row under a folder that is shut.
+///
+/// The folder row itself stays - it is what you click to get the rest back.
+/// Positional rather than path-based: everything below a folder row and deeper
+/// than it IS its contents, which is cheaper than asking each row who its
+/// parent is, and holds for nested folders without a second pass.
+fn prune<'a>(rows: Vec<TreeRow<'a>>, collapsed: &HashSet<String>) -> Vec<TreeRow<'a>> {
+    let mut out = Vec::with_capacity(rows.len());
+    // Depth of the shut folder we are currently inside, if any.
+    let mut hide_below: Option<usize> = None;
+    for row in rows {
+        if let Some(depth) = hide_below {
+            if row.depth > depth {
+                continue;
+            }
+            hide_below = None;
+        }
+        if row.index.is_none() && collapsed.contains(&row.path) {
+            hide_below = Some(row.depth);
+        }
+        out.push(row);
+    }
+    out
 }
 
 /// Trackers.
@@ -1852,9 +1912,20 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
             // One read for the whole list rather than one per row.
             let stored = ui.session.file_priorities(hash);
             let tr = ui.tr.borrow();
-            let rows: Vec<FileEntryRow> = file_tree(files.iter().map(|f| f.name.as_str()))
-                .into_iter()
-                .map(|(index, depth, name)| match index {
+            let collapsed = ui.detail_collapsed.borrow();
+            let rows: Vec<FileEntryRow> = prune(
+                file_tree(files.iter().map(|f| f.name.as_str())),
+                &collapsed,
+            )
+            .into_iter()
+            .map(|row| {
+                let TreeRow {
+                    index,
+                    depth,
+                    name,
+                    path,
+                } = row;
+                match index {
                     Some(index) => {
                         // A file left out of the download is at Skip whatever
                         // the priority table says - the include toggle and the
@@ -1875,6 +1946,8 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                             included: files[index].included,
                             priority: level as i32,
                             priority_name: ui_string(&tr, priority_key(level)),
+                            path: SharedString::new(),
+                            expanded: false,
                         }
                     }
                     None => FileEntryRow {
@@ -1886,12 +1959,33 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                         included: true,
                         priority: -1,
                         priority_name: SharedString::new(),
+                        expanded: !collapsed.contains(&path),
+                        path: path.into(),
                     },
-                })
-                .collect();
+                }
+            })
+            .collect();
+            drop(collapsed);
             drop(tr);
             if list_changed(&window.get_detail_files(), &rows) {
                 window.set_detail_files(ModelRc::new(VecModel::from(rows)));
+            }
+
+            // Whatever plugins are offering right now. Cheap and empty in the
+            // usual case - no plugins, or none that add anything here - and
+            // compared before it is set so a menu nobody changed does not
+            // repaint the tab.
+            let menu: Vec<PluginFileMenuItem> = crate::plugins::ui::file_menu_items()
+                .into_iter()
+                .map(|(plugin, id, label)| PluginFileMenuItem {
+                    title: SharedString::from(crate::plugins::ui::display_name(&plugin)),
+                    plugin: SharedString::from(plugin),
+                    id: SharedString::from(id),
+                    label: SharedString::from(label),
+                })
+                .collect();
+            if list_changed(&window.get_file_menu_items(), &menu) {
+                window.set_file_menu_items(ModelRc::new(VecModel::from(menu)));
             }
         }
         2 => {
@@ -2236,6 +2330,52 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             };
             u.session.set_file_priority(&hash, index, next);
             refresh_detail_tab(&window, &u, &hash);
+        });
+    }
+
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        window.on_file_open(move |row| {
+            let Some(window) = w.upgrade() else { return };
+            // The row number, because that is what the list knows. A folder row
+            // has no file behind it and nothing to open.
+            let Ok(row) = usize::try_from(row) else { return };
+            let Some(entry) = window.get_detail_files().row_data(row) else {
+                return;
+            };
+            let Ok(index) = usize::try_from(entry.index) else { return };
+
+            let hash = window.get_d_hash().to_string();
+            let Some(path) = u.session.file_path(&hash, index) else {
+                tracing::warn!("no path for file {index} of {hash}");
+                return;
+            };
+            // Not checked for existence first: a file that is not there yet
+            // fails in the shell's own words, which say more than a toast
+            // guessing why could.
+            if !utils::open_target(&path.to_string_lossy()) {
+                tracing::error!("cannot open {}", path.display());
+            }
+        });
+    }
+
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        window.on_toggle_detail_folder(move |path| {
+            let path = path.to_string();
+            {
+                let mut shut = u.detail_collapsed.borrow_mut();
+                if !shut.remove(&path) {
+                    shut.insert(path);
+                }
+            }
+            // Redrawn now rather than left to the one-second tick: a fold that
+            // takes up to a second to happen reads as a click that missed.
+            let Some(window) = w.upgrade() else { return };
+            let hash = window.get_d_hash().to_string();
+            if !hash.is_empty() {
+                refresh_detail_tab(&window, &u, &hash);
+            }
         });
     }
 
@@ -2917,33 +3057,17 @@ fn show_next_pending(ui: &Rc<Ui>) {
     // One file model per torrent, kept alive for the life of the dialog so
     // ticking files in one, looking at another and coming back does not lose
     // the first one's choices.
-    let file_models: Vec<Rc<VecModel<FileRow>>> = parsed
-        .iter()
-        .map(|(_, t)| {
-            Rc::new(VecModel::from(
-                // Padding files are dropped before the tree is built, so a
-                // row's position here is NOT its index in the torrent - that
-                // is why ParsedFile carries the index and this maps through
-                // `shown` rather than using the position.
-                {
-                    let shown: Vec<&crate::ui::torrentfile::ParsedFile> =
-                        t.files.iter().filter(|f| !f.padding).collect();
-                    file_tree(shown.iter().map(|f| f.path.as_str()))
-                        .into_iter()
-                        .map(|(index, depth, name)| FileRow {
-                            index: index.map_or(-1, |i| shown[i].index as i32),
-                            depth: depth as i32,
-                            name: name.into(),
-                            size: index
-                                .map(|i| utils::to_human_file_size(shown[i].size as i64).into())
-                                .unwrap_or_default(),
-                            included: true,
-                        })
-                        .collect::<Vec<_>>()
-                },
-            ))
-        })
-        .collect();
+    //
+    // Two pieces of state per torrent, both held HERE and not in the model:
+    // which files are unticked, and which folders are shut. The model used to
+    // own the ticks, which worked only while every file had a row - fold a
+    // folder and the files inside it would vanish from the list Add reads.
+    let excluded: Rc<Vec<RefCell<HashSet<usize>>>> =
+        Rc::new(parsed.iter().map(|_| RefCell::new(HashSet::new())).collect());
+    let shut: Rc<Vec<RefCell<HashSet<String>>>> =
+        Rc::new(parsed.iter().map(|_| RefCell::new(HashSet::new())).collect());
+    let file_models: Vec<Rc<VecModel<FileRow>>> =
+        parsed.iter().map(|_| Rc::new(VecModel::default())).collect();
 
     dialog.set_queue(ModelRc::new(VecModel::from(
         parsed
@@ -2963,6 +3087,54 @@ fn show_next_pending(ui: &Rc<Ui>) {
 
     let parsed = Rc::new(parsed);
     let file_models = Rc::new(file_models);
+
+    // Draw one torrent's list from the state above. Called for every change -
+    // a tick, a fold - rather than patching rows in place: a torrent's file
+    // list is hundreds of rows at the outside, and a full rebuild cannot leave
+    // the picture disagreeing with the state behind it.
+    let redraw = {
+        let (p, m, ex, sh) = (parsed.clone(), file_models.clone(), excluded.clone(), shut.clone());
+        move |i: usize| {
+            let (Some((_, t)), Some(model)) = (p.get(i), m.get(i)) else {
+                return;
+            };
+            // Padding files are dropped before the tree is built, so a row's
+            // position here is NOT its index in the torrent - that is why
+            // ParsedFile carries the index and this maps through `shown`.
+            let shown: Vec<&crate::ui::torrentfile::ParsedFile> =
+                t.files.iter().filter(|f| !f.padding).collect();
+            let out = ex[i].borrow();
+            let folded = sh[i].borrow();
+            let rows: Vec<FileRow> = prune(file_tree(shown.iter().map(|f| f.path.as_str())), &folded)
+                .into_iter()
+                .map(|row| match row.index {
+                    Some(at) => FileRow {
+                        index: shown[at].index as i32,
+                        depth: row.depth as i32,
+                        name: row.name.into(),
+                        size: utils::to_human_file_size(shown[at].size as i64).into(),
+                        included: !out.contains(&shown[at].index),
+                        path: SharedString::new(),
+                        expanded: false,
+                    },
+                    None => FileRow {
+                        index: -1,
+                        depth: row.depth as i32,
+                        name: row.name.into(),
+                        size: SharedString::new(),
+                        included: true,
+                        expanded: !folded.contains(&row.path),
+                        path: row.path.into(),
+                    },
+                })
+                .collect();
+            model.set_vec(rows);
+        }
+    };
+    for i in 0..parsed.len() {
+        redraw(i);
+    }
+    let redraw = Rc::new(redraw);
 
     // Selecting a torrent swaps which model the file list is bound to, and
     // repoints the name/size above it. Called once up front for the first.
@@ -3001,19 +3173,42 @@ fn show_next_pending(ui: &Rc<Ui>) {
     }
 
     {
-        let (weak, m) = (dialog.as_weak(), file_models.clone());
+        let (weak, ex, r) = (dialog.as_weak(), excluded.clone(), redraw.clone());
         dialog.on_toggle_file(move |index| {
+            let Some(d) = weak.upgrade() else { return };
+            let (Ok(sel), Ok(index)) = (
+                usize::try_from(d.get_selected_torrent()),
+                usize::try_from(index),
+            ) else {
+                return;
+            };
+            let Some(out) = ex.get(sel) else { return };
+            {
+                let mut out = out.borrow_mut();
+                if !out.remove(&index) {
+                    out.insert(index);
+                }
+            }
+            r(sel);
+        });
+    }
+
+    {
+        let (weak, sh, r) = (dialog.as_weak(), shut.clone(), redraw.clone());
+        dialog.on_toggle_folder(move |path| {
             let Some(d) = weak.upgrade() else { return };
             let Ok(sel) = usize::try_from(d.get_selected_torrent()) else {
                 return;
             };
-            let index = index.max(0) as usize;
-            if let Some(f) = m.get(sel)
-                && let Some(mut row) = f.row_data(index)
+            let Some(folded) = sh.get(sel) else { return };
+            let path = path.to_string();
             {
-                row.included = !row.included;
-                f.set_row_data(index, row);
+                let mut folded = folded.borrow_mut();
+                if !folded.remove(&path) {
+                    folded.insert(path);
+                }
             }
+            r(sel);
         });
     }
 
@@ -3034,7 +3229,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
 
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
-        let (p, m) = (parsed.clone(), file_models.clone());
+        let (p, ex) = (parsed.clone(), excluded.clone());
         dialog.on_accepted(move || {
             let Some(d) = weak.upgrade() else { return };
 
@@ -3047,19 +3242,18 @@ fn show_next_pending(ui: &Rc<Ui>) {
                 p.iter().map(|(b, t)| (t.name.as_str(), b.len())).collect::<Vec<_>>()
             );
 
-            for (i, (bytes, _)) in p.iter().enumerate() {
-                // row.index, not the row number: the model has folder rows in
-                // it, and only_files indexes the torrent's own file list.
+            for (i, (bytes, t)) in p.iter().enumerate() {
+                // Read off the torrent's own files rather than off the rows: a
+                // shut folder has no rows, and a file nobody can see is still a
+                // file the user left ticked.
+                let out = ex[i].borrow();
+                let shown = t.files.iter().filter(|f| !f.padding);
                 let mut total = 0;
                 let mut included: Vec<usize> = Vec::new();
-                for r in 0..m[i].row_count() {
-                    let Some(row) = m[i].row_data(r) else { continue };
-                    let Ok(index) = usize::try_from(row.index) else {
-                        continue; // a folder row
-                    };
+                for file in shown {
                     total += 1;
-                    if row.included {
-                        included.push(index);
+                    if !out.contains(&file.index) {
+                        included.push(file.index);
                     }
                 }
                 // None means "everything", which is not the same as an explicit
@@ -3105,6 +3299,20 @@ fn show_next_pending(ui: &Rc<Ui>) {
 /// beside the load/save pair so an index cannot mean one thing going in and
 /// another coming out.
 const THEMES: [&str; 3] = ["system", "light", "dark"];
+
+/// The name a combo box's selected index stands for, or the first name when the
+/// index is outside the list.
+///
+/// Slint reports -1 for "nothing selected", and a combo box rebuilt while the
+/// dialog is open can momentarily report an index past the end - so both ends
+/// need an answer, and the first entry is the default in all three lists that
+/// use this.
+fn pick<'a>(names: &[&'a str], index: i32) -> &'a str {
+    usize::try_from(index)
+        .ok()
+        .and_then(|i| names.get(i))
+        .unwrap_or(&names[0])
+}
 const CLOSE_ACTIONS: [&str; 3] = ["ask", "minimize", "exit"];
 
 /// Bump one component's `L.revision`, which re-evaluates every caption bound
@@ -3234,19 +3442,11 @@ fn web_warning(d: &PreferencesDialog, tr: &Translator, password_set: bool) -> St
 
 /// The Web interface tab: the same settings `--webui-set` exposes, plus the
 /// password, which the CLI can only take through a prompt.
-/// Show an `Advanced` in the eleven Advanced fields.
+/// Show an `Advanced` in the three Advanced fields.
 ///
 /// Shared by the initial load and the Reset button so the two cannot disagree
 /// about which field holds which knob.
 fn put_advanced(dialog: &PreferencesDialog, adv: &crate::webui::Advanced) {
-    dialog.set_web_req_timeout(adv.client_request_timeout.to_string().into());
-    dialog.set_web_disconnect_timeout(adv.client_disconnect_timeout.to_string().into());
-    dialog.set_web_keep_alive(adv.keep_alive.to_string().into());
-    dialog.set_web_shutdown_timeout(adv.shutdown_timeout.to_string().into());
-    dialog.set_web_max_connections(adv.max_connections.to_string().into());
-    dialog.set_web_max_conn_rate(adv.max_connection_rate.to_string().into());
-    dialog.set_web_workers(adv.workers.to_string().into());
-    dialog.set_web_max_body(adv.max_body_size.to_string().into());
     dialog.set_web_auth_max_failures(adv.auth_max_failures.to_string().into());
     dialog.set_web_auth_window(adv.auth_window.to_string().into());
     dialog.set_web_auth_block(adv.auth_block.to_string().into());
@@ -3433,7 +3633,7 @@ fn save_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
     cfg.set("webui.username", &d.get_web_username().to_string());
     cfg.set(
         "webui.tls_mode",
-        &TLS_MODES[(d.get_web_tls_index().max(0) as usize).min(TLS_MODES.len() - 1)],
+        &pick(&TLS_MODES, d.get_web_tls_index()),
     );
     cfg.set("webui.tls_cert_path", &d.get_web_cert_path().to_string());
     cfg.set("webui.tls_key_path", &d.get_web_key_path().to_string());
@@ -3447,14 +3647,6 @@ fn save_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
             cfg.set(key, &v);
         }
     };
-    num("webui.client_request_timeout", d.get_web_req_timeout());
-    num("webui.client_disconnect_timeout", d.get_web_disconnect_timeout());
-    num("webui.keep_alive", d.get_web_keep_alive());
-    num("webui.shutdown_timeout", d.get_web_shutdown_timeout());
-    num("webui.max_connections", d.get_web_max_connections());
-    num("webui.max_connection_rate", d.get_web_max_conn_rate());
-    num("webui.workers", d.get_web_workers());
-    num("webui.max_body_size", d.get_web_max_body());
     num("webui.auth_max_failures", d.get_web_auth_max_failures());
     num("webui.auth_window", d.get_web_auth_window());
     num("webui.auth_block", d.get_web_auth_block());
@@ -3739,7 +3931,7 @@ fn refresh_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
                 // Asked of the running host, not of the file: a plugin only
                 // says it needs configuring once it has loaded and said so, so
                 // this is false for one that is ticked but awaiting approval.
-                configurable: pluginwindow::configurable(&p.name),
+                configurable: crate::plugins::ui::configurable(&p.name),
                 name: SharedString::from(p.name),
                 enabled: p.enabled,
                 error: SharedString::from(p.error.unwrap_or_default()),
@@ -4508,11 +4700,11 @@ fn save_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     }
     cfg.set(
         "theme_id",
-        &THEMES[(d.get_theme_index().max(0) as usize).min(THEMES.len() - 1)],
+        &pick(&THEMES, d.get_theme_index()),
     );
     cfg.set_persistent(
         "ui.close_action",
-        CLOSE_ACTIONS[(d.get_close_action_index().max(0) as usize).min(CLOSE_ACTIONS.len() - 1)],
+        pick(&CLOSE_ACTIONS, d.get_close_action_index()),
     );
 
     cfg.set("skip_add_torrent_dialog", &d.get_skip_add_dialog());
@@ -5491,6 +5683,28 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     {
         // The titles are filled by the plugin host through
         // `pluginwindow::install`; these two answer the bar as it is used.
+        // A plugin's item on a file's context menu. The hash comes from the
+        // panel rather than the menu: the popup outlives the row that opened
+        // it, so the row cannot be trusted to still be the selected torrent by
+        // the time this fires.
+        {
+            let weak = window.as_weak();
+            window.on_file_menu_activated(move |plugin, id, index, name| {
+                let Some(w) = weak.upgrade() else { return };
+                let hash = w.get_d_hash().to_string();
+                if hash.is_empty() {
+                    return;
+                }
+                crate::plugins::ui::post(crate::plugins::ui::UiEvent::FileMenu {
+                    plugin: plugin.to_string(),
+                    id: id.to_string(),
+                    hash,
+                    index: index as i64,
+                    name: name.to_string(),
+                });
+            });
+        }
+
         window.on_open_plugin_menu(pluginwindow::fill_menu);
         window.on_activate_plugin_menu(|id| pluginwindow::activate_menu(&id));
     }
@@ -5617,33 +5831,127 @@ fn poll_minimize_to_tray(window: &MainWindow, ui: &Rc<Ui>) {
 
 #[cfg(test)]
 mod file_tree_tests {
-    use super::file_tree;
+    use super::{HashSet, TreeRow, file_tree, prune};
+
+    /// `(index, depth, name, path)` for every row, which is the whole of a
+    /// TreeRow and reads in a test far better than four assertions do.
+    fn shape<'a>(rows: &'a [TreeRow<'a>]) -> Vec<(Option<usize>, usize, &'a str, &'a str)> {
+        rows.iter()
+            .map(|r| (r.index, r.depth, r.name, r.path.as_str()))
+            .collect()
+    }
+
+    fn shut(paths: &[&str]) -> HashSet<String> {
+        paths.iter().map(|p| (*p).to_owned()).collect()
+    }
+
+    const SHOW: [&str; 4] = [
+        "Season 1/ep01.mkv",
+        "Season 1/subs/en.srt",
+        "Season 2/ep01.mkv",
+        "readme.txt",
+    ];
 
     /// Folder rows carry no index; files carry their real index into the
     /// torrent's file list. That mapping drives the include checkboxes, so
     /// getting it wrong toggles the wrong file.
+    ///
+    /// A folder's `path` is its full path, not its leaf - see the two `subs`
+    /// folders in the next test.
     #[test]
     fn nested_paths_become_indented_rows() {
-        let paths = [
-            "Season 1/ep01.mkv",
-            "Season 1/subs/en.srt",
-            "Season 2/ep01.mkv",
-            "readme.txt",
-        ];
         assert_eq!(
-            file_tree(paths.iter().copied()),
+            shape(&file_tree(SHOW.iter().copied())),
             vec![
                 // Root-level files first: the empty path sorts before any
                 // named folder.
-                (Some(3), 0, "readme.txt"),
-                (None, 0, "Season 1"),
-                (Some(0), 1, "ep01.mkv"),
-                (None, 1, "subs"),
-                (Some(1), 2, "en.srt"),
-                (None, 0, "Season 2"),
-                (Some(2), 1, "ep01.mkv"),
+                (Some(3), 0, "readme.txt", ""),
+                (None, 0, "Season 1", "Season 1"),
+                (Some(0), 1, "ep01.mkv", ""),
+                (None, 1, "subs", "Season 1/subs"),
+                (Some(1), 2, "en.srt", ""),
+                (None, 0, "Season 2", "Season 2"),
+                (Some(2), 1, "ep01.mkv", ""),
             ]
         );
+    }
+
+    /// Two folders with the same NAME are two folders. Keying the fold on the
+    /// leaf would shut both at once, which is the bug this path exists to stop.
+    #[test]
+    fn folders_are_keyed_by_their_whole_path() {
+        let paths = ["a/subs/one.srt", "b/subs/two.srt"];
+        let rows = file_tree(paths.iter().copied());
+        let folders: Vec<&str> = rows
+            .iter()
+            .filter(|r| r.index.is_none())
+            .map(|r| r.path.as_str())
+            .collect();
+        assert_eq!(folders, vec!["a", "a/subs", "b", "b/subs"]);
+
+        let only_a = prune(rows, &shut(&["a/subs"]));
+        assert_eq!(
+            shape(&only_a),
+            vec![
+                (None, 0, "a", "a"),
+                (None, 1, "subs", "a/subs"),
+                // one.srt is gone; b's subs is untouched.
+                (None, 0, "b", "b"),
+                (None, 1, "subs", "b/subs"),
+                (Some(1), 2, "two.srt", ""),
+            ]
+        );
+    }
+
+    /// A shut folder keeps its own row - it is what you click to get the rest
+    /// back - and loses everything under it, however deep.
+    #[test]
+    fn a_shut_folder_hides_its_contents_and_nothing_else() {
+        let rows = prune(file_tree(SHOW.iter().copied()), &shut(&["Season 1"]));
+        assert_eq!(
+            shape(&rows),
+            vec![
+                (Some(3), 0, "readme.txt", ""),
+                (None, 0, "Season 1", "Season 1"),
+                // ep01.mkv, subs and en.srt are all inside it, at two depths.
+                (None, 0, "Season 2", "Season 2"),
+                (Some(2), 1, "ep01.mkv", ""),
+            ]
+        );
+    }
+
+    /// Shutting an inner folder leaves its parent's other children alone.
+    #[test]
+    fn shutting_an_inner_folder_keeps_its_siblings() {
+        let rows = prune(file_tree(SHOW.iter().copied()), &shut(&["Season 1/subs"]));
+        assert_eq!(
+            shape(&rows),
+            vec![
+                (Some(3), 0, "readme.txt", ""),
+                (None, 0, "Season 1", "Season 1"),
+                (Some(0), 1, "ep01.mkv", ""),
+                (None, 1, "subs", "Season 1/subs"),
+                (None, 0, "Season 2", "Season 2"),
+                (Some(2), 1, "ep01.mkv", ""),
+            ]
+        );
+    }
+
+    /// Nothing shut is the list unchanged, and a path that is not a folder in
+    /// this torrent hides nothing rather than eating the row after it.
+    #[test]
+    fn an_unknown_fold_changes_nothing() {
+        let full = file_tree(SHOW.iter().copied());
+        let all = shape(&full);
+
+        let nothing_shut = prune(file_tree(SHOW.iter().copied()), &shut(&[]));
+        assert_eq!(shape(&nothing_shut), all);
+
+        let bad_keys = prune(
+            file_tree(SHOW.iter().copied()),
+            &shut(&["readme.txt", "nope"]),
+        );
+        assert_eq!(shape(&bad_keys), all, "a file's path is not a fold key");
     }
 
     /// A shared parent is emitted once, not repeated for every child folder.
@@ -5652,8 +5960,8 @@ mod file_tree_tests {
         let paths = ["a/b/one.bin", "a/c/two.bin"];
         let folders: Vec<&str> = file_tree(paths.iter().copied())
             .into_iter()
-            .filter(|(index, _, _)| index.is_none())
-            .map(|(_, _, name)| name)
+            .filter(|r| r.index.is_none())
+            .map(|r| r.name)
             .collect();
         assert_eq!(folders, vec!["a", "b", "c"]);
     }
@@ -5662,8 +5970,8 @@ mod file_tree_tests {
     #[test]
     fn backslash_separators_split_too() {
         assert_eq!(
-            file_tree(["dir\\file.bin"].iter().copied()),
-            vec![(None, 0, "dir"), (Some(0), 1, "file.bin")]
+            shape(&file_tree(["dir\\file.bin"].iter().copied())),
+            vec![(None, 0, "dir", "dir"), (Some(0), 1, "file.bin", "")]
         );
     }
 
@@ -5671,8 +5979,8 @@ mod file_tree_tests {
     #[test]
     fn a_flat_torrent_has_no_folders() {
         assert_eq!(
-            file_tree(["only.bin"].iter().copied()),
-            vec![(Some(0), 0, "only.bin")]
+            shape(&file_tree(["only.bin"].iter().copied())),
+            vec![(Some(0), 0, "only.bin", "")]
         );
     }
 }

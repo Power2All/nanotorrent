@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Hausa (Najeriya) - Partner Center: Hausa (Nigeria) (ha-Latn-NG)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent shi ne sigar Rust na PicoTorrent na Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Sigar 0.4.0
 
-Sigar 0.3.8
-
-- Harsuna 35 ƙari, 76 gaba ɗaya, an ƙara su a Turai, Kudancin Asiya, Kudu-maso-gabashin Asiya, Tsakiyar Asiya da Afirka.
-- Saukarwar da ta kammala ba ta ƙara zama kulle. Torrent da ya kammala, ko kuma da aka dakatar, yana ci gaba da riƙe fayilolinsa a buɗe don rubutawa, kuma a Windows hakan kaɗai ya isa ya hana wata shiri buɗe su: ba a iya buɗe wani kundi ko bidiyo a cikin babban fayil na saukarwa sai an rufe NanoTorrent. Yanzu ana sake buɗe fayiloli karantawa kaɗai da zarar ba sauran abin rubutawa, kuma ana mayar da izinin rubutawa kai tsaye idan ya sake zama wajibi.
+- Kalli bidiyo yayin da yake saukewa. Danna fayil da maɓallin dama a cikin bayanan torrent, ko a cikin hanyar yanar gizo, sai ya buɗe a VLC, mpv ko na'urar kunnawa da ka saba - kunnawa yana farawa kafin saukewar ta ƙare.
+- Jerin fayiloli mafi kyau: zaɓi fayiloli da linzami ko maɓallan kibiya, buɗe ɗaya da dannawa ta dama, kuma naɗe manyan fayilolin da ba ka kallo. A cikin manhaja da kuma a hanyar yanar gizo.
+- Plugins na iya ƙara abubuwa cikin menu na fayil, fara shirye-shirye ƙarƙashin sabon izini na "execute" wanda ka amince da shi a sarari, da kuma ɗauko fassarorinsu. Ƙarin kira goma sha biyar suna ba su abin da hanyar yanar gizo ta riga ta iya yi.
+- Ƙarin harsuna 35, 76 gaba ɗaya, an ƙara a Turai, Kudancin Asiya, Kudu maso Gabashin Asiya, Tsakiyar Asiya da Afirka.
+- Gyaran tsaro a hanyar yanar gizo da kuma a yadda ake sarrafa hanyoyin fayil na torrent.
+- Saukewa da aka gama da wanda aka dakatar ba sa ƙulle fayilolinsu, don haka ana iya buɗe kayan tarihi ko bidiyo a cikin babban fayil na saukewa yayin da NanoTorrent ke gudana.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

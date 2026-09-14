@@ -47,6 +47,25 @@ const MENU_ITEMS_MAX: usize = 20;
 /// to blow the stack.
 const XML_DEPTH: usize = 64;
 
+/// Standard base64 into bytes, for `add_torrent_file`.
+///
+/// The `base64` crate is already a dependency, but it is reached for through
+/// this one seam so a malformed string from a plugin is `None` rather than an
+/// error type crossing into Rhai.
+pub(crate) fn decode_base64(s: &str) -> Option<Vec<u8>> {
+    use base64::Engine as _;
+    let s = s.trim();
+    // Unpadded as well as padded. `STANDARD` refuses a string missing its `=`,
+    // and base64 assembled by hand in a script often is - which would surface
+    // as `add_torrent_file` returning false with nothing to explain it. The
+    // unpadded reading is unambiguous, so accepting it costs nothing.
+    base64::engine::general_purpose::STANDARD
+        .decode(s)
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(s))
+        .ok()
+}
+
+
 /// Bind the host API into an engine, limited to what this plugin was granted.
 ///
 /// A function whose permission is missing is NOT registered, rather than
@@ -59,7 +78,20 @@ pub fn register(
     cfg: Arc<Configuration>,
     name: &str,
     perms: &BTreeSet<Permission>,
+    strings: super::strings::Strings,
 ) {
+    // ---- the plugin's own strings --------------------------------------
+    // No permission, for the same reason `log` needs none: this reads the
+    // plugin's own file, sitting beside the plugin, saying what the plugin
+    // already says. A script with no `.json` gets its keys back, so `t()` is
+    // safe to write before anybody has translated anything.
+    let s = strings.clone();
+    engine.register_fn("t", move |key: &str| -> String { s.get(key) });
+    let s = strings.clone();
+    engine.register_fn("t", move |key: &str, arg: &str| -> String { s.get1(key, arg) });
+    let s = strings;
+    engine.register_fn("t", move |key: &str, a: &str, b: &str| -> String { s.get2(key, a, b) });
+
     // ---- logging -------------------------------------------------------
     // Goes to the same file as everything else, tagged with the plugin's
     // output so a misbehaving script is findable after the fact.
@@ -94,6 +126,130 @@ pub fn register(
         let s = session.clone();
         engine.register_fn("exists", move |hash: &str| -> bool { s.exists(hash) });
 
+        // Per-torrent detail. The desktop and the web interface both show these;
+        // a plugin that could see a torrent but not its files was reading half a
+        // record.
+        let s = session.clone();
+        engine.register_fn("files", move |hash: &str| -> Array {
+            let stored = s.file_priorities(hash);
+            s.files(hash)
+                .into_iter()
+                .enumerate()
+                .map(|(index, f)| {
+                    let mut m = Map::new();
+                    m.insert("index".into(), Dynamic::from(index as i64));
+                    m.insert("name".into(), Dynamic::from(f.name));
+                    m.insert("length".into(), Dynamic::from(f.length as i64));
+                    m.insert("progress".into(), Dynamic::from(f.progress as f64));
+                    m.insert(
+                        "priority".into(),
+                        Dynamic::from(
+                            stored
+                                .get(&index)
+                                .copied()
+                                .unwrap_or(crate::bittorrent::session::PRIORITY_NORMAL),
+                        ),
+                    );
+                    Dynamic::from_map(m)
+                })
+                .collect()
+        });
+
+        let s = session.clone();
+        engine.register_fn("peers", move |hash: &str| -> Array {
+            s.peers(hash)
+                .into_iter()
+                .map(|p| {
+                    let mut m = Map::new();
+                    m.insert("addr".into(), Dynamic::from(p.addr));
+                    m.insert("state".into(), Dynamic::from(p.state));
+                    m.insert("fetched_bytes".into(), Dynamic::from(p.fetched_bytes as i64));
+                    m.insert("pieces".into(), Dynamic::from(p.pieces as i64));
+                    Dynamic::from_map(m)
+                })
+                .collect()
+        });
+
+        let s = session.clone();
+        engine.register_fn("trackers", move |hash: &str| -> Array {
+            s.tracker_tiers(hash)
+                .into_iter()
+                .enumerate()
+                .flat_map(|(tier, urls)| {
+                    urls.into_iter().map(move |url| {
+                        let mut m = Map::new();
+                        m.insert("url".into(), Dynamic::from(url));
+                        m.insert("tier".into(), Dynamic::from(tier as i64));
+                        Dynamic::from_map(m)
+                    })
+                })
+                .collect()
+        });
+
+        let s = session.clone();
+        engine.register_fn("share_limits", move |hash: &str| -> Dynamic {
+            let (ratio, minutes) = s.share_overrides(hash);
+            let mut m = Map::new();
+            // Unit, not a sentinel: "no override" and "a limit of zero" are
+            // different answers and -1 would conflate them.
+            m.insert("ratio".into(), ratio.map_or(Dynamic::UNIT, Dynamic::from));
+            m.insert(
+                "seed_minutes".into(),
+                minutes.map_or(Dynamic::UNIT, Dynamic::from),
+            );
+            Dynamic::from_map(m)
+        });
+
+        let s = session.clone();
+        engine.register_fn("magnet_uri", move |hash: &str| -> String {
+            match s
+                .torrents(&std::collections::HashMap::new())
+                .into_iter()
+                .find(|t| t.info_hash == hash)
+            {
+                Some(t) => s.magnet_uri(hash, &t.name),
+                None => String::new(),
+            }
+        });
+
+        // A URL a media player can open, for one file, carrying a capability
+        // token rather than the web interface's password - which a plugin has
+        // no way to read and should not be given. Empty when the web interface
+        // is switched off: there is no server to stream from, and a plugin
+        // should say so rather than launch a player at nothing.
+        let c = cfg.clone();
+        engine.register_fn("stream_url", move |hash: &str, index: i64| -> String {
+            let Ok(index) = usize::try_from(index) else {
+                return String::new();
+            };
+            if !c.get_bool("webui.enabled") {
+                return String::new();
+            }
+            let Some(token) = crate::webui::streamtoken::issue_live(hash, index) else {
+                return String::new();
+            };
+            let port = c.get_int("webui.port").unwrap_or(8443);
+            // Loopback and the scheme the server is actually using. A plugin
+            // runs on the same machine as the server, so the LAN address is
+            // never the right answer here and would only break when it changed.
+            let scheme = match c.get_string("webui.tls_mode").unwrap_or_default().as_str() {
+                "off" => "http",
+                _ => "https",
+            };
+            format!(
+                "{scheme}://127.0.0.1:{port}/api/torrents/{hash}/files/{index}/stream?token={token}"
+            )
+        });
+
+        let s = session.clone();
+        engine.register_fn("dht_nodes", move || -> i64 { s.dht_nodes().unwrap_or(0) });
+
+        let s = session.clone();
+        engine.register_fn("listen_port", move || -> i64 {
+            s.listen_port().map(i64::from).unwrap_or(0)
+        });
+
+
         let s = session.clone();
         engine.register_fn("session_rates", move || -> Map {
             let (down, up) = s.session_rates();
@@ -114,6 +270,49 @@ pub fn register(
 
         let s = session.clone();
         engine.register_fn("recheck", move |hash: &str| s.recheck(hash));
+
+        let s = session.clone();
+        engine.register_fn("reannounce", move |hash: &str| s.reannounce(hash));
+
+        let s = session.clone();
+        engine.register_fn("queue_move", move |hash: &str, to: &str| -> bool {
+            // Named rather than numeric: "queue_move(h, 2)" says nothing at the
+            // call site, and an unknown name is a typo worth reporting as false.
+            let to = match to {
+                "top" => crate::bittorrent::session::QueueMove::Top,
+                "up" => crate::bittorrent::session::QueueMove::Up,
+                "down" => crate::bittorrent::session::QueueMove::Down,
+                "bottom" => crate::bittorrent::session::QueueMove::Bottom,
+                _ => return false,
+            };
+            s.move_in_queue(hash, to);
+            true
+        });
+
+        let s = session.clone();
+        engine.register_fn(
+            "set_file_priority",
+            move |hash: &str, index: i64, priority: i64| {
+                let Ok(index) = usize::try_from(index) else {
+                    return;
+                };
+                s.set_file_priority(hash, index, priority);
+            },
+        );
+
+        // Two calls behind one function: they are one decision in the UI and in
+        // the web API, and a plugin setting only half of a share limit is far
+        // more likely to be a bug than an intention.
+        let s = session.clone();
+        engine.register_fn(
+            "set_share_limits",
+            move |hash: &str, ratio: Dynamic, seed_minutes: Dynamic| {
+                // () clears an override; a number sets it.
+                s.set_ratio_limit(hash, ratio.as_float().ok());
+                s.set_seed_time_limit(hash, seed_minutes.as_int().ok());
+            },
+        );
+
     }
 
         // Two arities rather than a default argument: Rhai has no optional
@@ -129,10 +328,44 @@ pub fn register(
         });
     }
 
+    // ---- trackers ------------------------------------------------------
+    // Both permissions, deliberately. Editing a tracker is a control operation
+    // whose effect is disclosure: the torrent announces to whatever the plugin
+    // put there. A script holding only `control` can stop and start a torrent;
+    // it cannot redirect where that torrent tells the world about itself.
+    if perms.contains(&Permission::Control) && perms.contains(&Permission::Network) {
+        let s = session.clone();
+        engine.register_fn("add_tracker", move |hash: &str, url: &str, tier: i64| -> bool {
+            let Ok(tier) = usize::try_from(tier) else {
+                return false;
+            };
+            // The session validates the URL against the same rule the UI uses,
+            // so a plugin cannot smuggle in a scheme the app refuses by hand.
+            s.add_tracker(hash, url, tier)
+        });
+
+        let s = session.clone();
+        engine.register_fn("edit_tracker", move |hash: &str, from: &str, to: &str| -> bool {
+            s.edit_tracker(hash, from, to)
+        });
+
+        let s = session.clone();
+        engine.register_fn("remove_tracker", move |hash: &str, url: &str| {
+            s.remove_tracker(hash, url)
+        });
+    }
+
         if perms.contains(&Permission::Storage) {
     let s = session.clone();
         engine.register_fn("move_storage", move |hash: &str, folder: &str| {
             s.move_storage(hash, folder)
+        });
+
+        // Where it WILL live, without moving what is already there. The pair of
+        // them is why both are under `storage` rather than `control`.
+        let s = session.clone();
+        engine.register_fn("set_location", move |hash: &str, folder: &str| {
+            s.set_location(hash, folder)
         });
     }
 
@@ -175,9 +408,113 @@ pub fn register(
                 },
             )
         });
+
+        // The other half of http_get: a plugin that fetched a .torrent itself -
+        // because it needed a header, a cookie or a POST that add_torrent_url
+        // cannot make - had nowhere to put the bytes.
+        let s = session.clone();
+        engine.register_fn("add_torrent_file", move |b64: &str| -> bool {
+            let Some(bytes) = decode_base64(b64) else {
+                return false;
+            };
+            s.add_torrent(
+                crate::bittorrent::session::AddTorrentSource::TorrentFileBytes(bytes),
+                crate::bittorrent::session::AddParams {
+                    save_path: None,
+                    start_torrent: true,
+                    only_files: None,
+                    label_id: None,
+                },
+            );
+            true
+        });
+
+        let s = session.clone();
+        engine.register_fn("add_torrent_file", move |b64: &str, save_path: &str| -> bool {
+            let Some(bytes) = decode_base64(b64) else {
+                return false;
+            };
+            s.add_torrent(
+                crate::bittorrent::session::AddTorrentSource::TorrentFileBytes(bytes),
+                crate::bittorrent::session::AddParams {
+                    save_path: Some(save_path.to_string()),
+                    start_torrent: true,
+                    only_files: None,
+                    label_id: None,
+                },
+            );
+            true
+        });
     }
 
-        // ---- telling the user something ------------------------------------
+        // ---- running a program ---------------------------------------------
+    // Gated by `execute`, which is the permission that hands over the account
+    // rather than bounding what a script does to the session. See the note on
+    // Permission::Execute.
+    if perms.contains(&Permission::Execute) {
+        let plugin = name.to_owned();
+        engine.register_fn("run", move |program: &str, args: Array| -> bool {
+            let argv: Vec<String> = args
+                .into_iter()
+                .map(|a| a.into_string().unwrap_or_default())
+                .collect();
+
+            // Logged before it starts, at info, so what a plugin ran is in the
+            // same file as everything else it did. A plugin that runs something
+            // it should not is then findable after the fact, which is the only
+            // control left once the program is someone else's.
+            tracing::info!(
+                target: "plugin",
+                "{plugin} runs {program:?} with {argv:?}"
+            );
+
+            // No shell: the program and its arguments are passed as they are.
+            // Nothing here builds a command line out of a string, so nothing a
+            // torrent or a feed can say becomes part of a command.
+            std::process::Command::new(program)
+                .args(&argv)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map(|_child| {
+                    // Not waited on, deliberately: a media player runs for
+                    // hours and the plugin thread is not going to sit behind
+                    // it. The child is the user's problem from here.
+                    true
+                })
+                .inspect_err(|e| {
+                    tracing::warn!(target: "plugin", "{plugin} could not run {program:?}: {e}");
+                })
+                .is_ok()
+        });
+
+        let plugin = name.to_owned();
+        engine.register_fn("run", move |program: &str| -> bool {
+            tracing::info!(target: "plugin", "{plugin} runs {program:?}");
+            std::process::Command::new(program)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .inspect_err(|e| {
+                    tracing::warn!(target: "plugin", "{plugin} could not run {program:?}: {e}");
+                })
+                .is_ok()
+        });
+
+        // Hand something to whatever the desktop opens it with - a URL, a
+        // playlist, a folder. Separate from `run` because it names no program:
+        // the association is the user's, already made, and this is how a plugin
+        // reaches "the player they chose" without being told which it is.
+        let plugin = name.to_owned();
+        engine.register_fn("open", move |target: &str| -> bool {
+            tracing::info!(target: "plugin", "{plugin} opens {target:?}");
+            crate::core::utils::open_target(target)
+        });
+    }
+
+    // ---- telling the user something ------------------------------------
     // A desktop notification, the same channel a finished download uses. No-op
     // where the platform has none.
     if perms.contains(&Permission::Notify) {
@@ -374,6 +711,17 @@ pub fn register(
         // this overwrites the plugin's single entry, so calling it twice
         // replaces the menu instead of adding a second. There is no shape a
         // script can pass that produces two titles in the bar.
+        // Items on the file context menu in a torrent's details panel - the
+        // one place a plugin reaches outside its own window. Items only: the
+        // plugin says what to call it and gets told which file it was used on.
+        let plugin = name.to_owned();
+        engine.register_fn("ui_file_menu", move |items: Array| {
+            let items = menu_items(&plugin, items);
+            super::ui::update(&plugin, move |ui| {
+                ui.file_menu = items;
+            });
+        });
+
         let plugin = name.to_owned();
         engine.register_fn("ui_menu", move |title: &str, items: Array| {
             let title = title.to_owned();
@@ -1012,6 +1360,26 @@ fn torrent_map(t: &crate::bittorrent::torrentstatus::TorrentStatus) -> Map {
 mod tests {
     use super::*;
 
+    /// `add_torrent_file` takes a string straight from a plugin, so the decoder
+    /// has to answer "no" rather than panic or half-decode.
+    #[test]
+    fn base64_from_a_plugin_is_decoded_or_refused() {
+        assert_eq!(decode_base64("aGVsbG8=").as_deref(), Some(&b"hello"[..]));
+        // A real .torrent starts "d8:announce" - check a byte sequence, not just
+        // a length, so a decoder that dropped every fourth byte would fail here.
+        assert_eq!(decode_base64("ZDg6YW5ub3VuY2U=").as_deref(), Some(&b"d8:announce"[..]));
+        // Whitespace around it is the shape a plugin builds by string
+        // concatenation, and is not the plugin author's mistake.
+        assert_eq!(decode_base64("  aGVsbG8=
+").as_deref(), Some(&b"hello"[..]));
+        // Unpadded is still unambiguous.
+        assert_eq!(decode_base64("aGVsbG8").as_deref(), Some(&b"hello"[..]));
+
+        assert_eq!(decode_base64("not base64!"), None);
+        assert_eq!(decode_base64("aGVsbG8=extra!!"), None);
+        assert_eq!(decode_base64(""), Some(Vec::new()), "empty decodes to nothing");
+    }
+
     /// The `ui_*` calls every one of these tests wants to be silent about.
     ///
     /// A helper rather than three copies: a plugin that starts declaring a new
@@ -1026,6 +1394,21 @@ mod tests {
         engine.register_fn("ui_configurable", |_: bool| {});
         engine.register_fn("ui_form", |_: &str, _: &str, _: Array| {});
         engine.register_fn("ui_form_close", || {});
+
+        // `t` with no catalogue behind it. The key comes back, with the
+        // arguments in brackets after it: `items_from(1, example.invalid)`.
+        //
+        // Deliberately NOT the real fallback, which substitutes into the
+        // English string - these tests are about what the script does, and an
+        // assertion on an English sentence has to be rewritten every time
+        // somebody improves the wording. The key and its arguments are the
+        // part that is actually behaviour.
+        engine.register_fn("t", |key: &str| -> String { key.to_owned() });
+        engine.register_fn("t", |key: &str, a: &str| -> String { format!("{key}({a})") });
+        engine.register_fn("t", |key: &str, a: &str, b: &str| -> String {
+            format!("{key}({a}, {b})")
+        });
+
         // A fixed clock rather than the real one: a test that reads `now()`
         // wants an answer, not a different answer every run.
         engine.register_fn("now", || -> i64 { 1_760_000_000 });
@@ -2221,8 +2604,9 @@ mod tests {
             "status was: {}",
             status.lock().unwrap()
         );
+        // The key and the count, not the sentence: `items_from(1, ...)`.
         assert!(
-            status.lock().unwrap().contains("1 item"),
+            status.lock().unwrap().starts_with("items_from(1,"),
             "status was: {}",
             status.lock().unwrap()
         );
@@ -2565,8 +2949,11 @@ mod tests {
             .expect("reading with a limit should not fail");
         server2.join().unwrap();
         assert_eq!(capped.len(), 50, "the per-feed limit should cap the list");
+        // The key, not the sentence. The count in it is the UNCAPPED read
+        // above - `read_feed` does not touch the status line - so this asserts
+        // the status was drawn at all, which is what it is here for.
         assert!(
-            status.lock().unwrap().contains("item(s) from"),
+            status.lock().unwrap().starts_with("items_from("),
             "status was: {}",
             status.lock().unwrap()
         );

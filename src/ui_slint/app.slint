@@ -35,6 +35,20 @@ import { ScrollView, ListView, Button, ComboBox, HorizontalBox, VerticalBox, Tab
 import { Tray } from "tray.slint";
 export { Tray }
 
+/// One plugin's item on a file's context menu.
+export struct PluginFileMenuItem {
+    /// Which plugin offered it - the file stem, which is how the plugin is
+    /// addressed. Handed straight back when the item is used.
+    plugin: string,
+    /// The same name as it should be READ: capitalised, because `player` is a
+    /// file name and `Player` is what belongs in a menu. Shown in the label,
+    /// so an item cannot pretend to be part of NanoTorrent.
+    title: string,
+    /// Opaque to the window; handed straight back to the plugin.
+    id: string,
+    label: string,
+}
+
 export struct FileEntryRow {
     /// Index into the torrent's file list, or -1 for a folder row.
     index: int,
@@ -51,6 +65,11 @@ export struct FileEntryRow {
     /// than derived here: the markup would need a computed locale key, which is
     /// exactly what the string check cannot see through.
     priority-name: string,
+    /// A folder row's full path, handed back when it is clicked. Empty on a
+    /// file row, which does not fold.
+    path: string,
+    /// Whether this folder is showing its contents. Always false on a file row.
+    expanded: bool,
 }
 
 export struct PeerEntryRow {
@@ -148,14 +167,16 @@ component DCell inherits Rectangle {
     /// Drawn faded, for a value that is switched off rather than absent.
     in property <bool> dim;
     in property <length> indent: 0px;
+    /// Overridden on a selected row, which needs the palette's other pair.
+    in property <brush> fg: Palette.foreground;
     width: root.w;
     Text {
         text: root.text;
         // Mixed toward the background rather than a fixed grey, so it reads as
         // faded on both palettes - the same trick the tab strip uses.
         color: root.dim
-            ? Palette.foreground.mix(Palette.background, 0.45)
-            : Palette.foreground;
+            ? root.fg.mix(Palette.background, 0.45)
+            : root.fg;
         x: 6px + root.indent;
         width: parent.width - 12px - root.indent;
         height: parent.height;
@@ -1022,7 +1043,7 @@ export component MainWindow inherits Window {
     changed width => { root.window-width-changed(self.width); }
     // Title bar and taskbar icon. The exe gets its icon from a Win32 resource
     // in build.rs; the window needs telling separately.
-    icon: @image-url("../../res/app.png");
+    icon: @image-url("../../res/app-256.png");
     in property <string> window-title;
     title: root.window-title;
     preferred-width: 1280px;
@@ -1093,6 +1114,29 @@ export component MainWindow inherits Window {
 
     // Detail tabs. Only the visible one is refreshed - see current-tab.
     in property <[FileEntryRow]> detail-files;
+    /// Items plugins have added to a file's context menu. Empty for every
+    /// build with no plugins loaded, which is the common case and draws
+    /// nothing.
+    in property <[PluginFileMenuItem]> file-menu-items;
+    /// Which file the open context menu belongs to. Recorded on right-click
+    /// because the popup is shared and outlives the row that opened it.
+    private property <int> file-menu-index: -1;
+    private property <string> file-menu-name;
+    /// The selected row in the Files tab, as a row number.
+    ///
+    /// A row number and not a file index because folder rows are selectable
+    /// too - the keyboard walks past them and stopping on one is how you fold
+    /// it. The list is rebuilt every second from the same files in the same
+    /// order, so a row number survives that; a fold changes it, which is no
+    /// worse than what the torrent list does when it is re-sorted.
+    private property <int> file-row: -1;
+    /// Row height in the Files tab, shared by the rows and by the arithmetic
+    /// that scrolls one into view.
+    private property <length> file-row-h: 22px;
+    /// Open a file with whatever this system opens it with, by row number.
+    callback file-open(int);
+    /// plugin, id, file index, file name.
+    callback file-menu-activated(string, string, int, string);
     in property <[PeerEntryRow]> detail-peers;
     in property <[TrackerEntryRow]> detail-trackers;
     // in-out and bound from inside the TabWidget, not `tabs.current-index`:
@@ -1111,6 +1155,8 @@ export component MainWindow inherits Window {
     /// A file's priority cell was clicked in the details Files tab: step that
     /// file to the next level.
     callback cycle-file-priority(int);
+    /// A folder row in the details Files tab was clicked; fold or unfold it.
+    callback toggle-detail-folder(string);
     /// The tracker typed into the Trackers tab, and the button that adds it.
     in-out property <string> new-tracker;
     callback add-tracker();
@@ -1144,6 +1190,36 @@ export component MainWindow inherits Window {
     private property <length> drag-start-x;
     in-out property <bool> show-details: true;
     in-out property <bool> show-status: true;
+
+    /// Which row the keyboard is on. Not the same thing as the selection: a
+    /// ctrl-click leaves several rows selected and the cursor on the last one
+    /// touched, which is where the next arrow key starts from.
+    ///
+    /// Kept here rather than mirrored out of the Rust anchor because nothing on
+    /// that side needs to read it - a keyboard move goes through `row-pressed`
+    /// exactly as a click does, and the anchor follows from that.
+    private property <int> cursor-row;
+    /// Row height, shared by the rows and by the arithmetic that scrolls one
+    /// into view. They cannot be allowed to disagree.
+    private property <length> row-h: 26px;
+
+    /// Put the cursor on a row: select it, and scroll it into view.
+    ///
+    /// A ListView does not follow a selection it did not make, so the scroll is
+    /// ours to do. Rows are a fixed height, which makes where one sits
+    /// arithmetic rather than a lookup into a model that is culled anyway.
+    function walk-to(i: int) {
+        if (root.rows.length > 0) {
+            root.cursor-row = i;
+            root.row-pressed(i, false, false);
+
+            if (list.viewport-y + i * root.row-h < 0px) {
+                list.viewport-y = -i * root.row-h;
+            } else if (list.viewport-y + (i + 1) * root.row-h > list.visible-height) {
+                list.viewport-y = list.visible-height - (i + 1) * root.row-h;
+            }
+        }
+    }
 
     // Where the pending context menu should open, stashed by the press.
     private property <length> menu-x;
@@ -1226,6 +1302,56 @@ export component MainWindow inherits Window {
                 MenuRow {
                     label: L.s(L.revision, "remove_tracker");
                     activated => { root.remove-tracker(); tracker-popup.close(); }
+                }
+            }
+        }
+    }
+
+    // A file's context menu: NanoTorrent's one action on a file, then whatever
+    // plugins have added, under a separator. Everything else a file row does is
+    // a click in the row already - the priority cell cycles, the checkbox
+    // includes - which is why there is only ever one of ours here.
+    file-ctx-popup := PopupWindow {
+        x: root.menu-x;
+        y: root.menu-y;
+        width: 260px;
+        height: file-menu-layout.preferred-height;
+        close-policy: PopupClosePolicy.close-on-click-outside;
+
+        Rectangle {
+            background: Palette.alternate-background;
+            border-color: Palette.border;
+            border-width: 1px;
+            border-radius: 6px;
+
+            file-menu-layout := VerticalLayout {
+                padding: 4px;
+                // NanoTorrent's own, and the only one it has: hand the file to
+                // whatever this system opens it with. Everything else a file
+                // row does - the priority, the include tick - is a click in the
+                // row itself, so there is nothing else to put here.
+                MenuRow {
+                    label: L.s(L.revision, "open_file");
+                    activated => {
+                        root.file-open(root.file-row);
+                        file-ctx-popup.close();
+                    }
+                }
+                if root.file-menu-items.length > 0: MenuSep { }
+                for item[i] in root.file-menu-items: MenuRow {
+                    // The plugin's name is part of the label, not a tooltip:
+                    // an item reading "Verify your password" must be visibly
+                    // somebody's, and a tooltip is not visible.
+                    label: item.title + ": " + item.label;
+                    activated => {
+                        root.file-menu-activated(
+                            item.plugin,
+                            item.id,
+                            root.file-menu-index,
+                            root.file-menu-name,
+                        );
+                        file-ctx-popup.close();
+                    }
                 }
             }
         }
@@ -1897,13 +2023,33 @@ export component MainWindow inherits Window {
                             root.select-all();
                             return accept;
                         }
+                        // Walking the list. Clamped rather than wrapped: a list
+                        // that jumps from the last row to the first on one more
+                        // Down loses the user's place, and holding Down to reach
+                        // the bottom is the ordinary way to use this.
+                        if (event.text == Key.UpArrow) {
+                            root.walk-to(max(0, root.cursor-row - 1));
+                            return accept;
+                        }
+                        if (event.text == Key.DownArrow) {
+                            root.walk-to(min(root.rows.length - 1, root.cursor-row + 1));
+                            return accept;
+                        }
+                        if (event.text == Key.Home) {
+                            root.walk-to(0);
+                            return accept;
+                        }
+                        if (event.text == Key.End) {
+                            root.walk-to(root.rows.length - 1);
+                            return accept;
+                        }
                         return reject;
                     }
                   list := ListView {
                     // ListView culls to the viewport, so 5,000 rows cost the
                     // same as 50. That is what the Win32 list does NOT do.
                     for row[i] in root.rows: Rectangle {
-                        height: 26px;
+                        height: root.row-h;
                         background: row.selected
                             ? Palette.selection-background
                             : (mod(i, 2) == 0 ? transparent : Palette.alternate-background);
@@ -1925,6 +2071,11 @@ export component MainWindow inherits Window {
                                         root.menu-y = ta.absolute-position.y + ta.mouse-y;
                                         ctx-popup.show();
                                     } else {
+                                        // The cursor follows the click, so the
+                                        // next arrow key carries on from where
+                                        // the user last was rather than from
+                                        // wherever the keyboard had been.
+                                        root.cursor-row = i;
                                         root.row-pressed(i, e.modifiers.control, e.modifiers.shift);
                                     }
                                 }
@@ -2257,10 +2408,94 @@ export component MainWindow inherits Window {
                     }
                         Rectangle {
                             vertical-stretch: 1;
-                            ListView {
+                          // Its own scope, not the torrent list's: both lists
+                          // are on screen at once and the arrow keys have to
+                          // belong to whichever was last clicked in.
+                          dfiles-keys := FocusScope {
+                            key-pressed(event) => {
+                                if (root.detail-files.length == 0) {
+                                    return reject;
+                                }
+                                // Enter or Space on a folder folds it. A walk
+                                // that can reach a folder and not open it
+                                // stops at the first one.
+                                if (event.text == Key.Return || event.text == " ") {
+                                    if (root.file-row >= 0
+                                        && root.detail-files[root.file-row].index < 0) {
+                                        root.toggle-detail-folder(root.detail-files[root.file-row].path);
+                                        return accept;
+                                    }
+                                    return reject;
+                                }
+
+                                // Clamped rather than wrapped, as the torrent
+                                // list is: holding Down to reach the last row
+                                // should stop there.
+                                if (event.text == Key.UpArrow) {
+                                    root.file-row = max(0, root.file-row - 1);
+                                } else if (event.text == Key.DownArrow) {
+                                    root.file-row = min(root.detail-files.length - 1, root.file-row + 1);
+                                } else if (event.text == Key.Home) {
+                                    root.file-row = 0;
+                                } else if (event.text == Key.End) {
+                                    root.file-row = root.detail-files.length - 1;
+                                } else {
+                                    return reject;
+                                }
+
+                                // A ListView does not follow a selection it did
+                                // not make. Rows are a fixed height, so where
+                                // one sits is arithmetic.
+                                if (dfiles.viewport-y + root.file-row * root.file-row-h < 0px) {
+                                    dfiles.viewport-y = -root.file-row * root.file-row-h;
+                                } else if (dfiles.viewport-y + (root.file-row + 1) * root.file-row-h
+                                           > dfiles.visible-height) {
+                                    dfiles.viewport-y = dfiles.visible-height
+                                        - (root.file-row + 1) * root.file-row-h;
+                                }
+                                return accept;
+                            }
+                            dfiles := ListView {
                                 for f[i] in root.detail-files: Rectangle {
-                                    height: 22px;
-                                    background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                                    height: root.file-row-h;
+                                    background: i == root.file-row
+                                        ? Palette.selection-background
+                                        : (mod(i, 2) == 0 ? transparent : Palette.alternate-background);
+                                    // Behind the cells, so the priority cell's
+                                    // own TouchArea still gets its clicks: this
+                                    // one only ever reacts to the right button.
+                                    file-ta := TouchArea {
+                                        mouse-cursor: f.index < 0 ? pointer : default;
+                                        pointer-event(e) => {
+                                            if (e.kind == PointerEventKind.down) {
+                                                // Either button selects, so a
+                                                // right-click menu is about the
+                                                // row it came up on.
+                                                root.file-row = i;
+                                                // A TouchArea takes no focus of
+                                                // its own, and the arrow keys
+                                                // have to follow the click.
+                                                dfiles-keys.focus();
+                                            }
+                                            // A folder row is its own control:
+                                            // it has no checkbox and no
+                                            // priority, so the whole row folds.
+                                            if (e.button == PointerEventButton.left
+                                                && e.kind == PointerEventKind.down
+                                                && f.index < 0) {
+                                                root.toggle-detail-folder(f.path);
+                                            }
+                                            if (e.button == PointerEventButton.right
+                                                && e.kind == PointerEventKind.down
+                                                && f.index >= 0) {
+                                                root.file-menu-index = f.index;
+                                                root.file-menu-name = f.name;
+                                                root.menu-x = file-ta.absolute-position.x + file-ta.mouse-x;
+                                                root.menu-y = file-ta.absolute-position.y + file-ta.mouse-y;
+                                                file-ctx-popup.show();
+                                            }
+                                        }
+                                    }
                                     HorizontalLayout {
                                         // Indentation is the tree: Slint has no
                                         // tree widget, so depth becomes an
@@ -2269,9 +2504,17 @@ export component MainWindow inherits Window {
                                         // a fixed-width column cannot carry.
                                         DCell {
                                             w: DCols.files[0];
-                                            text: f.name;
+                                            // Which way the next click goes.
+                                            // Glyphs, not words - nothing here
+                                            // needs translating.
+                                            text: f.index < 0
+                                                ? (f.expanded ? "▾ " : "▸ ") + f.name
+                                                : f.name;
                                             bold: f.index < 0;
                                             indent: f.depth * 16px;
+                                            fg: i == root.file-row
+                                                ? Palette.selection-foreground
+                                                : Palette.foreground;
                                         }
                                         DCell { w: DCols.files[1]; text: f.size; align: right; }
                                         DCell {
@@ -2312,6 +2555,7 @@ export component MainWindow inherits Window {
                                     }
                                 }
                             }
+                          }
                         }
                     }
                 }
@@ -2950,7 +3194,7 @@ export component MainWindow inherits Window {
 // Add-magnet dialog. A separate Window rather than an in-window overlay, which
 // is what the platform expects of a dialog.
 export component AddMagnetDialog inherits Window {
-    icon: @image-url("../../res/app.png");
+    icon: @image-url("../../res/app-256.png");
     title: L.s(L.revision, "add_magnet_link_s");
     preferred-width: 560px;
     preferred-height: min(300px, root.screen-limit);
@@ -3012,11 +3256,16 @@ export struct FileRow {
     name: string,
     size: string,
     included: bool,
+    /// A folder row's full path, handed back when it is clicked. Empty on a
+    /// file row, which does not fold.
+    path: string,
+    /// Whether this folder is showing its contents. Always false on a file row.
+    expanded: bool,
 }
 
 // Add-torrent dialog: parsed file list, save path, label and start toggle.
 export component AddTorrentDialog inherits Window {
-    icon: @image-url("../../res/app.png");
+    icon: @image-url("../../res/app-256.png");
     title: L.s(L.revision, "add_torrent_s");
     preferred-width: 640px;
     preferred-height: min(540px, root.screen-limit);
@@ -3041,7 +3290,11 @@ export component AddTorrentDialog inherits Window {
     callback accepted();
     callback cancelled();
     callback browse();
+    /// Which FILE was ticked, by its index in the torrent - not the row
+    /// number, which moves as folders are folded.
     callback toggle-file(int);
+    /// A folder row was clicked; fold or unfold it.
+    callback toggle-folder(string);
     callback select-torrent(int);
 
     /// Width of the queue column. Rust seeds it from the last time and stores
@@ -3189,6 +3442,13 @@ export component AddTorrentDialog inherits Window {
                     for f[i] in root.files: Rectangle {
                         height: 24px;
                         background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                        // Folder rows only: a file row's one control is its
+                        // checkbox, and a TouchArea under it would swallow
+                        // nothing but still be there to reason about.
+                        if f.index < 0: TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.toggle-folder(f.path); }
+                        }
                         HorizontalLayout {
                             // Depth becomes indentation, the same tree the
                             // details Files tab draws.
@@ -3200,11 +3460,15 @@ export component AddTorrentDialog inherits Window {
                             if f.index >= 0: CheckBox {
                                 width: 70px;
                                 checked: f.included;
-                                toggled => { root.toggle-file(i); }
+                                // The file's index, not the row number: folding
+                                // a folder moves every row below it.
+                                toggled => { root.toggle-file(f.index); }
                             }
                             if f.index < 0: Rectangle { width: 70px; }
                             DataText {
-                                text: f.name;
+                                text: f.index < 0
+                                    ? (f.expanded ? "▾ " : "▸ ") + f.name
+                                    : f.name;
                                 horizontal-stretch: 1;
                                 bold: f.index < 0;
                             }

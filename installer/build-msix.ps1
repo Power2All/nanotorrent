@@ -104,8 +104,10 @@ Copy-Item (Join-Path $root "target\release\nanotorrent-gui.exe") $stage
 Copy-Item (Join-Path $root "target\release\nanotorrent-cli.exe") $stage
 
 # --- logos -------------------------------------------------------------------
-# Generated from res/app.png rather than checked in: one 256px source, and the
-# Store's required sizes are just scalings of it.
+# Generated from res/app.png rather than checked in: one high-resolution
+# source, and the Store's required sizes are all scalings of it. The master is
+# 2048x2048 so even the 400% 150px tile is a downscale; res/app-256.png is a
+# separate derivative for the things that ship inside the binary.
 Write-Host "[3/5] Generating logo assets..."
 Add-Type -AssemblyName System.Drawing
 $srcPath = Join-Path $root "res\app.png"

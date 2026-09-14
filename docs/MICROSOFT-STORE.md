@@ -268,12 +268,30 @@ msstore submission publish <product>              # commit for certification
 last published submission. Writing the release notes first would silently throw
 them away. Package first, metadata second, commit last.
 
+## Language codes the API accepts
+
+Two traps, both of which fail the *whole* `submission update` after the package
+has already uploaded:
+
+1. **Lowercase.** The Ingestion API keys listings `en-us`, `sr-cyrl`,
+   `az-latn-az` - lowercase throughout, script subtags included. Partner Center
+   displays them mixed case and `MS_Store_Release_Info/*.txt` is named that way,
+   so `store-whatsnew.ps1` lowercases the key when it creates a listing. Getting
+   it wrong answers `InvalidParameterValue ... not supported` and names every
+   offending code, which reads as though the languages are unsupported when the
+   only problem is the capitals.
+2. **Not every language is accepted.** Burmese (`my-MM`) is not, as of
+   2026-09-12; its listing file is kept and skipped by name. One unsupported
+   language fails the submission for all of them, so a release that adds
+   languages is worth rehearsing against a saved dump first - which is what the
+   offline run below is for.
+
 `installer\store-whatsnew.ps1` can be run on its own, against a saved
 `msstore submission get` dump, with no credentials and no release:
 
 ```powershell
 msstore submission get <product> | Out-File -Encoding utf8 sub.json
-.\installer\store-whatsnew.ps1 -SubmissionPath sub.json -OutPath sub.new.json -Version 0.3.8
+.\installer\store-whatsnew.ps1 -SubmissionPath sub.json -OutPath sub.new.json -Version 0.4.0
 ```
 
 It refuses to write anything if a listing's "What's new" does not mention the
