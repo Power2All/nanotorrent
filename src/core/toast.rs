@@ -326,7 +326,7 @@ pub fn download_complete(title: &str, name: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::icon_hint;
+    use super::{TOAST_ICON_PNG, icon_hint};
     use std::path::PathBuf;
 
     /// An absolute path is a legal `app_icon` and is what makes the icon show
@@ -343,5 +343,59 @@ mod tests {
             icon_hint(None, "org.nanotorrent.NanoTorrent"),
             "org.nanotorrent.NanoTorrent"
         );
+    }
+
+    /// Read a PNG's dimensions out of its IHDR, which is at a fixed offset:
+    /// 8-byte signature, 4-byte chunk length, the tag, then width and height
+    /// as big-endian u32s.
+    fn png_size(bytes: &[u8]) -> (u32, u32) {
+        assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n", "not a PNG");
+        assert_eq!(&bytes[12..16], b"IHDR", "IHDR is not the first chunk");
+        let at = |o: usize| u32::from_be_bytes(bytes[o..o + 4].try_into().unwrap());
+        (at(16), at(20))
+    }
+
+    /// `res/app-256.png` has to BE 256x256, because Linux packaging installs it
+    /// into `hicolor/256x256` and `linuxdeploy` refuses an icon whose size is
+    /// not one of the standard ones outright - it fails the AppImage build
+    /// rather than merely looking wrong. This has been broken once already, by
+    /// the master growing from 256 to 2048 while the packaging still pointed at
+    /// it, so the size is pinned here rather than assumed.
+    #[test]
+    fn the_packaged_icon_is_the_size_its_directory_claims() {
+        assert_eq!(png_size(TOAST_ICON_PNG), (256, 256));
+    }
+
+    /// And the packaging points at that file rather than at the 2048px master.
+    ///
+    /// Checked as text because `cargo deb`, `cargo generate-rpm`, the AppImage
+    /// step and the per-user installer each name it separately, and nothing
+    /// else makes them agree.
+    #[test]
+    fn every_linux_consumer_installs_the_256_icon() {
+        for (what, src) in [
+            ("Cargo.toml", include_str!("../../Cargo.toml")),
+            (
+                "install-desktop-entry.sh",
+                include_str!("../../packaging/linux/install-desktop-entry.sh"),
+            ),
+            (
+                "release.yml",
+                include_str!("../../.github/workflows/release.yml"),
+            ),
+        ] {
+            for line in src.lines() {
+                // macOS builds its .icns by downscaling with `sips`, so that one
+                // genuinely wants the master.
+                if line.contains("sips") || line.trim_start().starts_with('#') {
+                    continue;
+                }
+                assert!(
+                    !line.contains("res/app.png"),
+                    "{what} still installs the 2048px master: {}",
+                    line.trim()
+                );
+            }
+        }
     }
 }

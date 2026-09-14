@@ -174,7 +174,9 @@ jobs:
           # into the AppDir AND writes the top-level .desktop and .DirIcon that
           # make the AppImage launchable.
           install -Dm644 "packaging/linux/$APPID.desktop" "$APPID.desktop"
-          install -Dm644 res/app.png "$APPID.png"
+          # The 256 derivative, not the 2048px master: linuxdeploy checks the
+          # icon against the standard sizes and 2048 is not one of them.
+          install -Dm644 res/app-256.png "$APPID.png"
           install -Dm644 "packaging/linux/$APPID.metainfo.xml" \
             "AppDir/usr/share/metainfo/$APPID.metainfo.xml"
 
