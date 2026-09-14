@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Norsk bokmål (Norge) - Partner Center: Norwegian (Bokmal) (nb-NO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent er en Rust-portering av PicoTorrent av Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versjon 0.4.0
 
-Versjon 0.3.8
-
-- 35 flere språk, 76 i alt, lagt til i Europa, Sør-Asia, Sørøst-Asia, Sentral-Asia og Afrika.
-- Ferdige nedlastinger blir ikke lenger låst. En torrent som var ferdig, eller som var satt på pause, holdt filene sine åpne for skriving, og på Windows er det alene nok til å hindre et annet program fra å åpne dem: et arkiv eller en video i nedlastingsmappen kunne ikke åpnes før NanoTorrent ble lukket. Filer åpnes nå på nytt som skrivebeskyttet så snart ingenting skal skrives, og skrivetilgang hentes automatisk tilbake hvis den trengs igjen.
+- Se en video mens den lastes ned. Høyreklikk en fil i detaljene for en torrent, eller i webgrensesnittet, og den åpnes i VLC, mpv eller din vanlige avspiller - avspillingen starter før nedlastingen er ferdig.
+- En bedre filliste: velg filer med musen eller piltastene, åpne en med høyreklikk, og fold sammen mappene du ikke ser på. Både i appen og i webgrensesnittet.
+- Utvidelser kan legge til punkter i en fils meny, starte programmer under en ny "execute"-tillatelse som du godkjenner i klarspråk, og ha med sine egne oversettelser. Femten flere kall gir utvidelser det webgrensesnittet allerede kunne.
+- Sikkerhetsrettelser: et annet nettsted kan ikke lenger endre noe via webgrensesnittet, en torrent kan ikke lenger navngi en Windows-stasjon som mappe eller legge til en linje i en spilleliste, og låsing etter mislykkede innlogginger teller ikke lenger forespørsler som aldri prøvde et passord.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

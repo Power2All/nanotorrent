@@ -144,7 +144,7 @@ fn join_lines(list) {
 
 fn store(key, list) {
     if !data_set(key, join_lines(list)) {
-        ui_status("The plugin store is full - remove a feed or a rule.");
+        ui_status(t("store_full"));
         return false;
     }
     return true;
@@ -564,14 +564,14 @@ fn read_feed(url, quiet, limit) {
         log("rss: " + url + " failed: " + why);
         // A background sweep says nothing: a feed that is down for an hour
         // should not overwrite the status line every fifteen minutes.
-        if !quiet { ui_status("Could not read " + feed_name(url) + ": " + why); }
+        if !quiet { ui_status(t("cannot_read", feed_name(url), why)); }
         return out;
     }
 
     let doc = parse_xml(response.body);
     if doc == () {
         log("rss: " + url + " did not parse as XML");
-        if !quiet { ui_status(feed_name(url) + " did not return XML."); }
+        if !quiet { ui_status(t("not_xml", feed_name(url))); }
         return out;
     }
 
@@ -672,7 +672,7 @@ fn run_rules(all_feeds, all_rules, limit, repacks) {
                         }
                     }
                     log("rss: " + rule.name + " matched " + item.title);
-                    notify("RSS: " + rule.name, item.title);
+                    notify(t("matched", rule.name), item.title);
                 } else {
                     log("rss: could not add " + item.link);
                 }
@@ -714,7 +714,7 @@ fn draw_feeds(list, current, rule_count) {
     // upper list and this is the only place to put them.
     rows.push(#{
         id: global::RULES,
-        title: "Rules",
+        title: t("rules"),
         subtitle: rule_count + " auto-download rule(s)",
         selected: current == global::RULES,
     });
@@ -759,31 +759,31 @@ fn draw_buttons(current) {
     if current == global::RULES {
         ui_input("");
         ui_buttons([
-            #{ id: "newrule", label: "New rule" },
-            #{ id: "runrules", label: "Run rules now" },
-            #{ id: "settings", label: "Settings" },
+            #{ id: "newrule", label: t("new_rule") },
+            #{ id: "runrules", label: t("run_rules_now") },
+            #{ id: "settings", label: t("settings") },
         ]);
         return;
     }
-    ui_input("Feed URL");
+    ui_input(t("feed_url"));
     ui_buttons([
-        #{ id: "add", label: "Add feed" },
-        #{ id: "refresh", label: "Refresh" },
-        #{ id: "forget", label: "Remove feed" },
-        #{ id: "settings", label: "Settings" },
+        #{ id: "add", label: t("add_feed") },
+        #{ id: "refresh", label: t("refresh") },
+        #{ id: "forget", label: t("remove_feed") },
+        #{ id: "settings", label: t("settings") },
     ]);
 }
 
 // Read one feed and say how it went. Returns its items.
 fn load_one(url, limit) {
     if url == "" {
-        ui_status("Add a feed URL above, then pick it from the list.");
+        ui_status(t("add_a_feed_first"));
         return [];
     }
-    ui_status("Checking " + feed_name(url) + "...");
+    ui_status(t("checking_feed", feed_name(url)));
     let found = read_feed(url, false, limit);
     if !found.is_empty() {
-        ui_status(found.len() + " item(s) from " + feed_name(url) + ". Click one to download it.");
+        ui_status(t("items_from", "" + found.len(), feed_name(url)));
     }
     return found;
 }
@@ -793,26 +793,26 @@ fn load_one(url, limit) {
 // ---------------------------------------------------------------------------
 
 fn show_settings_form() {
-    ui_form("settings", "RSS settings", [
+    ui_form("settings", t("settings_title"), [
         #{
-            id: "interval", label: "Check every (minutes)", kind: "number",
+            id: "interval", label: t("f_interval"), kind: "number",
             value: "" + setting_int("interval", 15),
-            hint: "How often every feed is read and the rules are run.",
+            hint: t("h_interval"),
         },
         #{
-            id: "articles", label: "Keep per feed (articles)", kind: "number",
+            id: "articles", label: t("f_articles"), kind: "number",
             value: "" + setting_int("articles", 50),
-            hint: "Newest first. 0 keeps everything the feed offers.",
+            hint: t("h_articles"),
         },
         #{
-            id: "auto", label: "Run the auto-downloader", kind: "check",
+            id: "auto", label: t("f_auto"), kind: "check",
             value: on_off(setting_on("auto", true)),
-            hint: "Off leaves the feeds readable and downloads nothing on its own.",
+            hint: t("h_auto"),
         },
         #{
-            id: "repacks", label: "Take REPACK and PROPER re-releases", kind: "check",
+            id: "repacks", label: t("f_repacks"), kind: "check",
             value: on_off(setting_on("repacks", false)),
-            hint: "Only affects rules with the smart episode filter on.",
+            hint: t("h_repacks"),
         },
     ]);
 }
@@ -821,41 +821,41 @@ fn show_rule_form(rule) {
     let title = "New rule";
     if rule.name != "" { title = "Rule: " + rule.name; }
     ui_form("rule", title, [
-        #{ id: "name", label: "Name", kind: "text", value: rule.name },
-        #{ id: "enabled", label: "Enabled", kind: "check", value: on_off(rule.enabled) },
+        #{ id: "name", label: t("f_name"), kind: "text", value: rule.name },
+        #{ id: "enabled", label: t("f_enabled"), kind: "check", value: on_off(rule.enabled) },
         #{
-            id: "must", label: "Must contain", kind: "text", value: rule.must,
-            hint: "Every term has to appear. Alternatives with |, as in ubuntu|debian.",
+            id: "must", label: t("f_must"), kind: "text", value: rule.must,
+            hint: t("h_must"),
         },
-        #{ id: "must_not", label: "Must not contain", kind: "text", value: rule.must_not },
+        #{ id: "must_not", label: t("f_mustnot"), kind: "text", value: rule.must_not },
         #{
-            id: "regex", label: "Use regular expressions", kind: "check",
+            id: "regex", label: t("f_regex"), kind: "check",
             value: on_off(rule.regex),
-            hint: "Treats both fields above as patterns. (?i) at the front ignores case.",
+            hint: t("h_regex"),
         },
         #{
-            id: "episodes", label: "Episode filter", kind: "text", value: rule.episodes,
-            hint: "1x25- is episode 25 onward, 1x1-10 a range, 2x a whole season.",
+            id: "episodes", label: t("f_episodes"), kind: "text", value: rule.episodes,
+            hint: t("h_episodes"),
         },
         #{
-            id: "smart", label: "Smart episode filter", kind: "check",
+            id: "smart", label: t("f_smart"), kind: "check",
             value: on_off(rule.smart),
-            hint: "Take each episode once, however many times it is re-uploaded.",
+            hint: t("h_smart"),
         },
         #{
-            id: "ignore_days", label: "Ignore later matches for (days)", kind: "number",
+            id: "ignore_days", label: t("f_ignore_days"), kind: "number",
             value: "" + rule.ignore_days,
-            hint: "0 is off.",
+            hint: t("h_ignore_days"),
         },
         #{
-            id: "label", label: "Label", kind: "text", value: rule.label,
-            hint: "Must already exist - this will not create one.",
+            id: "label", label: t("f_label"), kind: "text", value: rule.label,
+            hint: t("h_label"),
         },
-        #{ id: "save_path", label: "Save to", kind: "text", value: rule.save_path },
-        #{ id: "paused", label: "Add paused", kind: "check", value: on_off(rule.paused) },
+        #{ id: "save_path", label: t("f_save_path"), kind: "text", value: rule.save_path },
+        #{ id: "paused", label: t("f_paused"), kind: "check", value: on_off(rule.paused) },
         #{
-            id: "feeds", label: "Apply to feeds", kind: "text", value: rule.feeds,
-            hint: "Blank means every feed. Otherwise a comma-separated list of feed URLs.",
+            id: "feeds", label: t("f_feeds"), kind: "text", value: rule.feeds,
+            hint: t("h_feeds"),
         },
     ]);
 }
@@ -865,15 +865,15 @@ fn show_rule_form(rule) {
 // ---------------------------------------------------------------------------
 
 fn on_session_start() {
-    ui_window("RSS feeds");
+    ui_window(t("window_title"));
 
     // A dropdown of our own in the menu bar. One per plugin - calling this
     // again replaces the menu rather than adding a second.
-    ui_menu("RSS", [
-        #{ id: "open", label: "Feeds..." },
-        #{ id: "refresh", label: "Check this feed now" },
-        #{ id: "runrules", label: "Check every feed now" },
-        #{ id: "settings", label: "Settings..." },
+    ui_menu(t("menu_title"), [
+        #{ id: "open", label: t("menu_feeds") },
+        #{ id: "refresh", label: t("menu_check_this") },
+        #{ id: "runrules", label: t("menu_check_all") },
+        #{ id: "settings", label: t("menu_settings") },
     ]);
 
     // This plugin is useless until someone gives it a feed URL, which is
@@ -889,9 +889,9 @@ fn on_session_start() {
     draw_buttons(selected);
 
     if feeds.is_empty() {
-        ui_status("No feeds yet. Paste a feed URL above and press Add feed.");
+        ui_status(t("no_feeds_yet"));
     } else {
-        ui_status("Open the window from the RSS menu.");
+        ui_status(t("open_from_menu"));
     }
     // Deliberately not fetching here: a plugin should not reach the network
     // because the application started.
@@ -909,7 +909,7 @@ fn on_ui_group(id) {
     if selected == global::RULES {
         rules = rule_list();
         draw_rules(rules);
-        ui_status(rules.len() + " rule(s). Click one to edit it.");
+        ui_status(t("rule_count", "" + rules.len()));
     } else {
         items = load_one(selected, setting_int("articles", 50));
         draw_items(items);
@@ -954,23 +954,23 @@ fn on_ui_button(id, input) {
     if id == "runrules" {
         feeds = lines_of("feeds");
         rules = rule_list();
-        ui_status("Checking " + feeds.len() + " feed(s) against " + rules.len() + " rule(s)...");
+        ui_status(t("checking_rules", "" + feeds.len(), "" + rules.len()));
         let added = run_rules(feeds, rules, setting_int("articles", 50),
                               setting_on("repacks", false));
         rules = rule_list();
         draw_rules(rules);
-        ui_status("Auto-download added " + added + " torrent(s).");
+        ui_status(t("auto_added", "" + added));
         return;
     }
 
     if id == "add" {
         if text == "" {
-            ui_status("Type a feed URL first.");
+            ui_status(t("type_a_url"));
             return;
         }
         feeds = lines_of("feeds");
         if text in feeds {
-            ui_status("That feed is already in the list.");
+            ui_status(t("feed_exists"));
             return;
         }
         feeds.push(text);
@@ -1015,7 +1015,7 @@ fn on_ui_row(id) {
         rules = rule_list();
         let rule = find_rule(rules, id);
         if rule == () {
-            ui_status("That rule is gone - the list has been reloaded.");
+            ui_status(t("rule_gone"));
             draw_rules(rules);
             return;
         }
@@ -1025,9 +1025,9 @@ fn on_ui_row(id) {
     }
 
     if add_torrent_url(id) {
-        ui_status("Added: " + id);
+        ui_status(t("added", id));
     } else {
-        ui_status("Could not add: " + id);
+        ui_status(t("could_not_add", id));
     }
 }
 
@@ -1041,7 +1041,7 @@ fn on_ui_form(form_id, values) {
         data_set("set.repacks", values.repacks);
         ui_form_close();
         draw_buttons(selected);
-        ui_status("Settings saved. Checking every " + setting_int("interval", 15) + " minute(s).");
+        ui_status(t("settings_saved", "" + setting_int("interval", 15)));
         return;
     }
 
@@ -1050,7 +1050,7 @@ fn on_ui_form(form_id, values) {
     let name = values.name;
     name.trim();
     if name == "" {
-        ui_status("A rule needs a name.");
+        ui_status(t("rule_needs_name"));
         return;
     }
     let rule = #{
@@ -1069,7 +1069,7 @@ fn on_ui_form(form_id, values) {
         last_match: 0,
     };
     if rule.must == "" && rule.episodes == "" {
-        ui_status("A rule needs something to match: fill in Must contain, or an episode filter.");
+        ui_status(t("rule_needs_match"));
         return;
     }
 
@@ -1107,7 +1107,7 @@ fn on_ui_form(form_id, values) {
     draw_feeds(feeds, selected, rules.len());
     draw_buttons(selected);
     draw_rules(rules);
-    ui_status("Rule '" + rule.name + "' saved. It runs on the next check.");
+    ui_status(t("rule_saved", rule.name));
 }
 
 // The form was dismissed. Put back whatever was on screen before it.
@@ -1119,7 +1119,7 @@ fn on_ui_form_cancel(form_id) {
     if selected == global::RULES {
         rules = rule_list();
         draw_rules(rules);
-        ui_status(rules.len() + " rule(s). Click one to edit it.");
+        ui_status(t("rule_count", "" + rules.len()));
         return;
     }
     draw_items(items);
@@ -1139,10 +1139,10 @@ fn on_ui_menu(id) {
         ui_show();
         feeds = lines_of("feeds");
         rules = rule_list();
-        ui_status("Checking " + feeds.len() + " feed(s) against " + rules.len() + " rule(s)...");
+        ui_status(t("checking_rules", "" + feeds.len(), "" + rules.len()));
         let added = run_rules(feeds, rules, setting_int("articles", 50),
                               setting_on("repacks", false));
-        ui_status("Auto-download added " + added + " torrent(s).");
+        ui_status(t("auto_added", "" + added));
     }
 }
 

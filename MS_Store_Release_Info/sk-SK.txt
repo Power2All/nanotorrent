@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Slovenčina (Slovensko) - Partner Center: Slovak (Slovakia) (sk-SK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Verzia 0.4.0
 
-Verzia 0.3.8
-
-- 35 ďalších jazykov, celkovo 76, pridaných v Európe, južnej Ázii, juhovýchodnej Ázii, strednej Ázii a Afrike.
-- Dokončené preberania už nezostávajú uzamknuté. Torrent, ktorý bol dokončený alebo pozastavený, držal svoje súbory otvorené na zápis a v systéme Windows to samo stačí na to, aby ich iný program nemohol otvoriť: archív ani video v priečinku preberania sa nedali otvoriť, kým sa NanoTorrent nezavrel. Súbory sa teraz znova otvoria len na čítanie, len čo sa už nebude nič zapisovať, a právo zápisu sa automaticky získa späť, keď je opäť potrebné.
+- Prehrajte video už počas sťahovania. Kliknite pravým tlačidlom na súbor v podrobnostiach torrentu alebo vo webovom rozhraní a otvorí sa vo VLC, mpv alebo vo vašom obvyklom prehrávači - prehrávanie sa začne skôr, ako sa sťahovanie skončí.
+- Lepší zoznam súborov: vyberajte myšou alebo šípkami, otvorte pravým tlačidlom a zbaľte priečinky, na ktoré sa práve nepozeráte. V aplikácii aj vo webovom rozhraní.
+- Doplnky môžu pridávať položky do ponuky súboru, spúšťať programy pod novým oprávnením "execute", ktoré schvaľujete zrozumiteľným jazykom, a niesť vlastné preklady. Ďalších pätnásť funkcií im dáva to, čo webové rozhranie vedelo už dávno.
+- Bezpečnostné opravy: iná stránka už nemôže nič zmeniť cez webové rozhranie, torrent už nemôže pomenovať disk Windows ako priečinok ani pridať riadok do zoznamu skladieb a blokovania po neúspešných prihláseniach už nepočítajú požiadavky, ktoré heslo nikdy neskúsili.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

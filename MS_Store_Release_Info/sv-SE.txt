@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Svenska (Sverige) - Partner Center: Swedish (Sweden) (sv-SE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent är en Rust-portning av PicoTorrent av Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Version 0.4.0
 
-Version 0.3.8
-
-- 35 fler språk, 76 i allt, tillagda i Europa, Sydasien, Sydostasien, Centralasien och Afrika.
-- Färdiga nedladdningar blir inte längre låsta. En torrent som var färdig, eller som var pausad, höll sina filer öppna för skrivning, och i Windows räcker det ensamt för att hindra ett annat program från att öppna dem: ett arkiv eller en video i nedladdningsmappen gick inte att öppna förrän NanoTorrent stängdes. Filer öppnas nu om som skrivskyddade så snart ingenting ska skrivas, och skrivåtkomst tas tillbaka automatiskt om den behövs igen.
+- Se en video medan den hämtas. Högerklicka på en fil i en torrents detaljer, eller i webbgränssnittet, så öppnas den i VLC, mpv eller din vanliga spelare - uppspelningen börjar innan hämtningen är klar.
+- En bättre fillista: välj filer med musen eller piltangenterna, öppna en med högerklick och fäll ihop mapparna du inte tittar på. I appen såväl som i webbgränssnittet.
+- Tillägg kan lägga till poster i en fils meny, starta program under en ny "execute"-behörighet som du godkänner på klarspråk, och bära med sig egna översättningar. Femton fler anrop ger tillägg det som webbgränssnittet redan kunde.
+- Säkerhetsrättningar: en annan webbplats kan inte längre ändra något via webbgränssnittet, en torrent kan inte längre namnge en Windows-enhet som mapp eller lägga till en rad i en spellista, och låsningar efter misslyckade inloggningar räknar inte längre förfrågningar som aldrig prövade ett lösenord.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

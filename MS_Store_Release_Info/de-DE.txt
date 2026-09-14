@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Deutsch (Deutschland) - Partner Center: German (Germany) (de-DE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent ist eine Rust-Portierung von PicoTorrent von Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Version 0.4.0
 
-Version 0.3.8
-
-- 35 weitere Sprachen, 76 insgesamt, ergänzt in Europa, Südasien, Südostasien, Zentralasien und Afrika.
-- Fertige Downloads bleiben nicht mehr gesperrt. Ein Torrent, der fertig war oder angehalten wurde, hielt seine Dateien zum Schreiben geöffnet, und unter Windows genügt das allein, um ein anderes Programm am Öffnen zu hindern: ein Archiv oder ein Video im Downloadordner ließ sich erst öffnen, wenn NanoTorrent geschlossen wurde. Dateien werden nun nur zum Lesen erneut geöffnet, sobald nichts mehr geschrieben wird, und der Schreibzugriff wird automatisch zurückgeholt, wenn er wieder gebraucht wird.
+- Ein Video schon während des Downloads abspielen. Rechtsklick auf eine Datei in den Details eines Torrents oder in der Weboberfläche, und sie öffnet sich in VLC, mpv oder Ihrem gewohnten Player - die Wiedergabe beginnt, bevor der Download fertig ist.
+- Eine bessere Dateiliste: Dateien mit der Maus oder den Pfeiltasten auswählen, per Rechtsklick öffnen und Ordner zuklappen, die Sie gerade nicht brauchen. In der App wie in der Weboberfläche.
+- Plugins können Einträge im Menü einer Datei hinzufügen, Programme unter einer neuen Berechtigung "execute" starten, die Sie in klarer Sprache genehmigen, und eigene Übersetzungen mitbringen. Fünfzehn weitere Aufrufe geben Plugins das, was die Weboberfläche längst konnte.
+- Sicherheitskorrekturen: Eine andere Website kann über die Weboberfläche nichts mehr ändern, ein Torrent kann kein Windows-Laufwerk mehr als Ordner benennen oder eine Zeile in eine Wiedergabeliste einfügen, und Sperren nach fehlgeschlagenen Anmeldungen zählen keine Anfragen mehr, die nie ein Passwort versucht haben.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

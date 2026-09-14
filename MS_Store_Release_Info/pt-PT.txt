@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Português (Portugal) - Partner Center: Portuguese (Portugal) (pt-PT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ O NanoTorrent é uma adaptação em Rust do PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versão 0.4.0
 
-Versão 0.3.8
-
-- 35 idiomas a mais, 76 no total, acrescentados na Europa, no sul da Ásia, no sudeste asiático, na Ásia central e em África.
-- As transferências concluídas já não ficam bloqueadas. Um torrent concluído, ou que estava em pausa, mantinha os seus ficheiros abertos para escrita, e no Windows isso só por si basta para impedir que outro programa os abra: um arquivo ou um vídeo na pasta de transferências não podia ser aberto até fechar o NanoTorrent. Os ficheiros são agora reabertos como apenas de leitura assim que nada mais seja escrito, e o acesso de escrita é retomado automaticamente se voltar a ser necessário.
+- Veja um vídeo enquanto está a ser transferido. Clique com o botão direito num ficheiro nos detalhes do torrent, ou na interface web, e abre no VLC, no mpv ou no seu leitor habitual: a reprodução começa antes de a transferência terminar.
+- Uma lista de ficheiros melhor: escolha ficheiros com o rato ou as setas, abra um com o botão direito e recolha as pastas que não está a ver. Na aplicação e na interface web.
+- Os plugins podem acrescentar itens ao menu de um ficheiro, iniciar programas ao abrigo de uma nova permissão "execute" que aprova em linguagem simples, e trazer as suas próprias traduções. Mais quinze funções dão-lhes o que a interface web já conseguia.
+- Correções de segurança: outro site já não pode alterar nada através da interface web, um torrent já não pode dar a uma unidade do Windows o nome de pasta nem acrescentar uma linha a uma lista de reprodução, e os bloqueios após inícios de sessão falhados já não contam os pedidos que nunca tentaram uma palavra-passe.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

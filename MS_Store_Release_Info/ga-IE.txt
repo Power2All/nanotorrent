@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Gaeilge (Éire) - Partner Center: Irish (Ireland) (ga-IE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ Is leagan Rust de PicoTorrent le Viktor Elofsson é NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Leagan 0.4.0
 
-Leagan 0.3.8
-
-- 35 teanga eile, 76 san iomlán, curtha leis ar fud na hEorpa, na hÁise Theas, Oirdheisceart na hÁise, Lár na hÁise agus na hAfraice.
-- Ní fhanann íoslódálacha críochnaithe faoi ghlas a thuilleadh. Torrent a bhí críochnaithe, nó a bhí curtha ar sos, choinnigh sé a chomhaid ar oscailt le scríobh, agus ar Windows is leor sin amháin chun clár eile a stopadh ó iad a oscailt: níorbh fhéidir cartlann ná físeán sa fhillteán íoslódála a oscailt go dtí gur dúnadh NanoTorrent. Osclaítear comhaid anois mar léamh-amháin a luaithe nach scríobhfar aon rud, agus tógtar cead scríofa ar ais go huathoibríoch má bhíonn gá leis arís.
+- Féach ar fhíseán agus é á íoslódáil. Deaschliceáil ar chomhad i sonraí torrent, nó sa chomhéadan gréasáin, agus osclóidh sé in VLC, in mpv nó sa seinnteoir is gnách leat - tosaíonn an seinm sula gcríochnaíonn an íoslódáil.
+- Liosta comhad níos fearr: roghnaigh comhaid leis an luch nó leis na saigheada, oscail ceann le deaschliceáil, agus fill na fillteáin nach bhfuil tú ag féachaint orthu. San fheidhmchlár agus sa chomhéadan gréasáin araon.
+- Is féidir le breiseáin míreanna a chur le roghchlár comhaid, cláir a thosú faoi chead nua "execute" a cheadaíonn tú i dteanga shoiléir, agus a n-aistriúcháin féin a iompar. Tugann cúig ghlao dhéag eile dóibh an rud a bhí ar chumas an chomhéadain ghréasáin cheana.
+- Ceartúcháin slándála: ní féidir le suíomh eile aon rud a athrú tríd an gcomhéadan gréasáin a thuilleadh, ní féidir le torrent tiomántán Windows a ainmniú mar fhillteán ná líne a chur le seinmliosta, agus ní chomhaireann glasálacha logála isteach teipthe iarratais nár bhain triail as pasfhocal.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

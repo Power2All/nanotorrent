@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Euskara (Espainia) - Partner Center: Basque (Spain) (eu-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent Viktor Elofsson-en PicoTorrent-en Rust portua da.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+0.4.0 bertsioa
 
-0.3.8 bertsioa
-
-- 35 hizkuntza gehiago, 76 guztira, Europan, Hego Asian, Hego-ekialdeko Asian, Erdialdeko Asian eta Afrikan gehituta.
-- Amaitutako deskargak ez dira jada blokeatuta geratzen. Amaituta edo pausatuta zegoen torrent batek bere fitxategiak idazteko irekita mantentzen zituen, eta Windows-en hori bera nahikoa da beste programa batek irekitzea eragozteko: deskarga-karpetako artxibo edo bideo bat ezin zen ireki NanoTorrent itxi arte. Orain fitxategiak irakurtzeko soilik irekitzen dira berriro, ezer idatzi behar ez den bezain laster, eta idazteko baimena automatikoki berreskuratzen da berriro behar izanez gero.
+- Ikusi bideoa deskargatzen ari den bitartean. Egin eskuin-klik torrentaren xehetasunetako fitxategi batean, edo web interfazean, eta VLCn, mpv-n edo zure ohiko erreproduzitzailean irekiko da: erreprodukzioa deskarga amaitu baino lehen hasten da.
+- Fitxategi-zerrenda hobea: aukeratu fitxategiak saguarekin edo gezi-teklekin, ireki bat eskuin-klikarekin, eta tolestu begiratzen ari ez zaren karpetak. Aplikazioan zein web interfazean.
+- Pluginek fitxategi baten menuan elementuak gehitu ditzakete, programak abiarazi "execute" baimen berriaren pean (hizkera argian onartzen duzuna), eta beren itzulpenak ekarri. Beste hamabost funtziok web interfazeak lehendik egin zezakeena ematen diete.
+- Segurtasun konponketak: beste gune batek ezin du jada ezer aldatu web interfazearen bidez, torrent batek ezin du jada Windows unitate bat karpeta gisa izendatu ez erreprodukzio-zerrenda bati lerro bat gehitu, eta saio-hasiera hutsegiteen blokeoek ez dituzte jada pasahitzik saiatu ez duten eskaerak zenbatzen.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

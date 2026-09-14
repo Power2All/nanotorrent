@@ -84,6 +84,9 @@ impl ConnectionProxyType {
     }
 }
 
+/// Clone is a handle copy: this is one `Arc<Database>` and nothing else, so a
+/// clone reads and writes the same settings as the original.
+#[derive(Clone)]
 pub struct Configuration {
     db: Arc<Database>,
 }

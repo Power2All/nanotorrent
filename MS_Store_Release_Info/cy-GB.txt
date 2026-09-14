@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Cymraeg (Y Deyrnas Unedig) - Partner Center: Welsh (United Kingdom) (cy-GB)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ Trosiad Rust o PicoTorrent gan Viktor Elofsson yw NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Fersiwn 0.4.0
 
-Fersiwn 0.3.8
-
-- 35 iaith arall, 76 yn y cyfan, wedi'u hychwanegu ar draws Ewrop, de Asia, de-ddwyrain Asia, canolbarth Asia ac Affrica.
-- Nid yw lawrlwythiadau gorffenedig yn aros ar glo bellach. Roedd torrent a oedd wedi gorffen, neu a oedd wedi'i oedi, yn cadw ei ffeiliau ar agor i ysgrifennu, ac ar Windows mae hynny ar ei ben ei hun yn ddigon i rwystro rhaglen arall rhag eu hagor: nid oedd modd agor archif na fideo yn y ffolder lawrlwytho hyd nes i NanoTorrent gau. Mae ffeiliau'n cael eu hailagor yn ddarllen-yn-unig cyn gynted nad oes dim i'w ysgrifennu, ac mae mynediad ysgrifennu'n dod yn ôl yn awtomatig os oes ei angen eto.
+- Ffrydiwch fideo wrth iddo lawrlwytho. De-gliciwch ffeil ym manylion torrent, neu yn y rhyngwyneb gwe, ac fe agorith yn VLC, mpv neu eich chwaraewr arferol - mae'r chwarae'n dechrau cyn i'r lawrlwythiad orffen.
+- Rhestr ffeiliau well: dewiswch ffeiliau gyda'r llygoden neu'r bysellau saeth, agorwch un gyda de-glic, a phlygwch y ffolderi nad ydych yn edrych arnynt. Yn yr ap ac yn y rhyngwyneb gwe fel ei gilydd.
+- Gall ategion ychwanegu eitemau at ddewislen ffeil, cychwyn rhaglenni o dan ganiatâd newydd "execute" rydych chi'n ei gymeradwyo mewn iaith glir, a chario eu cyfieithiadau eu hunain. Mae pymtheg galwad arall yn rhoi iddynt yr hyn y gallai'r rhyngwyneb gwe ei wneud eisoes.
+- Atgyweiriadau diogelwch: ni all safle arall newid dim trwy'r rhyngwyneb gwe mwyach, ni all torrent enwi gyriant Windows fel ffolder nac ychwanegu llinell at restr chwarae, ac nid yw cloeon mewngofnodi methedig yn cyfrif ceisiadau na roddodd gyfrinair.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

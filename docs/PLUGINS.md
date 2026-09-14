@@ -24,10 +24,15 @@ keeping with the rest of Preferences. A reloaded plugin starts fresh: it loses
 whatever it was keeping in its top-level scope, exactly as a restart would have
 made it. Anything it must keep belongs in `data_set`.
 
-NanoTorrent places its own examples in that folder — `example.rhai` and
-`rss.rhai` — switched off and unapproved. Each is offered once, by name, so a
-new example added in a later version reaches a profile that already has the
-folder, and one you delete stays deleted.
+NanoTorrent places its own examples in that folder — `example.rhai`,
+`rss.rhai` and `player.rhai` (with its `player_translations.json`) — switched
+off and unapproved. Each is offered
+once, by name, so a new example added in a later version reaches a profile that
+already has the folder, and one you delete stays deleted.
+
+`player.rhai` is the one to read before approving: it asks for `execute`, and
+arriving in the folder is not consent to anything. Nothing in it runs until you
+tick it and approve that list yourself.
 
 Drop your own `.rhai` files in beside them:
 
@@ -74,13 +79,29 @@ further down, or inside a string, cannot quietly widen the request.
 | `notify` | `notify` |
 | `network` | `http_get`, and `add_torrent_url` together with `add` |
 | `data` | `data_get`, `data_set`, `data_remove`, `data_keys` |
-| `ui` | `ui_window`, `ui_rows`, `ui_groups`, `ui_buttons`, `ui_input`, `ui_status`, `ui_form`, `ui_form_close`, `ui_menu`, `ui_configurable`, `ui_show` |
+| `ui` | `ui_window`, `ui_rows`, `ui_groups`, `ui_buttons`, `ui_input`, `ui_status`, `ui_form`, `ui_form_close`, `ui_menu`, `ui_file_menu`, `ui_configurable`, `ui_show` |
+| `execute` | `run`, `open` — **start programs on this computer, as you** |
 
 `network` is the one that changes what the others mean. A plugin holding
 `read` and `network` together can send everything it can see to anyone, and
 nothing in the host can tell a feed request from an upload of your torrent
 list. That is why the approval prompt shows the whole set at once rather than
 asking one line at a time — the combination is the decision, not the parts.
+
+`execute` is the largest thing on the list and reads last in the prompt for
+that reason. A plugin holding it is limited by what your account can do and by
+nothing else: the other ten permissions describe reach over *torrents*, and
+this one describes reach over the *machine*. There is no sandbox behind it, no
+allow-list of programs, and no way for the host to tell a media player from
+anything else. Grant it to scripts you have read, and read what changed when
+one updates — which the host makes you do, because a plugin that adds
+`execute` to its header is held until you approve the new set.
+
+What the host does offer is a record. Every `run` and every `open` is written
+to the log at `INFO` with the plugin's name, the program and its arguments,
+before the process starts. Nothing is shelled out: the program and each
+argument are passed separately, so a filename out of a torrent cannot become a
+second command however it is spelled.
 
 `log` needs no permission. A script that declares nothing gets `log` and
 nothing else, and needs no approval — there is nothing to consent to.
@@ -127,11 +148,12 @@ Define any of these. All are optional; a plugin that defines none does nothing.
 | `on_torrent_removed(hash, name)` | A torrent leaves the session |
 | `on_error(message)` | Background work failed |
 | `on_tick()` | Once a minute, for as long as the session runs |
-| `on_ui_open()` | Your window was opened |
+| `on_ui_open()` | Your window appeared on screen |
 | `on_ui_row(id)` | A row in your window's main list was clicked |
 | `on_ui_group(id)` | A row in the upper list was clicked |
 | `on_ui_button(id, input)` | A button was pressed; `input` is the text field |
 | `on_ui_menu(id)` | An item in your menu-bar dropdown was chosen |
+| `on_file_menu(id, hash, index, name)` | One of your items was used on a file |
 | `on_ui_form(form_id, values)` | A form was saved; `values` is field id to value |
 | `on_ui_form_cancel(form_id)` | A form was dismissed without saving |
 | `on_ui_configure()` | Configure was pressed on your Preferences row |
@@ -152,6 +174,11 @@ to save anything you cannot lose — write state out as you go instead.
 `on_torrent_completed` fires on a genuine transition. Torrents that were already
 complete when NanoTorrent started do not fire it, and a recheck that un-finishes
 a torrent lets it fire again when it re-completes.
+
+`on_file_menu` is told which item was used *and* which file it was used on, so
+a plugin needs nothing remembered between drawing the menu and the click
+arriving. It fires the same way from the desktop details panel and from the web
+interface — a plugin cannot tell the two apart, and should not try.
 
 ## Keeping state between events
 
@@ -216,6 +243,30 @@ retry rather than ignoring the result.
 | `torrent(hash)` | One map, or `()` if it is gone |
 | `exists(hash)` | `bool` |
 | `session_rates()` | `#{ download: int, upload: int }`, bytes/sec |
+| `files(hash)` | Array of `#{ index, name, length, progress, priority }` |
+| `peers(hash)` | Array of `#{ addr, state, fetched_bytes, pieces }` |
+| `trackers(hash)` | Array of `#{ url, tier }` |
+| `share_limits(hash)` | `#{ ratio, seed_minutes }` — `()` where there is no override |
+| `magnet_uri(hash)` | A magnet link for a torrent already added, or `""` |
+| `dht_nodes()` | Routing table size, `0` when DHT is off |
+| `listen_port()` | The port peers are told to reach, `0` if not listening |
+| `stream_url(hash, index)` | A URL a media player can open for one file, or `""` |
+
+`trackers()` gives URLs and tiers, not the Trackers tab's status column: that
+column is translated, and a plugin branching on it would work in English and
+quietly stop working in the other 75 languages.
+
+`stream_url` is how a plugin hands a file to something that is not NanoTorrent.
+It points at `127.0.0.1` and carries a **capability token**, not your password:
+the token is good for that one file of that one torrent, dies half an hour
+after its last use, and is never written to disk. A plugin cannot read the web
+interface's password and does not need to. The URL serves byte ranges out of a
+file that is still downloading, so a player can start before the torrent
+finishes.
+
+It returns `""` when the web interface is switched off, because then there is
+nothing listening to stream from — check for that rather than handing a player
+a URL into a closed port.
 
 Each torrent map has: `hash`, `name`, `save_path`, `label`, `progress` (0.0–1.0),
 `ratio`, `paused`, `error`, `size`, `remaining`, `downloaded`, `uploaded`,
@@ -230,6 +281,15 @@ same torrent the same way.
 |---|---|---|
 | `pause(hash)` / `resume(hash)` | Pause or resume | `control` |
 | `recheck(hash)` | Force a recheck | `control` |
+| `reannounce(hash)` | Announce to the trackers now | `control` |
+| `queue_move(hash, where)` | `"top"`, `"up"`, `"down"`, `"bottom"`; `false` for anything else | `control` |
+| `set_file_priority(hash, index, priority)` | 0 skips the file, 1 is normal, higher is sooner | `control` |
+| `set_share_limits(hash, ratio, minutes)` | Either may be `()` to clear that half | `control` |
+| `set_location(hash, folder)` | Where it will live, without moving what is there | `storage` |
+| `add_tracker(hash, url, tier)` | `bool` — the URL is validated as in the UI | `control` **and** `network` |
+| `edit_tracker(hash, from, to)` | `bool` | `control` **and** `network` |
+| `remove_tracker(hash, url)` | | `control` **and** `network` |
+| `add_torrent_file(base64)` / `(base64, save_path)` | `bool` — a `.torrent` the plugin already has | `add` |
 | `remove(hash)` | Remove, keeping files | `remove` |
 | `remove(hash, delete_files)` | Remove, optionally deleting files | `remove` |
 | `move_storage(hash, folder)` | Move the download | `storage` |
@@ -237,6 +297,17 @@ same torrent the same way.
 | `add_magnet(uri)` / `add_magnet(uri, save_path)` | Add a magnet link | `add` |
 | `notify(title, body)` | Desktop notification | `notify` |
 | `log(message)` | Write to the NanoTorrent log | — |
+
+Tracker editing needs **both** `control` and `network`, which no other call
+does. Adding a tracker is a control operation on a torrent, but its consequence
+is disclosure: the torrent starts announcing to a server the plugin chose, which
+is your address and what you are downloading going somewhere new. A plugin
+holding only `control` can stop and start a torrent; it cannot redirect where
+that torrent tells the world about itself.
+
+`add_torrent_file` is the other half of `http_get`. `add_torrent_url` fetches
+for you, which is no use when the file is behind a header, a cookie or a POST —
+fetch it yourself, then hand over the bytes.
 
 **Reaching the network** — needs `network`
 
@@ -263,6 +334,70 @@ never created — a plugin should not be able to fill somebody's label list by
 getting a rule wrong — so a name that does not exist means no label, and says so
 in the log. `paused` is true for any non-empty value except `"0"` and `"false"`,
 which is the same convention a form checkbox follows.
+
+**Starting something else** — needs `execute`
+
+| Function | Effect |
+|---|---|
+| `run(program, [args])` | Start `program` with those arguments; `true` if it started |
+| `run(program)` | The same, with none |
+| `open(target)` | Hand a URL, file or folder to whatever the desktop opens it with |
+
+`run` takes the program and its arguments **separately**, and there is no shell
+anywhere in the path. A space in a path needs no quoting and nothing a torrent,
+a feed or a filename can say becomes a command. The child is not waited on — a
+media player runs for hours — so `true` means *it started*, not *it worked*, and
+a program that is not installed comes back `false` rather than raising. That is
+what makes "try these four paths until one of them is VLC" the obvious way to
+find a player without being able to look at the file system.
+
+`open` names no program: the association is one the user already made. It is
+how a plugin reaches "the player they chose" without being told which it is.
+
+**Your own strings** — no permission
+
+| Function | Returns |
+|---|---|
+| `t(key)` | The string for `key` in the user's language |
+| `t(key, a)` | The same, with `{0}` replaced by `a` |
+| `t(key, a, b)` | The same, with `{0}` and `{1}` replaced |
+
+Put them in **`<your-plugin>_translations.json`**, beside the script — so
+`player.rhai` is translated by `player_translations.json`. Locale first, key
+second:
+
+```json
+{
+  "en-US": { "play": "Play", "not_playable": "Nothing here can play {0}" },
+  "nl-NL": { "play": "Afspelen", "not_playable": "Hier kan {0} niet mee" }
+}
+```
+
+Put the **whole sentence** in the catalogue, with `{0}` and `{1}` where the
+values go - do not build it with `+`. Word order is exactly what differs between
+languages: `"Checking " + n + " feeds against " + m + " rules"` can only ever
+come out in English order, while `"Checking {0} feeds against {1} rules"` lets
+the translator put the pieces where they belong. Two placeholders is the limit;
+a message with three moving parts is usually two messages.
+
+Adding a language is one block. A key with no string in the current language
+falls back to `en-US`, and then to **the key itself** — so `t("play")` on a
+plugin nobody has translated yet reads `play`, which is obviously a missing
+string rather than a blank control.
+
+No permission: it is your file, beside your plugin, saying what your plugin was
+going to say anyway. There is no file access here — the host reads that one
+path, nothing else, and a plugin with no such file simply gets its keys back.
+
+The language is read **when you call `t`**, not when the plugin loaded, so a
+plugin's window follows somebody changing their language in Preferences without
+a reload.
+
+One thing worth copying from `player.rhai`: do not store a translated string as
+a setting. It saves the option ids (`system`, `vlc`, `mpv`, `custom`) and shows
+`t("player_" + id)`, so the saved value means the same thing in every language.
+A dropdown whose translated label IS the stored value silently forgets itself
+the day somebody switches language.
 
 **Telling the time** — no permission
 
@@ -297,6 +432,7 @@ and CDATA are decoded, and each element's text is trimmed.
 | `ui_status(text)` | One line under the list |
 | `ui_show()` | Put the window on screen now |
 | `ui_menu(title, [#{ id, label }])` | Your own dropdown in the menu bar |
+| `ui_file_menu([#{ id, label }])` | Your items on a file's context menu |
 | `ui_form(form_id, title, [#{ id, label, kind, value, options, hint }])` | A form, in place of the lists |
 | `ui_form_close()` | Put the lists back |
 | `ui_configurable(true)` | Ask for a Configure button in Preferences |
@@ -304,6 +440,14 @@ and CDATA are decoded, and each element's text is trimmed.
 Declaring a window is what lists it in the menu; `ui_show` is separate so a
 plugin can prepare one at load without a window appearing unasked. Clicks come
 back as `on_ui_row` and `on_ui_button`.
+
+**Do not call `ui_show()` from `on_ui_open()`.** That handler runs *because* the
+window appeared, so asking for it again from inside it is a loop. `on_ui_open`
+is for filling the window; `ui_show` is for the handler that wanted it on screen
+in the first place - `on_ui_configure`, or an item in your menu. `ui_show` on a
+window that is already up raises it and does **not** re-run `on_ui_open`, so the
+loop terminates now even if a plugin writes it that way, but it is still the
+wrong shape.
 
 ### Forms
 
@@ -348,6 +492,28 @@ menu bar, after File, View and Help. An empty `title` falls back to the
 plugin's name. Choosing an item calls `on_ui_menu(id)`. This is where a plugin
 puts the things a person does with it — "Feeds…", "Check now".
 
+**`ui_file_menu(items)`** puts your items on the context menu of a *file*, in
+a torrent's details panel and on the matching row in the web interface. Using
+one calls `on_file_menu(id, hash, index, name)`. This is the only place a
+plugin draws outside its own window, and it is deliberately the smallest shape
+that works: items, no submenus, no icons, no say in where they go.
+
+They go **below** NanoTorrent's own *Open file*, under a separator, in the
+order the plugins sort by name. You cannot get above it or replace it.
+
+Items are labelled with your plugin's name — "Player: Play", not "Play". That
+is not decoration. A menu item is text of your choosing appearing inside
+NanoTorrent's own window, which is the shape of every convincing phishing
+prompt ever written; the prefix means an item reading "Verify your password" is
+at least visibly somebody's. The name shown is your file's stem with its first
+letter capitalised, and nothing else about it is touched — `my-tool.rhai` reads
+as "My-tool", not "My Tool".
+
+The same list is offered on every file. The host draws the menu before it knows
+which file it will be used on, so a plugin that only handles videos checks the
+name it is given in `on_file_menu` and says why, rather than expecting the item
+to hide itself.
+
 **`ui_configurable(true)`** puts a cog on the plugin's row in
 Preferences ▸ Plugins, which calls `on_ui_configure()`. That is for a plugin
 that will not work until it is set up — the RSS reader has no feeds until you
@@ -367,7 +533,9 @@ menus, and a dropdown taller than the screen covers the client rather than
 extending it. Items past the cap are dropped with a line in the log.
 
 A plugin can have a menu and no window, a window and no menu, or neither. They
-are separate declarations.
+are separate declarations. A plugin with file-menu items needs no window at
+all — `docs/plugins/player.rhai` has one only because its settings form has to
+be drawn somewhere.
 
 ### Two lists
 
@@ -413,7 +581,8 @@ Practical notes:
 - The **file name is the plugin's identity** — it is what is shown in
   Preferences, what the log lines say, and the key the approval is stored
   under. Renaming a plugin re-asks for approval. Pick something specific:
-  `example.rhai` is already taken by the shipped one.
+  `example.rhai`, `rss.rhai` and `player.rhai` are already taken by the
+  shipped ones.
 - Put the permission line where a reader will see it, and say in a comment why
   you need each one. It is the first thing anyone installing your plugin reads.
 
@@ -462,19 +631,49 @@ in the log, not in the dialog.
 
 ## What plugins deliberately cannot do
 
-There is no `run()`, no file reading and no file writing — not behind a
-permission, not at all. Those are the difference between a script that manages
-torrents and one that owns the machine, and no permission prompt makes
-"execute arbitrary programs" a decision a user can sensibly consent to.
+`run` and `open` exist, behind `execute`. They did not, and the reasoning
+against them was that no prompt makes "execute arbitrary programs" a decision
+anybody can sensibly consent to. What changed is not that argument — it is who
+is being asked. A permission shown in plain language, held until approved, held
+again when the script edits its own header, and logged on every use is the same
+consent the other ten permissions rest on. Refusing it did not make plugins
+safer; it made the useful ones impossible and pushed people to run the scripts
+outside NanoTorrent, where nothing is declared, approved or logged at all.
 
-Post-download processing that has to launch something needs to go out through
-another channel for now.
+File reading and file writing are still not offered. A plugin has `data_*` for
+its own state and `stream_url` for handing one file to a player, and neither
+turns into a general read of your disk.
 
-A plugin's window is the one described above and nothing else. It cannot add
-to the main window, the details panel or the web interface, and it cannot draw
-its own controls. What a plugin changes in the session still shows up in both
+Four things the web interface can do that a plugin still cannot, each for a
+reason rather than an oversight:
+
+- **Change application settings.** A plugin that could write settings could
+  move the save path or switch off the network kill switch, which is privilege
+  escalation wearing a convenience hat. Reading them is not offered either,
+  because the settings include the proxy host and the web interface's own
+  configuration.
+- **Create a torrent.** Creating one means hashing a path on disk, which is an
+  indirect read of the file system this API deliberately closes.
+- **Read file contents.** `stream_url` hands a *player* a URL; the bytes go
+  from the session to the player without passing through the script. A plugin
+  never sees them.
+- **Draw anything of its own shape.** Its window is a list, a text field and
+  some buttons, and its items on a file's context menu are text and nothing
+  else. There is no layout language and no way to place a control, so a script
+  cannot draw something that passes for part of the client asking for a
+  password.
+
+Beyond the file-menu items, a plugin's window is the one described above and
+nothing else — it cannot add to the main window, the toolbar or the rest of the
+details panel. What a plugin changes in the session still shows up in both
 surfaces, because both read the same session — a torrent a plugin pauses reads
 as paused everywhere.
 
 Plugin windows are desktop-only. A headless build has nowhere to put one, so
 the `ui_*` calls do nothing there; everything else in a plugin works the same.
+
+File-menu items are the exception: the web interface draws them, so on a
+headless build they are the plugin's only way in — and a click in a browser
+runs `execute` on the *server*. That is the same trust as installing the plugin
+there in the first place, and the web interface is authenticated, but it is
+worth knowing before granting `execute` on a machine you log into remotely.

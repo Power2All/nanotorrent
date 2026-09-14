@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Filipino (Pilipinas) - Partner Center: Filipino (Philippines) (fil-PH)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ Ang NanoTorrent ay bersyong Rust ng PicoTorrent ni Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Bersyon 0.4.0
 
-Bersyon 0.3.8
-
-- 35 pang wika, 76 sa kabuuan, idinagdag sa Europa, Timog Asya, Timog-Silangang Asya, Gitnang Asya at Aprika.
-- Hindi na nananatiling nakasara ang mga natapos nang download. Ang torrent na natapos na, o naka-pause, ay pinananatiling bukas ang mga file nito para sulatan, at sa Windows sapat na iyon upang mahadlangan ang ibang programa na buksan ang mga ito: hindi mabuksan ang isang archive o video sa download folder hangga't hindi isinasara ang NanoTorrent. Ang mga file ay binubuksang muli bilang read-only sa sandaling wala nang isusulat, at ang pahintulot na magsulat ay kinukuhang muli nang awtomatiko kung kailanganin pa.
+- Manood ng video habang dina-download. I-right-click ang isang file sa mga detalye ng torrent, o sa web interface, at bubuksan ito sa VLC, mpv o sa karaniwan mong player - nagsisimula ang playback bago pa matapos ang download.
+- Mas magandang listahan ng file: pumili ng file gamit ang mouse o ang arrow keys, buksan ang isa sa pamamagitan ng right-click, at itiklop ang mga folder na hindi mo tinitingnan. Sa app at sa web interface.
+- Makakapagdagdag ang mga plugin ng item sa menu ng isang file, makakapagpatakbo ng programa sa ilalim ng bagong pahintulot na "execute" na inaaprubahan mo sa malinaw na wika, at makakapagdala ng sariling salin. Labinlimang karagdagang tawag ang nagbibigay sa kanila ng kaya nang gawin ng web interface.
+- Mga pag-aayos sa seguridad: hindi na makakapagbago ang ibang site sa pamamagitan ng web interface, hindi na mapapangalanan ng torrent ang isang Windows drive bilang folder o makakadagdag ng linya sa playlist, at hindi na binibilang ng mga lockout sa nabigong pag-login ang mga kahilingang walang sinubukang password.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

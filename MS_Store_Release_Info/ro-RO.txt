@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Română (România) - Partner Center: Romanian (Romania) (ro-RO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent este o portare în Rust a PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versiunea 0.4.0
 
-Versiunea 0.3.8
-
-- 35 de limbi în plus, 76 în total, adăugate în Europa, Asia de Sud, Asia de Sud-Est, Asia Centrală și Africa.
-- Descărcările încheiate nu mai rămân blocate. Un torrent încheiat sau pus pe pauză își ținea fișierele deschise pentru scriere, iar pe Windows doar atât este suficient ca un alt program să nu le poată deschide: o arhivă sau un videoclip din dosarul de descărcări nu se putea deschide până la închiderea NanoTorrent. Fișierele sunt acum redeschise doar pentru citire de îndată ce nu mai este nimic de scris, iar accesul de scriere este luat înapoi automat dacă mai este nevoie de el.
+- Urmăriți un videoclip în timp ce se descarcă. Clic dreapta pe un fișier în detaliile unui torrent sau în interfața web, și se deschide în VLC, mpv sau playerul dumneavoastră obișnuit - redarea începe înainte ca descărcarea să se termine.
+- O listă de fișiere mai bună: alegeți fișiere cu mausul sau cu săgețile, deschideți unul cu clic dreapta și pliați dosarele la care nu vă uitați. În aplicație ca și în interfața web.
+- Pluginurile pot adăuga elemente în meniul unui fișier, pot porni programe sub o nouă permisiune "execute" pe care o aprobați într-un limbaj clar, și își pot purta propriile traduceri. Încă cincisprezece funcții le dau ceea ce interfața web putea deja face.
+- Corecții de securitate: un alt site nu mai poate schimba nimic prin interfața web, un torent nu mai poate denumi o unitate Windows ca folder sau adăuga o linie într-o listă de redare, iar blocările după autentificări eșuate nu mai numără cererile care nu au încercat nicio parolă.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

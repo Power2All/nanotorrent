@@ -181,10 +181,29 @@ function Read-ListingFile([string]$path, [string]$name) {
     return $fields
 }
 
+# Languages this repo has a listing for that the Store will not take one in.
+# The Ingestion API fails the WHOLE `submission update` with
+#   InvalidParameterValue - "Language codes: my-mm not supported"
+#   target appListings
+# so one unsupported language blocks every other. The .txt files stay: the app
+# ships these languages, the MSIX declares them as resource languages, and if
+# Microsoft adds one the text is already written and only this list changes.
+#
+# Checked against the lowercase form, which is what the API uses - see the note
+# where created listings are keyed.
+$UnsupportedListingLanguages = @(
+    'my-MM'   # Burmese - rejected 2026-09-12
+)
+
 $listingFiles = @{}
 foreach ($file in Get-ChildItem -Path $ListingDir -Filter *.txt | Sort-Object Name) {
     # Not a listing: it explains a store policy answer, not a language.
     if ($file.BaseName -eq 'restricted-capability-justification') { continue }
+
+    if ($UnsupportedListingLanguages -contains $file.BaseName) {
+        Write-Host "  skipping $($file.BaseName): the Store takes no listings in it"
+        continue
+    }
 
     $fields = Read-ListingFile $file.FullName $file.Name
 
@@ -298,7 +317,15 @@ Add a language), then re-run: every later language is created from it.
         # ids, and store-images.ps1 stages fresh ones for every listing.
         Set-Prop $base 'images' @()
 
-        Set-Prop $listings $locale $clone
+        # LOWERCASE, and not because it looks tidier. The Ingestion API rejects
+        # the whole PUT with
+        #   InvalidParameterValue - "Language codes: am-ET|az-Latn-AZ|... not
+        #   supported", target appListings
+        # if a listing is keyed the way Partner Center spells it in its UI, which
+        # is also how these files are named. Every language the API hands back is
+        # lowercase, script subtags and all - sr-cyrl, zh-hans, zh-hant - so that
+        # is its canonical form. Only the key is lowered; the file keeps its name.
+        Set-Prop $listings $locale.ToLowerInvariant() $clone
         $created += $locale
     }
 }

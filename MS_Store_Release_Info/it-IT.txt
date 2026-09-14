@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Italiano (Italia) - Partner Center: Italian (Italy) (it-IT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent è un port in Rust di PicoTorrent, di Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versione 0.4.0
 
-Versione 0.3.8
-
-- 35 lingue in più, 76 in tutto, aggiunte in Europa, Asia meridionale, Sud-est asiatico, Asia centrale e Africa.
-- I download completati non restano più bloccati. Un torrent completato, o messo in pausa, teneva i suoi file aperti in scrittura, e su Windows questo da solo basta a impedire a un altro programma di aprirli: un archivio o un video nella cartella dei download non si poteva aprire finché NanoTorrent non veniva chiuso. I file vengono ora riaperti in sola lettura appena non c'è più nulla da scrivere, e l'accesso in scrittura viene ripreso automaticamente se serve di nuovo.
+- Guarda un video mentre viene scaricato. Fai clic destro su un file nei dettagli di un torrent, o nell'interfaccia web, e si apre in VLC, mpv o nel tuo lettore abituale: la riproduzione parte prima che il download sia finito.
+- Un elenco file migliore: scegli i file con il mouse o le frecce, aprine uno con il clic destro e richiudi le cartelle che non stai guardando. Nell'app come nell'interfaccia web.
+- I plugin possono aggiungere voci al menu di un file, avviare programmi sotto un nuovo permesso "execute" che approvi in parole chiare, e portare le proprie traduzioni. Altre quindici funzioni danno loro ciò che l'interfaccia web già sapeva fare.
+- Correzioni di sicurezza: un altro sito non può più modificare nulla tramite l'interfaccia web, un torrent non può più chiamare cartella un'unità Windows né aggiungere una riga a una playlist, e i blocchi dopo accessi falliti non contano più le richieste che non hanno mai provato una password.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

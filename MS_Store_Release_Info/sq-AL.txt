@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Shqip (Shqipëri) - Partner Center: Albanian (Albania) (sq-AL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent është një port në Rust i PicoTorrent nga Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versioni 0.4.0
 
-Versioni 0.3.8
-
-- 35 gjuhë më shumë, 76 në total, të shtuara në Evropë, Azinë e Jugut, Azinë Jugperëndimore, Azinë Qendrore dhe Afrikë.
-- Shkarkimet e përfunduara nuk mbeten më të bllokuara. Një torrent që kishte përfunduar, ose që ishte në pauzë, i mbante skedarët e tij të hapur për shkrim, dhe në Windows vetëm kjo mjafton për të ndalur një program tjetër nga hapja e tyre: një arkiv ose një video në dosjen e shkarkimeve nuk mund të hapej derisa NanoTorrent të mbyllej. Skedarët tani rihapen vetëm për lexim sapo nuk ka më asgjë për të shkruar, dhe e drejta e shkrimit merret prapa automatikisht nëse nevojitet sërish.
+- Shikoni një video ndërsa shkarkohet. Klikoni me të djathtën mbi një skedar te detajet e një torrenti, ose te ndërfaqja e uebit, dhe hapet në VLC, mpv ose te luajtësi juaj i zakonshëm - luajtja fillon para se shkarkimi të përfundojë.
+- Një listë skedarësh më e mirë: zgjidhni skedarë me miun ose me shigjetat, hapni një me klik të djathtë, dhe paloseni dosjet që nuk po i shihni. Si në aplikacion, ashtu edhe te ndërfaqja e uebit.
+- Shtojcat mund të shtojnë zëra te menyja e një skedari, të nisin programe nën një leje të re "execute" që e miratoni me gjuhë të thjeshtë, dhe të mbartin përkthimet e veta. Pesëmbëdhjetë thirrje të tjera u japin atë që ndërfaqja e uebit e bënte tashmë.
+- Rregullime sigurie: një sajt tjetër nuk mund të ndryshojë më asgjë përmes ndërfaqes së uebit, një torrent nuk mund ta emërtojë më një disk Windows si dosje as të shtojë një rresht në një listë luajtjeje, dhe bllokimet pas hyrjeve të dështuara nuk numërojnë më kërkesat që nuk provuan kurrë fjalëkalim.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

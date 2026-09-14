@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Nederlands (Nederland) - Partner Center: Dutch (Netherlands) (nl-NL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent is een Rust-port van PicoTorrent van Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versie 0.4.0
 
-Versie 0.3.8
-
-- 35 talen meer, 76 in totaal, toegevoegd in Europa, Zuid-Azië, Zuidoost-Azië, Centraal-Azië en Afrika.
-- Voltooide downloads blijven niet meer vergrendeld. Een torrent die klaar was, of die gepauzeerd was, hield zijn bestanden open om te schrijven, en op Windows is dat alleen al genoeg om een ander programma te beletten ze te openen: een archief of een video in de downloadmap kon niet worden geopend totdat NanoTorrent werd afgesloten. Bestanden worden nu alleen-lezen heropend zodra er niets meer geschreven gaat worden, en schrijfrechten worden automatisch teruggenomen als ze opnieuw nodig zijn.
+- Bekijk een video terwijl die binnenkomt. Klik met rechts op een bestand in de details van een torrent, of in de webinterface, en het opent in VLC, mpv of je gebruikelijke speler - het afspelen begint voordat de download klaar is.
+- Een betere bestandslijst: kies bestanden met de muis of de pijltjestoetsen, klik er met rechts op om ze te openen, en vouw de mappen dicht waar je niet naar kijkt. Zowel in de app als in de webinterface.
+- Plug-ins kunnen items toevoegen aan het menu van een bestand, programma's starten onder een nieuwe "execute"-toestemming die je in gewone taal goedkeurt, en hun eigen vertalingen meebrengen. Vijftien extra functies geven plug-ins wat de webinterface al kon.
+- Beveiligingsoplossingen: een andere site kan niets meer wijzigen via de webinterface, een torrent kan geen Windows-station meer als map benoemen of een regel aan een afspeellijst toevoegen, en blokkades na mislukte aanmeldingen tellen geen verzoeken meer die nooit een wachtwoord probeerden.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

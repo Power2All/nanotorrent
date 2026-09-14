@@ -167,10 +167,22 @@ pub fn open(name: &str) {
     });
 
     if shown {
-        // The plugin's chance to fill the window before it is looked at.
-        ui::post(ui::UiEvent::Opened {
-            plugin: name.to_owned(),
-        });
+        // `fresh` and not merely `shown`: raising a window that is already up
+        // is not an opening, and telling the plugin otherwise is a trap it
+        // cannot get out of. A plugin that calls `ui_show()` from its own
+        // `on_ui_open` - which reads like the obvious way to write "open my
+        // settings" - would be shown, told it was opened, ask to be shown
+        // again, and so on for ever; closing the window just means the next
+        // turn of the loop builds a new one.
+        //
+        // The sweep above leaves only visible windows in the map, so `fresh`
+        // is exactly "this window is about to appear".
+        if fresh {
+            // The plugin's chance to fill the window before it is looked at.
+            ui::post(ui::UiEvent::Opened {
+                plugin: name.to_owned(),
+            });
+        }
         refresh();
     }
 }
@@ -219,11 +231,6 @@ pub fn activate_menu(id: &str) {
         plugin: plugin.clone(),
         id: id.to_owned(),
     });
-}
-
-/// Whether this plugin asked for a Configure button on its Preferences row.
-pub fn configurable(name: &str) -> bool {
-    ui::configurable(name)
 }
 
 /// Configure was pressed. The plugin decides what that means - typically

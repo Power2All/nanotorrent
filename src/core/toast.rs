@@ -27,7 +27,13 @@ const AUMID: &str = "Power2All.NanoTorrent";
 //
 // Linux wants the same file for a different reason: see `download_complete`.
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
-const TOAST_ICON_PNG: &[u8] = include_bytes!("../../res/app.png");
+/// The 256px derivative, not `res/app.png`.
+///
+/// The master is 2048x2048 and about 2 MB. It is the right source for the
+/// Store, which scales it down to a dozen sizes at package time, and the wrong
+/// thing to compile into the binary twice for a notification icon and a
+/// favicon. `res/app-256.png` is generated from it - see res/README.md.
+const TOAST_ICON_PNG: &[u8] = include_bytes!("../../res/app-256.png");
 
 /// Stable on-disk path for the toast icon (written once from TOAST_ICON_PNG).
 ///

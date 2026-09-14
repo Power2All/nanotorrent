@@ -184,9 +184,17 @@ impl Credentials {
 
     /// Check one set of credentials.
     ///
-    /// Both halves are compared in constant time: Argon2 already gives that
-    /// for the password, and the username needs the same treatment or the
-    /// difference in reply timing leaks whether it was right.
+    /// Neither half returns early, so a wrong username and a wrong password
+    /// cost the same Argon2 hash and take the same time - which is what stops
+    /// the reply saying which half was wrong.
+    ///
+    /// `ct_eq` on the username is content-constant-time but NOT
+    /// length-constant-time: subtle's slice impl documents that it
+    /// short-circuits when the lengths differ. So the LENGTH of the configured
+    /// username is observable. That is accepted rather than fixed: it is one
+    /// small integer about a name that is `nanotorrent` unless someone changed
+    /// it, and hiding it would mean hashing the username too - real cost for a
+    /// secret nobody is keeping.
     fn verify(&self, username: &str, password: &str) -> bool {
         // Both checks always run, and only then are combined. Returning early
         // on a bad username would make a wrong-user request measurably faster
@@ -235,6 +243,15 @@ fn too_many_requests(req: ServiceRequest, wait: std::time::Duration) -> ServiceR
     req.into_response(res)
 }
 
+/// A cross-site write. 403, not 401: the credentials were fine, the request
+/// had no business being made, and a 401 would make the browser re-prompt for
+/// a password that would not have helped.
+fn forbidden(req: ServiceRequest) -> ServiceResponse<BoxBody> {
+    req.into_response(
+        HttpResponse::Forbidden().body("cross-site requests cannot change anything here"),
+    )
+}
+
 fn unauthorized(req: ServiceRequest) -> ServiceResponse<BoxBody> {
     // The realm makes browsers show their own credential prompt, which is all
     // the login UI a personal client needs.
@@ -244,6 +261,101 @@ fn unauthorized(req: ServiceRequest) -> ServiceResponse<BoxBody> {
             .finish(),
     )
 }
+/// The `(hash, index)` of `/api/torrents/{hash}/files/{index}/stream`, if that
+/// is what this path is.
+///
+/// Written out rather than reached for through actix's path extractors because
+/// this runs in middleware, before a route has been matched - there is nothing
+/// to extract from yet. Matching the shape by hand also means no other route
+/// can start accepting tokens by accident: a path that is one segment off
+/// simply is not this one.
+fn stream_path(path: &str) -> Option<(&str, usize)> {
+    let rest = path.strip_prefix("/api/torrents/")?;
+    let (hash, rest) = rest.split_once('/')?;
+    let rest = rest.strip_prefix("files/")?;
+    let (index, tail) = rest.split_once('/')?;
+    if tail != "stream" {
+        return None;
+    }
+    Some((hash, index.parse().ok()?))
+}
+
+/// Is this a cross-site request trying to change something?
+///
+/// Browsers send Basic credentials on ANY request to an origin they hold them
+/// for, including a form on somebody else's page posting to this one. Most of
+/// the API is accidentally safe from that - `web::Json` demands
+/// `application/json`, and a form cannot send it - but the handlers that take
+/// no body at all (pause, resume, recheck, reannounce, apply settings) took a
+/// cross-site form POST and did as they were told.
+///
+/// `Origin` is the check because the browser sets it and script cannot: it is
+/// on every POST from a modern browser, and on every cross-origin fetch. A
+/// request with no `Origin` is not from a browser form - curl, a plugin, a
+/// script - and is left alone, which is what keeps the API usable from
+/// anything that is not a browser.
+///
+/// GET and HEAD are exempt: nothing behind them changes state, which is
+/// checked by the route table rather than assumed here.
+fn cross_site_write(req: &ServiceRequest) -> bool {
+    use actix_web::http::Method;
+    if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
+        return false;
+    }
+
+    let Some(origin) = req.headers().get("Origin").and_then(|v| v.to_str().ok()) else {
+        // No Origin at all: not a browser form. Left alone deliberately.
+        return false;
+    };
+    // "null" is what a sandboxed iframe or a file:// page sends. It is never
+    // this server, and treating it as unknown would let exactly the page that
+    // hid its origin through.
+    if origin.eq_ignore_ascii_case("null") {
+        return true;
+    }
+
+    // Compared against Host, not against a configured URL: the interface has
+    // no canonical address - it is reached by loopback, by LAN address and by
+    // hostname, and every one of those is the right answer to whoever typed it.
+    let host = req
+        .headers()
+        .get("Host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    let origin_host = origin
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(origin);
+    !origin_host.eq_ignore_ascii_case(host)
+}
+
+/// Does this request carry a capability token good for the file it is asking
+/// for? See [`crate::webui::streamtoken`].
+fn stream_token_ok(req: &ServiceRequest) -> bool {
+    // Reads only. A token is a capability to read one file; it is not a
+    // session, and nothing about it should let a request change anything.
+    if req.method() != actix_web::http::Method::GET
+        && req.method() != actix_web::http::Method::HEAD
+    {
+        return false;
+    }
+    let Some((hash, index)) = stream_path(req.path()) else {
+        return false;
+    };
+    let Some(state) = req.app_data::<web::Data<super::AppState>>() else {
+        return false;
+    };
+    // `token` out of the query string, without pulling in a parser: it is one
+    // parameter and the value is hex.
+    let Some(token) = req.query_string().split('&').find_map(|pair| {
+        pair.strip_prefix("token=")
+            .filter(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_hexdigit()))
+    }) else {
+        return false;
+    };
+    state.stream_tokens.verify(token, hash, index)
+}
+
 
 /// Middleware demanding HTTP Basic credentials on every request it wraps.
 ///
@@ -262,6 +374,29 @@ where
         tracing::error!("auth middleware has no credentials in app data - denying");
         return Ok(unauthorized(req));
     };
+
+    // The one door that is not the password: a short-lived token, good for a
+    // single file, so a media player can be handed a URL without also being
+    // handed the credentials to the whole interface.
+    //
+    // FIRST, ahead of the lockout below, and that ordering is load-bearing. The
+    // lockout exists because verifying a password costs an Argon2 hash, so
+    // guessing has to be made expensive to serve; a token is a hashmap lookup
+    // against a 256-bit value, with nothing to guess and nothing expensive to
+    // provoke. Checking it after the lockout meant a locked-out address - a
+    // mistyped password minutes earlier - killed playback that was already
+    // running, which is how this was found.
+    if stream_token_ok(&req) {
+        return next.call(req).await.map(|res| res.map_into_boxed_body());
+    }
+
+    // Before the password, because this is not about who is asking - the
+    // credentials are genuinely theirs, attached by their own browser to
+    // somebody else's page's request.
+    if cross_site_write(&req) {
+        tracing::warn!("refused a cross-site {} to {}", req.method(), req.path());
+        return Ok(forbidden(req));
+    }
 
     // peer_addr, NOT connection_info().realip_remote_addr(): that one trusts
     // Forwarded / X-Forwarded-For, which the client sends. Keying on a header
@@ -286,11 +421,15 @@ where
         return Ok(too_many_requests(req, wait));
     }
 
-    let supplied = req
-        .headers()
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(parse_basic);
+    let header = req.headers().get("Authorization").and_then(|h| h.to_str().ok());
+    // Whether there was an attempt at all, separately from whether it parsed.
+    // A request with no Authorization header is not a guess: it is a browser
+    // asking what this is so it can show its prompt, a bookmark, a port scan.
+    // Counting those as failures meant five of them - which one page load can
+    // produce on its own - locked the owner out for an hour. A real guess
+    // always carries the header, so the brute-force defence is unchanged.
+    let attempted = header.is_some();
+    let supplied = header.and_then(parse_basic);
 
     match supplied {
         Some((user, pass)) if creds.verify(&user, &pass) => {
@@ -300,7 +439,7 @@ where
             next.call(req).await.map(|res| res.map_into_boxed_body())
         }
         _ => {
-            if let Some(a) = attempts.as_ref() {
+            if attempted && let Some(a) = attempts.as_ref() {
                 a.record_failure(&who);
             }
             tracing::warn!("rejected web request to {} from {who}", req.path());
@@ -313,11 +452,80 @@ where
 mod tests {
     use super::*;
 
+    /// A browser attaches Basic credentials to a form on somebody else's page
+    /// posting here. Most of the API is saved by `web::Json` demanding a
+    /// content type a form cannot send; the handlers that take no body at all
+    /// were not, and did as they were told.
+    #[test]
+    fn a_cross_site_write_is_refused_and_everything_else_is_not() {
+        use actix_web::test::TestRequest;
+
+        let post = |origin: Option<&str>| {
+            let mut r = TestRequest::post()
+                .uri("/api/torrents/abc/pause")
+                .insert_header(("Host", "127.0.0.1:8443"));
+            if let Some(o) = origin {
+                r = r.insert_header(("Origin", o));
+            }
+            cross_site_write(&r.to_srv_request())
+        };
+
+        assert!(post(Some("https://evil.example")), "another origin");
+        assert!(post(Some("http://127.0.0.1:9999")), "same host, another port");
+        assert!(post(Some("null")), "a sandboxed frame hides its origin");
+
+        assert!(!post(Some("https://127.0.0.1:8443")), "the page itself");
+        assert!(!post(Some("http://127.0.0.1:8443")), "scheme is not the check");
+        // curl, a script, the plugin host: no Origin, and left alone
+        // deliberately - the API has to stay usable from something that is not
+        // a browser.
+        assert!(!post(None), "no Origin at all");
+
+        // Reads change nothing, so they are not this check's business - and
+        // refusing them would break every <img> and every link.
+        assert!(
+            !cross_site_write(
+                &TestRequest::get()
+                    .uri("/api/torrents")
+                    .insert_header(("Host", "127.0.0.1:8443"))
+                    .insert_header(("Origin", "https://evil.example"))
+                    .to_srv_request()
+            ),
+            "GET is exempt"
+        );
+    }
+
+
     fn creds() -> Credentials {
         Credentials {
             username: String::from("nanotorrent"),
             password_hash: Credentials::hash_password("correct horse battery").unwrap(),
         }
+    }
+
+    #[test]
+    fn only_the_stream_route_is_shaped_like_a_stream_route() {
+        assert_eq!(
+            stream_path("/api/torrents/abc123/files/0/stream"),
+            Some(("abc123", 0))
+        );
+        assert_eq!(
+            stream_path("/api/torrents/abc123/files/12/stream"),
+            Some(("abc123", 12))
+        );
+
+        // Everything a token must never reach.
+        assert_eq!(stream_path("/api/settings"), None);
+        assert_eq!(stream_path("/api/torrents"), None);
+        assert_eq!(stream_path("/api/torrents/abc123"), None);
+        assert_eq!(stream_path("/api/torrents/abc123/files"), None);
+        assert_eq!(stream_path("/api/torrents/abc123/files/0"), None);
+        assert_eq!(stream_path("/api/torrents/abc123/files/0/stream/extra"), None);
+        assert_eq!(stream_path("/api/torrents/abc123/files/x/stream"), None, "index must be a number");
+        assert_eq!(stream_path("/api/torrents/abc123/peers"), None);
+        // Not the API at all.
+        assert_eq!(stream_path("/torrents/abc123/files/0/stream"), None);
+        assert_eq!(stream_path(""), None);
     }
 
     #[test]

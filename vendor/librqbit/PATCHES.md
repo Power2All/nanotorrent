@@ -995,3 +995,84 @@ to fail with the per-file release disabled - its first version passed either way
 because it probed `<dir>/pair/a.bin` on the assumption that the torrent name
 becomes a containing directory. It does not: that is patch 0020's opt-in
 `output_folder_subfolder`, which the test does not set.
+
+
+## 0022 - a torrent naming a drive prefix is refused outright
+
+The companion to **0015**, and the reason both exist is worth stating.
+
+0015 guards `safe_join`, which sits between a torrent's idea of a filename and
+`OpenOptions::open`. Every filesystem operation in `FilesystemStorage` goes
+through it, so a `.torrent` whose path component is `C:` cannot write outside
+the download folder. That end is closed and stays closed.
+
+What 0015 does not do is make `FileInfo::relative_filename` itself safe. It is a
+plain `PathBuf` on a public struct, and everything that is not the storage layer
+reads it directly: the file list, the streaming endpoint, and - the one that
+found this - `Session::file_path`, which the details panel's "Open file" uses.
+That joined it onto the output folder with no guard at all, so a torrent naming
+`C:` as a component could make Open file hand an arbitrary existing file on
+another drive to the system's default handler. One reader, one gap; there will
+be more readers.
+
+So this patch moves the same check to where the names first become paths, in
+`TorrentMetadata::new`, which already returns `anyhow::Result`. Past that point
+`relative_filename` cannot hold anything but plain components, and a reader is
+safe without remembering to be.
+
+The mechanism is the one 0015 uses, for the same reason. Windows path
+components may carry a **prefix**, and `PathBuf::push` discards everything built
+so far when the pushed component has one:
+
+```
+Path::new(r"D:\Downloads\t").join("C:")          ->  "C:"
+push("C:"); push("Windows"); push("System32")    ->  "C:Windows\System32"
+```
+
+`C:` is not `..`, contains no separator, and passes librqbit-core's
+`validate()` untouched - and librqbit-core is not vendored, so the check cannot
+go where validation lives. `safe_relative_path` requires every component to
+parse as exactly one `Component::Normal`: a whitelist rather than a list of bad
+shapes, so it covers drive prefixes, UNC and verbatim prefixes, roots, `.` and
+`..` on every platform, and keeps covering them as `std` learns new ones.
+
+The torrent is **refused**, not sanitised, and refused at add time rather than
+at first write. A torrent naming `C:` as a directory is not one with a typo in
+it; and accepting it only to fail every file operation afterwards - which is
+what 0015 alone does - tells the user less than declining it does.
+
+Two tests in the NanoTorrent crate, in `bittorrent::session`:
+`a_torrent_naming_a_drive_prefix_is_refused` builds the metainfo by hand and
+asserts the add fails, and `an_ordinary_nested_torrent_still_adds` is the
+control - a whitelist that was too tight would make the first pass and break
+every multi-folder torrent there is. Confirmed to fail with
+`safe_relative_path` bypassed.
+
+
+## 0023 - axum is only a dependency when the HTTP API is
+
+Packaging, not behaviour: nothing this patch touches runs.
+
+NanoTorrent takes librqbit with `default-features = false`, so `http-api` is
+off and no axum route is ever served. axum was compiled anyway, because two
+declarations asked for it unconditionally:
+
+- `[dependencies.axum-extra]` had no `optional = true`, unlike the `axum` block
+  immediately above it. `axum_extra` appears in exactly one file,
+  `src/http_api/handlers/torrents.rs`, which only exists under `http-api`.
+- `[dependencies.librqbit-dualstack-sockets]` asked for `features = ["axum"]`
+  always. That feature is what makes the socket implement
+  `axum::serve::Listener` (`socket.rs`, behind `#[cfg(feature = "axum")]`) -
+  again only useful to the http-api.
+
+Both moved into the `http-api` feature list. Six crates leave the build:
+`axum`, `axum-core`, `axum-extra`, `matchit`, `serde_html_form` and
+`serde_path_to_error` - 106 lines off `Cargo.lock`.
+
+`tower` and `tower-http` stay: reqwest needs them, and reqwest is not optional
+here.
+
+Nothing to test beyond the build, which is the test - with `http-api` off the
+crate compiles without axum present, and with it on the feature list puts both
+back. `cargo tree -e normal -i axum` is the check.
+

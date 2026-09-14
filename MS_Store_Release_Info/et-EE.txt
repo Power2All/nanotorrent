@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Eesti (Eesti) - Partner Center: Estonian (Estonia) (et-EE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Versioon 0.4.0
 
-Versioon 0.3.8
-
-- 35 keelt juurde, kokku 76, lisatud Euroopas, Lõuna-Aasias, Kagu-Aasias, Kesk-Aasias ja Aafrikas.
-- Lõpetatud allalaadimised ei jää enam lukku. Torrent, mis oli lõpetatud või peatatud, hoidis oma faile kirjutamiseks avatuna ja Windowsis piisab ainuüksi sellest, et takistada teisel programmil neid avada: arhiivi ega videot allalaadimiskaustas ei saanud avada enne, kui NanoTorrent suleti. Failid avatakse nüüd uuesti kirjutuskaitstuna kohe, kui midagi enam ei kirjutata, ja kirjutusõigus võetakse automaatselt tagasi, kui seda jälle vaja läheb.
+- Vaadake videot juba allalaadimise ajal. Tehke torrenti üksikasjades või veebiliideses failil paremklõps ja see avaneb VLC-s, mpv-s või teie tavalises mängijas - taasesitus algab enne, kui allalaadimine on lõppenud.
+- Parem faililoend: valige faile hiire või nooleklahvidega, avage paremklõpsuga ja voltige kokku kaustad, mida parasjagu ei vaata. Nii rakenduses kui veebiliideses.
+- Pluginad saavad lisada kirjeid faili menüüsse, käivitada programme uue õiguse "execute" alusel, mille kiidate heaks lihtsas keeles, ja kanda kaasas oma tõlkeid. Veel viisteist funktsiooni annavad neile selle, mida veebiliides juba oskas.
+- Turvaparandused: teine sait ei saa enam veebiliidese kaudu midagi muuta, torrent ei saa enam nimetada Windowsi ketast kaustaks ega lisada esitusloendisse rida ning ebaõnnestunud sisselogimiste lukustused ei loe enam päringuid, mis parooli ei proovinud.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

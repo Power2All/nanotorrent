@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Kiswahili (Kenya) - Partner Center: Swahili (Kenya) (sw-KE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent ni toleo la Rust la PicoTorrent ya Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Toleo 0.4.0
 
-Toleo 0.3.8
-
-- Lugha 35 zaidi, 76 kwa jumla, zikiongezwa kote Ulaya, Asia Kusini, Asia ya Kusini-Mashariki, Asia ya Kati na Afrika.
-- Upakuaji uliokamilika haubaki umefungwa tena. Torrent iliyokamilika, au iliyosimamishwa, iliendelea kuweka faili zake wazi kwa kuandika, na kwenye Windows hilo peke yake linatosha kuzuia programu nyingine kuzifungua: kumbukumbu au video katika folda ya upakuaji haikuweza kufunguliwa hadi NanoTorrent ifungwe. Faili sasa zinafunguliwa tena kwa kusoma tu mara tu hakuna kitu kitakachoandikwa, na ruhusa ya kuandika inachukuliwa tena kiotomatiki ikihitajika.
+- Tazama video wakati bado inapakuliwa. Bofya kulia faili katika maelezo ya torrent, au katika kiolesura cha wavuti, nayo itafunguka katika VLC, mpv au kichezaji chako cha kawaida - uchezaji huanza kabla upakuaji haujakamilika.
+- Orodha bora ya faili: chagua faili kwa kipanya au vitufe vya mishale, fungua moja kwa kubofya kulia, na ukunje folda usizoziangalia. Katika programu na katika kiolesura cha wavuti.
+- Programu-jalizi zinaweza kuongeza vipengee kwenye menyu ya faili, kuanzisha programu chini ya ruhusa mpya ya "execute" unayoidhinisha kwa lugha rahisi, na kubeba tafsiri zao wenyewe. Miito kumi na tano zaidi huwapa kile ambacho kiolesura cha wavuti kiliweza tayari.
+- Marekebisho ya usalama: tovuti nyingine haiwezi tena kubadilisha chochote kupitia kiolesura cha wavuti, torrent haiwezi tena kuita diski ya Windows kama folda au kuongeza mstari kwenye orodha ya kucheza, na kufungiwa baada ya kuingia kushindwa hakuhesabu tena maombi ambayo hayakujaribu nenosiri.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Tiếng Việt (Việt Nam) - Partner Center: Vietnamese (Vietnam) (vi-VN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent là bản chuyển sang Rust của PicoTorrent do Viktor Elofsson vi
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Phiên bản 0.4.0
 
-Phiên bản 0.3.8
-
-- Thêm 35 ngôn ngữ, tổng cộng 76, bổ sung ở châu Âu, Nam Á, Đông Nam Á, Trung Á và châu Phi.
-- Các tệp tải xuống đã hoàn tất không còn bị khoá. Một torrent đã hoàn tất, hoặc đang tạm dừng, vẫn giữ các tệp của nó mở để ghi, và trên Windows chỉ riêng điều đó đã đủ để ngăn một chương trình khác mở chúng: một tệp nén hay một video trong thư mục tải xuống không thể mở được cho đến khi đóng NanoTorrent. Giờ đây các tệp được mở lại ở chế độ chỉ đọc ngay khi không còn gì cần ghi, và quyền ghi được lấy lại tự động nếu lại cần đến.
+- Xem video ngay khi đang tải. Nhấp chuột phải vào một tệp trong phần chi tiết của torrent, hoặc trong giao diện web, và tệp sẽ mở trong VLC, mpv hay trình phát quen thuộc của bạn - việc phát bắt đầu trước khi tải xong.
+- Danh sách tệp tốt hơn: chọn tệp bằng chuột hoặc phím mũi tên, mở một tệp bằng nhấp chuột phải, và thu gọn những thư mục bạn không xem đến. Trong ứng dụng cũng như trong giao diện web.
+- Các trình cắm có thể thêm mục vào trình đơn của một tệp, khởi chạy chương trình dưới quyền mới "execute" mà bạn phê duyệt bằng ngôn ngữ dễ hiểu, và mang theo bản dịch của riêng chúng. Mười lăm hàm nữa cho chúng những gì giao diện web vốn đã làm được.
+- Sửa lỗi bảo mật: một trang khác không còn có thể thay đổi bất cứ điều gì qua giao diện web, một torrent không còn có thể đặt tên ổ đĩa Windows làm thư mục hay thêm một dòng vào danh sách phát, và việc khóa sau các lần đăng nhập thất bại không còn đếm những yêu cầu chưa từng thử mật khẩu.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

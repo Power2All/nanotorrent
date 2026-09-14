@@ -1,0 +1,43 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index ac65f2e..d7c34ee 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -43,6 +43,10 @@ default-tls = [
+ disable-upload = []
+ http-api = [
+     "axum",
++    # NanoTorrent: both moved here from unconditional dependencies - see
++    # PATCHES.md, 0023.
++    "axum-extra",
++    "librqbit-dualstack-sockets/axum",
+     "tower-http",
+ ]
+ http-api-client = []
+@@ -118,9 +122,14 @@ version = "0.1"
+ version = "0.8"
+ optional = true
+ 
++# NanoTorrent: optional, like axum above it. `axum_extra` is used in exactly
++# one file - src/http_api/handlers/torrents.rs - which is itself behind
++# `http-api`, so leaving this unconditional compiled the whole framework into
++# builds that never serve a route. See vendor/librqbit/PATCHES.md, 0023.
+ [dependencies.axum-extra]
+ version = "0.12"
+ features = ["query"]
++optional = true
+ 
+ [dependencies.backon]
+ version = "1.5"
+@@ -188,9 +197,11 @@ version = "0.15"
+ version = "9.0.1"
+ default-features = false
+ 
++# NanoTorrent: the `axum` feature here is what makes the socket implement
++# `axum::serve::Listener`, which only the http-api needs - so it is requested
++# from the `http-api` feature below rather than always. See PATCHES.md, 0023.
+ [dependencies.librqbit-dualstack-sockets]
+ version = "0.7"
+-features = ["axum"]
+ 
+ [dependencies.librqbit-lsd]
+ version = "9.0.1"

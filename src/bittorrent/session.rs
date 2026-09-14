@@ -129,6 +129,19 @@ pub enum QueueMove {
     Bottom,
 }
 
+/// An open read over one file of a torrent. See [`Session::stream_file`].
+pub struct FileStreamOpen {
+    /// The file's own name, for `Content-Disposition`.
+    pub name: String,
+    /// The whole file's length, for `Content-Range`.
+    pub file_len: u64,
+    /// First and last byte this stream will produce, inclusive.
+    pub start: u64,
+    pub end: u64,
+    /// Byte chunks in order. Dropping this ends the reader.
+    pub chunks: tokio::sync::mpsc::Receiver<std::io::Result<Vec<u8>>>,
+}
+
 pub struct FileEntry {
     pub name: String,
     pub length: u64,
@@ -2892,7 +2905,140 @@ fn on_torrent_added(
         });
     }
 
+    /// One file of a torrent, opened for reading over a channel of byte chunks.
+    ///
+    /// `range` is an inclusive byte range, clamped to the file. `None` is the
+    /// whole file. Returns `None` when the torrent, the file index or the
+    /// metadata is not there - all of which mean "nothing to stream".
+    ///
+    /// The reader is spawned on the session runtime deliberately. librqbit's
+    /// `FileStream` performs its disk reads through `spawner.block_in_place`,
+    /// and that spawner enables `tokio::task::block_in_place` because the
+    /// session runtime is multi-threaded - calling it from a current-thread
+    /// runtime panics, and an actix worker is a current-thread runtime. So the
+    /// polling stays here and only bytes cross over.
+    ///
+    /// The channel bound is the backpressure: a player that stops reading stops
+    /// the reader, which stops the stream holding librqbit's blocking permit
+    /// busy. Dropping the receiver ends the task.
+    pub fn stream_file(
+        &self,
+        hash: &str,
+        file_id: usize,
+        range: Option<(u64, u64)>,
+    ) -> Option<FileStreamOpen> {
+        let handle = self.find(hash)?;
+        let metadata = handle.metadata.load_full()?;
+        let info = metadata.file_infos.get(file_id)?;
+        let file_len = info.len;
+        let name = info
+            .relative_filename
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| String::from("file"));
+
+        // An empty file has nothing to serve, and `end` below would underflow.
+        if file_len == 0 {
+            return None;
+        }
+        let (start, end) = match range {
+            Some((from, to)) => (from.min(file_len - 1), to.min(file_len - 1)),
+            None => (0, file_len - 1),
+        };
+        if start > end {
+            return None;
+        }
+
+        // Four 64 KiB chunks in flight. Enough that a read is usually ready when
+        // the socket wants one, small enough that abandoning a stream does not
+        // leave a megabyte of already-read film sitting in memory.
+        let (tx, rx) = tokio::sync::mpsc::channel::<std::io::Result<Vec<u8>>>(4);
+
+        self.rt.spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+            let mut stream = match handle.stream(file_id).await {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = tx
+                        .send(Err(std::io::Error::other(format!("{e:#}"))))
+                        .await;
+                    return;
+                }
+            };
+            if start > 0
+                && let Err(e) = stream.seek(std::io::SeekFrom::Start(start)).await
+            {
+                let _ = tx.send(Err(e)).await;
+                return;
+            }
+
+            let mut remaining = end - start + 1;
+            let mut buf = vec![0u8; 64 * 1024];
+            while remaining > 0 {
+                let want = remaining.min(buf.len() as u64) as usize;
+                match stream.read(&mut buf[..want]).await {
+                    // EOF before the range was satisfied. The file shrank or the
+                    // torrent went away; either way there is no more to send.
+                    Ok(0) => break,
+                    Ok(n) => {
+                        remaining -= n as u64;
+                        if tx.send(Ok(buf[..n].to_vec())).await.is_err() {
+                            // The client hung up.
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(e)).await;
+                        break;
+                    }
+                }
+            }
+        });
+
+        Some(FileStreamOpen { name, file_len, start, end, chunks: rx })
+    }
+
+    /// The tracker tiers a torrent announces to, as plain URLs.
+    ///
+    /// The rows behind the Trackers tab carry a translated status string, which
+    /// is the wrong thing to hand a plugin: branching on it would work in
+    /// English and quietly stop working in the other 75 languages. Tiers of URLs
+    /// are what an editing plugin actually wants.
+    pub fn tracker_tiers(&self, hash: &str) -> Vec<Vec<String>> {
+        self.effective_tiers(hash, &Configuration::new(self.db.clone()))
+    }
+
     /// File list for the Files tab.
+    /// Where one of a torrent's files is on disk.
+    ///
+    /// `relative_filename` is relative to the torrent's own output folder, and
+    /// that folder is not the save path a torrent was added with - a multi-file
+    /// torrent is wrapped in a directory named after it. Asking librqbit which
+    /// folder it chose is the only answer that stays right through a move.
+    ///
+    /// `None` for a torrent that is gone, or an index that is not one of its
+    /// files. Nothing here checks the file EXISTS: a torrent that has not
+    /// started has no files yet, and whoever is opening one finds that out in
+    /// its own way.
+    ///
+    /// The join is unguarded on purpose: patch 0022 refuses a torrent whose
+    /// path components are not plain names, so `relative_filename` cannot
+    /// carry the drive prefix that would make `join` discard the folder. That
+    /// guarantee is the patch's whole point - before it, this function was the
+    /// one reader with no check of its own.
+    pub fn file_path(&self, hash: &str, index: usize) -> Option<std::path::PathBuf> {
+        let handle = self.find(hash)?;
+        let metadata = handle.metadata.load_full()?;
+        let relative = &metadata.file_infos.get(index)?.relative_filename;
+        let folder = self
+            .rq_api()
+            .api_torrent_details(librqbit::api::TorrentIdOrHash::Id(handle.id()))
+            .ok()
+            .map(|d| d.output_folder)?;
+        Some(std::path::Path::new(&folder).join(relative))
+    }
+
     pub fn files(&self, hash: &str) -> Vec<FileEntry> {
         let Some(handle) = self.find(hash) else {
             return Vec::new();
@@ -3611,7 +3757,7 @@ mod tests {
         // "file 0 is complete" is unambiguous.
         let payload0 = vec![b'A'; 4096];
         let payload1 = vec![b'B'; 4096];
-        let bytes = two_file_torrent(&payload0, &payload1);
+        let bytes = two_file_torrent_bytes(&payload0, &payload1);
 
         // File 0 present and correct, file 1 absent, so the initial check finds
         // exactly one complete file. Straight into the output folder: the
@@ -3675,8 +3821,7 @@ mod tests {
 
     /// A two-file torrent whose pieces are the real SHA-1 of the payloads, so
     /// librqbit's initial check agrees about which file is complete.
-    #[cfg(windows)]
-    fn two_file_torrent(a: &[u8], b: &[u8]) -> Vec<u8> {
+    fn two_file_torrent_bytes(a: &[u8], b: &[u8]) -> Vec<u8> {
         use sha1::{Digest, Sha1};
 
         let piece = |data: &[u8]| -> [u8; 20] { Sha1::digest(data).into() };
@@ -3696,6 +3841,234 @@ mod tests {
         out.extend_from_slice(&pieces);
         out.extend_from_slice(b"ee");
         out
+    }
+
+    /// A torrent whose path component carries a Windows drive prefix escapes
+    /// the download folder when joined, because `PathBuf::push("C:")` throws
+    /// away everything pushed before it. librqbit-core's validation does not
+    /// catch it: `C:` is not "..", and contains neither separator.
+    ///
+    /// Writes were already safe - patch 0015 guards `safe_join`, which every
+    /// filesystem operation goes through. Patch 0022 refuses the torrent
+    /// outright, so `relative_filename` is safe for the readers OUTSIDE the
+    /// storage layer too: the file list, the stream endpoint, and `file_path`
+    /// below, which had no guard of its own. See
+    /// `vendor/librqbit/PATCHES.md`.
+    #[test]
+    fn a_torrent_naming_a_drive_prefix_is_refused() {
+        // The escape itself, first - so this test states what it is defending
+        // against rather than only that an add failed.
+        let joined = std::path::Path::new("D:/Downloads/t").join("C:");
+        assert_eq!(
+            joined,
+            std::path::Path::new("C:"),
+            "join() must be the hazard this test claims it is"
+        );
+
+        let err = add_one_file_torrent(&["C:", "evil.txt"]).expect_err("must be refused");
+        assert!(
+            err.contains("not a plain file name"),
+            "refused for the right reason, got: {err}"
+        );
+    }
+
+    /// The control. A whitelist that refused every nested path would make the
+    /// test above pass and break every multi-folder torrent there is.
+    #[test]
+    fn an_ordinary_nested_torrent_still_adds() {
+        add_one_file_torrent(&["Season 1", "subs", "en.srt"]).expect("an ordinary path");
+    }
+
+    /// Add a single-file torrent whose path is these components, and report
+    /// whether librqbit took it.
+    fn add_one_file_torrent(path: &[&str]) -> Result<(), String> {
+        use librqbit::{AddTorrent, AddTorrentOptions};
+        use sha1::{Digest, Sha1};
+
+        let payload = vec![b'x'; 64];
+        let pieces: [u8; 20] = Sha1::digest(&payload).into();
+
+        // Bencode by hand: the helper above hardcodes its two file names, and
+        // the whole point here is what the names are.
+        let mut out = Vec::new();
+        out.extend_from_slice(b"d4:infod5:filesld6:lengthi");
+        out.extend_from_slice(payload.len().to_string().as_bytes());
+        out.extend_from_slice(b"e4:pathl");
+        for bit in path {
+            out.extend_from_slice(bit.len().to_string().as_bytes());
+            out.push(b':');
+            out.extend_from_slice(bit.as_bytes());
+        }
+        out.extend_from_slice(b"eee4:name4:pack12:piece lengthi4096e6:pieces20:");
+        out.extend_from_slice(&pieces);
+        out.extend_from_slice(b"ee");
+
+        let dir = std::env::temp_dir().join(format!(
+            "nt-prefix-{}-{:p}",
+            std::process::id(),
+            path.as_ptr()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let result = rt.block_on(async {
+            let opts = librqbit::SessionOptions {
+                dht: None,
+                persistence: None,
+                listen: None,
+                ..Default::default()
+            };
+            let session = librqbit::Session::new_with_opts(dir.clone(), opts)
+                .await
+                .expect("session");
+            let add = AddTorrentOptions {
+                // Listed only, so nothing is written either way - the refusal
+                // happens while the metadata is being read, before that.
+                list_only: true,
+                output_folder: Some(dir.to_string_lossy().into_owned()),
+                overwrite: true,
+                ..Default::default()
+            };
+            let r = session
+                .add_torrent(AddTorrent::from_bytes(out), Some(add))
+                .await
+                .map(|_| ())
+                .map_err(|e| format!("{e:#}"));
+            std::mem::forget(session);
+            r
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
+        result
+    }
+
+    /// The streaming read behind `/files/{index}/stream`: a byte range out of a
+    /// torrent file, read on the session runtime and consumed from a
+    /// current-thread one.
+    ///
+    /// The runtime split is the point. librqbit's `FileStream` reads through
+    /// `spawner.block_in_place`, which becomes `tokio::task::block_in_place`
+    /// because the session runtime is multi-threaded - and that panics if it is
+    /// polled on a current-thread runtime, which is what every actix worker is.
+    /// Consuming from `new_current_thread` here is the regression: if the reader
+    /// is ever moved onto the caller's runtime this test panics instead of
+    /// quietly working until someone streams in the real app.
+    #[test]
+    fn a_byte_range_streams_out_of_an_incomplete_torrent() {
+        use librqbit::{AddTorrent, AddTorrentOptions, AddTorrentResponse};
+        use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+        let dir = std::env::temp_dir().join(format!("nt-stream-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Distinguishable bytes, so a wrong offset is visible rather than just
+        // the wrong length: payload0[i] == i % 251.
+        let payload0: Vec<u8> = (0..4096u32).map(|i| (i % 251) as u8).collect();
+        let payload1 = vec![b'B'; 4096];
+        let bytes = two_file_torrent_bytes(&payload0, &payload1);
+        std::fs::write(dir.join("a.bin"), &payload0).unwrap();
+
+        // The session's runtime: multi-threaded, like the real one, so
+        // block_in_place is enabled exactly as it is in production.
+        let session_rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let handle = session_rt.block_on(async {
+            let opts = librqbit::SessionOptions {
+                dht: None,
+                persistence: None,
+                listen: None,
+                ..Default::default()
+            };
+            let session = librqbit::Session::new_with_opts(dir.clone(), opts)
+                .await
+                .expect("session");
+            let add = AddTorrentOptions {
+                output_folder: Some(dir.to_string_lossy().into_owned()),
+                overwrite: true,
+                ..Default::default()
+            };
+            let h = match session
+                .add_torrent(AddTorrent::from_bytes(bytes), Some(add))
+                .await
+                .expect("add")
+            {
+                AddTorrentResponse::Added(_, h) => h,
+                _ => panic!("the torrent was not added"),
+            };
+            // The check has to finish before file 0 reads as present.
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            // Keep the session alive for as long as the handle is used.
+            std::mem::forget(session);
+            h
+        });
+
+        // What Session::stream_file does: read on the session runtime, hand
+        // bytes over a bounded channel.
+        let (start, end) = (10u64, 99u64);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<std::io::Result<Vec<u8>>>(4);
+        session_rt.spawn(async move {
+            let mut stream = match handle.stream(0).await {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = tx.send(Err(std::io::Error::other(format!("{e:#}")))).await;
+                    return;
+                }
+            };
+            if let Err(e) = stream.seek(std::io::SeekFrom::Start(start)).await {
+                let _ = tx.send(Err(e)).await;
+                return;
+            }
+            let mut remaining = end - start + 1;
+            let mut buf = vec![0u8; 64 * 1024];
+            while remaining > 0 {
+                let want = remaining.min(buf.len() as u64) as usize;
+                match stream.read(&mut buf[..want]).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        remaining -= n as u64;
+                        if tx.send(Ok(buf[..n].to_vec())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(e)).await;
+                        break;
+                    }
+                }
+            }
+        });
+
+        // The web server's side: a current-thread runtime, as actix uses.
+        let consumer = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let got = consumer.block_on(async {
+            let mut out = Vec::new();
+            while let Some(chunk) = rx.recv().await {
+                out.extend_from_slice(&chunk.expect("stream read failed"));
+            }
+            out
+        });
+
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(got.len(), 90, "asked for bytes 10-99 inclusive");
+        assert_eq!(
+            got,
+            payload0[10..100],
+            "the range came back from the wrong offset"
+        );
     }
 
     /// A single-file torrent whose name (and therefore info hash) varies with

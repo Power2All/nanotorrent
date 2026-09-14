@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.3.8 - Microsoft Store listing
+NanoTorrent 0.4.0 - Microsoft Store listing
 Language: Hrvatski (Hrvatska) - Partner Center: Croatian (Croatia) (hr-HR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,12 @@ NanoTorrent je prijenos PicoTorrenta Viktora Elofssona na Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
+Verzija 0.4.0
 
-Verzija 0.3.8
-
-- 35 jezika više, 76 ukupno, dodanih u Europi, južnoj Aziji, jugoistočnoj Aziji, srednjoj Aziji i Africi.
-- Dovršena preuzimanja više ne ostaju zaključana. Torrent koji je bio dovršen ili pauziran držao je svoje datoteke otvorenima za pisanje, a u sustavu Windows je to samo po sebi dovoljno da drugi program ne može otvoriti: arhiva ili videozapis u mapi preuzimanja nisu se mogli otvoriti dok se NanoTorrent ne zatvori. Datoteke se sada ponovno otvaraju samo za čitanje čim se više ništa ne zapisuje, a pravo pisanja automatski se vraća ako ponovno zatreba.
+- Gledajte video dok se preuzima. Desnom tipkom kliknite datoteku u pojedinostima torrenta ili u web sučelju i otvorit će se u VLC-u, mpv-u ili vašem uobičajenom playeru - reprodukcija počinje prije nego što preuzimanje završi.
+- Bolji popis datoteka: birajte datoteke mišem ili strelicama, otvorite jednu desnim klikom i sklopite mape koje trenutačno ne gledate. I u aplikaciji i u web sučelju.
+- Dodaci mogu dodavati stavke u izbornik datoteke, pokretati programe uz novo dopuštenje "execute" koje odobravate jednostavnim jezikom, i nositi vlastite prijevode. Još petnaest funkcija daje im ono što je web sučelje već moglo.
+- Sigurnosni popravci: druga stranica više ne može ništa promijeniti putem web sučelja, torrent više ne može imenovati Windows pogon kao mapu niti dodati redak u popis za reprodukciju, a zaključavanja nakon neuspjelih prijava više ne broje zahtjeve koji nisu pokušali lozinku.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
