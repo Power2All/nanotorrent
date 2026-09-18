@@ -180,7 +180,7 @@ export component PluginWindow inherits Window {
         }
         if root.form-id != "": Flickable {
             vertical-stretch: 1;
-            viewport-height: form-body.preferred-height;
+            content-height: form-body.preferred-height;
             form-body := VerticalLayout {
                 width: parent.width;
                 spacing: 10px;

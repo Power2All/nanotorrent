@@ -1573,10 +1573,10 @@ export component MainWindow inherits Window {
             root.cursor-row = i;
             root.row-pressed(i, false, false);
 
-            if (list.viewport-y + i * root.row-h < 0px) {
-                list.viewport-y = -i * root.row-h;
-            } else if (list.viewport-y + (i + 1) * root.row-h > list.visible-height) {
-                list.viewport-y = list.visible-height - (i + 1) * root.row-h;
+            if (list.content-y + i * root.row-h < 0px) {
+                list.content-y = -i * root.row-h;
+            } else if (list.content-y + (i + 1) * root.row-h > list.visible-height) {
+                list.content-y = list.visible-height - (i + 1) * root.row-h;
             }
         }
     }
@@ -2288,7 +2288,7 @@ export component MainWindow inherits Window {
         // --- torrent list ---------------------------------------------------
         scroll := ScrollView {
             vertical-stretch: 1;
-            viewport-width: Cols.total + Cols.bar-room;
+            content-width: Cols.total + Cols.bar-room;
             // The ListView inside owns vertical scrolling; two of them fight.
             vertical-scrollbar-policy: always-off;
 
@@ -2725,7 +2725,7 @@ export component MainWindow inherits Window {
                 // far ones would simply be unreachable. The ListView owns
                 // vertical scrolling - two of them fight.
                 ScrollView {
-                    viewport-width: DCols.files-total + Cols.bar-room;
+                    content-width: DCols.files-total + Cols.bar-room;
                     vertical-scrollbar-policy: always-off;
                     VerticalLayout {
                         padding: 0px;
@@ -2785,11 +2785,11 @@ export component MainWindow inherits Window {
                                 // A ListView does not follow a selection it did
                                 // not make. Rows are a fixed height, so where
                                 // one sits is arithmetic.
-                                if (dfiles.viewport-y + root.file-row * root.file-row-h < 0px) {
-                                    dfiles.viewport-y = -root.file-row * root.file-row-h;
-                                } else if (dfiles.viewport-y + (root.file-row + 1) * root.file-row-h
+                                if (dfiles.content-y + root.file-row * root.file-row-h < 0px) {
+                                    dfiles.content-y = -root.file-row * root.file-row-h;
+                                } else if (dfiles.content-y + (root.file-row + 1) * root.file-row-h
                                            > dfiles.visible-height) {
-                                    dfiles.viewport-y = dfiles.visible-height
+                                    dfiles.content-y = dfiles.visible-height
                                         - (root.file-row + 1) * root.file-row-h;
                                 }
                                 return accept;
@@ -2901,7 +2901,7 @@ export component MainWindow inherits Window {
             if root.current-tab == 2: VerticalLayout {
                 vertical-stretch: 1;
                 ScrollView {
-                    viewport-width: DCols.peers-total + Cols.bar-room;
+                    content-width: DCols.peers-total + Cols.bar-room;
                     vertical-scrollbar-policy: always-off;
                     VerticalLayout {
                         padding: 0px;
@@ -2997,7 +2997,7 @@ export component MainWindow inherits Window {
                 }
 
                 ScrollView {
-                    viewport-width: DCols.trackers-total + Cols.bar-room;
+                    content-width: DCols.trackers-total + Cols.bar-room;
                     vertical-scrollbar-policy: always-off;
                     VerticalLayout {
                         padding: 0px;

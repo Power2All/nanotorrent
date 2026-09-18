@@ -2993,7 +2993,10 @@ function pushRates(down, up) {
 // The last entry is the Actions column. It is a starting width only -
 // sizeActionsColumn() measures the buttons and replaces it on the first draw -
 // but it wants to be close, so the column does not visibly jump.
-const COL_DEFAULTS = [null, 90, 130, 110, 90, 90, 80, 60, 140];
+// Size is the one that does not match the desktop: 90px clipped "392.91 MB",
+// because table-layout:fixed gives a column exactly what it is told and no
+// more, where the desktop list sizes itself to its contents.
+const COL_DEFAULTS = [null, 110, 130, 110, 90, 90, 80, 60, 140];
 
 // Widths live in this browser, not on the server.
 //
