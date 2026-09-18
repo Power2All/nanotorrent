@@ -79,7 +79,7 @@ further down, or inside a string, cannot quietly widen the request.
 | `notify` | `notify` |
 | `network` | `http_get`, and `add_torrent_url` together with `add` |
 | `data` | `data_get`, `data_set`, `data_remove`, `data_keys` |
-| `ui` | `ui_window`, `ui_rows`, `ui_groups`, `ui_buttons`, `ui_input`, `ui_status`, `ui_form`, `ui_form_close`, `ui_menu`, `ui_file_menu`, `ui_configurable`, `ui_show` |
+| `ui` | `ui_window`, `ui_rows`, `ui_groups`, `ui_buttons`, `ui_input`, `ui_status`, `ui_form`, `ui_form_close`, `ui_menu`, `ui_file_menu`, `ui_configurable`, `ui_icon`, `ui_show` |
 | `execute` | `run`, `open` — **start programs on this computer, as you** |
 
 `network` is the one that changes what the others mean. A plugin holding
@@ -436,6 +436,7 @@ and CDATA are decoded, and each element's text is trimmed.
 | `ui_form(form_id, title, [#{ id, label, kind, value, options, hint }])` | A form, in place of the lists |
 | `ui_form_close()` | Put the lists back |
 | `ui_configurable(true)` | Ask for a Configure button in Preferences |
+| `ui_icon(path)` | Your own icon, as SVG path data on a 16×16 grid |
 
 Declaring a window is what lists it in the menu; `ui_show` is separate so a
 plugin can prepare one at load without a window appearing unasked. Clicks come
@@ -522,7 +523,30 @@ there is genuinely something to configure, or the cog becomes noise on every
 row.
 
 Both appear only once the plugin is **loaded and has actually declared them**,
-so a plugin that is ticked but still waiting for approval offers neither.
+so a plugin that is ticked but still waiting for approval offers neither. They
+are always drawn, greyed out when you have not asked for them — a row that
+changes shape between plugins reads as something broken.
+
+**`ui_icon(path)`** gives your plugin its own mark beside its name, once it is
+running with a window. The argument is SVG path data on a **16×16** grid:
+
+```rhai
+ui_icon("M 4 2 L 14 8 L 4 14 Z");     // a play triangle
+```
+
+One string, both front ends — the desktop hands it to Slint's `Path` and the
+web interface to `<svg><path d="">`, which read the same syntax. So it is sharp
+at any size in either, and takes its colour from the theme rather than carrying
+one of its own.
+
+Two things to know. **Straight lines only** in practice: Slint's `Path` does not
+lean on SVG arc support, so `A` commands are best avoided — the shipped RSS
+icon is three rising bars rather than the usual arcs for exactly this reason.
+And the string is **checked before it is stored**: anything that is not path
+data — a tag, an `&`, a quote, or more than 2 KB of it — is dropped and your
+plugin falls back to its initial. That is not a restriction, since none of those
+mean anything in path data; it is what lets the web interface put your icon in
+its markup without having to trust it.
 
 **One dropdown per plugin**, and that is structural rather than a rule the host
 checks: a plugin holds a single menu title and a single item list, so calling

@@ -216,19 +216,14 @@ pub(crate) fn set_setting(
                 // Not refused here - it is legitimate on loopback, and startup
                 // is where the bind address is known. Say so now rather than
                 // letting it fail confusingly later.
-                println!(
-                    "Note: with tls_mode=off the interface will only start on 127.0.0.1."
-                );
+                println!("{}", tr.i18n("cli_web_tls_off_warning"));
             }
             cfg.set("webui.tls_mode", &value);
         }
         "bind_address" => {
             anyhow::ensure!(!value.trim().is_empty(), "bind_address must not be empty");
             if value != "127.0.0.1" && value != "::1" {
-                println!(
-                    "Note: {value} is reachable from outside this machine. \
-                     Make sure the password is one you are happy exposing."
-                );
+                println!("{}", tr.i18n1("cli_web_exposed_note", value));
             }
             cfg.set("webui.bind_address", &value);
         }

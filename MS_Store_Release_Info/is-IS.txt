@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Íslenska (Ísland) - Partner Center: Icelandic (Iceland) (is-IS)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent er Rust-útfærsla af PicoTorrent eftir Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Útgáfa 0.4.0
+Útgáfa 0.4.1
 
-- Horfðu á myndskeið meðan það hleðst niður. Hægrismelltu á skrá í smáatriðum straums, eða í vefviðmótinu, og hún opnast í VLC, mpv eða þínum venjulega spilara - spilun hefst áður en niðurhalinu lýkur.
-- Betri skráalisti: veldu skrár með músinni eða örvatökkunum, opnaðu eina með hægrismelli og felldu saman möppur sem þú ert ekki að skoða. Bæði í forritinu og í vefviðmótinu.
-- Viðbætur geta bætt atriðum við valmynd skráar, ræst forrit undir nýrri heimild "execute" sem þú samþykkir á skýru máli, og borið með sér eigin þýðingar. Fimmtán köll til viðbótar gefa þeim það sem vefviðmótið gat þegar.
-- Öryggislagfæringar: annað vefsvæði getur ekki lengur breytt neinu í gegnum vefviðmótið, torrent getur ekki lengur nefnt Windows-drif sem möppu eða bætt línu við spilunarlista, og lokanir eftir misheppnaðar innskráningar telja ekki lengur beiðnir sem reyndu aldrei lykilorð.
+- Hlutfallið þitt núllstillist ekki lengur þegar þú breytir stillingu eða endurræsir.
+- Fleiri myndspilarar: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA og Elmedia Player. Aðeins þeir sem eru til á kerfinu þínu eru í boði, og ef einhver finnst ekki er spurt hvar hann er.
+- Tilkynnt er til rekjara eftir þrepum, eins og torrentinn bað um - vararekjari er áfram til vara.
+- Að fjarlægja torrent, og að breyta eða fjarlægja rekjara, spyr fyrst. Hverri spurningu má svara einu sinni og svarið er munað.
+- Innflutningur frá PicoTorrent spyr fyrst, getur tæmt núverandi lista og flutt stillingar hans yfir, og segir hvað kom, hvað var þegar til staðar og hvað mistókst.
+- Vefviðmótið hefur náð forritinu: skráartré með tákni fyrir hverja gerð, Nánar í flipum, tákntakkar sem ákveða breidd eigin dálks, og engin lárétt skrunstika.
+- Viðbætur geta borið eigið tákn, og Opna-hnappur þeirra og stillingahnappur sjást alltaf.
+- Yfir HTTPS gat vefviðmótið engu breytt - hverjum hnappi var hafnað.
+- Tækjastikan fellur inn í valmyndina þegar þrengist, langir textar eru styttir og bakgrunnsvillur eru þýddar.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

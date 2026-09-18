@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Nederlands (Nederland) - Partner Center: Dutch (Netherlands) (nl-NL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent is een Rust-port van PicoTorrent van Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versie 0.4.0
+Versie 0.4.1
 
-- Bekijk een video terwijl die binnenkomt. Klik met rechts op een bestand in de details van een torrent, of in de webinterface, en het opent in VLC, mpv of je gebruikelijke speler - het afspelen begint voordat de download klaar is.
-- Een betere bestandslijst: kies bestanden met de muis of de pijltjestoetsen, klik er met rechts op om ze te openen, en vouw de mappen dicht waar je niet naar kijkt. Zowel in de app als in de webinterface.
-- Plug-ins kunnen items toevoegen aan het menu van een bestand, programma's starten onder een nieuwe "execute"-toestemming die je in gewone taal goedkeurt, en hun eigen vertalingen meebrengen. Vijftien extra functies geven plug-ins wat de webinterface al kon.
-- Beveiligingsoplossingen: een andere site kan niets meer wijzigen via de webinterface, een torrent kan geen Windows-station meer als map benoemen of een regel aan een afspeellijst toevoegen, en blokkades na mislukte aanmeldingen tellen geen verzoeken meer die nooit een wachtwoord probeerden.
+- Je ratio wordt niet meer op nul gezet wanneer je een instelling wijzigt of opnieuw start.
+- Meer videospelers: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA en Elmedia Player. Alleen wat je systeem heeft wordt aangeboden, en wordt er een niet gevonden, dan wordt gevraagd waar die staat.
+- Trackers worden per laag aangekondigd, zoals de torrent vroeg - een reservetracker blijft reserve.
+- Een torrent verwijderen, en een tracker wijzigen of verwijderen, vragen eerst. Elke vraag kan één keer beantwoord en onthouden worden.
+- Importeren uit PicoTorrent vraagt eerst, kan de huidige lijst leegmaken en de instellingen meenemen, en vertelt wat er binnenkwam, wat er al was en wat mislukte.
+- De webinterface heeft de app ingehaald: bestandsbomen met een pictogram per type, Details met tabbladen, pictogramknoppen die hun eigen kolom op maat maken, en geen horizontale schuifbalk.
+- Plug-ins kunnen hun eigen pictogram meebrengen, en hun knoppen Openen en instellingen zijn altijd zichtbaar.
+- Via HTTPS kon de webinterface niets wijzigen - elke knop werd geweigerd.
+- De werkbalk vouwt in het menu naarmate hij smaller wordt, lange bijschriften worden ingekort en achtergrondfouten zijn vertaald.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

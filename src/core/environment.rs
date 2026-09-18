@@ -238,6 +238,43 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
 
 #[cfg(test)]
 mod tests {
+    /// Windows gives the main thread 1 MB; Linux and macOS give it 8. Slint
+    /// lays a window out by recursing over its element tree, and the deepest
+    /// window here - Preferences - sat right on that 1 MB floor: a debug build
+    /// died with "thread 'main' has overflowed its stack" before the dialog
+    /// appeared, and release had less room left than anyone would guess.
+    ///
+    /// `.cargo/config.toml` raises it to 8 MB. That file is easy to lose in a
+    /// merge and impossible to notice the loss of, so this reads the reserve
+    /// back out of the running test binary - `rustflags` apply to it too.
+    ///
+    /// Parsing rather than trusting the file: what matters is the number the
+    /// linker actually wrote, not the flag someone believes is in effect.
+    #[test]
+    #[cfg(all(windows, target_env = "msvc"))]
+    fn the_main_thread_gets_more_than_windows_would_give_it() {
+        let exe = std::env::current_exe().expect("this test binary has a path");
+        let bytes = std::fs::read(&exe).expect("read this test binary");
+
+        // PE: e_lfanew at 0x3c points at the signature; the optional header
+        // starts 24 bytes later, and SizeOfStackReserve is 72 bytes into it.
+        let at = |o: usize| -> u64 {
+            u64::from_le_bytes(bytes[o..o + 8].try_into().expect("8 bytes"))
+        };
+        let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
+        assert_eq!(&bytes[pe..pe + 4], b"PE\0\0", "not a PE image");
+        let magic = u16::from_le_bytes(bytes[pe + 24..pe + 26].try_into().unwrap());
+        assert_eq!(magic, 0x20b, "expected PE32+ (64-bit)");
+
+        let reserve = at(pe + 24 + 72);
+        assert!(
+            reserve >= 4 * 1024 * 1024,
+            "stack reserve is {reserve} bytes - the /STACK link arg in \
+             .cargo/config.toml is not taking effect, and the Preferences \
+             window will overflow the stack in a debug build"
+        );
+    }
+
     use super::*;
 
     /// `cargo test` never runs inside an MSIX container, so the answer here is

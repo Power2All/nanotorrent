@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Bosanski (Bosna i Hercegovina) - Partner Center: Bosnian (Bosnia and Herzegovina) (bs-Latn-BA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent je Rust port PicoTorrenta autora Viktora Elofssona.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzija 0.4.0
+Verzija 0.4.1
 
-- Gledajte video dok se preuzima. Desnim klikom na fajl u detaljima torenta, ili u web sučelju, otvorite ga u VLC-u, mpv-u ili svom uobičajenom plejeru - reprodukcija počinje prije nego što se preuzimanje završi.
-- Bolji spisak fajlova: birajte fajlove mišem ili strelicama, otvorite jedan desnim klikom i sklopite foldere koje trenutno ne gledate. I u aplikaciji i u web sučelju.
-- Dodaci mogu dodavati stavke u meni fajla, pokretati programe uz novu dozvolu "execute" koju odobravate jednostavnim jezikom, i nositi vlastite prijevode. Još petnaest funkcija daje im ono što je web sučelje već moglo.
-- Sigurnosne ispravke: druga stranica više ne može ništa promijeniti kroz web sučelje, torrent više ne može nazvati Windows disk folderom niti dodati red u plejlistu, a zaključavanja nakon neuspjelih prijava više ne broje zahtjeve koji nisu pokušali lozinku.
+- Vaš omjer se više ne resetuje kada promijenite postavku ili ponovo pokrenete.
+- Novi video plejeri: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA i Elmedia Player. Nude se samo oni koje vaš sistem ima, a ako se neki ne nađe, pitamo gdje je.
+- Trekeri se najavljuju po nivoima, kako je torrent tražio - rezervni treker ostaje rezervni.
+- Uklanjanje torenta, te promjena ili uklanjanje trekera, prvo pitaju. Na svako pitanje može se odgovoriti jednom i zapamtiti.
+- Uvoz iz PicoTorrenta prvo pita, može očistiti trenutni spisak i prenijeti postavke, i kaže šta je stiglo, šta je već bilo i šta nije uspjelo.
+- Web sučelje sustiže aplikaciju: stabla fajlova s ikonom po vrsti, Detalji s karticama, dugmad s ikonama koja sama određuju širinu kolone, i bez bočnog klizača.
+- Dodaci mogu nositi vlastitu ikonu, a njihova dugmad Open i postavke uvijek se prikazuju.
+- Preko HTTPS-a web sučelje nije moglo ništa promijeniti - svako dugme je odbijano.
+- Alatna traka se sklapa u meni kako se sužava, dugi natpisi se skraćuju, a pozadinske greške se prevode.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

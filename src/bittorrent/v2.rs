@@ -1164,9 +1164,10 @@ pub fn prepare(torrent_bytes: &[u8]) -> Result<V2Prep, String> {
     let truncated = librqbit::Id20::new(meta.truncated_info_hash());
     let hashes = {
         let h = V2Hashes::new(&meta);
-        match h.is_empty() {
-            true => None,
-            false => Some(std::sync::Arc::new(h) as std::sync::Arc<dyn librqbit::HashProvider>),
+        if h.is_empty() {
+            None
+        } else {
+            Some(std::sync::Arc::new(h) as std::sync::Arc<dyn librqbit::HashProvider>)
         }
     };
     if meta.has_v1 {

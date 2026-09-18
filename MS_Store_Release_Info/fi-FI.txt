@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versio 0.4.0
+Versio 0.4.1
 
-- Katso videota jo latauksen aikana. Napsauta tiedostoa hiiren oikealla painikkeella torrentin tiedoissa tai selainkäyttöliittymässä, niin se avautuu VLC:ssä, mpv:ssä tai tavallisessa soittimessasi - toisto alkaa ennen kuin lataus on valmis.
-- Parempi tiedostoluettelo: valitse tiedostoja hiirellä tai nuolinäppäimillä, avaa oikealla painikkeella ja taita kokoon kansiot, joita et juuri katso. Sekä sovelluksessa että selainkäyttöliittymässä.
-- Lisäosat voivat lisätä kohteita tiedoston valikkoon, käynnistää ohjelmia uudella "execute"-oikeudella, jonka hyväksyt selkokielellä, ja kuljettaa omia käännöksiään. Viisitoista uutta kutsua antaa lisäosille sen, mihin selainkäyttöliittymä pystyi jo.
-- Tietoturvakorjauksia: toinen sivusto ei voi enää muuttaa mitään verkkokäyttöliittymän kautta, torrent ei voi enää nimetä Windows-asemaa kansioksi tai lisätä riviä soittolistaan, eivätkä epäonnistuneiden kirjautumisten lukitukset laske enää pyyntöjä, jotka eivät kokeilleet salasanaa.
+- Suhdelukusi ei enää nollaudu, kun muutat asetusta tai käynnistät uudelleen.
+- Lisää videosoittimia: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA ja Elmedia Player. Vain järjestelmästäsi löytyvät tarjotaan, ja jos jotakin ei löydy, sinulta kysytään missä se on.
+- Seurantapalvelimille ilmoitetaan tasoittain, kuten torrent pyysi - varaseurantapalvelin pysyy varalla.
+- Torrentin poistaminen sekä seurantapalvelimen muuttaminen tai poistaminen kysyvät ensin. Jokaiseen kysymykseen voi vastata kerran ja vastaus muistetaan.
+- PicoTorrentista tuonti kysyy ensin, voi tyhjentää nykyisen luettelon ja tuoda asetukset mukanaan, ja kertoo mitä saapui, mitä oli jo täällä ja mikä epäonnistui.
+- Verkkokäyttöliittymä saavuttaa sovelluksen: tiedostopuut kuvakkeineen kullekin tyypille, välilehdellinen Tiedot, kuvakepainikkeet jotka mitoittavat oman sarakkeensa, eikä vaakavierityspalkkia.
+- Laajennukset voivat tuoda oman kuvakkeensa, ja niiden Avaa- ja asetuspainikkeet näkyvät aina.
+- HTTPS:n yli verkkokäyttöliittymä ei voinut muuttaa mitään - jokainen painallus torjuttiin.
+- Työkalupalkki taittuu valikkoon ikkunan kaventuessa, pitkät tekstit katkaistaan ja taustavirheet on käännetty.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

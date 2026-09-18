@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Cymraeg (Y Deyrnas Unedig) - Partner Center: Welsh (United Kingdom) (cy-GB)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ Trosiad Rust o PicoTorrent gan Viktor Elofsson yw NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Fersiwn 0.4.0
+Fersiwn 0.4.1
 
-- Ffrydiwch fideo wrth iddo lawrlwytho. De-gliciwch ffeil ym manylion torrent, neu yn y rhyngwyneb gwe, ac fe agorith yn VLC, mpv neu eich chwaraewr arferol - mae'r chwarae'n dechrau cyn i'r lawrlwythiad orffen.
-- Rhestr ffeiliau well: dewiswch ffeiliau gyda'r llygoden neu'r bysellau saeth, agorwch un gyda de-glic, a phlygwch y ffolderi nad ydych yn edrych arnynt. Yn yr ap ac yn y rhyngwyneb gwe fel ei gilydd.
-- Gall ategion ychwanegu eitemau at ddewislen ffeil, cychwyn rhaglenni o dan ganiatâd newydd "execute" rydych chi'n ei gymeradwyo mewn iaith glir, a chario eu cyfieithiadau eu hunain. Mae pymtheg galwad arall yn rhoi iddynt yr hyn y gallai'r rhyngwyneb gwe ei wneud eisoes.
-- Atgyweiriadau diogelwch: ni all safle arall newid dim trwy'r rhyngwyneb gwe mwyach, ni all torrent enwi gyriant Windows fel ffolder nac ychwanegu llinell at restr chwarae, ac nid yw cloeon mewngofnodi methedig yn cyfrif ceisiadau na roddodd gyfrinair.
+- Nid yw eich cymhareb yn ailosod mwyach wrth newid gosodiad nac ailgychwyn.
+- Mwy o chwaraewyr fideo: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA ac Elmedia Player. Dim ond y rhai sydd gan eich system a gynigir, ac os na ellir dod o hyd i un, gofynnir i chi ble mae.
+- Cyhoeddir tracwyr fesul haen, fel y gofynnodd y torrent - mae traciwr wrth gefn yn aros wrth gefn.
+- Mae tynnu torrent, a newid neu dynnu traciwr, yn gofyn yn gyntaf. Gellir ateb pob cwestiwn unwaith a'i gofio.
+- Mae mewnforio o PicoTorrent yn gofyn yn gyntaf, gall glirio'r rhestr bresennol a dod â'i osodiadau drosodd, ac yn dweud beth gyrhaeddodd, beth oedd yma'n barod a beth fethodd.
+- Mae'r rhyngwyneb gwe yn dal i fyny: coed ffeiliau ag eicon fesul math, Manylion â thabiau, botymau eicon sy'n gosod lled eu colofn eu hunain, a dim bar sgrolio ochrol.
+- Gall ategion gario eu heicon eu hunain, ac mae eu botymau Open a gosodiadau i'w gweld bob amser.
+- Dros HTTPS ni allai'r rhyngwyneb gwe newid dim - gwrthodwyd pob botwm.
+- Mae'r bar offer yn plygu i'r ddewislen wrth gulhau, caiff capsiynau hir eu tocio, ac mae gwallau cefndir wedi'u cyfieithu.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

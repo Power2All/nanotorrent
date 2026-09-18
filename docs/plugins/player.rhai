@@ -40,19 +40,61 @@
 //
 //! permissions: read, ui, data, execute, notify
 
-// Where players actually live, tried in order until one starts. A path that is
-// not there fails to spawn and the next is tried, so there is no need to look
-// first - which is just as well, because a plugin cannot read the file system.
-const VLC = [
-    "vlc",                                                  // PATH: Linux, or installed that way
-    "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
-    "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe",
-    "/Applications/VLC.app/Contents/MacOS/VLC",
-];
-const MPV = [
-    "mpv",
-    "C:\\Program Files\\mpv\\mpv.exe",
-    "/Applications/mpv.app/Contents/MacOS/mpv",
+// Every player this plugin knows, where it lives, and which systems it exists
+// on. Paths are tried in order until one starts: a path that is not there
+// fails to spawn and the next is tried, so nothing has to look first - which is
+// just as well, because a plugin cannot read the file system.
+//
+// `os` is what keeps the dropdown honest. Offering IINA on Linux or Celluloid
+// on Windows is an option that can only disappoint, so the list is filtered to
+// what could actually be there before it is ever shown.
+const PLAYERS = [
+    #{ id: "system", os: ["windows", "linux", "macos"], paths: [] },
+    #{ id: "wmp", os: ["windows"], paths: [
+        "C:\\Program Files\\Windows Media Player\\wmplayer.exe",
+        "C:\\Program Files (x86)\\Windows Media Player\\wmplayer.exe",
+    ] },
+    #{ id: "vlc", os: ["windows", "linux", "macos"], paths: [
+        "vlc",                                              // PATH: Linux, or installed that way
+        "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
+        "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe",
+        "/Applications/VLC.app/Contents/MacOS/VLC",
+        "/snap/bin/vlc",
+    ] },
+    #{ id: "mpv", os: ["windows", "linux", "macos"], paths: [
+        "mpv",
+        "C:\\Program Files\\mpv\\mpv.exe",
+        "/Applications/mpv.app/Contents/MacOS/mpv",
+        "/opt/homebrew/bin/mpv",
+        "/usr/local/bin/mpv",
+    ] },
+    #{ id: "mpchc", os: ["windows"], paths: [
+        "C:\\Program Files\\MPC-HC\\mpc-hc64.exe",
+        "C:\\Program Files\\MPC-HC\\mpc-hc.exe",
+        "C:\\Program Files (x86)\\MPC-HC\\mpc-hc.exe",
+    ] },
+    #{ id: "potplayer", os: ["windows"], paths: [
+        "C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini64.exe",
+        "C:\\Program Files (x86)\\DAUM\\PotPlayer\\PotPlayerMini.exe",
+        "C:\\Program Files\\PotPlayer\\PotPlayerMini64.exe",
+    ] },
+    #{ id: "smplayer", os: ["windows", "linux"], paths: [
+        "smplayer",
+        "C:\\Program Files\\SMPlayer\\smplayer.exe",
+        "C:\\Program Files (x86)\\SMPlayer\\smplayer.exe",
+    ] },
+    #{ id: "celluloid", os: ["linux"], paths: [
+        "celluloid",
+        "/usr/bin/celluloid",
+    ] },
+    #{ id: "iina", os: ["macos"], paths: [
+        "/Applications/IINA.app/Contents/MacOS/IINA",
+        "iina-cli",
+    ] },
+    #{ id: "elmedia", os: ["macos"], paths: [
+        "/Applications/Elmedia Player.app/Contents/MacOS/Elmedia Player",
+    ] },
+    #{ id: "custom", os: ["windows", "linux", "macos"], paths: [] },
 ];
 
 // What is worth handing to a player. The same list the web interface uses for
@@ -63,10 +105,19 @@ const PLAYABLE = [
     ".mp3", ".flac", ".aac", ".m4a", ".opus", ".ogg", ".oga", ".wav",
 ];
 
-// Stored values, never shown. The dropdown displays `t("player_" + id)`, so
-// the saved setting means the same thing in every language and survives
-// somebody changing theirs.
-const PLAYER_IDS = ["system", "vlc", "mpv", "custom"];
+// What to use when nothing has been picked.
+//
+// Windows gets Media Player, which is what is actually there on a stock
+// install. Linux and macOS get the system default instead of a named player:
+// nothing is reliably preinstalled on Linux, and the one that is on macOS -
+// QuickTime - cannot open Matroska, which is most of what gets downloaded.
+// Handing those two to the desktop's own association at least respects
+// whatever the user has already chosen for video.
+const DEFAULT_PLAYER = #{
+    "windows": "wmp",
+    "linux": "system",
+    "macos": "system",
+};
 
 // What the setting used to hold, when the label WAS the value. Read on the way
 // in so an existing profile keeps the player it had.
@@ -84,10 +135,20 @@ fn on_session_start() {
     ui_window(t("title"));
     ui_configurable(true);
 
+    // Its mark in the plugin lists, as SVG path data on a 16x16 grid. The same
+    // string is drawn by the desktop and by the web interface, so this is
+    // declared once and is sharp in both. Straight lines only: Slint's Path
+    // does not lean on SVG arc support.
+    ui_icon("M 4 2 L 14 8 L 4 14 Z");
+
     // The item itself. One is enough - which file it was used on comes back
     // with the click, so there is no need for one item per file or any state
     // held between drawing the menu and it being used.
     ui_file_menu([#{ id: "play", label: t("play") }]);
+
+    // And a place on the menu bar, so the settings are reachable without going
+    // by way of Preferences > Plugins > the cog.
+    ui_menu(t("menu_title"), [#{ id: "settings", label: t("menu_settings") }]);
 
     // The log is not translated: it is for whoever reads the log file, which is
     // as often the person being asked for it as the person who wrote it.
@@ -97,6 +158,13 @@ fn on_session_start() {
 // ---------------------------------------------------------------------------
 // The click
 // ---------------------------------------------------------------------------
+
+fn on_ui_menu(id) {
+    if id == "settings" {
+        fill_settings();
+        ui_show();
+    }
+}
 
 fn on_file_menu(id, hash, index, name) {
     if id != "play" { return; }
@@ -124,15 +192,13 @@ fn on_file_menu(id, hash, index, name) {
 fn launch(url, name) {
     let choice = player_id();
 
-    if choice == "vlc" {
-        if first_that_runs(global::VLC, [url]) { return; }
-        notify(t("title"), t("no_vlc"));
-        return;
-    }
-
-    if choice == "mpv" {
-        if first_that_runs(global::MPV, [url]) { return; }
-        notify(t("title"), t("no_mpv"));
+    // System default: hand the URL to whatever the desktop opens links with.
+    // That is usually the browser, which plays MP4 and WebM perfectly well and
+    // is the honest answer for someone who has not picked a player.
+    if choice == "system" {
+        if !open(url) {
+            notify(t("title"), t("nothing_opened"));
+        }
         return;
     }
 
@@ -140,6 +206,8 @@ fn launch(url, name) {
         let program = setting("custom_program", "");
         if program == "" {
             notify(t("title"), t("no_custom"));
+            fill_settings();
+            ui_show();
             return;
         }
         // Arguments are separate from the program so a path with a space in it
@@ -147,15 +215,46 @@ fn launch(url, name) {
         // here builds a command line out of a string a torrent could influence.
         if run(program, custom_args(url)) { return; }
         notify(t("title"), t("wont_start", program));
+        fill_settings();
+        ui_show();
         return;
     }
 
-    // System default: hand the URL to whatever the desktop opens links with.
-    // That is usually the browser, which plays MP4 and WebM perfectly well and
-    // is the honest answer for someone who has not picked a player.
-    if !open(url) {
-        notify(t("title"), t("nothing_opened"));
+    // A path pointed at by hand comes first: it is the answer to "it is
+    // installed, just not where you looked", and it is what the Browse button
+    // in the settings fills in.
+    let candidates = [];
+    let pointed = setting("path." + choice, "");
+    if pointed != "" { candidates.push(pointed); }
+    for guess in paths_for(choice) { candidates.push(guess); }
+
+    if first_that_runs(candidates, [url]) { return; }
+
+    // Nowhere to be found. Rather than a dead end, open the settings with a
+    // Browse button already labelled for this player - "it is installed
+    // somewhere else" is by far the likeliest reason to be here, and there is
+    // nothing else the user could usefully do with the message on its own.
+    notify(t("title"), t("not_found", t("player_" + choice)));
+    fill_settings();
+    ui_show();
+}
+
+// The search paths for one player id, or an empty list for one that has none.
+fn paths_for(id) {
+    for entry in global::PLAYERS {
+        if entry.id == id { return entry.paths; }
     }
+    return [];
+}
+
+// The player ids that exist on this system, in the order they are listed.
+fn available_ids() {
+    let here = os();
+    let out = [];
+    for entry in global::PLAYERS {
+        if entry.os.contains(here) { out.push(entry.id); }
+    }
+    return out;
 }
 
 // Arguments for a custom player: whitespace-separated, with {url} replaced.
@@ -216,28 +315,46 @@ fn on_ui_open() {
 
 fn fill_settings() {
     // Labels are built from the ids, so the dropdown is in the reader's
-    // language while the stored value stays the id.
+    // language while the stored value stays the id. Only the ids that exist on
+    // this system are offered.
+    let chosen = player_id();
+    // Hoisted: the host caps how deeply a Rhai expression may nest, and
+    // `t("path_to", t("player_" + chosen))` is one level past it.
+    let chosen_name = t("player_" + chosen);
     let labels = [];
-    for id in global::PLAYER_IDS { labels.push(t("player_" + id)); }
+    for id in available_ids() { labels.push(t("player_" + id)); }
 
-    ui_form("settings", t("title"), [
+    // One path field, for whichever player is currently chosen, rather than ten
+    // that are blank. It is labelled with that player's name so the Browse
+    // dialog says what it is asking for.
+    let fields = [
         #{
             id: "player", label: t("play_with"), kind: "choice",
             options: join_lines(labels),
-            value: t("player_" + player_id()),
+            value: chosen_name,
             hint: t("hint_player"),
         },
-        #{
-            id: "custom_program", label: t("custom_player"), kind: "text",
-            value: setting("custom_program", ""),
-            hint: t("hint_custom_player"),
-        },
-        #{
-            id: "custom_args", label: t("custom_args"), kind: "text",
-            value: setting("custom_args", ""),
-            hint: t("hint_custom_args"),
-        },
-    ]);
+    ];
+    if chosen != "system" && chosen != "custom" {
+        fields.push(#{
+            id: "player_path", label: t("path_to", chosen_name),
+            kind: "file",
+            value: setting("path." + chosen, ""),
+            hint: t("hint_path"),
+        });
+    }
+    fields.push(#{
+        id: "custom_program", label: t("custom_player"), kind: "file",
+        value: setting("custom_program", ""),
+        hint: t("hint_custom_player"),
+    });
+    fields.push(#{
+        id: "custom_args", label: t("custom_args"), kind: "text",
+        value: setting("custom_args", ""),
+        hint: t("hint_custom_args"),
+    });
+
+    ui_form("settings", t("title"), fields);
     ui_show();
 }
 
@@ -247,14 +364,20 @@ fn on_ui_form(form_id, values) {
     // Back from the label to the id. A form hands back the line that was
     // chosen, and the lines are translated - so the id is whichever one
     // produced that label.
-    let chosen = "system";
-    for id in global::PLAYER_IDS {
+    let chosen = default_player();
+    for id in available_ids() {
         if t("player_" + id) == values["player"] { chosen = id; }
     }
 
     data_set("set.player", chosen);
     data_set("set.custom_program", values["custom_program"]);
     data_set("set.custom_args", values["custom_args"]);
+    // The path field is only drawn for a real player, and belongs to the one
+    // that is selected NOW - changing both in one go points the new player at
+    // the path just typed, which is the only reading that is not surprising.
+    if values.contains("player_path") {
+        data_set("set.path." + chosen, values["player_path"]);
+    }
     ui_form_close();
     ui_status(t("now_playing_with", t("player_" + chosen)));
 }
@@ -276,9 +399,19 @@ fn on_ui_form_cancel(form_id) {
 // The chosen player, as an id. Accepts what older versions stored - the
 // English label - so nobody's setting is lost to this change.
 fn player_id() {
-    let raw = setting("player", "system");
-    if global::LEGACY_IDS.contains(raw) { return global::LEGACY_IDS[raw]; }
-    if global::PLAYER_IDS.contains(raw) { return raw; }
+    let fallback = default_player();
+    let raw = setting("player", fallback);
+    if global::LEGACY_IDS.contains(raw) { raw = global::LEGACY_IDS[raw]; }
+    // A player that does not exist on this system is not a player: a profile
+    // carried from a Windows machine to a Linux one would otherwise keep
+    // trying to start PotPlayer forever.
+    if available_ids().contains(raw) { return raw; }
+    return fallback;
+}
+
+fn default_player() {
+    let here = os();
+    if global::DEFAULT_PLAYER.contains(here) { return global::DEFAULT_PLAYER[here]; }
     return "system";
 }
 

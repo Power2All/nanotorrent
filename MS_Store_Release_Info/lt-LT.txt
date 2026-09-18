@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Lietuvių (Lietuva) - Partner Center: Lithuanian (Lithuania) (lt-LT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent yra Viktoro Elofssono PicoTorrent perkėlimas į Rust kalbą.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.0
+Versija 0.4.1
 
-- Žiūrėkite vaizdo įrašą jam dar atsisiunčiant. Dešiniuoju pelės mygtuku spustelėkite failą torento informacijoje arba saityno sąsajoje, ir jis atsidarys VLC, mpv ar jūsų įprastame grotuve - atkūrimas prasideda nelaukiant, kol atsisiuntimas baigsis.
-- Geresnis failų sąrašas: rinkitės failus pele arba rodyklėmis, atverkite dešiniuoju mygtuku ir suskleiskite aplankus, į kuriuos dabar nežiūrite. Ir programoje, ir saityno sąsajoje.
-- Papildiniai gali įtraukti elementų į failo meniu, paleisti programas su nauju leidimu "execute", kurį patvirtinate aiškia kalba, ir turėti savo vertimus. Dar penkiolika funkcijų suteikia jiems tai, ką saityno sąsaja jau mokėjo.
-- Saugumo pataisymai: kita svetainė nebegali nieko pakeisti per žiniatinklio sąsają, torentas nebegali pavadinti „Windows“ disko aplanku ar pridėti eilutės į grojaraštį, o užraktai po nesėkmingų prisijungimų nebeskaičiuoja užklausų, kurios niekada nebandė slaptažodžio.
+- Jūsų santykis nebeatstatomas į nulį, kai pakeičiate nuostatą arba paleidžiate iš naujo.
+- Daugiau vaizdo grotuvų: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA ir Elmedia Player. Siūlomi tik tie, kuriuos turi jūsų sistema, o jei kurio nors nerandama, paklausiama, kur jis yra.
+- Sekikliams pranešama pagal lygius, kaip prašė torentas - atsarginis sekiklis lieka atsarginiu.
+- Torento šalinimas, taip pat sekiklio keitimas ar šalinimas pirma paklausia. Į kiekvieną klausimą galima atsakyti kartą ir atsakymą įsiminti.
+- Importavimas iš PicoTorrent pirma paklausia, gali išvalyti dabartinį sąrašą ir perkelti jo nuostatas bei pasako, kas atkeliavo, kas jau buvo ir kas nepavyko.
+- Žiniatinklio sąsaja pasivijo programą: failų medžiai su piktograma kiekvienam tipui, kortelėmis suskirstyta Išsami informacija, piktogramų mygtukai, patys nustatantys savo stulpelio plotį, ir jokios horizontalios slinkties juostos.
+- Papildiniai gali turėti savo piktogramą, o jų Atverti ir nuostatų mygtukai rodomi visada.
+- Per HTTPS žiniatinklio sąsaja nieko negalėjo pakeisti - kiekvienas mygtukas buvo atmestas.
+- Siaurėjant įrankių juosta sulankstoma į meniu, ilgi užrašai sutrumpinami, o fono klaidos išverstos.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

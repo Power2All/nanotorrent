@@ -172,6 +172,7 @@ struct Ui {
     /// The one-time "shall I encrypt the database?" question.
     db_prompt: RefCell<Option<DbPromptDialog>>,
     remove_dialog: RefCell<Option<RemoveDialog>>,
+    pico_dialog: RefCell<Option<PicoImportDialog>>,
     /// The .torrent currently in the Add dialog, and any queued behind it.
     /// argv can name several, and only one dialog is shown at a time.
     pending: RefCell<Vec<Vec<u8>>>,
@@ -371,6 +372,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         close_prompt: RefCell::new(None),
         db_prompt: RefCell::new(None),
         remove_dialog: RefCell::new(None),
+        pico_dialog: RefCell::new(None),
     });
 
     let model: Rc<VecModel<Row>> = Rc::new(VecModel::from(Vec::new()));
@@ -1754,7 +1756,7 @@ fn drain_notifications(window: &MainWindow, ui: &Rc<Ui>) {
             // message that fades. Already logged where it was raised.
             SessionEvent::Error(err) => {
                 had_error = true;
-                show_error_toast(window, &err);
+                show_error_toast(window, &err.text(&ui.tr.borrow()));
             }
             // Confirmation that the add actually happened. Failures already
             // arrive as Error above, so between the two every add says
@@ -2066,12 +2068,13 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                         // A file left out of the download is at Skip whatever
                         // the priority table says - the include toggle and the
                         // priority are two views of one setting.
-                        let level = match files[index].included {
-                            false => session::PRIORITY_SKIP,
-                            true => stored
+                        let level = if files[index].included {
+                            stored
                                 .get(&index)
                                 .copied()
-                                .unwrap_or(session::PRIORITY_NORMAL),
+                                .unwrap_or(session::PRIORITY_NORMAL)
+                        } else {
+                            session::PRIORITY_SKIP
                         };
                         FileEntryRow {
                             index: index as i32,
@@ -2197,9 +2200,10 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
             // so it goes back to the default.
             let last = names.len() as i32 - 1;
             let unchanged = window.get_tracker_tier_names().row_count() == names.len();
-            let picked = match unchanged {
-                true => window.get_tracker_tier_index().clamp(0, last),
-                false => last,
+            let picked = if unchanged {
+                window.get_tracker_tier_index().clamp(0, last)
+            } else {
+                last
             };
             window.set_tracker_tier_names(ModelRc::new(VecModel::from(names)));
             window.set_tracker_tier_index(picked);
@@ -2407,10 +2411,22 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             if to.trim() == from {
                 return;
             }
-            match u.session.edit_tracker(&hash, &from, &to) {
-                true => show_toast(&window, &u.tr.borrow().i18n("edit_tracker")),
-                false => show_error_toast(&window, &u.tr.borrow().i18n("tracker_url_invalid")),
-            }
+            let _ = &hash;
+            // Asked on APPLY, not when the field opened: until now nothing has
+            // changed, and a question about an edit nobody has finished making
+            // is a question about nothing.
+            let heading = u.tr.borrow().i18n("confirm_tracker_edit");
+            let weak = window.as_weak();
+            let (from, to) = (from, to);
+            open_confirm(&u, CONFIRM_TRACKER_KEY, heading, to.clone(), move |u| {
+                let Some(hash) = u.detail_hash.borrow().clone() else { return };
+                let Some(window) = weak.upgrade() else { return };
+                if u.session.edit_tracker(&hash, &from, &to) {
+                    show_toast(&window, &u.tr.borrow().i18n("edit_tracker"));
+                } else {
+                    show_error_toast(&window, &u.tr.borrow().i18n("tracker_url_invalid"));
+                }
+            });
         });
     }
     {
@@ -2419,10 +2435,18 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             let (Some(window), Some(hash)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
                 return;
             };
-            u.session
-                .remove_tracker(&hash, window.get_tracker_target().as_str());
-            // Whatever was being edited is gone with the row.
-            window.set_tracker_editing_row(-1);
+            let url = window.get_tracker_target().to_string();
+            let heading = u.tr.borrow().i18n1("confirm_remove_tracker", &url);
+            let weak = window.as_weak();
+            open_confirm(&u, CONFIRM_TRACKER_KEY, heading, String::new(), move |u| {
+                let Some(hash) = u.detail_hash.borrow().clone() else { return };
+                u.session.remove_tracker(&hash, &url);
+                // Whatever was being edited is gone with the row.
+                if let Some(window) = weak.upgrade() {
+                    window.set_tracker_editing_row(-1);
+                }
+            });
+            let _ = hash;
         });
     }
     {
@@ -2436,17 +2460,16 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             // the last real tier - which is exactly what `add_tracker` reads as
             // "make a new one", so no special case is needed here.
             let tier = window.get_tracker_tier_index().max(0) as usize;
-            match u.session.add_tracker(&hash, url.trim(), tier) {
-                true => {
-                    window.set_new_tracker(SharedString::new());
-                    // The torrent is being re-added, so the list it is about to
-                    // redraw from is briefly the old one. The one-second tick
-                    // picks the new tracker up.
-                    show_toast(&window, &u.tr.borrow().i18n("add_tracker"));
-                }
+            if u.session.add_tracker(&hash, url.trim(), tier) {
+                window.set_new_tracker(SharedString::new());
+                // The torrent is being re-added, so the list it is about to
+                // redraw from is briefly the old one. The one-second tick
+                // picks the new tracker up.
+                show_toast(&window, &u.tr.borrow().i18n("add_tracker"));
+            } else {
                 // Refused by the scheme check, which is the only way this
                 // fails without touching the disk.
-                false => show_error_toast(&window, &u.tr.borrow().i18n("tracker_url_invalid")),
+                show_error_toast(&window, &u.tr.borrow().i18n("tracker_url_invalid"));
             }
         });
     }
@@ -2689,9 +2712,111 @@ fn repaint_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>
 /// Only Delete reaches this. The context menu's two Remove entries say which
 /// they are and go straight to the session - a prompt on top of a choice
 /// already made is just a second click.
-fn open_remove_prompt(window: &MainWindow, ui: &Rc<Ui>) {
+/// Ask before importing from PicoTorrent, then report what happened.
+///
+/// A dialog rather than a toast-and-go: this can add hundreds of torrents, and
+/// with purging ticked it removes everything already here first. Both choices
+/// are made in one place, and the answer afterwards says what actually landed
+/// rather than only what succeeded.
+fn open_pico_import(window: &MainWindow, ui: &Rc<Ui>) {
+    let dialog = match PicoImportDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the import dialog: {err}");
+            return;
+        }
+    };
+
+    {
+        let tr = ui.tr.borrow();
+        dialog.set_ask_text(tr.i18n1("pico_import_ask", "PicoTorrent").into());
+        dialog.set_settings_text(tr.i18n1("pico_import_settings", "PicoTorrent").into());
+    }
+
+    {
+        let (weak, u, owner) = (dialog.as_weak(), ui.clone(), window.as_weak());
+        dialog.on_confirmed(move |purge, settings| {
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+            *u.pico_dialog.borrow_mut() = None;
+
+            let Some(window) = owner.upgrade() else { return };
+            let tr = u.tr.borrow();
+            let Some(path) = u.env.get_picotorrent_db_path() else {
+                show_error_toast(&window, &tr.i18n("nothing_to_add"));
+                return;
+            };
+
+            let options = crate::bittorrent::session::ImportOptions { purge, settings };
+            match u.session.import_from_picotorrent(&path, options) {
+                Err(err) => show_error_toast(&window, &err.to_string()),
+                Ok(report) => {
+                    // Imported and skipped every time, including the zeroes: a
+                    // line that changes shape with the outcome is one nobody
+                    // learns to read. The other two are only worth the words
+                    // when they happened.
+                    let mut text = tr.i18n_args(
+                        "pico_import_done",
+                        &[&report.imported.to_string(), &report.skipped.to_string()],
+                    );
+                    if report.failed > 0 {
+                        text.push(' ');
+                        text.push_str(
+                            &tr.i18n1("pico_import_failed", &report.failed.to_string()),
+                        );
+                    }
+                    if report.settings > 0 {
+                        text.push(' ');
+                        text.push_str(
+                            &tr.i18n1("pico_import_copied", &report.settings.to_string()),
+                        );
+                    }
+                    show_toast(&window, &text);
+                }
+            }
+        });
+    }
+
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_cancelled(move || {
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+            *u.pico_dialog.borrow_mut() = None;
+        });
+    }
+
+    wire_dialog_close(&dialog, ui);
+    let _ = dialog.show();
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
+    let _ = window; // owner is set by wire_dialog_close
+    *ui.pico_dialog.borrow_mut() = Some(dialog);
+}
+
+/// The setting behind both removal prompts.
+pub const CONFIRM_REMOVE_KEY: &str = "ui.confirm_remove_torrent";
+
+/// Ask before removing, unless the user has said not to.
+///
+/// `files` is `None` when the caller did not say what should happen to the
+/// downloaded data - Delete and the toolbar's trash - and the dialog offers
+/// both. It is `Some(..)` from the context menu, whose two entries already
+/// said which, so there the question is only whether it was meant.
+fn open_remove_prompt(window: &MainWindow, ui: &Rc<Ui>, files: Option<bool>) {
     let targets = ui.targets();
     if targets.is_empty() {
+        return;
+    }
+
+    // Turned off, and the caller already knows what to do: just do it. With no
+    // choice made, the dialog is the only place that choice can come from, so
+    // it is shown whatever the setting says.
+    if !ui.cfg.get_bool(CONFIRM_REMOVE_KEY)
+        && let Some(delete_files) = files
+    {
+        remove_all(ui, &targets, delete_files);
         return;
     }
 
@@ -2721,20 +2846,42 @@ fn open_remove_prompt(window: &MainWindow, ui: &Rc<Ui>) {
                 .i18n1("remove_n_torrents", &targets.len().to_string())
         }
     };
-    dialog.set_subject(subject.into());
+
+    {
+        let tr = ui.tr.borrow();
+        dialog.set_heading(tr.i18n("remove_confirm").into());
+        dialog.set_subject(subject.into());
+        dialog.set_note(tr.i18n("remove_keeps_files").into());
+        match files {
+            // Nothing was said: offer both, with the safe one primary.
+            None => {
+                dialog.set_primary_text(tr.i18n("remove_torrent").into());
+                dialog.set_secondary_text(tr.i18n("remove_torrent_and_files").into());
+            }
+            // It was said: one button, worded as the menu entry was, so the
+            // dialog confirms the thing that was actually clicked.
+            Some(true) => {
+                dialog.set_primary_text(tr.i18n("remove_torrent_and_files").into());
+                dialog.set_secondary_text(SharedString::new());
+            }
+            Some(false) => {
+                dialog.set_primary_text(tr.i18n("remove_torrent").into());
+                dialog.set_secondary_text(SharedString::new());
+            }
+        }
+    }
 
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
         let targets = targets.clone();
-        dialog.on_chosen(move |delete_files| {
-            for hash in &targets {
-                u.session.remove(hash, delete_files);
+        dialog.on_chosen(move |secondary, remember| {
+            // With one button the caller's choice stands; with two, the second
+            // button is the one that takes the files.
+            let delete_files = files.unwrap_or(secondary);
+            if remember {
+                u.cfg.set(CONFIRM_REMOVE_KEY, &false);
             }
-            tracing::info!(
-                "removed {} torrent(s), data {}",
-                targets.len(),
-                if delete_files { "deleted" } else { "kept" }
-            );
+            remove_all(&u, &targets, delete_files);
             if let Some(d) = weak.upgrade() {
                 dismiss(&u, &d);
             }
@@ -2759,13 +2906,99 @@ fn open_remove_prompt(window: &MainWindow, ui: &Rc<Ui>) {
     *ui.remove_dialog.borrow_mut() = Some(dialog);
 }
 
+/// The setting behind the tracker prompts.
+pub const CONFIRM_TRACKER_KEY: &str = "ui.confirm_tracker_change";
+
+/// Ask a yes-or-no question, unless the user has said not to, then act.
+///
+/// The same dialog the removal prompt uses, with one action instead of two -
+/// a tracker edit has only one thing it can do, so a second button would be a
+/// choice nobody is being offered.
+fn open_confirm(
+    ui: &Rc<Ui>,
+    setting_key: &'static str,
+    heading: String,
+    subject: String,
+    act: impl Fn(&Rc<Ui>) + 'static,
+) {
+    if !ui.cfg.get_bool(setting_key) {
+        act(ui);
+        return;
+    }
+
+    let dialog = match RemoveDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the confirmation dialog: {err}");
+            // Asking was the point, but refusing to act because a window would
+            // not open is worse: the user asked for this.
+            act(ui);
+            return;
+        }
+    };
+
+    dialog.set_heading(heading.into());
+    dialog.set_subject(subject.into());
+    dialog.set_note(SharedString::new());
+    dialog.set_primary_text(ui.tr.borrow().i18n("yes").into());
+    dialog.set_secondary_text(SharedString::new());
+
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_chosen(move |_secondary, remember| {
+            if remember {
+                u.cfg.set(setting_key, &false);
+            }
+            act(&u);
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+            *u.remove_dialog.borrow_mut() = None;
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_cancelled(move || {
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+            *u.remove_dialog.borrow_mut() = None;
+        });
+    }
+
+    wire_dialog_close(&dialog, ui);
+    let _ = dialog.show();
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
+    *ui.remove_dialog.borrow_mut() = Some(dialog);
+}
+
+fn remove_all(ui: &Rc<Ui>, targets: &[String], delete_files: bool) {
+    for hash in targets {
+        ui.session.remove(hash, delete_files);
+    }
+    tracing::info!(
+        "removed {} torrent(s), data {}",
+        targets.len(),
+        if delete_files { "deleted" } else { "kept" }
+    );
+}
+
 /// Menu and context-menu commands, dispatched by name.
 fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
     {
         let (u, w) = (ui.clone(), window.as_weak());
         window.on_remove_prompt(move || {
             if let Some(window) = w.upgrade() {
-                open_remove_prompt(&window, &u);
+                open_remove_prompt(&window, &u, None);
+            }
+        });
+    }
+
+    {
+        let (u, w) = (ui.clone(), window.as_weak());
+        window.on_remove_confirm(move |files| {
+            if let Some(window) = w.upgrade() {
+                open_remove_prompt(&window, &u, Some(files));
             }
         });
     }
@@ -2789,26 +3022,18 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
             // may have gone since.
             "import-pico" => {
                 let Some(window) = w.upgrade() else { return };
-                let tr = u.tr.borrow();
-                let Some(path) = u.env.get_picotorrent_db_path() else {
-                    show_error_toast(&window, &tr.i18n("nothing_to_add"));
-                    return;
-                };
-                match u.session.import_from_picotorrent(&path) {
-                    Err(err) => show_error_toast(&window, &err.to_string()),
-                    Ok((0, 0)) => show_toast(&window, &tr.i18n("nothing_to_add")),
-                    Ok((0, _)) => {
-                        show_toast(&window, &tr.i18n("all_torrents_already_in_session"))
-                    }
-                    Ok((added, skipped)) => {
-                        let mut text = tr.i18n1("torrents_added", &added.to_string());
-                        if skipped > 0 {
-                            text.push(' ');
-                            text.push_str(&tr.i18n("some_torrents_already_in_session"));
-                        }
-                        show_toast(&window, &text);
+                {
+                    let tr = u.tr.borrow();
+                    if u.env.get_picotorrent_db_path().is_none() {
+                        show_error_toast(&window, &tr.i18n("nothing_to_add"));
+                        return;
                     }
                 }
+                // Asked first, and asked once: importing can add hundreds of
+                // torrents and - if purging was ticked - take away everything
+                // already here. The dialog carries both choices so there is one
+                // decision point rather than three prompts in a row.
+                open_pico_import(&window, &u);
             }
             // The manual switch only. The schedule can also have the limits on,
             // and this must not silently turn that off - the scheduler will put
@@ -4060,9 +4285,11 @@ where
 fn refresh_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
     let dir = crate::plugins::plugin_dir(&ui.env);
     let tr = ui.tr.borrow();
+    let windows = crate::plugins::ui::windows();
     let rows: Vec<PluginRow> = crate::plugins::scan(&dir, &ui.cfg)
         .into_iter()
         .map(|p| {
+            let window = windows.iter().find(|w| w.name == p.name);
             // Descriptions, not tags: "remove" is not a decision anyone can
             // make, "Remove torrents and delete their files" is.
             let mut what: Vec<String> = p
@@ -4080,6 +4307,12 @@ fn refresh_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
                 // says it needs configuring once it has loaded and said so, so
                 // this is false for one that is ticked but awaiting approval.
                 configurable: crate::plugins::ui::configurable(&p.name),
+                // Both from the running host for the same reason: a plugin
+                // that has not loaded has declared neither.
+                has_window: window.is_some(),
+                icon: SharedString::from(
+                    window.map(|w| w.icon.clone()).unwrap_or_default(),
+                ),
                 name: SharedString::from(p.name),
                 enabled: p.enabled,
                 error: SharedString::from(p.error.unwrap_or_default()),
@@ -4147,6 +4380,17 @@ fn wire_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
             // "configure" means is the plugin's decision, and one without a
             // window might do something else entirely.
             pluginwindow::configure(row.name.as_ref());
+        });
+    }
+
+    {
+        let weak = d.as_weak();
+        d.on_open_plugin(move |index| {
+            let Some(dd) = weak.upgrade() else { return };
+            let Some(row) = dd.get_plugins().row_data(index as usize) else {
+                return;
+            };
+            pluginwindow::open(row.name.as_ref());
         });
     }
 
@@ -4467,6 +4711,8 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     d.set_close_action_index(CLOSE_ACTIONS.iter().position(|a| *a == close).unwrap_or(0) as i32);
 
     d.set_skip_add_dialog(cfg.get_bool("skip_add_torrent_dialog"));
+    d.set_confirm_remove(cfg.get_bool(CONFIRM_REMOVE_KEY));
+    d.set_confirm_tracker(cfg.get_bool(CONFIRM_TRACKER_KEY));
     d.set_show_in_tray(cfg.get_bool("show_in_notification_area"));
     d.set_minimize_to_tray(cfg.get_bool("minimize_to_notification_area"));
     d.set_notify_complete(cfg.get_bool(crate::core::toast::ENABLED_KEY));
@@ -4746,12 +4992,12 @@ fn save_transfer(d: &PreferencesDialog, cfg: &crate::core::configuration::Config
     let picked = d.get_watch_label_index();
     cfg.set(
         "watch.label_id",
-        &match picked >= 1 {
-            true => cfg
-                .get_labels()
+        &if picked >= 1 {
+            cfg.get_labels()
                 .get(picked as usize - 1)
-                .map_or(-1, |l| i64::from(l.id)),
-            false => -1,
+                .map_or(-1, |l| i64::from(l.id))
+        } else {
+            -1
         },
     );
 
@@ -4856,6 +5102,8 @@ fn save_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     );
 
     cfg.set("skip_add_torrent_dialog", &d.get_skip_add_dialog());
+    cfg.set(CONFIRM_REMOVE_KEY, &d.get_confirm_remove());
+    cfg.set(CONFIRM_TRACKER_KEY, &d.get_confirm_tracker());
     cfg.set("show_in_notification_area", &d.get_show_in_tray());
     cfg.set("minimize_to_notification_area", &d.get_minimize_to_tray());
     cfg.set(crate::core::toast::ENABLED_KEY, &d.get_notify_complete());
@@ -5777,16 +6025,18 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
                     .iter()
                     .all(|hash| u.cfg.tags_for(hash).iter().any(|t| t.id == tag.id));
             for hash in &selected {
-                match all_have {
-                    true => u.cfg.remove_tag(hash, tag.id),
-                    false => u.cfg.add_tag(hash, tag.id),
+                if all_have {
+                    u.cfg.remove_tag(hash, tag.id);
+                } else {
+                    u.cfg.add_tag(hash, tag.id);
                 }
             }
             let on: Vec<bool> = tags
                 .iter()
-                .map(|t| match t.id == tag.id {
-                    true => !all_have,
-                    false => {
+                .map(|t| {
+                    if t.id == tag.id {
+                        !all_have
+                    } else {
                         !selected.is_empty()
                             && selected
                                 .iter()
@@ -6086,6 +6336,66 @@ mod file_tree_tests {
         assert_eq!(file_kind("episode.ts"), FileKind::Video);
     }
 
+    /// No image file may be both a window's icon and something that window
+    /// draws.
+    ///
+    /// Slint loses the icon of every window shown after one that renders the
+    /// file its own `icon` is bound to - the title bar falls back to the
+    /// generic Windows one. It is not About-specific: About was simply the only
+    /// window that drew its own icon. Shipped in v0.4.0, found by opening
+    /// About, closing it and opening it again.
+    ///
+    /// Hence `res/about-logo.png`, which is `app-256.png`'s twin and exists to
+    /// keep the two uses apart. A future tidy-up that "deduplicates" them
+    /// fails here rather than in a title bar.
+    #[test]
+    fn no_window_draws_the_image_its_own_icon_comes_from() {
+        use std::collections::BTreeSet;
+
+        // Every .slint in this directory, so a new window is covered the day
+        // it is added rather than the day someone remembers this test.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui_slint");
+        let files: Vec<_> = std::fs::read_dir(&dir)
+            .expect("src/ui_slint is readable")
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("slint"))
+            .collect();
+        assert!(files.len() >= 10, "found only {} .slint files", files.len());
+
+        let url_in = |line: &str| -> Option<String> {
+            let at = line.find("@image-url(\"")? + "@image-url(\"".len();
+            let rest = &line[at..];
+            Some(rest[..rest.find('"')?].to_owned())
+        };
+
+        let mut icons: BTreeSet<String> = BTreeSet::new();
+        let mut drawn: BTreeSet<String> = BTreeSet::new();
+        for path in &files {
+            let text = std::fs::read_to_string(path).expect("readable");
+            for line in text.lines() {
+                let line = line.trim();
+                if let Some(url) = url_in(line) {
+                    if line.starts_with("icon:") {
+                        icons.insert(url);
+                    } else if line.starts_with("source:") {
+                        drawn.insert(url);
+                    }
+                }
+            }
+        }
+
+        assert!(!icons.is_empty(), "no window icons found - did the syntax change?");
+        assert!(!drawn.is_empty(), "no drawn images found - did the syntax change?");
+
+        let both: Vec<_> = icons.intersection(&drawn).collect();
+        assert!(
+            both.is_empty(),
+            "these files are used as a window icon AND drawn in a window, which \
+             costs every later window its icon: {both:?}"
+        );
+    }
+
     /// The discriminants cross into the markup as plain ints, so they are not
     /// free to be renumbered on one side.
     #[test]
@@ -6124,6 +6434,58 @@ mod file_tree_tests {
         for kind in 0..=9 {
             assert!(draws(kind), "FileGlyph draws nothing for kind {kind}");
         }
+    }
+
+    /// The web interface draws the same icons from its own copy of this table,
+    /// because the tree is rendered in the browser. Two tables that must agree
+    /// and cannot be shared: this is what keeps them honest, and it reads the
+    /// shipped page rather than a copy of it.
+    ///
+    /// A mismatch is not cosmetic - the same file would get one icon in the
+    /// window and another in the browser, which is exactly the sort of thing
+    /// nobody notices until a user reports it.
+    #[test]
+    fn the_web_file_icons_match_the_desktops() {
+        use super::{FileKind, file_kind};
+
+        let html = include_str!("../webui/index.html");
+        let start = html.find("const KINDS = {").expect("no KINDS table in the page");
+        let end = html[start..].find("};").expect("KINDS never closed") + start;
+        let table = &html[start..end];
+
+        let mut checked = 0;
+        for line in table.lines() {
+            // `  video: "mkv mp4 ...",`
+            let Some((name, rest)) = line.split_once(':') else { continue };
+            let name = name.trim();
+            let Some(exts) = rest.split('"').nth(1) else { continue };
+            if name.is_empty() || name.starts_with("const") {
+                continue;
+            }
+            let want = match name {
+                "video" => FileKind::Video,
+                "audio" => FileKind::Audio,
+                "image" => FileKind::Image,
+                "archive" => FileKind::Archive,
+                "disc" => FileKind::Disc,
+                "document" => FileKind::Document,
+                "subtitle" => FileKind::Subtitle,
+                "program" => FileKind::Program,
+                "code" => FileKind::Code,
+                other => panic!("the page has a kind this side does not: {other}"),
+            };
+            for ext in exts.split_whitespace() {
+                assert_eq!(
+                    file_kind(&format!("x.{ext}")),
+                    want,
+                    "the page files .{ext} as {name}; this side does not"
+                );
+                checked += 1;
+            }
+        }
+        // A table that silently stopped parsing would pass every assertion
+        // above by making none of them.
+        assert!(checked > 100, "only {checked} extensions checked - did the table parse?");
     }
 
     /// The connectors, read back as the tree they draw.

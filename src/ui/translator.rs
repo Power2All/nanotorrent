@@ -524,6 +524,7 @@ mod slint_key_tests {
             // list was hand-written and fell behind the directory.
             include_str!("../ui_slint/clihelp.slint"),
             include_str!("../ui_slint/plugin.slint"),
+            include_str!("../ui_slint/picoimport.slint"),
             include_str!("../ui_slint/remove.slint"),
             include_str!("../ui_slint/update.slint"),
         ] {

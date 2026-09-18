@@ -40,6 +40,33 @@ pub struct AddParams {
     pub label_id: Option<i32>,
 }
 
+/// What to bring across from a PicoTorrent install.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct ImportOptions {
+    /// Remove every torrent already in this session first. The files are left
+    /// alone either way.
+    pub purge: bool,
+    /// Copy the settings this build also has.
+    pub settings: bool,
+}
+
+/// What an import actually did, so it can be reported rather than guessed at.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct ImportReport {
+    pub imported: usize,
+    /// Already in this session, so left alone.
+    pub skipped: usize,
+    /// Did not make it: a row with neither metadata nor a magnet to rebuild
+    /// it from, or one the engine refused outright. A failure that happens
+    /// inside the engine's own task after it accepted the torrent is not
+    /// counted here - it arrives as an error event instead.
+    pub failed: usize,
+    /// Settings copied across. Zero when the option was off.
+    pub settings: usize,
+    /// Torrents removed first, when purging was asked for.
+    pub purged: usize,
+}
+
 /// Per-torrent metadata persisted in the `torrent` table.
 #[derive(Clone)]
 struct TorrentMeta {
@@ -54,6 +81,22 @@ struct TorrentMeta {
     /// stale fastresume, which would otherwise pop a false toast and, worse,
     /// suppress the real one after a recheck+re-download).
     prev_finished: Option<bool>,
+    /// Bytes this torrent has ever uploaded, across every session.
+    ///
+    /// Kept here and in the `torrent` table rather than read from the engine,
+    /// because the engine's figure counts only the current session: rebuilding
+    /// it - which `apply_settings` does for ANY preference change - starts it
+    /// again at zero, and the ratio along with it.
+    uploaded_total: i64,
+    /// The engine's own counter as of the last tick, so the delta can be taken.
+    ///
+    /// Session-local: a fresh process, or a rebuilt engine, starts at zero and
+    /// the first tick treats the whole live figure as new. That is what makes
+    /// the total survive the rebuild rather than double-counting it.
+    seen_uploaded: i64,
+    /// `uploaded_total` as last written to the database, so a tick only writes
+    /// when there is something worth writing.
+    flushed_uploaded: i64,
     /// The v1/v2 info hashes, computed once from the info dict.
     ///
     /// Cached because `list()` runs on the one-second UI tick and hashing is
@@ -70,6 +113,20 @@ pub const PRIORITY_SKIP: i64 = 0;
 pub const PRIORITY_NORMAL: i64 = 1;
 pub const PRIORITY_HIGH: i64 = 2;
 pub const PRIORITY_MAX: i64 = 3;
+
+/// Fold one tick's engine counter into a running upload total.
+///
+/// Returns the new total and the watermark to remember. The engine counts only
+/// the session it is currently running, so the figure goes BACKWARDS whenever
+/// that session is rebuilt - which `apply_settings` does for any preference
+/// change at all - or the torrent is re-added. When it does, the live number is
+/// the new session's whole contribution rather than a continuation of the old
+/// one, and subtracting the stale watermark would yield a negative delta and
+/// walk the total down.
+fn accumulate_uploaded(total: i64, seen: i64, live: i64) -> (i64, i64) {
+    let delta = if live >= seen { live - seen } else { live };
+    (total + delta, live)
+}
 
 /// A priority level as a word, for the log.
 fn priority_name(level: i64) -> &'static str {
@@ -245,7 +302,58 @@ pub enum SessionEvent {
     TorrentCompleted { hash: String, name: String },
     TorrentRemoved { hash: String, name: String },
     /// Background work failed where there was no caller to return it to.
-    Error(String),
+    Error(SessionError),
+}
+
+/// A background failure, as a translation key and its arguments.
+///
+/// Deliberately not a finished sentence. These are raised down here, where
+/// there is no translator, and displayed by two front ends that each have one;
+/// formatting at the raise site is how English used to end up in the middle of
+/// a German window.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionError {
+    /// A key in `lang/*.json`, or `None` when the text is already final - an
+    /// error from further down with no wording of ours around it.
+    pub key: Option<&'static str>,
+    /// `{0}`, `{1}`, ... for that key; the whole message when `key` is `None`.
+    pub args: Vec<String>,
+}
+
+impl SessionError {
+    /// A failure this crate owns the wording of.
+    pub fn new<I, T>(key: &'static str, args: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        Self {
+            key: Some(key),
+            args: args.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Text that arrived already formed - an anyhow chain out of a library, a
+    /// parse failure. There is nothing of ours to translate around it.
+    pub fn raw(text: impl Into<String>) -> Self {
+        Self {
+            key: None,
+            args: vec![text.into()],
+        }
+    }
+
+    /// The message, in the language this translator carries.
+    ///
+    /// The one place a `SessionError` becomes a string for a person to read.
+    pub fn text(&self, tr: &crate::ui::translator::Translator) -> String {
+        match self.key {
+            Some(key) => {
+                let args: Vec<&str> = self.args.iter().map(String::as_str).collect();
+                tr.i18n_args(key, &args)
+            }
+            None => self.args.first().cloned().unwrap_or_default(),
+        }
+    }
 }
 
 /// Where a new torrent should actually be written.
@@ -320,7 +428,7 @@ async fn apply_share_action(
             let Some(handle) = rq.get(id) else { return };
             let name = handle.name().unwrap_or_else(|| hash.to_string());
             if let Err(err) = rq.pause(&handle).await {
-                report_error(events, format!("Failed to pause {name}: {err:#}"));
+                report_error(events, SessionError::new("error_pause_named", [name.clone(), format!("{err:#}")]));
                 return;
             }
             tracing::info!("{name} reached its share limit and was paused");
@@ -331,7 +439,7 @@ async fn apply_share_action(
                 .and_then(|h| h.name())
                 .unwrap_or_else(|| hash.to_string());
             if let Err(err) = rq.delete(id, with_data).await {
-                report_error(events, format!("Failed to remove {name}: {err:#}"));
+                report_error(events, SessionError::new("error_remove_named", [name.clone(), format!("{err:#}")]));
                 return;
             }
             meta.lock().unwrap().remove(hash);
@@ -354,9 +462,15 @@ async fn apply_share_action(
 /// no `&self` - they own a cloned bus and nothing else. Logging here rather than
 /// where the event is consumed means a headless build, which has no UI draining
 /// anything, still gets the error in its log.
-fn report_error(events: &EventBus, message: String) {
-    tracing::error!("{message}");
-    events.emit(SessionEvent::Error(message));
+fn report_error(events: &EventBus, err: SessionError) {
+    // The key and its arguments rather than a sentence: a log that says the
+    // same thing whatever language the window is in is the more useful one to
+    // grep, and the arguments carry the detail anyway.
+    match err.key {
+        Some(key) => tracing::error!("{key} {:?}", err.args),
+        None => tracing::error!("{}", err.args.first().map_or("", String::as_str)),
+    }
+    events.emit(SessionEvent::Error(err));
 }
 
 /// Fan-out to every subscriber.
@@ -1081,7 +1195,61 @@ impl Session {
     /// Tear the librqbit session down and rebuild it with options derived
     /// from the (changed) configuration - "apply preferences without
     /// restart". Torrent state comes back through the JSON persistence.
+    /// Write every in-memory upload total to the database.
+    ///
+    /// The tick only writes once a torrent has moved a megabyte, so there is
+    /// always a little unwritten. That is fine until the engine is about to be
+    /// thrown away, which is the one moment the unwritten part cannot be
+    /// recovered from anywhere.
+    fn flush_uploaded_totals(&self) {
+        let pending: Vec<(String, i64)> = {
+            let mut meta = self.meta.lock().unwrap();
+            meta.iter_mut()
+                .filter(|(_, m)| m.uploaded_total != m.flushed_uploaded)
+                .map(|(hash, m)| {
+                    m.flushed_uploaded = m.uploaded_total;
+                    (hash.clone(), m.uploaded_total)
+                })
+                .collect()
+        };
+        self.write_uploaded_totals(&pending);
+    }
+
+    /// Write a batch of upload totals in one transaction.
+    ///
+    /// `with` hands out a shared reference, so the transaction is driven with
+    /// statements rather than rusqlite's `Transaction`, which needs `&mut`. The
+    /// batch is what matters: one commit instead of an fsync per torrent.
+    fn write_uploaded_totals(&self, rows: &[(String, i64)]) {
+        if rows.is_empty() {
+            return;
+        }
+        let _ = self.db.with(|conn| {
+            conn.execute_batch("BEGIN TRANSACTION;")?;
+            let result = (|| -> rusqlite::Result<()> {
+                let mut stmt =
+                    conn.prepare("update torrent set uploaded_bytes = ?1 where info_hash = ?2")?;
+                for (hash, uploaded) in rows {
+                    stmt.execute(rusqlite::params![uploaded, hash])?;
+                }
+                Ok(())
+            })();
+            match result {
+                Ok(()) => conn.execute_batch("COMMIT;"),
+                Err(err) => {
+                    let _ = conn.execute_batch("ROLLBACK;");
+                    Err(err)
+                }
+            }
+        });
+    }
+
     pub fn apply_settings(&self, env: &Environment, cfg: &Configuration) {
+        // Before anything else: the rebuild below resets every engine counter,
+        // and the ratio is only right afterwards if what they held is already
+        // on disk.
+        self.flush_uploaded_totals();
+
         // A refusal here keeps the session that is already running rather than
         // rebuilding into one that would leak. The settings are saved either
         // way - the user can see what they asked for and fix it - but nothing
@@ -1090,7 +1258,7 @@ impl Session {
             Ok(limits) => limits,
             Err(err) => {
                 tracing::error!("settings not applied: {err}");
-                report_error(&self.events, format!("{err}"));
+                report_error(&self.events, SessionError::raw(format!("{err}")));
                 return;
             }
         };
@@ -1120,9 +1288,10 @@ impl Session {
                     resume_after_restore(new_session, running).await;
                 }
                 Err(err) => {
-                    let msg = format!("Failed to apply settings: {err:#}");
-                    tracing::error!("{msg}");
-                    report_error(&events, msg);
+                    report_error(
+                        &events,
+                        SessionError::new("error_apply_settings_failed", [format!("{err:#}")]),
+                    );
                 }
             }
         });
@@ -1183,13 +1352,14 @@ impl Session {
     fn load_torrent_meta(&self) {
         /// info_hash, queue position, label, added on, completed on - one row
         /// of the `torrent` table, named because the tuple is unreadable.
-        type MetaRow = (String, i64, Option<i32>, Option<i64>, Option<i64>);
+        type MetaRow = (String, i64, Option<i32>, Option<i64>, Option<i64>, i64);
 
         let rows: Vec<MetaRow> = self
             .db
             .with(|conn| {
                 let mut stmt = conn.prepare(
-                    "select info_hash, queue_position, label_id, added_on, completed_on \
+                    "select info_hash, queue_position, label_id, added_on, completed_on, \
+                            uploaded_bytes \
                      from torrent",
                 )?;
                 let rows = stmt.query_map([], |row| {
@@ -1199,6 +1369,7 @@ impl Session {
                         row.get(2)?,
                         row.get(3)?,
                         row.get(4)?,
+                        row.get(5)?,
                     ))
                 })?;
                 rows.collect()
@@ -1206,7 +1377,7 @@ impl Session {
             .unwrap_or_default();
 
         let mut meta = self.meta.lock().unwrap();
-        for (hash, queue_position, label_id, added_on, completed_on) in rows {
+        for (hash, queue_position, label_id, added_on, completed_on, uploaded) in rows {
             meta.insert(
                 hash,
                 TorrentMeta {
@@ -1220,6 +1391,9 @@ impl Session {
                     label_id,
                     queue_position,
                     prev_finished: None,
+                    uploaded_total: uploaded,
+                    seen_uploaded: 0,
+                    flushed_uploaded: uploaded,
                     info_hashes: None,
                 },
             );
@@ -1261,9 +1435,7 @@ impl Session {
         }
 
         tracing::error!("network interface \"{name}\" is gone - pausing everything");
-        self.push_error(format!(
-            "Network interface \"{name}\" is no longer present. All torrents have been paused."
-        ));
+        self.push_error(SessionError::new("error_interface_gone", [name.clone()]));
         let handles: Vec<Arc<ManagedTorrent>> = self
             .rq()
             .with_torrents(|torrents| torrents.map(|(_, h)| h.clone()).collect());
@@ -1296,7 +1468,7 @@ impl Session {
 
         self.rt.spawn(async move {
             if let Err(err) = rq.delete(id, false).await {
-                report_error(&events, format!("Failed to recheck torrent: {err:#}"));
+                report_error(&events, SessionError::new("error_recheck_failed", [format!("{err:#}")]));
                 return;
             }
 
@@ -1314,7 +1486,7 @@ impl Session {
                 .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
                 .await
             {
-                report_error(&events, format!("Failed to re-add torrent for recheck: {err:#}"));
+                report_error(&events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
             }
         });
     }
@@ -1351,12 +1523,12 @@ impl Session {
 
         self.rt.spawn(async move {
             if let Err(err) = rq.delete(id, false).await {
-                report_error(&events, format!("Failed to move torrent: {err:#}"));
+                report_error(&events, SessionError::new("error_move_failed", [format!("{err:#}")]));
                 return;
             }
 
             if let Err(err) = move_files(&old_folder, &new_folder, &files) {
-                report_error(&events, format!("Failed to move torrent data: {err:#}"));
+                report_error(&events, SessionError::new("error_move_data_failed", [format!("{err:#}")]));
                 // Fall through and re-add at the OLD location so the torrent
                 // is not lost.
             }
@@ -1377,7 +1549,7 @@ impl Session {
                 .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
                 .await
             {
-                report_error(&events, format!("Failed to re-add moved torrent: {err:#}"));
+                report_error(&events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
             }
         });
     }
@@ -1446,14 +1618,14 @@ impl Session {
             if first_missing {
                 report_error(
                     &events,
-                    format!("No data found in {new_folder} - it will be downloaded again."),
+                    SessionError::new("error_no_data_at", [new_folder.clone()]),
                 );
             }
 
             // `false`: the files stay exactly where they are. This forgets the
             // torrent, not the data.
             if let Err(err) = rq.delete(id, false).await {
-                report_error(&events, format!("Failed to set the location: {err:#}"));
+                report_error(&events, SessionError::new("error_set_location_failed", [format!("{err:#}")]));
                 return;
             }
 
@@ -1469,7 +1641,7 @@ impl Session {
                 .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
                 .await
             {
-                report_error(&events, format!("Failed to re-add at the new location: {err:#}"));
+                report_error(&events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
             }
         });
     }
@@ -1571,7 +1743,7 @@ impl Session {
 
     /// Record an error from background work, where there is no caller to
     /// return it to.
-    fn push_error(&self, err: String) {
+    fn push_error(&self, err: SessionError) {
         report_error(&self.events, err);
     }
 
@@ -1580,7 +1752,14 @@ impl Session {
     /// Runs on the session runtime: for magnet links librqbit resolves the
     /// metadata before returning, which can take a long time (or forever for
     /// dead magnets), so this must never block the UI thread.
-    pub fn add_torrent(&self, source: AddTorrentSource, params: AddParams) {
+    /// Hand a torrent to the engine.
+    ///
+    /// Returns false only when it was refused HERE, before the engine saw it -
+    /// a v2-only file that could not be reshaped, a source that would not
+    /// parse. A failure inside the engine's own task happens after this has
+    /// returned and is reported as an error event instead, so a `true` means
+    /// "accepted for adding", not "added".
+    pub fn add_torrent(&self, source: AddTorrentSource, params: AddParams) -> bool {
         // Cloned before the spawn below: the task outlives this borrow of
         // `self`, so the client has to travel with it rather than be reached
         // for later.
@@ -1610,10 +1789,11 @@ impl Session {
                 use crate::bittorrent::v2::V2Prep;
                 match crate::bittorrent::v2::prepare(bytes) {
                     Err(err) => {
-                        let msg = format!("Failed to add torrent: {err}");
-                        tracing::error!("{msg}");
-                        report_error(&self.events, msg);
-                        return;
+                        report_error(
+                            &self.events,
+                            SessionError::new("error_add_torrent_failed", [err.to_string()]),
+                        );
+                        return false;
                     }
                     Ok(V2Prep::V2Only(prepared)) => {
                         tracing::info!(
@@ -1671,9 +1851,8 @@ impl Session {
                 match crate::bittorrent::v2::normalise_magnet(uri) {
                     Ok(fixed) => AddTorrent::from_url(fixed),
                     Err(err) => {
-                        tracing::error!("{err}");
-                        report_error(&self.events, err);
-                        return;
+                        report_error(&self.events, SessionError::raw(err));
+                        return false;
                     }
                 }
             }
@@ -1715,12 +1894,17 @@ impl Session {
                 }
                 Ok(AddTorrentResponse::ListOnly(_)) => {}
                 Err(err) => {
-                    let msg = format!("Failed to add torrent: {err:#}");
-                    tracing::error!("{msg}");
-                    report_error(&events, msg);
+                    report_error(
+                        &events,
+                        SessionError::new("error_add_torrent_failed", [format!("{err:#}")]),
+                    );
                 }
             }
         });
+
+        // Handed over. Whether the engine then accepts it is its own
+        // business, and arrives as an event rather than a return value.
+        true
     }
 
     /// Resolve a magnet's metadata (file list, sizes, name) WITHOUT adding it,
@@ -1736,7 +1920,7 @@ impl Session {
             Ok(fixed) => fixed,
             Err(err) => {
                 tracing::warn!("{err}");
-                report_error(&self.events, err);
+                report_error(&self.events, SessionError::raw(err));
                 slot.lock().unwrap().push(MagnetOutcome::Failed(uri));
                 return;
             }
@@ -1780,25 +1964,49 @@ impl Session {
     /// torrent not already present, reconstructs a `.torrent` (or magnet) plus
     /// its save path and adds it; librqbit rechecks the on-disk files to
     /// recover progress. Returns `(imported, skipped_already_present)`.
-    pub fn import_from_picotorrent(&self, pico_db: &std::path::Path) -> Result<(usize, usize)> {
-        use crate::core::pico_import::{ImportSource, read_torrents};
+    pub fn import_from_picotorrent(
+        &self,
+        pico_db: &std::path::Path,
+        options: ImportOptions,
+    ) -> Result<ImportReport> {
+        use crate::core::pico_import::{ImportSource, read_settings, read_torrents};
 
-        let entries = read_torrents(pico_db)?;
+        let scan = read_torrents(pico_db)?;
+
+        // Before anything is added, so the "already here" check below sees an
+        // empty session and nothing is skipped for colliding with a torrent
+        // that is on its way out anyway.
+        let mut purged = 0;
+        if options.purge {
+            let all: Vec<String> = self.meta.lock().unwrap().keys().cloned().collect();
+            purged = all.len();
+            for hash in all {
+                // Never the files. Purging is about this list, and someone who
+                // wanted the data gone would have removed the torrents
+                // themselves - this is not the place to guess otherwise.
+                self.remove(&hash, false);
+            }
+        }
+
         let existing: std::collections::HashSet<String> =
             self.meta.lock().unwrap().keys().cloned().collect();
 
-        let mut imported = 0;
-        let mut skipped = 0;
-        for entry in entries {
+        let mut report = ImportReport {
+            failed: scan.unreadable,
+            purged,
+            ..Default::default()
+        };
+
+        for entry in scan.entries {
             if existing.contains(&entry.info_hash) {
-                skipped += 1;
+                report.skipped += 1;
                 continue;
             }
             let source = match entry.source {
                 ImportSource::TorrentBytes(bytes) => AddTorrentSource::TorrentFileBytes(bytes),
                 ImportSource::Magnet(uri) => AddTorrentSource::MagnetUri(uri),
             };
-            self.add_torrent(
+            match self.add_torrent(
                 source,
                 AddParams {
                     save_path: entry.save_path,
@@ -1806,10 +2014,34 @@ impl Session {
                     only_files: None,
                     label_id: entry.label_id,
                 },
-            );
-            imported += 1;
+            ) {
+                true => report.imported += 1,
+                // Refused before the engine saw it, so it is a failure this
+                // side can actually see and count.
+                false => report.failed += 1,
+            }
         }
-        Ok((imported, skipped))
+
+        if options.settings {
+            let cfg = Configuration::new(self.db.clone());
+            match read_settings(pico_db) {
+                Ok(pairs) => {
+                    for (key, value) in pairs {
+                        // A key this build does not have writes nothing, which
+                        // is how "what is supported" stays a fact about the
+                        // schema rather than a list to keep up to date.
+                        if cfg.import_value(&key, &value) {
+                            report.settings += 1;
+                        }
+                    }
+                }
+                // The torrents are already in; a settings table that cannot be
+                // read is worth saying so about, not worth undoing them for.
+                Err(err) => tracing::warn!("could not read PicoTorrent settings: {err:#}"),
+            }
+        }
+
+        Ok(report)
     }
 
     /// Record a newly added torrent in the database.
@@ -1836,6 +2068,9 @@ fn on_torrent_added(
                 label_id: params.label_id,
                 queue_position,
                 prev_finished: None,
+                uploaded_total: 0,
+                seen_uploaded: 0,
+                flushed_uploaded: 0,
                 info_hashes: None,
             });
         }
@@ -1868,7 +2103,7 @@ fn on_torrent_added(
         if let Some(handle) = self.find(hash)
             && let Err(err) = self.rt.block_on(self.rq().pause(&handle))
         {
-            self.push_error(format!("Failed to pause torrent: {err:#}"));
+            self.push_error(SessionError::new("error_pause_failed", [format!("{err:#}")]));
         }
     }
 
@@ -1877,7 +2112,7 @@ fn on_torrent_added(
         if let Some(handle) = self.find(hash)
             && let Err(err) = self.rt.block_on(self.rq().unpause(&handle))
         {
-            self.push_error(format!("Failed to resume torrent: {err:#}"));
+            self.push_error(SessionError::new("error_resume_failed", [format!("{err:#}")]));
         }
     }
 
@@ -2014,7 +2249,7 @@ fn on_torrent_added(
             // false: the files stay exactly where they are. This is a
             // re-registration, not a removal.
             if let Err(err) = rq.delete(id, false).await {
-                report_error(&events, format!("Failed to update trackers: {err:#}"));
+                report_error(&events, SessionError::new("error_update_trackers_failed", [format!("{err:#}")]));
                 return;
             }
             let opts = AddTorrentOptions {
@@ -2034,7 +2269,7 @@ fn on_torrent_added(
                 .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
                 .await
             {
-                report_error(&events, format!("Failed to re-add torrent: {err:#}"));
+                report_error(&events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
             }
         });
     }
@@ -2063,7 +2298,7 @@ fn on_torrent_added(
             self.rq().pause(&handle).await?;
             self.rq().unpause(&handle).await
         }) {
-            self.push_error(format!("Failed to reannounce: {err:#}"));
+            self.push_error(SessionError::new("error_reannounce_failed", [format!("{err:#}")]));
             return;
         }
         tracing::info!("reannounced {hash}");
@@ -2077,7 +2312,7 @@ fn on_torrent_added(
         if let Some(handle) = self.find(hash) {
             let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
             if let Err(err) = self.rt.block_on(self.rq().delete(id, delete_files)) {
-                self.push_error(format!("Failed to remove torrent: {err:#}"));
+                self.push_error(SessionError::new("error_remove_failed", [format!("{err:#}")]));
                 return;
             }
         }
@@ -2264,7 +2499,7 @@ fn on_torrent_added(
                 .rt
                 .block_on(self.rq().update_only_files(&handle, &wanted))
         {
-            self.push_error(format!("Failed to apply file selection: {err:#}"));
+            self.push_error(SessionError::new("error_file_selection_failed", [format!("{err:#}")]));
             return;
         }
 
@@ -2332,7 +2567,7 @@ fn on_torrent_added(
         // An empty selection would make the torrent 0 bytes "wanted" (and it
         // persists that way) - always keep at least one file included.
         if only_files.is_empty() {
-            self.push_error(String::from("At least one file must be included."));
+            self.push_error(SessionError::new("error_need_one_file", Vec::<String>::new()));
             return;
         }
         if let Some(handle) = self.find(hash)
@@ -2341,7 +2576,7 @@ fn on_torrent_added(
                     .update_only_files(&handle, &only_files.into_iter().collect()),
             )
         {
-            self.push_error(format!("Failed to update file selection: {err:#}"));
+            self.push_error(SessionError::new("error_file_selection_failed", [format!("{err:#}")]));
         }
     }
 
@@ -2386,6 +2621,9 @@ fn on_torrent_added(
 
         let mut result = Vec::with_capacity(handles.len());
         let mut completed_now: Vec<String> = Vec::new();
+        // (hash, uploaded_total) pairs to persist once the lock is released -
+        // the database must not be touched while `meta` is held.
+        let mut to_flush: Vec<(String, i64)> = Vec::new();
 
         {
             let mut meta_map = self.meta.lock().unwrap();
@@ -2395,14 +2633,53 @@ fn on_torrent_added(
                 let stats = handle.stats();
 
                 let queue_position = meta_map.len() as i64;
+                // Zero and None are safe defaults here ONLY because
+                // `load_torrent_meta` runs inside `new`, before any caller can
+                // reach this: a torrent the engine has and this map does not is
+                // therefore one with no row in the database, so it has no label
+                // and no upload history to lose. Move that load later and this
+                // becomes a way to overwrite both - the flush below would write
+                // a session-only total over a real one.
                 let meta = meta_map.entry(hash.clone()).or_insert_with(|| TorrentMeta {
                     added_on: Local::now(),
                     completed_on: None,
                     label_id: None,
                     queue_position,
                     prev_finished: None,
+                    uploaded_total: 0,
+                    seen_uploaded: 0,
+                    flushed_uploaded: 0,
                     info_hashes: None,
                 });
+
+                // Accumulate rather than read. The engine's counter only ever
+                // covers the current session, so a rebuild or a re-add sends it
+                // backwards; when it does, the live figure IS the new session's
+                // whole contribution and is added as such.
+                let (total, seen) = accumulate_uploaded(
+                    meta.uploaded_total,
+                    meta.seen_uploaded,
+                    stats.uploaded_bytes as i64,
+                );
+                meta.uploaded_total = total;
+                meta.seen_uploaded = seen;
+
+                // Write it back once it has moved enough to be worth a write.
+                // Every tick for every torrent would be an UPDATE per torrent
+                // per second; a megabyte's worth caps that at the upload rate
+                // divided by a megabyte, and bounds what a crash can lose to
+                // the same figure.
+                const FLUSH_EVERY_BYTES: i64 = 1 << 20;
+                let flush = meta.uploaded_total - meta.flushed_uploaded >= FLUSH_EVERY_BYTES;
+                if flush {
+                    meta.flushed_uploaded = meta.uploaded_total;
+                }
+                // Copied out before the borrow ends - the rows below are built
+                // after `meta_map` has been handed back.
+                let uploaded_total = meta.uploaded_total;
+                if flush {
+                    to_flush.push((hash.clone(), uploaded_total));
+                }
 
                 // Completion is detected by the scan task in `new`, not here:
                 // this function is called only when something asks for the list,
@@ -2478,8 +2755,10 @@ fn on_torrent_added(
                     0.0
                 };
 
+                // From the persisted total, not the engine's session figure:
+                // otherwise every settings change resets it to 0.00.
                 let ratio = if stats.progress_bytes > 0 {
-                    stats.uploaded_bytes as f32 / stats.progress_bytes as f32
+                    uploaded_total as f32 / stats.progress_bytes as f32
                 } else {
                     0.0
                 };
@@ -2518,7 +2797,7 @@ fn on_torrent_added(
                 result.push(TorrentStatus {
                     added_on: meta.added_on,
                     all_time_download: stats.progress_bytes as i64,
-                    all_time_upload: stats.uploaded_bytes as i64,
+                    all_time_upload: uploaded_total,
                     availability,
                     completed_on: meta.completed_on,
                     download_payload_rate: down_rate,
@@ -2561,6 +2840,10 @@ fn on_torrent_added(
                 )
             });
         }
+
+        // After the lock is back, not during: the write is one transaction for
+        // the whole tick.
+        self.write_uploaded_totals(&to_flush);
 
         result
     }
@@ -2777,10 +3060,14 @@ fn on_torrent_added(
                 // reaches the UI as a toast and the web API's /errors.
                 report_error(
                     &events,
-                    format!(
-                        "Only {free:.1}% free on {} (limit {limit:.0}%) - paused {} torrent(s).",
-                        path.display(),
-                        running.len(),
+                    SessionError::new(
+                        "error_disk_low",
+                        [
+                            format!("{free:.1}"),
+                            path.display().to_string(),
+                            format!("{limit:.0}"),
+                            running.len().to_string(),
+                        ],
                     ),
                 );
             }
@@ -3457,7 +3744,58 @@ mod layout_tests {
 #[cfg(test)]
 mod tests {
 
-    use super::{QueueMove, queue_target};
+    use super::{QueueMove, accumulate_uploaded, queue_target};
+
+    /// Ordinary progress: the engine's counter climbs, and the difference is
+    /// what gets added.
+    #[test]
+    fn a_climbing_counter_adds_only_the_difference() {
+        let (total, seen) = accumulate_uploaded(0, 0, 100);
+        assert_eq!((total, seen), (100, 100));
+        let (total, seen) = accumulate_uploaded(total, seen, 250);
+        assert_eq!((total, seen), (250, 250), "the 100 must not be counted twice");
+        let (total, seen) = accumulate_uploaded(total, seen, 250);
+        assert_eq!((total, seen), (250, 250), "an idle tick adds nothing");
+    }
+
+    /// The bug this exists for. `apply_settings` rebuilds the engine, so the
+    /// counter restarts at zero; the total must carry across rather than being
+    /// walked backwards by a negative delta.
+    #[test]
+    fn a_rebuilt_engine_does_not_lose_the_total() {
+        let (total, seen) = accumulate_uploaded(0, 0, 900);
+        assert_eq!(total, 900);
+
+        // Settings changed: new session, counter back to zero.
+        let (total, seen) = accumulate_uploaded(total, seen, 0);
+        assert_eq!((total, seen), (900, 0), "the total was reset");
+
+        // And it keeps counting from there.
+        let (total, _) = accumulate_uploaded(total, seen, 40);
+        assert_eq!(total, 940);
+    }
+
+    /// A rebuild that is not noticed until the new session has already sent
+    /// something: the live figure is that session's whole contribution, so all
+    /// of it is added rather than a difference against a stale watermark.
+    #[test]
+    fn a_reset_seen_late_still_counts_what_the_new_session_sent() {
+        let (total, seen) = accumulate_uploaded(1_000, 1_000, 1_000);
+        assert_eq!(total, 1_000);
+        let (total, seen) = accumulate_uploaded(total, seen, 30);
+        assert_eq!((total, seen), (1_030, 30));
+    }
+
+    /// Loading a stored total on startup: the watermark begins at zero, so the
+    /// first tick adds the running session's figure on top of what was stored.
+    #[test]
+    fn a_stored_total_is_the_floor_after_a_restart() {
+        // 5_000 came out of the database; the engine is freshly started.
+        let (total, seen) = accumulate_uploaded(5_000, 0, 0);
+        assert_eq!((total, seen), (5_000, 0));
+        let (total, _) = accumulate_uploaded(total, seen, 120);
+        assert_eq!(total, 5_120);
+    }
 
     use super::{PRIORITY_HIGH, PRIORITY_MAX, PRIORITY_NORMAL, PRIORITY_SKIP, priority_order};
     use std::collections::HashMap;
@@ -4451,25 +4789,57 @@ mod tests {
         .unwrap();
     }
 
+    /// A background error reads in the user's language, and still carries the
+    /// detail the engine put in it.
+    ///
+    /// This is the regression the key/args split exists for: the message used
+    /// to be formatted where it was raised, which had no translator, so a
+    /// German window showed "Failed to pause Ubuntu: disk full" in the middle
+    /// of otherwise German text. Asserting the German differs from the English
+    /// is what makes going back to a formatted string fail here.
+    #[test]
+    fn a_background_error_is_translated_and_keeps_its_arguments() {
+        use super::SessionError;
+        use crate::ui::translator::Translator;
+
+        let dir = std::path::Path::new("no-such-lang-dir");
+        let err = SessionError::new("error_pause_named", ["Ubuntu", "disk full"]);
+
+        let english = err.text(&Translator::load(dir, "en-US"));
+        assert_eq!(english, "Failed to pause Ubuntu: disk full");
+
+        let german = err.text(&Translator::load(dir, "de-DE"));
+        assert_ne!(german, english, "de-DE fell back to English");
+        for arg in ["Ubuntu", "disk full"] {
+            assert!(german.contains(arg), "{arg:?} missing from {german:?}");
+        }
+        assert!(!german.contains('{'), "placeholder left unfilled: {german:?}");
+
+        // Text that arrived already formed has nothing to translate around it,
+        // and must come back exactly as it went in rather than as a key.
+        let plain = SessionError::raw("a librqbit error");
+        assert_eq!(plain.text(&Translator::load(dir, "de-DE")), "a librqbit error");
+    }
+
     /// The bus has no unsubscribe: a subscriber leaves by dropping its
     /// receiver, and the next emit is what notices. Worth pinning, because the
     /// alternative failure is a sender kept forever for a receiver that is gone.
     #[test]
     fn events_reach_every_subscriber_and_dropped_ones_unregister() {
-        use super::{EventBus, SessionEvent};
+        use super::{EventBus, SessionError, SessionEvent};
 
         let bus = EventBus::new();
         let first = bus.subscribe();
         let second = bus.subscribe();
 
-        bus.emit(SessionEvent::Error("one".into()));
-        assert!(matches!(first.try_recv(), Ok(SessionEvent::Error(m)) if m == "one"));
-        assert!(matches!(second.try_recv(), Ok(SessionEvent::Error(m)) if m == "one"));
+        bus.emit(SessionEvent::Error(SessionError::raw("one")));
+        assert!(matches!(first.try_recv(), Ok(SessionEvent::Error(m)) if m == SessionError::raw("one")));
+        assert!(matches!(second.try_recv(), Ok(SessionEvent::Error(m)) if m == SessionError::raw("one")));
 
         drop(second);
-        bus.emit(SessionEvent::Error("two".into()));
+        bus.emit(SessionEvent::Error(SessionError::raw("two")));
 
-        assert!(matches!(first.try_recv(), Ok(SessionEvent::Error(m)) if m == "two"));
+        assert!(matches!(first.try_recv(), Ok(SessionEvent::Error(m)) if m == SessionError::raw("two")));
         assert_eq!(
             bus.0.lock().unwrap().len(),
             1,

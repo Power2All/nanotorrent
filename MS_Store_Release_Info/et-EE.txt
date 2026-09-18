@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Eesti (Eesti) - Partner Center: Estonian (Estonia) (et-EE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioon 0.4.0
+Versioon 0.4.1
 
-- Vaadake videot juba allalaadimise ajal. Tehke torrenti üksikasjades või veebiliideses failil paremklõps ja see avaneb VLC-s, mpv-s või teie tavalises mängijas - taasesitus algab enne, kui allalaadimine on lõppenud.
-- Parem faililoend: valige faile hiire või nooleklahvidega, avage paremklõpsuga ja voltige kokku kaustad, mida parasjagu ei vaata. Nii rakenduses kui veebiliideses.
-- Pluginad saavad lisada kirjeid faili menüüsse, käivitada programme uue õiguse "execute" alusel, mille kiidate heaks lihtsas keeles, ja kanda kaasas oma tõlkeid. Veel viisteist funktsiooni annavad neile selle, mida veebiliides juba oskas.
-- Turvaparandused: teine sait ei saa enam veebiliidese kaudu midagi muuta, torrent ei saa enam nimetada Windowsi ketast kaustaks ega lisada esitusloendisse rida ning ebaõnnestunud sisselogimiste lukustused ei loe enam päringuid, mis parooli ei proovinud.
+- Sinu suhtarv ei lähe enam nulli, kui muudad mõnda sätet või taaskäivitad.
+- Rohkem videomängijaid: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA ja Elmedia Player. Pakutakse ainult neid, mis su süsteemis olemas on, ja kui mõnda ei leita, küsitakse, kus see asub.
+- Jälgijatele teatatakse tasemete kaupa, nagu torrent palus - varujälgija jääb varuks.
+- Torrenti eemaldamine ning jälgija muutmine või eemaldamine küsivad enne üle. Igale küsimusele saab vastata korra ja vastus jäetakse meelde.
+- PicoTorrentist importimine küsib enne üle, võib praeguse loendi tühjendada ja sätted kaasa tuua ning ütleb, mis saabus, mis oli juba olemas ja mis ebaõnnestus.
+- Veebiliides jõuab rakendusele järele: failipuud igale tüübile oma ikooniga, sakkidega Üksikasjad, ikooninupud, mis ise oma veeru laiuse määravad, ja rõhtkerimisriba pole enam.
+- Pluginad võivad kaasa tuua oma ikooni ning nende Ava- ja sättenupp on alati näha.
+- HTTPS-i kaudu ei saanud veebiliides midagi muuta - iga nupp lükati tagasi.
+- Tööriistariba voldib kitsenedes menüüsse, pikad pealdised lõigatakse ja taustavead on tõlgitud.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

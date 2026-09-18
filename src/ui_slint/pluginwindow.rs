@@ -315,6 +315,37 @@ fn make(name: &str) -> Option<PluginWindow> {
     }
 
     {
+        // Browse, for a `file` field. The dialog runs here rather than being
+        // sent to the plugin as an event, for two reasons: a native file
+        // dialog has to be opened from the UI thread, and the value belongs in
+        // the form the user is still filling in - posting it to the plugin
+        // would mean a round trip that redraws the form and throws away
+        // everything else typed into it.
+        //
+        // The chosen path is written straight into the model, which is what
+        // Save reads back, so it needs no separate bookkeeping.
+        let weak = window.as_weak();
+        window.on_pick_form_file(move |field_id, label| {
+            let Some(window) = weak.upgrade() else { return };
+            let Some(path) = rfd::FileDialog::new()
+                .set_title(label.to_string())
+                .pick_file()
+            else {
+                return;
+            };
+            let fields = window.get_fields();
+            for i in 0..fields.row_count() {
+                let Some(mut f) = fields.row_data(i) else { continue };
+                if f.id == field_id {
+                    f.value = path.to_string_lossy().as_ref().into();
+                    fields.set_row_data(i, f);
+                    break;
+                }
+            }
+        });
+    }
+
+    {
         // Cancel is the plugin's business, not the window's: it is the plugin
         // that knows what to put back on screen. Its own event rather than a
         // save with no values, which would be indistinguishable from a form

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Français (France) - Partner Center: French (France) (fr-FR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent est un portage en Rust de PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.0
+Version 0.4.1
 
-- Lire une vidéo pendant son téléchargement. Faites un clic droit sur un fichier dans les détails d'un torrent, ou dans l'interface web, et il s'ouvre dans VLC, mpv ou votre lecteur habituel : la lecture commence avant la fin du téléchargement.
-- Une meilleure liste de fichiers : choisissez-les à la souris ou aux flèches, ouvrez-en un d'un clic droit, et repliez les dossiers que vous ne regardez pas. Dans l'application comme dans l'interface web.
-- Les extensions peuvent ajouter des entrées au menu d'un fichier, lancer des programmes sous une nouvelle permission « execute » que vous approuvez en langage clair, et apporter leurs propres traductions. Quinze appels supplémentaires leur donnent ce que l'interface web savait déjà faire.
-- Corrections de sécurité : un autre site ne peut plus rien modifier via l'interface web, un torrent ne peut plus nommer un lecteur Windows comme dossier ni ajouter une ligne à une liste de lecture, et les verrouillages après échecs de connexion ne comptent plus les requêtes qui n'ont jamais essayé de mot de passe.
+- Votre ratio ne repart plus de zéro quand vous changez un réglage ou redémarrez.
+- Davantage de lecteurs vidéo : Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA et Elmedia Player. Seuls ceux présents sur votre système sont proposés, et si l'un reste introuvable, on vous demande où il se trouve.
+- Les traqueurs sont annoncés par niveau, comme le torrent le demandait - un traqueur de secours reste de secours.
+- Retirer un torrent, et modifier ou retirer un traqueur, demandent d'abord. On peut répondre une fois à chaque question et la réponse est retenue.
+- L'import depuis PicoTorrent demande d'abord, peut vider la liste actuelle et reprendre ses réglages, et indique ce qui est arrivé, ce qui était déjà là et ce qui a échoué.
+- L'interface web rattrape l'application : arborescences de fichiers avec une icône par type, Détails en onglets, boutons à icône qui dimensionnent leur propre colonne, et plus de barre de défilement horizontale.
+- Les extensions peuvent porter leur propre icône, et leurs boutons Ouvrir et réglages sont toujours affichés.
+- En HTTPS, l'interface web ne pouvait rien changer : chaque bouton était refusé.
+- La barre d'outils se replie dans le menu quand elle rétrécit, les légendes longues sont tronquées et les erreurs de fond sont traduites.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

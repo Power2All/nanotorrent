@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Hausa (Najeriya) - Partner Center: Hausa (Nigeria) (ha-Latn-NG)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent shi ne sigar Rust na PicoTorrent na Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sigar 0.4.0
+Sigar 0.4.1
 
-- Kalli bidiyo yayin da yake saukewa. Danna fayil da maɓallin dama a cikin bayanan torrent, ko a cikin hanyar yanar gizo, sai ya buɗe a VLC, mpv ko na'urar kunnawa da ka saba - kunnawa yana farawa kafin saukewar ta ƙare.
-- Jerin fayiloli mafi kyau: zaɓi fayiloli da linzami ko maɓallan kibiya, buɗe ɗaya da dannawa ta dama, kuma naɗe manyan fayilolin da ba ka kallo. A cikin manhaja da kuma a hanyar yanar gizo.
-- Plugins na iya ƙara abubuwa cikin menu na fayil, fara shirye-shirye ƙarƙashin sabon izini na "execute" wanda ka amince da shi a sarari, da kuma ɗauko fassarorinsu. Ƙarin kira goma sha biyar suna ba su abin da hanyar yanar gizo ta riga ta iya yi.
-- Gyaran tsaro: wani shafi ba zai iya canza komai ta hanyar hanyar sadarwar yanar gizo ba, torrent ba zai iya sanya sunan faifan Windows a matsayin babban fayil ko ƙara layi a jerin kunnawa ba, kuma kullewar shiga da ta gaza ba ta ƙidaya buƙatun da ba su gwada kalmar sirri ba.
+- Rabon ka ba ya sake komawa sifili idan ka canja saiti ko ka sake kunnawa.
+- Ƙarin na'urorin kunna bidiyo: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA da Elmedia Player. Wadanda ke kan na'urarka kawai ake bayarwa, kuma idan ba a sami ɗaya ba sai a tambaye ka inda yake.
+- Ana sanar da masu bin diddigi bisa matakai, kamar yadda torrent ɗin ya nema - mai bin diddigi na ajiya yana nan a matsayin ajiya.
+- Cire torrent, da canja ko cire mai bin diddigi, suna tambaya tukuna. Ana iya amsa kowace tambaya sau ɗaya a kuma tuna amsar.
+- Shigo da bayanai daga PicoTorrent yana tambaya tukuna, yana iya share jerin na yanzu ya kuma kawo saitunansa, kuma yana faɗin abin da ya zo, abin da ya riga ya kasance da abin da ya kasa.
+- Yanayin gidan yanar gizo ya kama manhajar: itatuwan fayiloli da alama ga kowane nau'i, Bayanai masu shafuka, maɓallan alama da ke auna ginshiƙinsu, kuma babu sandar gungurawa a kwance.
+- Plugins na iya ɗaukar alamarsu, kuma koyaushe ana nuna maɓallan Buɗe da na saiti.
+- Ta HTTPS yanayin gidan yanar gizo bai iya canza komai ba - an ƙi kowane maɓalli.
+- Sandar kayan aiki tana nannaɗewa cikin menu yayin da take ƙunci, ana yanke dogayen rubutu, kuma ana fassara kurakuran baya.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

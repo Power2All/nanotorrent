@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: 简体中文 (中国) - app locale zh-CN - Partner Center: Chinese (Simplified) (zh-Hans)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-版本 0.4.0
+版本 0.4.1
 
-- 边下载边播放视频。在种子详情或网页界面中右键单击文件，即可用 VLC、mpv 或你惯用的播放器打开，下载尚未完成就能开始播放。
-- 更好用的文件列表：用鼠标或方向键选择文件，右键打开，并折叠起你此刻不关心的文件夹。应用内和网页界面都一样。
-- 插件可以在文件菜单中添加条目，在新的 "execute" 权限下启动程序（该权限以通俗语言呈现并由你批准），还可以自带翻译。另外十五个函数让插件也能做网页界面早已能做的事。
-- 安全修复：其他网站无法再通过网页界面更改任何内容，种子文件无法再将 Windows 驱动器命名为文件夹或向播放列表添加一行，登录失败锁定也不再统计从未尝试过密码的请求。
+- 更改设置或重新启动后，分享率不会再归零。
+- 更多视频播放器：Media Player、MPC-HC、PotPlayer、SMPlayer、Celluloid、IINA 和 Elmedia Player。只列出你系统中已有的，若某个找不到，会询问它在哪里。
+- 按种子的要求逐层向 Tracker 通告 - 备用 Tracker 依然作为备用保留。
+- 删除种子，以及修改或删除 Tracker，都会先询问。每个问题只需回答一次，答案可以记住。
+- 从 PicoTorrent 导入会先询问，可以清空当前列表并带入它的设置，并说明哪些导入了、哪些已存在、哪些失败了。
+- 网页界面追上了应用：按类型显示图标的文件树、分页的详细信息、自行决定列宽的图标按钮，横向滚动条也没有了。
+- 插件可以带有自己的图标，其打开按钮和设置按钮始终显示。
+- 在 HTTPS 下网页界面无法更改任何内容，每个按钮都被拒绝。
+- 变窄时工具栏折入菜单，过长的文字会被截断，后台错误也已翻译。
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

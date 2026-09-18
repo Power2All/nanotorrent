@@ -72,6 +72,8 @@ const MIGRATIONS: &[(&str, &str)] = &[
     migration!("20260908010000_share_limit_toggle"),
     migration!("20260908020000_drop_sequential_columns"),
     migration!("20260908030000_tracker_tiers"),
+    migration!("20260916000000_persist_upload_total"),
+    migration!("20260917000000_confirmation_prompts"),
 ];
 
 /// The settings database, open.
@@ -166,12 +168,13 @@ impl Database {
                 // header rather than a file that was never a database, and the
                 // bare SQLite message ("file is not a database") sends people
                 // looking in the wrong place.
-                match super::dbkey::key_path(env).exists() {
-                    true => err.context(
+                if super::dbkey::key_path(env).exists() {
+                    err.context(
                         "there is a key file beside this database, so it was probably \
                          encrypted and its header has been damaged",
-                    ),
-                    false => err,
+                    )
+                } else {
+                    err
                 }
             });
         }

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Dansk (Danmark) - Partner Center: Danish (Denmark) (da-DK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent er en Rust-portering af PicoTorrent af Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.0
+Version 0.4.1
 
-- Stream en video, mens den hentes. Højreklik på en fil i en torrents detaljer eller i webgrænsefladen, og den åbnes i VLC, mpv eller din sædvanlige afspiller - afspilningen begynder, før overførslen er færdig.
-- En bedre filliste: vælg filer med musen eller piletasterne, åbn en med højreklik, og klap de mapper sammen, du ikke kigger på. Både i appen og i webgrænsefladen.
-- Plugins kan tilføje punkter til en fils menu, starte programmer under en ny "execute"-tilladelse, som du godkender i almindeligt sprog, og medbringe deres egne oversættelser. Femten flere kald giver plugins det, webgrænsefladen allerede kunne.
-- Sikkerhedsrettelser: et andet websted kan ikke længere ændre noget via webgrænsefladen, en torrent kan ikke længere navngive et Windows-drev som en mappe eller tilføje en linje til en afspilningsliste, og låsninger efter mislykkede logins tæller ikke længere anmodninger uden adgangskode.
+- Dit forhold nulstilles ikke længere, når du ændrer en indstilling eller genstarter.
+- Flere medieafspillere: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA og Elmedia Player. Kun dem, dit system har, tilbydes, og kan en ikke findes, bliver du spurgt hvor den er.
+- Trackere annonceres pr. niveau, som torrenten bad om - en reservetracker forbliver en reserve.
+- At fjerne en torrent, og at ændre eller fjerne en tracker, spørger først. Hvert spørgsmål kan besvares én gang og huskes.
+- Import fra PicoTorrent spørger først, kan rydde den nuværende liste og tage indstillingerne med, og siger hvad der kom, hvad der allerede var her, og hvad der mislykkedes.
+- Webgrænsefladen indhenter appen: filtræer med et ikon pr. type, Detaljer med faneblade, ikonknapper der selv sætter deres kolonnebredde, og ingen vandret rullebjælke.
+- Udvidelser kan bære deres eget ikon, og deres Open- og indstillingsknapper vises altid.
+- Over HTTPS kunne webgrænsefladen ikke ændre noget - hver knap blev afvist.
+- Værktøjslinjen foldes ind i menuen, når vinduet bliver smallere, lange tekster beskæres, og baggrundsfejl oversættes.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

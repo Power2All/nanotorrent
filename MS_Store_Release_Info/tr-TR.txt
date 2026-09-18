@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Türkçe (Türkiye) - Partner Center: Turkish (Turkey) (tr-TR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent, Viktor Elofsson'ın PicoTorrent uygulamasının Rust'a aktarımıd�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sürüm 0.4.0
+Sürüm 0.4.1
 
-- Videoyu indirilirken izleyin. Bir torrentin ayrıntılarında ya da web arayüzünde bir dosyaya sağ tıklayın; VLC, mpv veya her zamanki oynatıcınızda açılsın - oynatma, indirme bitmeden başlar.
-- Daha iyi bir dosya listesi: dosyaları fareyle ya da ok tuşlarıyla seçin, sağ tıklayıp açın ve şu an bakmadığınız klasörleri katlayın. Uygulamada da web arayüzünde de.
-- Eklentiler bir dosyanın menüsüne öğe ekleyebilir, sade bir dille gösterilip sizin onayladığınız yeni "execute" izniyle program başlatabilir ve kendi çevirilerini taşıyabilir. On beş işlev daha, web arayüzünün zaten yapabildiklerini eklentilere de verir.
-- Güvenlik düzeltmeleri: başka bir site artık web arayüzü üzerinden hiçbir şeyi değiştiremez, bir torrent artık bir Windows sürücüsünü klasör olarak adlandıramaz veya çalma listesine satır ekleyemez ve başarısız oturum açma kilitleri artık parola denemeyen istekleri saymaz.
+- Bir ayarı değiştirdiğinizde veya yeniden başlattığınızda oranınız artık sıfırlanmıyor.
+- Daha fazla video oynatıcı: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA ve Elmedia Player. Yalnızca sisteminizde bulunanlar sunulur ve biri bulunamazsa nerede olduğu size sorulur.
+- İzleyicilere, torrentin istediği gibi katman katman duyuru yapılır - yedek izleyici yedek olarak kalır.
+- Bir torrenti kaldırmak, bir izleyiciyi değiştirmek veya kaldırmak önce sorar. Her soru bir kez yanıtlanıp hatırlanabilir.
+- PicoTorrent'ten içe aktarma önce sorar, mevcut listeyi boşaltabilir ve ayarlarını getirebilir, ardından neyin geldiğini, neyin zaten burada olduğunu ve neyin başarısız olduğunu söyler.
+- Web arayüzü uygulamayı yakaladı: her tür için simgesi olan dosya ağaçları, sekmeli Ayrıntılar, kendi sütun genişliğini belirleyen simge düğmeleri ve yatay kaydırma çubuğu yok.
+- Eklentiler kendi simgesini taşıyabilir ve Aç ile ayar düğmeleri her zaman görünür.
+- HTTPS üzerinden web arayüzü hiçbir şeyi değiştiremiyordu - her düğme reddediliyordu.
+- Daraldıkça araç çubuğu menüye katlanır, uzun başlıklar kısaltılır ve arka plan hataları çevrilir.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

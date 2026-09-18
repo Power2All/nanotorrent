@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Latviešu (Latvija) - Partner Center: Latvian (Latvia) (lv-LV)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent ir Viktora Elofsona PicoTorrent pārnesums uz Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.0
+Versija 0.4.1
 
-- Skatieties video, kamēr tas lejupielādējas. Ar peles labo pogu noklikšķiniet uz faila torenta detaļās vai tīmekļa saskarnē, un tas atvērsies VLC, mpv vai jūsu parastajā atskaņotājā - atskaņošana sākas, pirms lejupielāde ir pabeigta.
-- Labāks failu saraksts: izvēlieties failus ar peli vai bultiņām, atveriet ar labo pogu un salokiet mapes, kuras pašlaik neskatāties. Gan lietotnē, gan tīmekļa saskarnē.
-- Spraudņi var pievienot vienumus faila izvēlnē, palaist programmas ar jaunu atļauju "execute", ko apstiprināt vienkāršā valodā, un nest savus tulkojumus. Vēl piecpadsmit funkcijas dod tiem to, ko tīmekļa saskarne jau prata.
-- Drošības labojumi: cita vietne vairs nevar neko mainīt caur tīmekļa saskarni, torrents vairs nevar nosaukt Windows disku par mapi vai pievienot rindu atskaņošanas sarakstam, un bloķēšana pēc neveiksmīgām pieteikšanām vairs neskaita pieprasījumus, kas nekad nav mēģinājuši paroli.
+- Jūsu attiecība vairs netiek atiestatīta, kad maināt iestatījumu vai restartējat.
+- Vairāk video atskaņotāju: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA un Elmedia Player. Tiek piedāvāti tikai tie, kas ir jūsu sistēmā, un, ja kāds netiek atrasts, jums jautā, kur tas ir.
+- Sekotājiem tiek paziņots pa līmeņiem, kā torents lūdza - rezerves sekotājs paliek rezervē.
+- Torenta noņemšana, kā arī sekotāja maiņa vai noņemšana vispirms pajautā. Uz katru jautājumu var atbildēt vienreiz, un atbilde tiek atcerēta.
+- Importēšana no PicoTorrent vispirms pajautā, var iztukšot pašreizējo sarakstu un pārnest tā iestatījumus, un pasaka, kas atnāca, kas jau bija un kas neizdevās.
+- Tīmekļa saskarne ir panākusi lietotni: failu koki ar ikonu katram tipam, cilnēs sadalīta Detalizēta informācija, ikonu pogas, kas pašas nosaka savas kolonnas platumu, un nekādas horizontālās ritjoslas.
+- Spraudņiem var būt sava ikona, un to Atvērt un iestatījumu pogas vienmēr ir redzamas.
+- Caur HTTPS tīmekļa saskarne neko nevarēja mainīt - katra poga tika noraidīta.
+- Sašaurinoties rīkjosla saliekas izvēlnē, gari uzraksti tiek apcirsti, un fona kļūdas ir tulkotas.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

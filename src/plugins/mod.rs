@@ -141,8 +141,8 @@ fn start(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environment>) 
     let (wake_tx, wake_rx) = std::sync::mpsc::channel::<Wake>();
     {
         let tx = wake_tx.clone();
-        ui::set_event_sink(move |event| {
-            let _ = tx.send(Wake::Ui(event));
+        ui::set_event_sink(move |origin, event| {
+            let _ = tx.send(Wake::Ui(origin, event));
         });
     }
 
@@ -166,9 +166,10 @@ fn start(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environment>) 
     }
 
     let dir = plugin_dir(&env);
+    let env = Arc::clone(&env);
     match std::thread::Builder::new()
         .name("plugins".into())
-        .spawn(move || run(session, cfg, dir, wake_rx))
+        .spawn(move || run(session, cfg, env, dir, wake_rx))
     {
         Ok(_) => *slot = Some(wake_tx),
         Err(err) => tracing::error!("could not start the plugin host: {err}"),
@@ -663,6 +664,7 @@ fn discover(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
 fn run(
     session: Arc<Session>,
     cfg: Arc<Configuration>,
+    env: Arc<Environment>,
     dir: PathBuf,
     wake_rx: std::sync::mpsc::Receiver<Wake>,
 ) {
@@ -671,6 +673,7 @@ fn run(
     };
 
     let mut plugins = load(engines, &cfg, &enabled_scripts(&dir, &cfg));
+    let mut tr = crate::load_translator(&env, &cfg);
     tracing::info!("plugin host running with {} plugin(s)", plugins.len());
 
     call_all(&mut plugins, "on_session_start", ());
@@ -686,8 +689,12 @@ fn run(
             call_all(&mut plugins, "on_tick", ());
         }
         match wake_rx.recv_timeout(next_tick.saturating_duration_since(std::time::Instant::now())) {
-            Ok(Wake::Session(event)) => dispatch(&mut plugins, event),
-            Ok(Wake::Ui(event)) => deliver_ui(&mut plugins, event),
+            Ok(Wake::Session(event)) => dispatch(&mut plugins, &tr, event),
+            // The origin is in scope for the whole handler, which is what lets
+            // `ui_show()` tell a click on this machine from one in a browser.
+            Ok(Wake::Ui(origin, event)) => {
+                ui::with_origin(origin, || deliver_ui(&mut plugins, event));
+            }
             // The settings changed. Stop what is running, forget what it drew,
             // and load whatever the configuration now says - the same sequence
             // a restart would have performed, without the restart.
@@ -695,6 +702,9 @@ fn run(
                 call_all(&mut plugins, "on_session_stop", ());
                 ui::clear_surfaces();
                 plugins = load(engines, &cfg, &enabled_scripts(&dir, &cfg));
+                // The language is a setting, so a reload is also when it may
+                // have changed.
+                tr = crate::load_translator(&env, &cfg);
                 tracing::info!("plugins reloaded: {} running", plugins.len());
                 call_all(&mut plugins, "on_session_start", ());
                 // A reload is not a tick. Without this, one landing just
@@ -857,7 +867,7 @@ fn load(
 /// Everything the host loop can wake up for.
 enum Wake {
     Session(SessionEvent),
-    Ui(ui::UiEvent),
+    Ui(ui::Origin, ui::UiEvent),
     /// The plugin settings changed: load whatever they now say.
     Reload,
     /// Plugins were switched off. Distinct from `Shutdown` only in what it
@@ -952,7 +962,7 @@ fn deliver_ui(plugins: &mut [Plugin], event: ui::UiEvent) {
 }
 
 /// Map an event onto the handler name and arguments a script would define.
-fn dispatch(plugins: &mut [Plugin], event: SessionEvent) {
+fn dispatch(plugins: &mut [Plugin], tr: &crate::ui::translator::Translator, event: SessionEvent) {
     match event {
         SessionEvent::TorrentAdded { hash, name } => {
             call_all(plugins, "on_torrent_added", (hash, name))
@@ -963,7 +973,7 @@ fn dispatch(plugins: &mut [Plugin], event: SessionEvent) {
         SessionEvent::TorrentRemoved { hash, name } => {
             call_all(plugins, "on_torrent_removed", (hash, name))
         }
-        SessionEvent::Error(message) => call_all(plugins, "on_error", (message,)),
+        SessionEvent::Error(err) => call_all(plugins, "on_error", (err.text(tr),)),
         // Re-adding something already held is not an add. No hook for it: no
         // plugin has asked, and a script that wants it can compare against
         // torrents(). Left explicit rather than a catch-all so a new event
@@ -1046,6 +1056,14 @@ mod tests {
     /// The three things dispatch has to get right at once: call the handler
     /// that matches, skip the plugin that does not define it, and keep going
     /// after one that fails.
+    use crate::bittorrent::session::SessionError;
+
+    /// A translator for the dispatch tests. They care which hook ran, not what
+    /// language it was told in.
+    fn en() -> crate::ui::translator::Translator {
+        crate::ui::translator::Translator::load(Path::new("no-such-lang-dir"), "en-US")
+    }
+
     #[test]
     fn dispatch_calls_matching_handlers_and_survives_a_failing_one() {
         let dir = folder(
@@ -1072,6 +1090,7 @@ mod tests {
 
         dispatch(
             &mut plugins,
+            &en(),
             SessionEvent::TorrentCompleted {
                 hash: "abc".into(),
                 name: "Ubuntu".into(),
@@ -1104,7 +1123,11 @@ mod tests {
         let mut plugins = load(|_, _, _| recording_engine_shared(log2.clone()), &test_cfg(), &discover(&dir).unwrap());
         assert_eq!(plugins.len(), 1, "only the valid script loads");
 
-        dispatch(&mut plugins, SessionEvent::Error("disk full".into()));
+        dispatch(
+            &mut plugins,
+            &en(),
+            SessionEvent::Error(SessionError::raw("disk full")),
+        );
         assert_eq!(*seen.lock().unwrap(), vec!["ok"]);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -1125,6 +1148,7 @@ mod tests {
 
         dispatch(
             &mut plugins,
+            &en(),
             SessionEvent::TorrentCompleted {
                 hash: "abc".into(),
                 name: "Ubuntu".into(),
@@ -1299,7 +1323,12 @@ mod tests {
                 "player",
                 include_str!("../../docs/plugins/player.rhai"),
                 include_str!("../../docs/plugins/player_translations.json"),
-                &["player_system", "player_vlc", "player_mpv", "player_custom"],
+                // Derived below from the plugin's own PLAYERS table rather
+                // than listed here: the dropdown labels are built as
+                // `t("player_" + id)`, which the scan cannot see, and a list
+                // written out by hand would let a newly added player ship with
+                // no string at all - visible only as a raw key in the dropdown.
+                &[],
             ),
         ];
 
@@ -1308,6 +1337,24 @@ mod tests {
                 serde_json::from_str(json).unwrap_or_else(|e| panic!("{name}: {e}"));
 
             let mut wanted: BTreeSet<String> = extra.iter().map(|k| (*k).to_owned()).collect();
+
+            // Keys built at run time from a table in the script itself. Each
+            // `#{ id: "x", os: [...] }` in the player's PLAYERS list becomes a
+            // `player_x` label, so the two are tied together here instead of
+            // being kept in step by hand.
+            for (at, _) in source.match_indices("id: \"") {
+                let tail = &source[at + 5..];
+                let Some(end) = tail.find('"') else { continue };
+                let id = &tail[..end];
+                let after = tail[end..]
+                    .trim_start_matches('"')
+                    .trim_start()
+                    .trim_start_matches(',')
+                    .trim_start();
+                if after.starts_with("os:") {
+                    wanted.insert(format!("player_{id}"));
+                }
+            }
             let bytes = source.as_bytes();
             let mut rest = source;
             while let Some(at) = rest.find("t(\"") {

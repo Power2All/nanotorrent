@@ -314,13 +314,28 @@ fn cross_site_write(req: &ServiceRequest) -> bool {
         return true;
     }
 
-    // Compared against Host, not against a configured URL: the interface has
-    // no canonical address - it is reached by loopback, by LAN address and by
-    // hostname, and every one of those is the right answer to whoever typed it.
+    // Compared against the host asked for, not against a configured URL: the
+    // interface has no canonical address - it is reached by loopback, by LAN
+    // address and by hostname, and every one of those is the right answer to
+    // whoever typed it.
+    //
+    // Two places to look, because HTTP/1.1 and HTTP/2 disagree about where the
+    // host lives. h2 has no `Host` header at all - it carries `:authority`,
+    // which actix puts in the request URI - and TLS is on by default with h2 in
+    // actix's ALPN list, so a browser here is usually speaking h2. Reading only
+    // `Host` compared the page's own origin against "" and refused every write
+    // the page attempted.
+    //
+    // Deliberately NOT `connection_info().host()`, which would consult
+    // `Forwarded` and `X-Forwarded-Host` as well: those are set by the caller,
+    // so either would let a hostile origin vouch for itself and walk straight
+    // through this check.
     let host = req
         .headers()
         .get("Host")
         .and_then(|v| v.to_str().ok())
+        .filter(|h| !h.is_empty())
+        .or_else(|| req.uri().authority().map(|a| a.as_str()))
         .unwrap_or_default();
     let origin_host = origin
         .split_once("://")
@@ -451,6 +466,50 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// HTTP/2 carries the host as the `:authority` pseudo-header and sends no
+    /// `Host` header at all - and actix serves h2 to any modern browser as soon
+    /// as TLS is on, which is the default. Reading only `Host` therefore
+    /// compared the page's own origin against an empty string and refused every
+    /// state-changing request the page made: "Open" on a plugin came back 403,
+    /// and so did the settings cog.
+    ///
+    /// The fix has to keep failing closed, so the authority is read from the
+    /// request URI - which actix fills from `:authority` - and never from
+    /// `Forwarded` or `X-Forwarded-Host`, which the caller controls and could
+    /// simply set to match its own Origin.
+    #[test]
+    fn a_same_origin_write_over_http2_is_allowed() {
+        use actix_web::test::TestRequest;
+
+        // No Host header; the authority rides in the URI, as h2 delivers it.
+        let h2 = |origin: &str| {
+            cross_site_write(
+                &TestRequest::post()
+                    .uri("https://127.0.0.1:8443/api/plugins/player/event")
+                    .insert_header(("Origin", origin))
+                    .to_srv_request(),
+            )
+        };
+
+        assert!(!h2("https://127.0.0.1:8443"), "the page itself, over h2");
+        assert!(h2("https://evil.example"), "another origin, over h2");
+        assert!(h2("https://127.0.0.1:9999"), "same host, another port, over h2");
+
+        // A forwarding header must not be able to vouch for the request: if it
+        // could, any origin could name itself and walk through.
+        assert!(
+            cross_site_write(
+                &TestRequest::post()
+                    .uri("/api/torrents/abc/pause")
+                    .insert_header(("Origin", "https://evil.example"))
+                    .insert_header(("X-Forwarded-Host", "evil.example"))
+                    .insert_header(("Host", "127.0.0.1:8443"))
+                    .to_srv_request()
+            ),
+            "X-Forwarded-Host must not be trusted"
+        );
+    }
 
     /// A browser attaches Basic credentials to a form on somebody else's page
     /// posting here. Most of the API is saved by `web::Json` demanding a

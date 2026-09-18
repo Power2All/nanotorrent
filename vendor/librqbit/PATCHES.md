@@ -1076,3 +1076,56 @@ Nothing to test beyond the build, which is the test - with `http-api` off the
 crate compiles without axum present, and with it on the feature list puts both
 back. `cargo tree -e normal -i axum` is the check.
 
+## 0024 - announce by tier, not all at once (BEP 12)
+
+Spans both crates, like 0005.
+
+The announce list is a list of TIERS, and patch 0005 already recorded them so
+the Trackers tab could group by them - but the announcer never saw them.
+`TrackerComms::start` took a flat `HashSet<Url>` and pushed every tracker into
+one `FuturesUnordered`, so a torrent announced to all of them at once,
+forever. Tiers existed in the UI and nowhere else.
+
+What made it more than a plumbing job: each tracker's monitor retries with
+`ExponentialBuilder::without_max_times()`. It never returns. A dead tracker is
+retried up to every ten minutes for as long as the torrent is loaded, so
+nothing could ever hand over to the next tracker in its tier even if the tier
+had been known. Failover needs a tracker to be allowed to fail.
+
+`0024-tracker-tier-failover-comms.patch` (**librqbit-tracker-comms**):
+
+- `start` takes `Vec<Vec<Url>>`.
+- `add_tracker` and both monitors take `max_failures: Option<usize>`. `None`
+  keeps the old retry-forever behaviour; `Some(n)` lets the monitor return an
+  error so its tier can move on. The UDP side counts CONSECUTIVE failures - a
+  tracker that answers once has proved it is alive and the count restarts - and
+  treats a URL that resolves to both v4 and v6 as up if either answers.
+- `run_tier` shuffles a tier once (BEP 12), then runs its trackers in order.
+  "Stop at the first that works" needs no success signal: a monitor that is
+  announcing happily never returns, so control stays on that tracker until it
+  gives up, at which point the next one takes over and the last wraps to the
+  first.
+- `reconcile_tiers` lines the recorded grouping up with the tracker set that is
+  actually live, which differ once trackers have been added or removed by hand.
+  Every live URL comes out exactly once; anything the map does not account for
+  gets a tier of its own at the end.
+- `shuffle`, hand-rolled on `rand::random` rather than pulling in
+  `rand::seq::SliceRandom` for one call.
+
+`0024-tracker-tier-failover.patch` (**librqbit**): `session.rs` passes the
+recorded tiers through `reconcile_tiers` instead of handing over a flat set.
+
+**One tier is deliberately not treated as a tier.** A great many torrents are
+built with every tracker on one line, which bencodes as a single tier that was
+never meant as a fallback group; announcing to only one of those would cut the
+torrent off from most of its swarm to honour a grouping the author did not
+intend. With more than one tier the grouping is deliberate and BEP 12's order
+is what was asked for. BEP 12's own wording on this is ambiguous - "all URLs in
+each tier must be checked before the client goes on to the next tier" can be
+read either way - and this is the failover reading, which is what the spec's
+`backup1` example implies and what the fallback order is for.
+
+Tested in the comms crate, not here: `librqbit` is not a workspace member and
+needs dev-dependencies, so `cargo test -p librqbit` refuses to run. The tier
+reconciliation and the shuffle therefore live in **librqbit-tracker-comms**,
+where `cargo test -p librqbit-tracker-comms` does run them.

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Malti (Malta) - Partner Center: Maltese (Malta) (mt-MT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent huwa port bir-Rust ta' PicoTorrent ta' Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verżjoni 0.4.0
+Verżjoni 0.4.1
 
-- Ara vidjow waqt li qed jitniżżel. Ikklikkja bil-lemin fajl fid-dettalji ta' torrent, jew fl-interfaċċa tal-web, u jinfetaħ f'VLC, f'mpv jew fil-plejer tas-soltu tiegħek - id-daqq jibda qabel ma jitlesta t-tniżżil.
-- Lista ta' fajls aħjar: agħżel fajls bil-maws jew bil-vleġeġ, iftaħ wieħed b'klikk tal-lemin, u aqfel il-folders li mhux qed tħares lejhom. Fl-app u fl-interfaċċa tal-web.
-- Il-plaggins jistgħu jżidu elementi mal-menu ta' fajl, jibdew programmi taħt permess ġdid "execute" li tapprova b'lingwaġġ ċar, u jġorru t-traduzzjonijiet tagħhom stess. Ħmistax-il funzjoni oħra jagħtuhom dak li l-interfaċċa tal-web diġà setgħet tagħmel.
-- Tiswijiet ta' sigurtà: sit ieħor ma jistax jibdel xejn permezz tal-interface tal-web, torrent ma jistax jsemmi drive tal-Windows bħala folder jew iżid linja ma' playlist, u l-illokkjar wara login falluti ma jgħoddx aktar talbiet li qatt ma ppruvaw password.
+- Il-proporzjon tiegħek ma jerġax lura għal żero meta tbiddel xi setting jew tibda mill-ġdid.
+- Aktar plejers tal-vidjow: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA u Elmedia Player. Jiġu offruti biss dawk li għandek fis-sistema tiegħek, u jekk wieħed ma jinstabx tiġi mistoqsi fejn qiegħed.
+- It-trackers jiġu mħabbra skont il-livell, kif talab it-torrent - tracker ta' riżerva jibqa' ta' riżerva.
+- It-tneħħija ta' torrent, u l-bidla jew it-tneħħija ta' tracker, jistaqsu l-ewwel. Kull mistoqsija tista' tiġi mwieġba darba u t-tweġiba tinżamm fil-memorja.
+- L-importazzjoni minn PicoTorrent tistaqsi l-ewwel, tista' tbattal il-lista attwali u ġġib is-settings tiegħu, u tgħid x'wasal, x'kien diġà hawn u x'falla.
+- L-interfaċċa tal-web laħqet l-applikazzjoni: siġar ta' fajls b'ikona għal kull tip, Dettalji bit-tabs, buttuni b'ikona li jiddeterminaw il-wisa' tal-kolonna tagħhom, u l-ebda scrollbar orizzontali.
+- Il-plugins jistgħu jġorru l-ikona tagħhom stess, u l-buttuni Iftaħ u tas-settings tagħhom dejjem jidhru.
+- Fuq HTTPS l-interfaċċa tal-web ma setgħet tbiddel xejn - kull buttuna kienet tiġi rifjutata.
+- It-toolbar tintewa fil-menu hekk kif tidjieq, il-kapzjonijiet twal jitqassru, u l-iżbalji fl-isfond huma tradotti.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

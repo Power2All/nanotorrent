@@ -85,6 +85,24 @@ pub fn register(
     // plugin's own file, sitting beside the plugin, saying what the plugin
     // already says. A script with no `.json` gets its keys back, so `t()` is
     // safe to write before anybody has translated anything.
+    // Which platform this is running on, so a plugin can offer only what
+    // exists here - a macOS-only player in a Linux dropdown is an option that
+    // can only disappoint.
+    //
+    // No permission: it says nothing a plugin could not infer from the shape of
+    // the paths it is already allowed to see, and gating it would only push
+    // plugins into guessing.
+    engine.register_fn("os", || -> String {
+        match std::env::consts::OS {
+            "windows" => "windows",
+            "macos" => "macos",
+            // Everything else is close enough to Linux for a plugin's purposes:
+            // the BSDs run the same players off the same PATH.
+            _ => "linux",
+        }
+        .to_owned()
+    });
+
     let s = strings.clone();
     engine.register_fn("t", move |key: &str| -> String { s.get(key) });
     let s = strings.clone();
@@ -534,7 +552,7 @@ pub fn register(
     // network functions are simply not registered - the same fail-closed shape
     // permissions use, and better than handing out a client that silently goes
     // direct on a setup where that is the one thing not to do.
-    let http = match crate::core::http::client_arc(&cfg) {
+    let http = match crate::core::http::client(&cfg) {
         Ok(client) => Some(client),
         Err(err) => {
             tracing::error!("plugin {name}: no HTTP client ({err}); network is unavailable");
@@ -795,6 +813,14 @@ pub fn register(
         });
     }
 
+    {
+        let plugin = name.to_owned();
+        engine.register_fn("ui_icon", move |path: &str| {
+            let path = sanitise_icon(path);
+            super::ui::update(&plugin, move |ui| ui.icon = path.clone());
+        });
+    }
+
     // Seconds since the Unix epoch. No permission: a clock reveals nothing a
     // script could not already infer from how often it is ticked, and without
     // one "ignore this rule for a week" cannot be written at all.
@@ -846,6 +872,32 @@ pub fn register(
 /// ponytail: a plain map with a cap and a clear-when-full, not an LRU. The
 /// working set here is a handful of patterns from one plugin's rules; anything
 /// cleverer would be more code than the thing it manages.
+/// Keep an icon to SVG path data, or reject it entirely.
+///
+/// The string is put straight into markup by the web interface, so the one
+/// thing it must never contain is a tag. Angle brackets and ampersands have no
+/// meaning in path data, which makes refusing them free rather than a
+/// restriction - and refusing beats escaping, because an icon that arrives
+/// looking like markup is a bug in the plugin, not a thing to render.
+///
+/// The length cap is for the drawing, not for safety: an icon is a 16x16 glyph,
+/// and a path that long is a picture that will not read at that size.
+fn sanitise_icon(path: &str) -> String {
+    const MAX: usize = 2048;
+    let refuse = path.len() > MAX
+        || path.contains(['<', '>', '&', '"'])
+        // Path data is numbers and single-letter commands. Anything else is
+        // something other than an icon.
+        || !path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || " .,-+eE".contains(c));
+    if refuse {
+        String::new()
+    } else {
+        path.trim().to_owned()
+    }
+}
+
 fn compiled(pattern: &str) -> Option<std::sync::Arc<regex::Regex>> {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex, OnceLock};
@@ -1358,7 +1410,38 @@ fn torrent_map(t: &crate::bittorrent::torrentstatus::TorrentStatus) -> Map {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
+
+    /// A plugin's icon is written straight into the web interface's markup, so
+    /// the sanitiser is the only thing between a plugin and an injected tag.
+    /// Real path data survives; anything that is not path data does not.
+    #[test]
+    fn an_icon_is_path_data_or_it_is_nothing() {
+        // The shape every shipped icon in app.slint is written in.
+        assert_eq!(
+            sanitise_icon("M 4 2 L 17 10 L 4 18 Z"),
+            "M 4 2 L 17 10 L 4 18 Z"
+        );
+        // Decimals, negatives and exponents are all legal in path data.
+        assert_eq!(sanitise_icon("m -1.5 2e3 h 4"), "m -1.5 2e3 h 4");
+        assert_eq!(sanitise_icon("  M 0 0  "), "M 0 0", "trimmed, not refused");
+
+        // The whole point: markup cannot get through.
+        for bad in [
+            r#"<script>alert(1)</script>"#,
+            r#""/><script>x</script>"#,
+            "M 0 0 &amp;",
+            "M 0 0 <",
+        ] {
+            assert_eq!(sanitise_icon(bad), "", "{bad:?} was not refused");
+        }
+
+        // Nor can anything that is simply not an icon.
+        assert_eq!(sanitise_icon("url(http://example.com/x.png)"), "");
+        assert_eq!(sanitise_icon(&"M 0 0 ".repeat(1000)), "", "over the cap");
+    }
 
     /// `add_torrent_file` takes a string straight from a plugin, so the decoder
     /// has to answer "no" rather than panic or half-decode.
@@ -1386,12 +1469,14 @@ mod tests {
     /// surface should break one place, not each test in turn - which is
     /// exactly what adding `ui_menu` did.
     fn stub_surfaces(engine: &mut rhai::Engine) {
+        engine.register_fn("os", || -> String { String::from("linux") });
         engine.register_fn("ui_window", |_: &str| {});
         engine.register_fn("ui_input", |_: &str| {});
         engine.register_fn("ui_buttons", |_: Array| {});
         engine.register_fn("ui_menu", |_: &str, _: Array| {});
         engine.register_fn("ui_groups", |_: Array| {});
         engine.register_fn("ui_configurable", |_: bool| {});
+        engine.register_fn("ui_icon", |_: &str| {});
         engine.register_fn("ui_form", |_: &str, _: &str, _: Array| {});
         engine.register_fn("ui_form_close", || {});
 
@@ -1483,27 +1568,17 @@ mod tests {
     /// any of them, and an item that has already been taken must not come back
     /// on the next sweep - which is what the `seen` list is for and what a feed
     /// re-read would otherwise undo.
-    #[test]
-    fn the_rss_plugin_auto_downloads_what_its_rules_match() {
-        use std::sync::Mutex;
+    /// The store the RSS plugin's `data_get`/`data_set` read and write in these
+    /// tests.
+    type Store = Arc<Mutex<std::collections::BTreeMap<String, String>>>;
 
-        let store: Arc<Mutex<std::collections::BTreeMap<String, String>>> = Arc::default();
-        let added: Arc<Mutex<Vec<String>>> = Arc::default();
-
-        {
-            let mut db = store.lock().unwrap();
-            db.insert(
-                String::from("feeds"),
-                String::from("https://example.invalid/feed.xml"),
-            );
-            // enabled \t name \t must \t must not \t save path.
-            // "ubuntu,debian" is the comma-as-OR form the plugin documents.
-            db.insert(
-                String::from("rules"),
-                String::from("1\tISOs\tubuntu,debian amd64\tbeta\tD:\\isos"),
-            );
-        }
-
+    /// An engine wired the way the RSS auto-download tests need it: the
+    /// plugin's UI surfaces stubbed out, its key-value store backed by `store`,
+    /// and `http_get` answering with `RULES_FEED`.
+    ///
+    /// `add_torrent_url` is deliberately NOT registered - what each test does
+    /// with a matched link is the thing it is testing.
+    fn feed_engine(store: &Store) -> rhai::Engine {
         let mut engine = rhai::Engine::new();
         crate::plugins::apply_limits(&mut engine);
         engine.register_fn("log", |_: &str| {});
@@ -1525,7 +1600,6 @@ mod tests {
             db.lock().unwrap().insert(key.to_owned(), value.to_owned());
             true
         });
-
         engine.register_fn("http_get", |_url: &str| -> Map {
             let mut map = Map::new();
             map.insert("ok".into(), Dynamic::from(true));
@@ -1537,6 +1611,29 @@ mod tests {
         engine.register_fn("parse_xml", |text: &str| -> Dynamic {
             parse_xml(text).unwrap_or(Dynamic::UNIT)
         });
+        engine
+    }
+
+    #[test]
+    fn the_rss_plugin_auto_downloads_what_its_rules_match() {
+        let store: Store = Arc::default();
+        let added: Arc<Mutex<Vec<String>>> = Arc::default();
+
+        {
+            let mut db = store.lock().unwrap();
+            db.insert(
+                String::from("feeds"),
+                String::from("https://example.invalid/feed.xml"),
+            );
+            // enabled \t name \t must \t must not \t save path.
+            // "ubuntu,debian" is the comma-as-OR form the plugin documents.
+            db.insert(
+                String::from("rules"),
+                String::from("1\tISOs\tubuntu,debian amd64\tbeta\tD:\\isos"),
+            );
+        }
+
+        let mut engine = feed_engine(&store);
 
         // The options form, because the rule names a save path - that is what
         // the auto-downloader calls now. The bare form returns false so that a
@@ -1611,9 +1708,7 @@ mod tests {
     /// words, and "S02 only, any episode" is not.
     #[test]
     fn an_rss_rule_can_match_with_a_regular_expression() {
-        use std::sync::Mutex;
-
-        let store: Arc<Mutex<std::collections::BTreeMap<String, String>>> = Arc::default();
+        let store: Store = Arc::default();
         let added: Arc<Mutex<Vec<String>>> = Arc::default();
         {
             let mut db = store.lock().unwrap();
@@ -1629,38 +1724,7 @@ mod tests {
             );
         }
 
-        let mut engine = rhai::Engine::new();
-        crate::plugins::apply_limits(&mut engine);
-        engine.register_fn("log", |_: &str| {});
-        engine.register_fn("notify", |_: &str, _: &str| {});
-        engine.register_fn("ui_status", |_: &str| {});
-        engine.register_fn("ui_rows", |_: Array| {});
-        register_regex(&mut engine);
-        stub_surfaces(&mut engine);
-
-        let db = store.clone();
-        engine.register_fn("data_get", move |key: &str| -> Dynamic {
-            match db.lock().unwrap().get(key) {
-                Some(value) => Dynamic::from(value.clone()),
-                None => Dynamic::UNIT,
-            }
-        });
-        let db = store.clone();
-        engine.register_fn("data_set", move |key: &str, value: &str| -> bool {
-            db.lock().unwrap().insert(key.to_owned(), value.to_owned());
-            true
-        });
-        engine.register_fn("http_get", |_url: &str| -> Map {
-            let mut map = Map::new();
-            map.insert("ok".into(), Dynamic::from(true));
-            map.insert("status".into(), Dynamic::from(200_i64));
-            map.insert("body".into(), Dynamic::from(String::from(RULES_FEED)));
-            map.insert("error".into(), Dynamic::from(String::new()));
-            map
-        });
-        engine.register_fn("parse_xml", |text: &str| -> Dynamic {
-            parse_xml(text).unwrap_or(Dynamic::UNIT)
-        });
+        let mut engine = feed_engine(&store);
         let sink = added.clone();
         engine.register_fn("add_torrent_url", move |url: &str| -> bool {
             sink.lock().unwrap().push(url.to_owned());
@@ -1697,9 +1761,7 @@ mod tests {
     /// being able to switch one off.
     #[test]
     fn a_disabled_rss_rule_downloads_nothing() {
-        use std::sync::Mutex;
-
-        let store: Arc<Mutex<std::collections::BTreeMap<String, String>>> = Arc::default();
+        let store: Store = Arc::default();
         let added: Arc<Mutex<Vec<String>>> = Arc::default();
         {
             let mut db = store.lock().unwrap();
@@ -1710,38 +1772,7 @@ mod tests {
             db.insert(String::from("rules"), String::from("0\tISOs\tubuntu\t\t"));
         }
 
-        let mut engine = rhai::Engine::new();
-        crate::plugins::apply_limits(&mut engine);
-        engine.register_fn("log", |_: &str| {});
-        engine.register_fn("notify", |_: &str, _: &str| {});
-        engine.register_fn("ui_status", |_: &str| {});
-        engine.register_fn("ui_rows", |_: Array| {});
-        register_regex(&mut engine);
-        stub_surfaces(&mut engine);
-
-        let db = store.clone();
-        engine.register_fn("data_get", move |key: &str| -> Dynamic {
-            match db.lock().unwrap().get(key) {
-                Some(value) => Dynamic::from(value.clone()),
-                None => Dynamic::UNIT,
-            }
-        });
-        let db = store.clone();
-        engine.register_fn("data_set", move |key: &str, value: &str| -> bool {
-            db.lock().unwrap().insert(key.to_owned(), value.to_owned());
-            true
-        });
-        engine.register_fn("http_get", |_url: &str| -> Map {
-            let mut map = Map::new();
-            map.insert("ok".into(), Dynamic::from(true));
-            map.insert("status".into(), Dynamic::from(200_i64));
-            map.insert("body".into(), Dynamic::from(String::from(RULES_FEED)));
-            map.insert("error".into(), Dynamic::from(String::new()));
-            map
-        });
-        engine.register_fn("parse_xml", |text: &str| -> Dynamic {
-            parse_xml(text).unwrap_or(Dynamic::UNIT)
-        });
+        let mut engine = feed_engine(&store);
         let sink = added.clone();
         engine.register_fn("add_torrent_url", move |url: &str| -> bool {
             sink.lock().unwrap().push(url.to_owned());
@@ -1987,9 +2018,7 @@ mod tests {
     /// script's own variables: what survives a restart is what was written.
     #[test]
     fn rss_forms_write_settings_and_rules() {
-        use std::sync::Mutex;
-
-        let store: Arc<Mutex<std::collections::BTreeMap<String, String>>> = Arc::default();
+        let store: Store = Arc::default();
 
         let mut engine = rhai::Engine::new();
         crate::plugins::apply_limits(&mut engine);
@@ -2330,11 +2359,9 @@ mod tests {
     /// test here is the real one.
     #[test]
     fn the_rss_plugin_turns_a_feed_into_clickable_rows() {
-        use std::sync::Mutex;
-
         let rows: Arc<Mutex<Vec<String>>> = Arc::default();
         let status: Arc<Mutex<String>> = Arc::default();
-        let store: Arc<Mutex<std::collections::BTreeMap<String, String>>> = Arc::default();
+        let store: Store = Arc::default();
         let added: Arc<Mutex<Vec<String>>> = Arc::default();
 
         store
@@ -2504,8 +2531,6 @@ mod tests {
     /// This is the test that answers "does the RSS plugin actually work".
     #[test]
     fn the_rss_plugin_reads_a_real_feed_over_http() {
-        use std::sync::Mutex;
-
         let (url, server) = serve_once(String::from(FEED));
 
         // The plugin thread is not a runtime thread in production either, so
@@ -2686,8 +2711,6 @@ mod tests {
     /// id must be the magnet, ready to hand straight to `add_torrent_url`.
     #[test]
     fn the_rss_plugin_reads_magnet_links_from_a_real_feed() {
-        use std::sync::Mutex;
-
         let (url, server) = serve_once(String::from(MAGNET_FEED));
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
@@ -2833,8 +2856,6 @@ mod tests {
     /// the ceilings drifting apart again fails here rather than on a real feed.
     #[test]
     fn a_feed_larger_than_the_old_string_ceiling_still_loads() {
-        use std::sync::Mutex;
-
         // ~200 KB: comfortably past 64 KB, and a realistic size for a busy
         // tracker's feed.
         let mut body = String::from(

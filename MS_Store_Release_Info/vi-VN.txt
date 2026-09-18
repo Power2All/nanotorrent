@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Tiếng Việt (Việt Nam) - Partner Center: Vietnamese (Vietnam) (vi-VN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent là bản chuyển sang Rust của PicoTorrent do Viktor Elofsson vi
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Phiên bản 0.4.0
+Phiên bản 0.4.1
 
-- Xem video ngay khi đang tải. Nhấp chuột phải vào một tệp trong phần chi tiết của torrent, hoặc trong giao diện web, và tệp sẽ mở trong VLC, mpv hay trình phát quen thuộc của bạn - việc phát bắt đầu trước khi tải xong.
-- Danh sách tệp tốt hơn: chọn tệp bằng chuột hoặc phím mũi tên, mở một tệp bằng nhấp chuột phải, và thu gọn những thư mục bạn không xem đến. Trong ứng dụng cũng như trong giao diện web.
-- Các trình cắm có thể thêm mục vào trình đơn của một tệp, khởi chạy chương trình dưới quyền mới "execute" mà bạn phê duyệt bằng ngôn ngữ dễ hiểu, và mang theo bản dịch của riêng chúng. Mười lăm hàm nữa cho chúng những gì giao diện web vốn đã làm được.
-- Sửa lỗi bảo mật: một trang khác không còn có thể thay đổi bất cứ điều gì qua giao diện web, một torrent không còn có thể đặt tên ổ đĩa Windows làm thư mục hay thêm một dòng vào danh sách phát, và việc khóa sau các lần đăng nhập thất bại không còn đếm những yêu cầu chưa từng thử mật khẩu.
+- Tỷ lệ của bạn không còn bị đặt lại về 0 khi bạn thay đổi một thiết lập hay khởi động lại.
+- Thêm trình phát video: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA và Elmedia Player. Chỉ những trình có trên máy bạn mới được đưa ra, và nếu không tìm thấy một trình nào đó, bạn sẽ được hỏi nó nằm ở đâu.
+- Các tracker được thông báo theo tầng, đúng như torrent yêu cầu - tracker dự phòng vẫn là dự phòng.
+- Gỡ một torrent, và sửa hoặc gỡ một tracker, đều hỏi trước. Mỗi câu hỏi có thể trả lời một lần và được ghi nhớ.
+- Nhập từ PicoTorrent hỏi trước, có thể dọn sạch danh sách hiện tại và mang thiết lập của nó sang, rồi cho biết những gì đã vào, những gì đã có sẵn và những gì thất bại.
+- Giao diện web đã bắt kịp ứng dụng: cây tệp với biểu tượng theo từng loại, Chi tiết chia thẻ, nút biểu tượng tự định độ rộng cột của mình, và không còn thanh cuộn ngang.
+- Phần mở rộng có thể mang biểu tượng riêng, và nút Mở cùng nút thiết lập của chúng luôn hiển thị.
+- Qua HTTPS giao diện web không thể thay đổi gì - mọi nút đều bị từ chối.
+- Thanh công cụ gập vào menu khi hẹp lại, chú thích dài bị cắt bớt, và lỗi nền được dịch.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

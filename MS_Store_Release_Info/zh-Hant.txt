@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: 繁體中文 (台灣) - app locale zh-TW - Partner Center: Chinese (Traditional) (zh-Hant)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-版本 0.4.0
+版本 0.4.1
 
-- 邊下載邊播放影片。在種子詳情或網頁介面中對檔案按右鍵，即可用 VLC、mpv 或你慣用的播放器開啟，下載還沒完成就能開始播放。
-- 更好用的檔案清單：用滑鼠或方向鍵選取檔案，按右鍵開啟，並收合你此刻不關心的資料夾。應用程式與網頁介面皆然。
-- 外掛可以在檔案選單中加入項目，在新的 "execute" 權限下啟動程式（該權限以淺白文字呈現並由你核准），還可以自帶翻譯。另外十五個函式讓外掛也能做網頁介面早已能做的事。
-- 安全性修正：其他網站無法再透過網頁介面變更任何內容，種子檔無法再將 Windows 磁碟機命名為資料夾或在播放清單中加入一行，登入失敗鎖定也不再計入從未嘗試過密碼的請求。
+- 變更設定或重新啟動後，分享率不會再歸零。
+- 更多影片播放器：Media Player、MPC-HC、PotPlayer、SMPlayer、Celluloid、IINA 和 Elmedia Player。只列出你系統中已有的，若某個找不到，會詢問它在哪裡。
+- 依種子的要求逐層向 Tracker 通告 - 備用 Tracker 仍作為備用保留。
+- 刪除種子，以及修改或刪除 Tracker，都會先詢問。每個問題只需回答一次，答案可以記住。
+- 從 PicoTorrent 匯入會先詢問，可以清空目前清單並帶入它的設定，並說明哪些匯入了、哪些已存在、哪些失敗了。
+- 網頁介面追上了應用程式：依類型顯示圖示的檔案樹、分頁的詳細資料、自行決定欄寬的圖示按鈕，橫向捲軸也沒有了。
+- 外掛可以帶有自己的圖示，其開啟按鈕與設定按鈕一律顯示。
+- 在 HTTPS 下網頁介面無法變更任何內容，每個按鈕都被拒絕。
+- 變窄時工具列收入選單，過長的文字會被截斷，背景錯誤也已翻譯。
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
