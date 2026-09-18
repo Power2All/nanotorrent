@@ -119,11 +119,34 @@ jobs:
     # newer, while one built on 24.04 needs 2.39 and refuses to start on
     # anything older. glibc is backward compatible, not forward.
     runs-on: ubuntu-22.04
+    env:
+      # What skia-bindings reads to choose the compiler; without these it runs
+      # a bare `clang++` and gets whatever the image happens to ship. See
+      # skia-bindings/build_support/skia/config.rs.
+      CLANGCC: clang-18
+      CLANGCXX: clang++-18
     steps:
       - uses: actions/checkout@v5
 
       - name: System packages
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+
+      # Skia is compiled from source in this job, by clang, against the newest
+      # libstdc++ headers on the image. 22.04's own clang is 14, and once the
+      # image carries gcc-12's headers clang picks those - a pairing clang
+      # cannot build: libstdc++ 12's <ranges> needs clang 16, and so does the
+      # parenthesised aggregate initialisation (P0960) that SkPDFTag.cpp uses
+      # through std::optional::emplace. Nothing here changed; the image did.
+      #
+      # From apt.llvm.org because 22.04 has nothing newer than clang-15 of its
+      # own, and moving the job to 24.04 is not an option - see the note on
+      # `runs-on` above about glibc.
+      - name: Clang for the Skia build
+        run: |
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+          clang++-18 --version
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2

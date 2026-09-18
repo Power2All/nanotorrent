@@ -78,16 +78,16 @@ export component TabStrip inherits Rectangle {
     // window grew to make room for a scrollbar with nothing to scroll.
     // Losing up to 6px of the last tab's right padding is not losing
     // anything.
-    out property <bool> scrolls: sv.viewport-width > sv.visible-width + 6px;
+    out property <bool> scrolls: sv.content-width > sv.visible-width + 6px;
 
     // Room BELOW the tabs for the scrollbar, which a ScrollView draws inside
     // its own bounds - over whatever is at that edge, and what sits there is
     // the selected tab's underline.
     //
     // The room is empty space under the row, NOT padding on the row: padding
-    // feeds into the layout info that `viewport-width` reads, and Slint
+    // feeds into the layout info that `content-width` reads, and Slint
     // rejected that as a binding loop (bar-room -> padding -> min-width ->
-    // viewport-width -> scrolls -> bar-room).
+    // content-width -> scrolls -> bar-room).
     out property <length> bar-room: root.scrolls ? 20px : 0px;
 
     // min == max, NOT `height`. This sits in a VerticalLayout, and a layout
@@ -121,11 +121,11 @@ export component TabStrip inherits Rectangle {
             }
             // A tilt wheel or a trackpad gives delta-x directly; a plain wheel
             // gives delta-y and means the same thing here.
-            sv.viewport-x = clamp(
-                sv.viewport-x + (event.delta-x != 0 ? event.delta-x : event.delta-y),
-                // viewport-x runs from 0 (leftmost) down to a negative number,
+            sv.content-x = clamp(
+                sv.content-x + (event.delta-x != 0 ? event.delta-x : event.delta-y),
+                // content-x runs from 0 (leftmost) down to a negative number,
                 // so the LOWER bound is the negative one.
-                min(0px, sv.visible-width - sv.viewport-width),
+                min(0px, sv.visible-width - sv.content-width),
                 0px);
             return EventResult.accept;
         }
@@ -136,7 +136,7 @@ export component TabStrip inherits Rectangle {
             width: parent.width;
             height: parent.height;
             vertical-scrollbar-policy: always-off;
-            viewport-width: inner.preferred-width;
+            content-width: inner.preferred-width;
 
             // Holds the row at the top; whatever is left over is where the bar
             // draws.
