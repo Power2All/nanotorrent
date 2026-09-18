@@ -132,6 +132,28 @@ impl Configuration {
         });
     }
 
+    /// Write a value that came from somewhere else, and say whether it landed.
+    ///
+    /// For importing another client's settings. `set_value` writes with an
+    /// UPDATE, so a key this build does not have touches no rows - which is
+    /// exactly the filter an import wants, and it is the honest definition of
+    /// "a setting we support" rather than a list that would go stale.
+    ///
+    /// The value is stored as-is. PicoTorrent's `setting` table holds JSON in
+    /// the same column for the same reason this one does, so a value copied
+    /// across is already in the right shape.
+    pub fn import_value(&self, key: &str, json: &str) -> bool {
+        self.db
+            .with(|conn| {
+                conn.execute(
+                    "UPDATE setting SET value = ?1 WHERE key = ?2",
+                    rusqlite::params![json, key],
+                )
+            })
+            .map(|rows| rows > 0)
+            .unwrap_or(false)
+    }
+
     /// Port of Configuration::Get<T> - the stored value is JSON.
     pub fn get<T: DeserializeOwned>(&self, key: &str) -> Option<T> {
         let val = self.get_value(key)?;

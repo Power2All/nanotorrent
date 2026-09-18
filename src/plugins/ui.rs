@@ -46,8 +46,13 @@ pub struct Field {
     /// The key this field's value arrives under.
     pub id: String,
     pub label: String,
-    /// "text", "check", "choice" or "number". Anything else is drawn as text,
-    /// which is the harmless reading of a typo.
+    /// "text", "check", "choice", "number" or "file". Anything else is drawn
+    /// as text, which is the harmless reading of a typo.
+    ///
+    /// "file" is a text box with a Browse button beside it. The box is not
+    /// read-only: a path can still be typed or pasted, which is the only way
+    /// to fill one in from the web interface, where there is no native dialog
+    /// to open.
     pub kind: String,
     pub value: String,
     /// The entries of a "choice". Ignored by every other kind.
@@ -97,6 +102,17 @@ pub struct PluginUi {
     /// default and what every plugin written before this did.
     pub file_menu: Vec<(String, String)>,
 
+    /// The plugin's own icon, as SVG path data on a 16x16 grid.
+    ///
+    /// One string drives both front ends - Slint's `Path { commands: }` and the
+    /// web's `<svg><path d="">` read the same syntax - so a plugin declares its
+    /// icon once and it is sharp at any size in either, and takes its colour
+    /// from the theme rather than carrying its own.
+    ///
+    /// Empty means the plugin never called `ui_icon`, and the front ends fall
+    /// back to its initial.
+    pub icon: String,
+
     // ---- its settings --------------------------------------------------
     /// The plugin says it needs setting up before it will do anything useful,
     /// so Preferences offers a Configure button on its row.
@@ -108,6 +124,45 @@ impl PluginUi {
     pub fn has_window(&self) -> bool {
         !self.title.is_empty()
     }
+}
+
+/// Which front end a click came from.
+///
+/// Carried because `ui_show()` means "put my window on screen", and whose
+/// screen that is depends entirely on who clicked. A plugin has no way to know
+/// and no business knowing; the host does.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Origin {
+    /// The desktop window on this machine.
+    Desktop,
+    /// A browser talking to the web interface - possibly on another machine,
+    /// possibly belonging to someone else.
+    Web,
+}
+
+thread_local! {
+    /// Where the event currently being handled came from.
+    ///
+    /// A thread-local rather than an argument because it has to be readable
+    /// from inside a host function the plugin calls, several frames down, and
+    /// every handler runs on the plugin host's own thread.
+    static ORIGIN: std::cell::Cell<Origin> = const { std::cell::Cell::new(Origin::Desktop) };
+}
+
+/// Run `f` with `origin` recorded as the source of the event being handled.
+pub fn with_origin<T>(origin: Origin, f: impl FnOnce() -> T) -> T {
+    /// Restores the previous origin however `f` leaves - a plugin handler that
+    /// panics must not leave every later event looking like it came from a
+    /// browser.
+    struct Restore(Origin);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            ORIGIN.with(|o| o.set(self.0));
+        }
+    }
+
+    let _restore = Restore(ORIGIN.with(|o| o.replace(origin)));
+    f()
 }
 
 /// A click, on its way back to the plugin that drew it.
@@ -159,7 +214,7 @@ struct Registry {
     /// Into the plugin host's loop. A closure rather than a Sender so this
     /// module does not have to know the host's own event type. None until the
     /// host is running, which is the normal state when plugins are off.
-    events: Option<Arc<dyn Fn(UiEvent) + Send + Sync>>,
+    events: Option<Arc<dyn Fn(Origin, UiEvent) + Send + Sync>>,
     /// Set by the Slint side. None in a headless build, which is why every
     /// `ui_*` host function is a no-op there rather than an error.
     repaint: Option<Arc<dyn Fn() + Send + Sync>>,
@@ -174,7 +229,7 @@ fn registry() -> &'static Mutex<Registry> {
 }
 
 /// Called by the plugin host once its loop is up.
-pub fn set_event_sink(sink: impl Fn(UiEvent) + Send + Sync + 'static) {
+pub fn set_event_sink(sink: impl Fn(Origin, UiEvent) + Send + Sync + 'static) {
     if let Ok(mut reg) = registry().lock() {
         reg.events = Some(Arc::new(sink));
     }
@@ -193,7 +248,15 @@ pub fn set_presenter(
 }
 
 /// Open one plugin's window, or raise it if it is already up.
+///
+/// Does nothing while handling something a browser did. The web interface
+/// opens its own panel for the same plugin, and the two front ends are
+/// separate places - a click in a browser is not a request for a window on
+/// this machine's desktop.
 pub fn show(plugin: &str) {
+    if ORIGIN.with(std::cell::Cell::get) == Origin::Web {
+        return;
+    }
     let open = registry().lock().ok().and_then(|reg| reg.open.clone());
     if let Some(open) = open {
         open(plugin.to_owned());
@@ -233,15 +296,34 @@ pub fn snapshot(plugin: &str) -> Option<PluginUi> {
 /// same plugins the desktop menu bar offers and renders their surfaces
 /// itself: the surface state lives here, not in the Slint window, so a second
 /// renderer costs nothing but the drawing.
-pub fn windows() -> Vec<(String, String, bool)> {
+pub fn windows() -> Vec<WindowInfo> {
     let Ok(reg) = registry().lock() else {
         return Vec::new();
     };
     reg.plugins
         .iter()
         .filter(|(_, ui)| ui.has_window())
-        .map(|(name, ui)| (name.clone(), ui.title.clone(), ui.configurable))
+        .map(|(name, ui)| WindowInfo {
+            name: name.clone(),
+            title: ui.title.clone(),
+            configurable: ui.configurable,
+            icon: ui.icon.clone(),
+        })
         .collect()
+}
+
+/// What the front ends need to know about a plugin that has a window.
+///
+/// A struct rather than the tuple this used to be: three fields were already
+/// being read as `|(_, _, c)| *c`, which says nothing about which field that
+/// is, and a fourth would have made it guesswork.
+#[derive(Clone, Debug)]
+pub struct WindowInfo {
+    pub name: String,
+    pub title: String,
+    pub configurable: bool,
+    /// SVG path data, or empty when the plugin declared none.
+    pub icon: String,
 }
 
 /// Every plugin that has declared a menu, in a stable order - the menu bar.
@@ -320,9 +402,14 @@ pub fn configurable(plugin: &str) -> bool {
 /// Dropped on the floor when the host is not running: a window left on screen
 /// after plugins were switched off should be inert, not a panic.
 pub fn post(event: UiEvent) {
+    post_from(Origin::Desktop, event);
+}
+
+/// The same, naming where the click came from.
+pub fn post_from(origin: Origin, event: UiEvent) {
     let sink = registry().lock().ok().and_then(|reg| reg.events.clone());
     if let Some(sink) = sink {
-        sink(event);
+        sink(origin, event);
     }
 }
 
@@ -463,22 +550,26 @@ mod tests {
         update("web-has-window", |ui| {
             ui.title = String::from("Has one");
             ui.configurable = true;
+            ui.icon = String::from("M 0 0 L 16 16 Z");
         });
         update("web-no-window", |ui| ui.status = String::from("no window here"));
 
         let listed = windows();
-        let found = |name: &str| listed.iter().any(|(n, _, _)| n == name);
+        let found = |name: &str| listed.iter().any(|w| w.name == name);
 
         assert!(found("web-has-window"), "a declared window was not listed");
         assert!(!found("web-no-window"), "a plugin with no window was listed");
 
-        let (_, title, configurable) = listed
+        let info = listed
             .iter()
-            .find(|(n, _, _)| n == "web-has-window")
+            .find(|w| w.name == "web-has-window")
             .cloned()
             .expect("just asserted it is there");
-        assert_eq!(title, "Has one");
-        assert!(configurable);
+        assert_eq!(info.title, "Has one");
+        assert!(info.configurable);
+        // The icon travels with the rest: the front ends read it from here, so
+        // a window listed without it would draw the fallback initial forever.
+        assert_eq!(info.icon, "M 0 0 L 16 16 Z");
     }
 
     /// One plugin's surfaces are not another's, and the snapshot is a copy -
@@ -498,6 +589,41 @@ mod tests {
         assert!(configurable("iso-b"));
         assert!(!configurable("iso-a"), "configurable must be opted into");
         assert!(!configurable("iso-never-seen"));
+    }
+
+    /// A browser opening a plugin's window must not open one on the desktop.
+    ///
+    /// The shipped plugins call `ui_show()` from `on_ui_menu` and
+    /// `on_ui_configure`, and those handlers run for a web click exactly as
+    /// they do for a local one. Without the origin, clicking Open in a browser
+    /// put a window on whoever's screen was running the session.
+    ///
+    /// Not parallel-safe with the other tests in this file if they shared the
+    /// presenter, which is why this one installs its own and asserts on a
+    /// counter it alone owns.
+    #[test]
+    fn a_web_click_does_not_open_a_window_on_the_desktop() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static OPENED: AtomicUsize = AtomicUsize::new(0);
+        set_presenter(|| {}, |_| {
+            OPENED.fetch_add(1, Ordering::SeqCst);
+        });
+
+        // The default, and what a click in the desktop window means.
+        with_origin(Origin::Desktop, || show("origin-test"));
+        assert_eq!(OPENED.load(Ordering::SeqCst), 1, "a local click opens it");
+
+        with_origin(Origin::Web, || show("origin-test"));
+        assert_eq!(
+            OPENED.load(Ordering::SeqCst),
+            1,
+            "a web click must not reach the desktop presenter"
+        );
+
+        // And the origin does not leak past the handler it belonged to.
+        show("origin-test");
+        assert_eq!(OPENED.load(Ordering::SeqCst), 2, "origin outlived its event");
     }
 
     /// A plugin has a window once it has named one, and not before - which is

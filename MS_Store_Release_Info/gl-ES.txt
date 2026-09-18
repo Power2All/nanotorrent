@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Galego (España) - Partner Center: Galician (Spain) (gl-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent é un porte a Rust de PicoTorrent de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versión 0.4.0
+Versión 0.4.1
 
-- Reproduce un vídeo mentres se descarga. Fai clic dereito nun ficheiro nos detalles dun torrent, ou na interface web, e abrirase en VLC, mpv ou no teu reprodutor habitual: a reprodución comeza antes de que remate a descarga.
-- Unha lista de ficheiros mellor: escóllleos co rato ou coas frechas, abre un con clic dereito e prega os cartafoles que non esteas a mirar. Tanto na aplicación como na interface web.
-- Os complementos poden engadir elementos ao menú dun ficheiro, iniciar programas baixo un novo permiso "execute" que aprobas en linguaxe clara, e traer as súas propias traducións. Quince funcións máis danlles o que a interface web xa podía facer.
-- Correccións de seguranza: outro sitio xa non pode cambiar nada a través da interface web, un torrent xa non pode nomear unha unidade de Windows como cartafol nin engadir unha liña a unha lista de reprodución, e os bloqueos por inicios de sesión fallidos xa non contan as solicitudes que nunca probaron un contrasinal.
+- A túa proporción xa non se restablece cando cambias un axuste ou reinicias.
+- Máis reprodutores de vídeo: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA e Elmedia Player. Só se ofrecen os que ten o teu sistema, e se non se atopa algún pregúntasche onde está.
+- Os rastrexadores anúncianse por niveis, como pediu o torrent: un rastrexador de reserva mantense como reserva.
+- Retirar un torrent, e cambiar ou retirar un rastrexador, preguntan antes. Cada pregunta pódese responder unha vez e lembrarse.
+- A importación desde PicoTorrent pregunta antes, pode baleirar a lista actual e traer a súa configuración, e di que chegou, que xa estaba e que fallou.
+- A interface web ponse ao día coa aplicación: árbores de ficheiros cunha icona por tipo, Detalles con lapelas, botóns de icona que axustan a súa propia columna e sen barra de desprazamento horizontal.
+- Os engadidos poden levar a súa propia icona, e os seus botóns Abrir e de configuración amósanse sempre.
+- Por HTTPS a interface web non podía cambiar nada: cada botón era rexeitado.
+- A barra de ferramentas prégase no menú ao estreitarse, os rótulos longos recórtanse e os erros de fondo tradúcense.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

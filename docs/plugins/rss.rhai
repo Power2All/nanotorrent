@@ -880,6 +880,12 @@ fn on_session_start() {
     // exactly what the Configure cog in Preferences is for.
     ui_configurable(true);
 
+    // Three rising bars, on a 16x16 grid. The classic RSS mark is two arcs and
+    // a dot; this is the same idea in straight lines, because Slint's Path does
+    // not lean on SVG arc support.
+    ui_icon("M 2 11 L 4 11 L 4 14 L 2 14 Z M 6 8 L 8 8 L 8 14 L 6 14 Z " +
+            "M 10 4 L 12 4 L 12 14 L 10 14 Z");
+
     feeds = lines_of("feeds");
     rules = rule_list();
     selected = data_get("selected");

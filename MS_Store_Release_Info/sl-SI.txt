@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Slovenščina (Slovenija) - Partner Center: Slovenian (Slovenia) (sl-SI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent je prenos PicoTorrenta avtorja Viktorja Elofssona v Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Različica 0.4.0
+Različica 0.4.1
 
-- Video si oglejte že med prenosom. Z desno tipko kliknite datoteko v podrobnostih torrenta ali v spletnem vmesniku in odprla se bo v VLC, mpv ali vašem običajnem predvajalniku - predvajanje se začne, preden je prenos končan.
-- Boljši seznam datotek: izbirajte datoteke z miško ali s puščicami, odprite jo z desnim klikom in zložite mape, ki jih trenutno ne gledate. V aplikaciji in v spletnem vmesniku.
-- Vtičniki lahko dodajajo vnose v meni datoteke, zaganjajo programe pod novim dovoljenjem "execute", ki ga odobrite v razumljivem jeziku, in prinesejo svoje prevode. Nadaljnjih petnajst funkcij jim da to, kar je spletni vmesnik že znal.
-- Varnostni popravki: drugo mesto ne more več ničesar spremeniti prek spletnega vmesnika, torrent ne more več poimenovati pogona Windows kot mape ali dodati vrstice na seznam predvajanja, zaklepanja po neuspelih prijavah pa ne štejejo več zahtev, ki gesla niso nikoli poskusile.
+- Vaše razmerje se ne ponastavi več, ko spremenite nastavitev ali znova zaženete program.
+- Več videopredvajalnikov: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA in Elmedia Player. Ponujeni so samo tisti, ki jih ima vaš sistem, če pa katerega ni mogoče najti, vas vpraša, kje je.
+- Sledilnikom se najavlja po ravneh, kot je zahteval torrent - rezervni sledilnik ostane rezerva.
+- Odstranjevanje torrenta ter spreminjanje ali odstranjevanje sledilnika najprej vprašata. Na vsako vprašanje lahko odgovorite enkrat in odgovor se zapomni.
+- Uvoz iz PicoTorrenta najprej vpraša, lahko izprazni trenutni seznam in prenese njegove nastavitve ter pove, kaj je prišlo, kaj je že bilo tu in kaj ni uspelo.
+- Spletni vmesnik je dohitel aplikacijo: drevesa datotek z ikono za vsako vrsto, Podrobnosti v zavihkih, ikonski gumbi, ki si sami določijo širino stolpca, in nobenega vodoravnega drsnika.
+- Vtičniki imajo lahko svojo ikono, njihova gumba Odpri in nastavitve pa sta vedno prikazana.
+- Prek HTTPS spletni vmesnik ni mogel ničesar spremeniti - vsak gumb je bil zavrnjen.
+- Orodna vrstica se ob oženju zloži v meni, dolgi napisi se skrajšajo, napake v ozadju pa so prevedene.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

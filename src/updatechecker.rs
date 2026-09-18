@@ -2,15 +2,27 @@
 // bittorrent/semver.hpp version comparison.
 //
 // The original polled api.picotorrent.org for `{version, url}`. That host is
-// gone, so the endpoint (`update_checks.url`) now points at this project's
-// GitHub releases API and we read GitHub's shape instead: `tag_name` and
-// `html_url`. `/releases/latest` never returns drafts or prereleases, so
-// anything it hands back is a real release. Pointing the setting at another
-// repo's `/releases/latest` works unchanged.
+// gone, so this asks GitHub's releases API instead and reads GitHub's shape:
+// `tag_name` and `html_url`. `/releases/latest` never returns drafts or
+// prereleases, so anything it hands back is a real release.
 
 use std::sync::{Arc, Mutex};
 
 use crate::core::configuration::Configuration;
+
+/// Where "is there a newer release?" is asked.
+///
+/// A constant, not a setting. It used to be `update_checks.url`, editable in
+/// Preferences, in the web drawer and from the command line - which made the
+/// host that answers that question, and supplies the download link the update
+/// dialog then offers, something anyone with access to the settings could
+/// change. A settings file could carry it too: `import_value` writes any key
+/// already in the table, so the import path was a way in even after the
+/// control was taken off the surfaces.
+///
+/// A fork that wants its own releases changes this line and rebuilds, which is
+/// the same trust boundary as the rest of the binary.
+const RELEASES_URL: &str = "https://api.github.com/repos/Power2All/nanotorrent/releases/latest";
 
 pub struct UpdateInfo {
     pub version: String,
@@ -94,10 +106,7 @@ pub fn check(handle: &tokio::runtime::Handle, cfg: &Configuration, slot: Slot, m
         return;
     }
 
-    let Some(url) = cfg.get_string("update_checks.url") else {
-        report(&slot, None, Some(String::from("no update URL is configured")), manual);
-        return;
-    };
+    let url = RELEASES_URL;
 
     // A version dismissed with "Ignore this update" stays dismissed for the
     // automatic check only. Asking directly overrides it.
@@ -123,7 +132,7 @@ pub fn check(handle: &tokio::runtime::Handle, cfg: &Configuration, slot: Slot, m
     handle.spawn(async move {
 
         let response = match client
-            .get(&url)
+            .get(url)
             .header("Accept", "application/vnd.github+json")
             .send()
             .await

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Euskara (Espainia) - Partner Center: Basque (Spain) (eu-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent Viktor Elofsson-en PicoTorrent-en Rust portua da.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-0.4.0 bertsioa
+0.4.1 bertsioa
 
-- Ikusi bideoa deskargatzen ari den bitartean. Egin eskuin-klik torrentaren xehetasunetako fitxategi batean, edo web interfazean, eta VLCn, mpv-n edo zure ohiko erreproduzitzailean irekiko da: erreprodukzioa deskarga amaitu baino lehen hasten da.
-- Fitxategi-zerrenda hobea: aukeratu fitxategiak saguarekin edo gezi-teklekin, ireki bat eskuin-klikarekin, eta tolestu begiratzen ari ez zaren karpetak. Aplikazioan zein web interfazean.
-- Pluginek fitxategi baten menuan elementuak gehitu ditzakete, programak abiarazi "execute" baimen berriaren pean (hizkera argian onartzen duzuna), eta beren itzulpenak ekarri. Beste hamabost funtziok web interfazeak lehendik egin zezakeena ematen diete.
-- Segurtasun konponketak: beste gune batek ezin du jada ezer aldatu web interfazearen bidez, torrent batek ezin du jada Windows unitate bat karpeta gisa izendatu ez erreprodukzio-zerrenda bati lerro bat gehitu, eta saio-hasiera hutsegiteen blokeoek ez dituzte jada pasahitzik saiatu ez duten eskaerak zenbatzen.
+- Zure ratioa ez da berrezartzen ezarpen bat aldatzean edo berrabiaraztean.
+- Bideo-erreproduzitzaile gehiago: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA eta Elmedia Player. Sisteman dituzunak baino ez dira eskaintzen, eta bat aurkitzen ez bada, non dagoen galdetuko zaizu.
+- Aztarnariei mailaka jakinarazten zaie, torrentak eskatu bezala: ordezko aztarnari bat ordezko gisa gordetzen da.
+- Torrent bat kentzeak, eta aztarnari bat aldatzeak edo kentzeak, lehenik galdetzen dute. Galdera bakoitzari behin erantzun eta gogoratu daiteke.
+- PicoTorrentetik inportatzeak lehenik galdetzen du, uneko zerrenda hustu eta bere ezarpenak ekar ditzake, eta zer iritsi den, zer zegoen jada eta zerk huts egin duen esaten du.
+- Web interfazea aplikazioarekin parekatu da: fitxategi-zuhaitzak mota bakoitzeko ikono batekin, Xehetasunak fitxatan, beren zutabea neurtzen duten ikono-botoiak, eta alboko korritze-barrarik ez.
+- Pluginek beren ikonoa eraman dezakete, eta haien Ireki eta ezarpen botoiak beti erakusten dira.
+- HTTPS bidez web interfazeak ezin zuen ezer aldatu: botoi bakoitza baztertzen zen.
+- Tresna-barra menuan tolesten da estutu ahala, epigrafe luzeak moztu egiten dira eta atzeko planoko erroreak itzulita daude.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

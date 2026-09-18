@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Shqip (Shqipëri) - Partner Center: Albanian (Albania) (sq-AL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent është një port në Rust i PicoTorrent nga Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioni 0.4.0
+Versioni 0.4.1
 
-- Shikoni një video ndërsa shkarkohet. Klikoni me të djathtën mbi një skedar te detajet e një torrenti, ose te ndërfaqja e uebit, dhe hapet në VLC, mpv ose te luajtësi juaj i zakonshëm - luajtja fillon para se shkarkimi të përfundojë.
-- Një listë skedarësh më e mirë: zgjidhni skedarë me miun ose me shigjetat, hapni një me klik të djathtë, dhe paloseni dosjet që nuk po i shihni. Si në aplikacion, ashtu edhe te ndërfaqja e uebit.
-- Shtojcat mund të shtojnë zëra te menyja e një skedari, të nisin programe nën një leje të re "execute" që e miratoni me gjuhë të thjeshtë, dhe të mbartin përkthimet e veta. Pesëmbëdhjetë thirrje të tjera u japin atë që ndërfaqja e uebit e bënte tashmë.
-- Rregullime sigurie: një sajt tjetër nuk mund të ndryshojë më asgjë përmes ndërfaqes së uebit, një torrent nuk mund ta emërtojë më një disk Windows si dosje as të shtojë një rresht në një listë luajtjeje, dhe bllokimet pas hyrjeve të dështuara nuk numërojnë më kërkesat që nuk provuan kurrë fjalëkalim.
+- Raporti juaj nuk rikthehet më në zero kur ndryshoni një cilësim ose rinisni.
+- Më shumë luajtës videosh: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA dhe Elmedia Player. Ofrohen vetëm ata që i ka sistemi juaj dhe, nëse ndonjëri nuk gjendet, ju pyesim ku ndodhet.
+- Gjurmuesit njoftohen sipas niveleve, siç e kërkoi torrenti - një gjurmues rezervë mbetet rezervë.
+- Heqja e një torrenti, si dhe ndryshimi ose heqja e një gjurmuesi, pyesin më parë. Çdo pyetjeje mund t'i përgjigjeni një herë dhe përgjigjja mbahet mend.
+- Importimi nga PicoTorrent pyet më parë, mund ta zbrazë listën aktuale dhe të sjellë cilësimet e tij, dhe thotë çfarë mbërriti, çfarë ishte tashmë këtu dhe çfarë dështoi.
+- Ndërfaqja e uebit e ka arritur aplikacionin: pemë skedarësh me nga një ikonë për çdo lloj, Detaje me skeda, butona me ikona që e caktojnë vetë gjerësinë e kolonës së tyre dhe asnjë shirit rrëshqitës horizontal.
+- Shtojcat mund të mbajnë ikonën e tyre dhe butonat e tyre Hap e të cilësimeve shfaqen gjithmonë.
+- Përmes HTTPS ndërfaqja e uebit nuk mund të ndryshonte asgjë - çdo buton refuzohej.
+- Shiriti i veglave paloset në menu ndërsa ngushtohet, titujt e gjatë priten, dhe gabimet në sfond janë përkthyer.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

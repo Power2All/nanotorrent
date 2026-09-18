@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: English (United States) (en-US)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent is a Rust port of PicoTorrent by Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.0
+Version 0.4.1
 
-- Stream a video while it downloads. Right-click a file in a torrent's details, or in the web interface, and it opens in VLC, mpv or your usual player - playback starts before the download has finished.
-- A better file list: pick files with the mouse or the arrow keys, right-click one to open it, and fold away the folders you are not looking at. In the app and in the web interface alike.
-- Plugins can add items to a file's menu, start programs under a new "execute" permission you approve in plain language, and carry their own translations. Fifteen more calls give plugins what the web interface could already do.
-- Security fixes: another site can no longer change anything through the web interface, a torrent can no longer name a Windows drive as a folder or add a line to a playlist, and failed-login lockouts no longer count requests that never tried a password.
+- Your ratio no longer resets when you change a setting or restart.
+- More video players: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA and Elmedia Player. Only the ones your system has are offered, and if one cannot be found you are asked where it is.
+- Trackers are announced by tier, as the torrent asked - a backup tracker is kept as a backup.
+- Removing a torrent, and changing or removing a tracker, ask first. Each question can be answered once and remembered.
+- Importing from PicoTorrent asks first, can clear the current list and bring its settings over, and says what arrived, what was already here and what failed.
+- The web interface catches up with the app: file trees with an icon per type, tabbed Details, icon buttons that size their own column, and no sideways scrollbar.
+- Plugins can carry their own icon, and their Open and settings buttons are always shown.
+- Over HTTPS the web interface could not change anything - every button came back refused.
+- Its toolbar folds into the menu as it narrows, long captions are trimmed, and background errors are translated.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

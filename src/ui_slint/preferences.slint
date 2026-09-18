@@ -34,14 +34,20 @@ export struct NamedRule {
 // SVG arc support.
 component ConfigButton inherits Rectangle {
     in property <string> tip;
+    /// False draws it faded and stops it responding, which is how a row keeps
+    /// the same shape for a plugin that has nothing to configure.
+    in property <bool> enabled: true;
     callback activated();
 
     width: 24px;
     height: 24px;
     border-radius: 4px;
-    background: touch.has-hover ? Palette.alternate-background : transparent;
+    background: touch.has-hover && root.enabled
+        ? Palette.alternate-background
+        : transparent;
 
     touch := TouchArea {
+        enabled: root.enabled;
         mouse-cursor: MouseCursor.pointer;
         clicked => { root.activated(); }
     }
@@ -53,7 +59,11 @@ component ConfigButton inherits Rectangle {
         height: 16px;
         viewbox-width: 24;
         viewbox-height: 24;
-        fill: Palette.foreground;
+        // Mixed toward the background rather than a fixed grey, so it reads as
+        // faded on both palettes - the trick DCell's `dim` uses.
+        fill: root.enabled
+            ? Palette.foreground
+            : Palette.foreground.mix(Palette.background, 0.6);
         commands: "M 22.67 9.34 L 22.67 14.66 L 20.18 14.66 L 19.66 15.90 L 21.43 17.67 L 17.67 21.43 L 15.90 19.66 L 14.66 20.18 L 14.66 22.67 L 9.34 22.67 L 9.34 20.18 L 8.10 19.66 L 6.33 21.43 L 2.57 17.67 L 4.34 15.90 L 3.82 14.66 L 1.33 14.66 L 1.33 9.34 L 3.82 9.34 L 4.34 8.10 L 2.57 6.33 L 6.33 2.57 L 8.10 4.34 L 9.34 3.82 L 9.34 1.33 L 14.66 1.33 L 14.66 3.82 L 15.90 4.34 L 17.67 2.57 L 21.43 6.33 L 19.66 8.10 L 20.18 9.34 Z";
     }
 
@@ -92,6 +102,11 @@ export struct PluginRow {
     /// useful. Runtime state, not a setting: a plugin that is ticked but has
     /// not run yet has nothing to configure.
     configurable: bool,
+    /// It is running and has declared a window, so there is something to open.
+    has-window: bool,
+    /// Its own icon as SVG path data on a 16x16 grid, empty when it declared
+    /// none. The same string the web interface draws - see `ui_icon`.
+    icon: string,
 }
 
 /// A small "?" that explains a setting on hover.
@@ -267,6 +282,10 @@ export component PreferencesDialog inherits Window {
     in property <[string]> themes;
     in-out property <int> theme-index;
     in-out property <bool> skip-add-dialog;
+    /// The two confirmations that can be answered once and remembered.
+    /// Here so a box ticked in a dialog can be found again and undone.
+    in-out property <bool> confirm-remove;
+    in-out property <bool> confirm-tracker;
     in-out property <bool> show-in-tray;
     in property <[string]> close-actions;
     in-out property <int> close-action-index;
@@ -410,6 +429,7 @@ export component PreferencesDialog inherits Window {
     callback toggle-plugin(int, bool);
     callback approve-plugin(int);
     callback configure-plugin(int);
+    callback open-plugin(int);
     callback open-plugin-folder();
 
     callback pick-label(int);
@@ -587,6 +607,8 @@ export component PreferencesDialog inherits Window {
                         }
 
                         CheckBox { text: L.s(L.revision, "skip_add_torrent_dialog"); checked <=> root.skip-add-dialog; }
+                        CheckBox { text: L.s(L.revision, "confirm_remove_label"); checked <=> root.confirm-remove; }
+                        CheckBox { text: L.s(L.revision, "confirm_tracker_label"); checked <=> root.confirm-tracker; }
                         CheckBox { text: L.s(L.revision, "show_picotorrent_in_notification_area"); checked <=> root.show-in-tray; }
 
                         Labelled {
@@ -1113,14 +1135,40 @@ export component PreferencesDialog inherits Window {
                                                 enabled: root.plugins-enabled;
                                                 toggled => { root.toggle-plugin(i, self.checked); }
                                             }
+                                            // The plugin's own mark, once it
+                                            // is actually running with a
+                                            // window - before that there is
+                                            // nothing for it to stand for.
+                                            if p.enabled && p.has-window && p.icon != "": Rectangle {
+                                                width: 16px;
+                                                height: 16px;
+                                                Path {
+                                                    width: 16px;
+                                                    height: 16px;
+                                                    viewbox-width: 16;
+                                                    viewbox-height: 16;
+                                                    fill: Palette.foreground.mix(Palette.background, 0.3);
+                                                    commands: p.icon;
+                                                }
+                                            }
                                             Rectangle { horizontal-stretch: 1; }
-                                            // Only for a plugin that is
-                                            // running and has said it needs
-                                            // setting up. What it opens is the
-                                            // plugin's business - this asks,
-                                            // it does not decide.
-                                            if p.configurable: ConfigButton {
+                                            // Both buttons always, disabled
+                                            // when they would do nothing. A row
+                                            // whose shape changes with what the
+                                            // plugin supports reads as
+                                            // something broken; a greyed button
+                                            // reads as "not this one". What
+                                            // either opens is the plugin's
+                                            // business - these ask, they do not
+                                            // decide.
+                                            Button {
+                                                text: L.s(L.revision, "open");
+                                                enabled: p.has-window;
+                                                clicked => { root.open-plugin(i); }
+                                            }
+                                            ConfigButton {
                                                 tip: L.s(L.revision, "plugins_configure");
+                                                enabled: p.configurable;
                                                 activated => { root.configure-plugin(i); }
                                             }
                                         }

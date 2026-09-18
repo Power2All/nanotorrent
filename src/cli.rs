@@ -117,11 +117,14 @@ pub const SETTINGS: &[Setting] = &[
     Setting { name: "close-action", key: "ui.close_action", section: "general", kind: Kind::Persist(CLOSE_ACTIONS) },
     Setting { name: "show-padding-files", key: "ui.show_padding_files", section: "general", kind: Kind::Bool },
     Setting { name: "skip-add-dialog", key: "skip_add_torrent_dialog", section: "general", kind: Kind::Bool },
+    Setting { name: "confirm-remove", key: "ui.confirm_remove_torrent", section: "general", kind: Kind::Bool },
+    Setting { name: "confirm-tracker-change", key: "ui.confirm_tracker_change", section: "general", kind: Kind::Bool },
     Setting { name: "tray-icon", key: "show_in_notification_area", section: "general", kind: Kind::Bool },
     Setting { name: "minimize-to-tray", key: "minimize_to_notification_area", section: "general", kind: Kind::Bool },
     Setting { name: "notify-complete", key: crate::core::toast::ENABLED_KEY, section: "general", kind: Kind::Bool },
     Setting { name: "check-updates", key: "update_checks.enabled", section: "general", kind: Kind::Bool },
-    Setting { name: "update-url", key: "update_checks.url", section: "general", kind: Kind::Text },
+    // No `update-url`: see `updatechecker::RELEASES_URL` for why the endpoint
+    // is a constant rather than a setting.
 
     // --- Downloads -------------------------------------------------------
     Setting { name: "save-path", key: "default_save_path", section: "downloads", kind: Kind::Dir },

@@ -22,9 +22,11 @@ import { AboutDialog } from "about.slint";
 import { CreateTorrentDialog } from "create.slint";
 import { ClosePromptDialog } from "closeprompt.slint";
 import { DbPromptDialog } from "dbprompt.slint";
+import { PicoImportDialog } from "picoimport.slint";
 import { RemoveDialog } from "remove.slint";
 import { PluginWindow, PluginRowItem, PluginButton } from "plugin.slint";
 export { PreferencesDialog, AboutDialog, CliHelpDialog, UpdateDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
+export { PicoImportDialog }
 export { DbPromptDialog }
 export { PluginWindow, PluginRowItem, PluginButton }
 
@@ -547,6 +549,64 @@ component ColResize inherits Rectangle {
             // into, so the column reads as a gap rather than a column.
             root.resized(max(40px,
                 root.start-w + ((self.absolute-position.x + self.mouse-x) - root.start-x)));
+        }
+    }
+}
+
+/// The header row of a detail tab: a caption per column, a right-click target
+/// for the column menu, and a drag handle between each pair.
+///
+/// The widths live in a global the caller owns, so every write goes back out
+/// through a callback rather than happening here - this draws the row, it does
+/// not decide what a column is.
+///
+/// Not shared with the torrent list's header: that one sorts on click and
+/// carries a sort arrow in its caption, which makes it a different row that
+/// happens to look like this one.
+component ColumnHeader inherits Rectangle {
+    in property <[string]> titles;
+    in property <[length]> widths;
+    /// Live, on every move of a drag handle.
+    callback resized(int, length);
+    /// Once, when a drag ends - persisting is a database write.
+    callback done(int, length);
+    /// A handle was double-clicked: fit that column to its contents.
+    callback fit(int);
+    /// Right-clicked, in window coordinates.
+    callback menu(length, length);
+
+    height: 24px;
+    background: Palette.alternate-background;
+    HorizontalLayout {
+        for title[i] in root.titles: Rectangle {
+            width: root.widths[i];
+            Text {
+                text: title;
+                font-weight: 700;
+                font-size: 12px;
+                x: 6px;
+                width: parent.width - 12px;
+                height: parent.height;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            TouchArea {
+                pointer-event(e) => {
+                    if (e.button == PointerEventButton.right
+                        && e.kind == PointerEventKind.down) {
+                        root.menu(self.absolute-position.x + self.mouse-x,
+                                  self.absolute-position.y + self.mouse-y);
+                    }
+                }
+            }
+            ColResize {
+                current: root.widths[i];
+                x: parent.width - 8px;
+                height: parent.height;
+                resized(width) => { root.resized(i, width); }
+                done(width) => { root.done(i, width); }
+                fit() => { root.fit(i); }
+            }
         }
     }
 }
@@ -1780,8 +1840,8 @@ export component MainWindow inherits Window {
                     MenuRow { label: "    " + L.s(L.revision, "queue_bottom"); activated => { root.action("queue-bottom"); ctx-popup.close(); } }
                 }
                 MenuSep { }
-                MenuRow { label: L.s(L.revision, "remove_torrent"); activated => { root.action("remove"); ctx-popup.close(); } }
-                MenuRow { label: L.s(L.revision, "remove_torrent_and_files"); activated => { root.action("remove-files"); ctx-popup.close(); } }
+                MenuRow { label: L.s(L.revision, "remove_torrent"); activated => { root.remove-confirm(false); ctx-popup.close(); } }
+                MenuRow { label: L.s(L.revision, "remove_torrent_and_files"); activated => { root.remove-confirm(true); ctx-popup.close(); } }
                 MenuSep { }
                 MenuRow { label: L.s(L.revision, "copy_info_hash"); activated => { root.action("copy-hash"); ctx-popup.close(); } }
                 MenuRow { label: L.s(L.revision, "magnet_link_s"); activated => { root.action("copy-magnet"); ctx-popup.close(); } }
@@ -1817,7 +1877,11 @@ export component MainWindow inherits Window {
     callback row-pressed(int, bool, bool);
     /// Delete on the torrent list. Named for what it opens rather than what it
     /// does, because it does nothing until the dialog comes back.
+    /// Delete and the toolbar: ask WHICH, because neither said.
     callback remove-prompt();
+    /// The context menu: it already said which, so only ask whether the
+    /// user meant it. The argument is whether the files go too.
+    callback remove-confirm(bool);
     /// Ctrl+A on the torrent list.
     callback select-all();
     /// Clicking the empty space below the rows clears the selection.
@@ -2094,7 +2158,7 @@ export component MainWindow inherits Window {
                     tint: #e5484d;
                     enabled: root.selected-count > 0;
                     tip: L.s(L.revision, "remove");
-                    activated => { root.action("remove"); }
+                    activated => { root.remove-prompt(); }
                     TrashIcon { ink: parent.ink; }
                 }
                 IconButton {
@@ -2665,45 +2729,20 @@ export component MainWindow inherits Window {
                     vertical-scrollbar-policy: always-off;
                     VerticalLayout {
                         padding: 0px;
-                    Rectangle {
-                        height: 24px;
-                        background: Palette.alternate-background;
-                        HorizontalLayout {
-                            for title[i] in DCols.files-titles: Rectangle {
-                                width: DCols.files[i];
-                                Text {
-                                    text: title;
-                                    font-weight: 700;
-                                    font-size: 12px;
-                                    x: 6px;
-                                    width: parent.width - 12px;
-                                    height: parent.height;
-                                    vertical-alignment: center;
-                                    overflow: elide;
-                                }
-                                TouchArea {
-                                    pointer-event(e) => {
-                                        if (e.button == PointerEventButton.right
-                                            && e.kind == PointerEventKind.down) {
-                                            root.menu-x = self.absolute-position.x + self.mouse-x;
-                                            root.menu-y = self.absolute-position.y + self.mouse-y;
-                                            root.header-menu-list = 1;
-                                            col-popup.show();
-                                        }
-                                    }
-                                }
-                                ColResize {
-                                    current: DCols.files[i];
-                                    x: parent.width - 8px;
-                                    height: parent.height;
-                                    resized(width) => {
-                                        DCols.files-total += width - DCols.files[i];
-                                        DCols.files[i] = width;
-                                    }
-                                    done(width) => { root.detail-column-resized(0, i, width); }
-                                    fit() => { root.column-fit(1, i); }
-                                }
-                            }
+                    ColumnHeader {
+                        titles: DCols.files-titles;
+                        widths: DCols.files;
+                        resized(i, w) => {
+                            DCols.files-total += w - DCols.files[i];
+                            DCols.files[i] = w;
+                        }
+                        done(i, w) => { root.detail-column-resized(0, i, w); }
+                        fit(i) => { root.column-fit(1, i); }
+                        menu(x, y) => {
+                            root.menu-x = x;
+                            root.menu-y = y;
+                            root.header-menu-list = 1;
+                            col-popup.show();
                         }
                     }
                         Rectangle {
@@ -2866,45 +2905,20 @@ export component MainWindow inherits Window {
                     vertical-scrollbar-policy: always-off;
                     VerticalLayout {
                         padding: 0px;
-                        Rectangle {
-                            height: 24px;
-                            background: Palette.alternate-background;
-                            HorizontalLayout {
-                                for title[i] in DCols.peers-titles: Rectangle {
-                                    width: DCols.peers[i];
-                                    Text {
-                                        text: title;
-                                        font-weight: 700;
-                                        font-size: 12px;
-                                        x: 6px;
-                                        width: parent.width - 12px;
-                                        height: parent.height;
-                                        vertical-alignment: center;
-                                        overflow: elide;
-                                    }
-                                    TouchArea {
-                                        pointer-event(e) => {
-                                            if (e.button == PointerEventButton.right
-                                                && e.kind == PointerEventKind.down) {
-                                                root.menu-x = self.absolute-position.x + self.mouse-x;
-                                                root.menu-y = self.absolute-position.y + self.mouse-y;
-                                                root.header-menu-list = 2;
-                                                col-popup.show();
-                                            }
-                                        }
-                                    }
-                                    ColResize {
-                                        current: DCols.peers[i];
-                                        x: parent.width - 8px;
-                                        height: parent.height;
-                                        resized(width) => {
-                                            DCols.peers-total += width - DCols.peers[i];
-                                            DCols.peers[i] = width;
-                                        }
-                                        done(width) => { root.detail-column-resized(1, i, width); }
-                                        fit() => { root.column-fit(2, i); }
-                                    }
-                                }
+                        ColumnHeader {
+                            titles: DCols.peers-titles;
+                            widths: DCols.peers;
+                            resized(i, w) => {
+                                DCols.peers-total += w - DCols.peers[i];
+                                DCols.peers[i] = w;
+                            }
+                            done(i, w) => { root.detail-column-resized(1, i, w); }
+                            fit(i) => { root.column-fit(2, i); }
+                            menu(x, y) => {
+                                root.menu-x = x;
+                                root.menu-y = y;
+                                root.header-menu-list = 2;
+                                col-popup.show();
                             }
                         }
                         Rectangle {
@@ -2987,45 +3001,20 @@ export component MainWindow inherits Window {
                     vertical-scrollbar-policy: always-off;
                     VerticalLayout {
                         padding: 0px;
-                        Rectangle {
-                            height: 24px;
-                            background: Palette.alternate-background;
-                            HorizontalLayout {
-                                for title[i] in DCols.trackers-titles: Rectangle {
-                                    width: DCols.trackers[i];
-                                    Text {
-                                        text: title;
-                                        font-weight: 700;
-                                        font-size: 12px;
-                                        x: 6px;
-                                        width: parent.width - 12px;
-                                        height: parent.height;
-                                        vertical-alignment: center;
-                                        overflow: elide;
-                                    }
-                                    TouchArea {
-                                        pointer-event(e) => {
-                                            if (e.button == PointerEventButton.right
-                                                && e.kind == PointerEventKind.down) {
-                                                root.menu-x = self.absolute-position.x + self.mouse-x;
-                                                root.menu-y = self.absolute-position.y + self.mouse-y;
-                                                root.header-menu-list = 3;
-                                                col-popup.show();
-                                            }
-                                        }
-                                    }
-                                    ColResize {
-                                        current: DCols.trackers[i];
-                                        x: parent.width - 8px;
-                                        height: parent.height;
-                                        resized(width) => {
-                                            DCols.trackers-total += width - DCols.trackers[i];
-                                            DCols.trackers[i] = width;
-                                        }
-                                        done(width) => { root.detail-column-resized(2, i, width); }
-                                        fit() => { root.column-fit(3, i); }
-                                    }
-                                }
+                        ColumnHeader {
+                            titles: DCols.trackers-titles;
+                            widths: DCols.trackers;
+                            resized(i, w) => {
+                                DCols.trackers-total += w - DCols.trackers[i];
+                                DCols.trackers[i] = w;
+                            }
+                            done(i, w) => { root.detail-column-resized(2, i, w); }
+                            fit(i) => { root.column-fit(3, i); }
+                            menu(x, y) => {
+                                root.menu-x = x;
+                                root.menu-y = y;
+                                root.header-menu-list = 3;
+                                col-popup.show();
                             }
                         }
                         Rectangle {

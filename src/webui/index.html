@@ -109,12 +109,55 @@ body {
 }
 #drawer-body h3:first-child { margin-top: .25rem; }
 .pref { display: grid; gap: .25rem; margin-bottom: .8rem; }
-.pref label { font-size: .85rem; }
+/* One line, always. These captions are written for `--set` on a command line,
+   where a sentence is right; in a drawer a wrapped one pushes every control
+   below it about as the language changes. Clipped here, with the whole of it
+   on hover - see prefControl. */
+.pref label {
+  font-size: .85rem; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+  /* The one that makes the three above do anything. `.pref` is a grid, and a
+     grid item's min-width defaults to `auto` - its min-content size, which for
+     nowrap text is the whole caption. So the column simply grew to fit and the
+     overflow never happened. Zero lets it shrink, and only then is there
+     anything to clip. */
+  min-width: 0;
+}
+/* The grid item BETWEEN the panel and the control. `.pref` is a grid, and this
+   row is one of its items, so its `min-width` defaulted to `auto` - the
+   min-content width of a caption that must not wrap, which is the whole
+   sentence. The row grew past the drawer, carrying the toggle with it, and
+   nothing was ever clipped however many ellipsis rules were set inside it. */
+.pref .row { min-width: 0; }
+/* Same story inside the toggle, which is an inline-flex: its items will not go
+   below their content either without being told they may. */
+.pref .toggle { min-width: 0; }
+/* One size, the panel's. A checkbox caption is the same kind of text as the
+   caption above a text box, and was a size larger than all of them. */
+.pref .toggle { font-size: .85rem; }
+.pref .toggle span:last-child {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+/* A dropdown's own text can outrun it too. Not every browser honours ellipsis
+   on a select, but every one of them clips rather than overflowing the drawer,
+   and the title carries the full text regardless. */
+.pref .row select { text-overflow: ellipsis; }
 .pref .row { display: flex; gap: .4rem; align-items: center; }
+/* Only what is actually cut short offers to explain itself. `help` on a
+   caption that is entirely readable promises something the tooltip does not
+   deliver - the same words again. Set by markClipped(). */
+.pref label.clipped, .pref .toggle.clipped { cursor: help; }
 .pref .row input[type=text], .pref .row select { flex: 1; min-width: 0; }
 .pref .row input[type=number] { width: 8rem; }
 .pref .unit { color: var(--muted); font-size: .8rem; }
 .hamburger { line-height: 1; padding: .3rem .55rem; }
+/* A plugin's own icon, and the cog beside Open. currentColor so both follow
+   the theme rather than carrying a colour of their own. */
+.pl-icon { flex: 0 0 auto; width: 1rem; height: 1rem; color: var(--muted); }
+.pl-icon svg { width: 100%; height: 100%; fill: currentColor; display: block; }
+.pl-cog { padding: .3rem .45rem; line-height: 0; }
+.pl-cog svg { width: .95rem; height: .95rem; fill: currentColor; display: block; }
+.pl-row button[disabled] { opacity: .45; cursor: default; }
 header {
   display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: center;
   padding: .7rem 1rem; border-bottom: 1px solid var(--line); background: var(--panel);
@@ -151,13 +194,22 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
 }
 
 main { padding: 1rem; }
-/* Wide content scrolls in its own box - the page body never scrolls sideways. */
+/* Wide content scrolls in its own box - the page body never scrolls sideways.
+   The box is still here for a genuinely narrow phone; what is gone is the
+   reason it used to appear on a perfectly wide screen. */
 .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
-table { border-collapse: collapse; width: 100%; min-width: 720px; }
+/* No min-width. A fixed floor of 720px meant the table refused to fit anything
+   narrower and the wrapper produced a horizontal scrollbar, even when the only
+   thing that needed the room was the name - which can ellipsis instead, and
+   does. The name column is the one that gives, because it is the only cell
+   whose content has no natural width. */
+table { border-collapse: collapse; width: 100%; table-layout: auto; }
 th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); }
 th { background: var(--panel); font-weight: 600; position: sticky; top: 0; }
 tr:last-child td { border-bottom: 0; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* max-width, not width: the name takes what is left after every other column
+   has had what it needs, and stops growing before it pushes them off. */
 td.name { max-width: 30rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty { padding: 3rem 1rem; text-align: center; color: var(--muted); }
 
@@ -181,7 +233,16 @@ td.name { max-width: 30rem; overflow: hidden; text-overflow: ellipsis; white-spa
 /* Compact enough for three of them side by side without the column having to
    be as wide as the name. */
 .actions button { padding: .35rem .5rem; white-space: nowrap; }
-td.act { overflow: visible; }
+/* An icon button is square and says what it is on hover. The glyph takes its
+   colour from the button, so a danger button's icon turns with it. */
+.actions button.ico { padding: .3rem .4rem; line-height: 0; }
+.actions button.ico svg { width: 1rem; height: 1rem; fill: currentColor; display: block; }
+/* `width: 1%` with nowrap content is the usual way to say "as narrow as your
+   contents allow": the browser treats it as a floor, then grows the cell to fit
+   the buttons. Which buttons there are changes with the torrent's state, and
+   how wide they are changes with the language, so a fixed width would be wrong
+   in one or the other. */
+td.act { overflow: visible; width: 1%; white-space: nowrap; }
 
 dialog {
   border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
@@ -251,6 +312,34 @@ textarea { resize: vertical; min-height: 2.4rem; }
    buttons on the right stay in their column. */
 .f-name, .lrow .grow { min-width: 0; }
 
+/* The tree's connectors. One cell per ancestor level; the cell holding this
+   row's own elbow is the last. Borders rather than an SVG per row: there is one
+   of these for every file in a torrent, and a border is free. */
+.gut { display: flex; flex: 0 0 auto; align-self: stretch; }
+.gcell { position: relative; flex: 0 0 auto; width: 1.1rem; }
+/* An ancestor's line, the full height of the row. */
+.gcell.line::before {
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 0;
+  border-left: 1px solid var(--line);
+}
+/* This row's connector: down from the row above, and across to the glyph. It
+   carries on below the middle only when another sibling follows. */
+.gcell.el::before {
+  content: ""; position: absolute; left: 50%; top: 0; height: 50%;
+  border-left: 1px solid var(--line);
+}
+.gcell.el.cont::before { height: 100%; }
+.gcell.el::after {
+  content: ""; position: absolute; left: 50%; top: 50%; right: 0;
+  border-top: 1px solid var(--line);
+}
+/* The fold marker and the file/folder glyph. Drawn, not typed: U+25B8 and
+   U+25BE are missing from some system fonts entirely - that is what made the
+   desktop's fold marker invisible until 0.4.1. */
+.tw { flex: 0 0 auto; width: .9rem; height: .9rem; align-self: center; color: var(--muted); }
+.tw svg { width: 100%; height: 100%; fill: currentColor; display: block; }
+.ficon { margin-right: .35rem; }
+
 /* Narrow screens: the two panes stack rather than squeezing the file names
    into nothing. */
 @media (max-width: 560px) {
@@ -287,6 +376,9 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
   border-bottom: 1px solid var(--line); padding: .4rem .6rem; background: none;
 }
 #browser-list button:last-child { border-bottom: 0; }
+#ask-subject { word-break: break-all; }
+#ask-note { color: var(--muted); font-size: .85rem; }
+.remember { display: flex; align-items: center; gap: .45rem; font-size: .85rem; }
 #browser-path { font-family: ui-monospace, Consolas, monospace; font-size: .8rem; color: var(--muted); word-break: break-all; }
 
 #toasts { position: fixed; right: 1rem; bottom: 1rem; display: grid; gap: .5rem; z-index: 10; max-width: min(28rem, 92vw); }
@@ -317,6 +409,41 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
 .tool svg { width: 18px; height: 18px; fill: currentColor; }
 .tool:disabled { opacity: .35; }
 .tool-sep { width: 1px; height: 1.2rem; background: var(--line); margin: 0 .15rem; }
+
+/* What the toolbar hands to the drawer when the window is too narrow for it.
+
+   Sits above the settings, and vanishes entirely when the bar has room for
+   everything - an empty box with padding would otherwise push the settings
+   down for no reason. */
+#drawer-tools {
+  display: flex; flex-direction: column; gap: .15rem;
+  padding: .5rem 1rem; border-bottom: 1px solid var(--line);
+}
+#drawer-tools:empty { display: none; }
+#drawer-tools .tool { width: 100%; justify-content: flex-start; gap: .5rem; padding: .4rem .5rem; }
+/* The caption the bar had only as a tooltip. Free: every one of these buttons
+   already carries the translated text in `title`. */
+#drawer-tools .tool::after { content: attr(title); font-size: .9rem; }
+/* A vertical rule divides nothing in a stack. */
+#drawer-tools .tool-sep { display: none; }
+#drawer-tools select { width: 100%; }
+/* The sparklines get the panel's width rather than the 96px they have in the
+   bar - the alternative was hiding them, which silently dropped them on every
+   screen narrower than 1800px. */
+#drawer-tools .chart { width: 100%; }
+#drawer-tools .chart svg { width: 100%; }
+/* The drag handle that sets that width belongs to the bar: there is nothing to
+   drag against down the side of a panel. */
+#drawer-tools .chart .cgrip { display: none; }
+
+/* The readouts, on one row. Down the side of a 30rem panel they stopped being
+   a status line and became a column of fragments: "DHT -", then a bare "0",
+   then a lone connection dot. */
+#drawer-stats {
+  display: flex; flex-wrap: wrap; gap: .3rem 1rem; align-items: center;
+  padding: .6rem 1rem; border-bottom: 1px solid var(--line);
+}
+#drawer-stats:empty { display: none; }
 /* A toolbar button that is a switch rather than an action, drawn held down.
    The desktop's turtle does the same thing for the same reason: an icon-only
    toggle with no state showing is indistinguishable from one that did
@@ -327,15 +454,20 @@ input[type=file]::file-selector-button:hover { border-color: var(--accent); colo
 /* The per-torrent panel. A <dialog> rather than a second drawer: the drawer
    slides over the list, and this is opened FROM a row - keeping the list
    visible behind a backdrop is what says which torrent it belongs to.
-
-   Sections stacked rather than tabbed: three short lists, and a panel that
-   scrolls is easier on a phone than a tab strip that has to scroll sideways. */
+ */
 #tdet .dlg-body { max-height: min(70vh, 40rem); overflow-y: auto; }
-.sec-title {
-  font-size: .8rem; text-transform: uppercase; letter-spacing: .04em;
-  color: var(--muted); margin: 1.1rem 0 .4rem; font-weight: 600;
+/* The details tabs. One strip of buttons, one pane shown at a time - the same
+   shape the desktop's details panel has, so the two read as one product. */
+.tabs { display: flex; gap: .25rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.tabs button {
+  background: transparent; border: 0; border-bottom: 2px solid transparent;
+  padding: .45rem .7rem; color: var(--muted); cursor: pointer;
+  font-size: .9rem; white-space: nowrap;
 }
-.sec-title:first-child { margin-top: 0; }
+.tabs button:hover { color: var(--fg); }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--bar); }
+.pane { display: none; }
+.pane.on { display: grid; gap: .8rem; }
 /* One row of any of the three lists. */
 .lrow {
   display: flex; align-items: center; gap: .5rem;
@@ -443,11 +575,13 @@ tbody tr { cursor: default; }
    keyboard focus, space to toggle and screen readers all keep working. */
 .toggle {
   display: inline-flex; align-items: center; gap: .5rem;
-  /* A floor, not a fixed height: these labels are whole sentences and wrap to
-     two lines on a narrow drawer, which a fixed height simply cut off. */
+  /* A floor rather than a fixed height. These captions are kept to one line
+     now and clipped with an ellipsis, so the extra room is rarely needed - but
+     a floor costs nothing and a fixed height would cut off anything that did
+     manage two lines. */
   min-height: var(--control-h); padding: .4rem .8rem;
-  /* The drawer is narrow; let the button take the width it is given so the
-     text wraps inside it rather than pushing past the edge. */
+  /* The drawer is narrow; let the button take the width it is given rather
+     than pushing past the edge. */
   width: 100%; text-align: left;
   border: 1px solid var(--line); border-radius: 6px;
   background: var(--bg); color: var(--fg);
@@ -532,57 +666,57 @@ th .arrow { opacity: .75; font-size: .8em; }
   <h1><img src="/favicon.ico" alt="" width="20" height="20">NanoTorrent <span class="stat" id="version"></span></h1>
   <span class="stat">&darr; <b id="dl">0 B/s</b></span>
   <span class="stat">&uarr; <b id="ul">0 B/s</b></span>
-  <span class="stat">DHT <b id="dht">-</b></span>
-  <span class="stat"><b id="count">0</b></span>
-  <span class="stat link" id="link" title="{{connecting}}"><span class="dot"></span><b id="clients"></b></span>
-  <select id="theme" title="{{theme}}" aria-label="{{theme}}">
+  <span class="stat" data-of="3">DHT <b id="dht">-</b></span>
+  <span class="stat" data-of="3"><b id="count">0</b></span>
+  <span class="stat link" id="link" data-of="3" title="{{connecting}}"><span class="dot"></span><b id="clients"></b></span>
+  <select id="theme" data-of="4" title="{{theme}}" aria-label="{{theme}}">
     <option value="auto">{{theme_system}}</option>
     <option value="light">{{light_theme}}</option>
     <option value="dark">{{theme_dark}}</option>
   </select>
-  <button class="tool" id="tb-magnet" title="{{add_magnet_link_s}}" aria-label="{{add_magnet_link_s}}">
+  <button class="tool" id="tb-magnet" data-of="6" title="{{add_magnet_link_s}}" aria-label="{{add_magnet_link_s}}">
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3h4v3H4zM12 3h4v3h-4zM4 7h4v3a2 2 0 0 0 4 0V7h4v3a6 6 0 0 1-12 0z"/></svg>
   </button>
-  <button class="tool" id="tb-add" title="{{add_torrent_s}}" aria-label="{{add_torrent_s}}">
+  <button class="tool" id="tb-add" data-of="6" title="{{add_torrent_s}}" aria-label="{{add_torrent_s}}">
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 4h2v5h5v2h-5v5H9v-5H4V9h5z"/></svg>
   </button>
-  <span class="tool-sep"></span>
-  <button class="tool" id="tb-remove" title="{{remove}}" aria-label="{{remove}}" disabled>
+  <span class="tool-sep" data-of="5"></span>
+  <button class="tool" id="tb-remove" data-of="5" title="{{remove}}" aria-label="{{remove}}" disabled>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 2h6v2h4v2H3V4h4zM4 7h12l-1 11H5z"/></svg>
   </button>
-  <button class="tool" id="tb-resume" title="{{resume}}" aria-label="{{resume}}" disabled>
+  <button class="tool" id="tb-resume" data-of="5" title="{{resume}}" aria-label="{{resume}}" disabled>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3l12 7-12 7z"/></svg>
   </button>
-  <button class="tool" id="tb-pause" title="{{pause}}" aria-label="{{pause}}" disabled>
+  <button class="tool" id="tb-pause" data-of="5" title="{{pause}}" aria-label="{{pause}}" disabled>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3h4v14H5zM11 3h4v14h-4z"/></svg>
   </button>
-  <span class="tool-sep"></span>
+  <span class="tool-sep" data-of="2"></span>
   <!-- Queue order, in queue order left to right. Same four actions and the
        same multi-selection rules as the desktop toolbar. -->
-  <button class="tool" id="tb-qtop" title="{{queue_top}}" aria-label="{{queue_top}}" disabled>
+  <button class="tool" id="tb-qtop" data-of="2" title="{{queue_top}}" aria-label="{{queue_top}}" disabled>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 2h12v2H4zM9 16V9H5l5-5 5 5h-4v7z"/></svg>
   </button>
-  <button class="tool" id="tb-qup" title="{{up}}" aria-label="{{up}}" disabled>
+  <button class="tool" id="tb-qup" data-of="2" title="{{up}}" aria-label="{{up}}" disabled>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 17V8H5l5-5 5 5h-4v9z"/></svg>
   </button>
-  <button class="tool" id="tb-qdown" title="{{down}}" aria-label="{{down}}" disabled>
+  <button class="tool" id="tb-qdown" data-of="2" title="{{down}}" aria-label="{{down}}" disabled>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9 3v9H5l5 5 5-5h-4V3z"/></svg>
   </button>
-  <button class="tool" id="tb-qbottom" title="{{queue_bottom}}" aria-label="{{queue_bottom}}" disabled>
+  <button class="tool" id="tb-qbottom" data-of="2" title="{{queue_bottom}}" aria-label="{{queue_bottom}}" disabled>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16h12v2H4zM9 4v7H5l5 5 5-5h-4V4z"/></svg>
   </button>
-  <span class="tool-sep"></span>
+  <span class="tool-sep" data-of="4"></span>
   <!-- The turtle, latched on while the alternative limits are in force. -->
-  <button class="tool" id="tb-alt" title="{{alt_speed_now}}" aria-label="{{alt_speed_now}}">
+  <button class="tool" id="tb-alt" data-of="4" title="{{alt_speed_now}}" aria-label="{{alt_speed_now}}">
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 13h2v3H3zM15 13h2v3h-2zM10 4c4 0 7 2 7 5v3H3V9c0-3 3-5 7-5zM1 8h2v2H1z"/></svg>
   </button>
-  <span class="stat" id="sel-count" title="{{status}}"></span>
-  <span class="tool-sep"></span>
+  <span class="stat" id="sel-count" data-of="3" title="{{status}}"></span>
+  <span class="tool-sep" data-of="1"></span>
   <!-- One minute of each direction, the same pair the desktop toolbar draws.
        Not to a shared scale: upload is usually a fraction of download, and one
        scale would flatten it into a line along the bottom. -->
-  <span class="chart" title="&darr;"><svg id="ch-dl" viewBox="0 0 60 100" preserveAspectRatio="none"><polyline id="ch-dl-p"/></svg><b id="ch-dl-t">-</b></span>
-  <span class="chart" title="&uarr;"><svg id="ch-ul" viewBox="0 0 60 100" preserveAspectRatio="none"><polyline id="ch-ul-p"/></svg><b id="ch-ul-t">-</b></span>
+  <span class="chart" data-of="1" title="&darr;"><svg id="ch-dl" viewBox="0 0 60 100" preserveAspectRatio="none"><polyline id="ch-dl-p"/></svg><b id="ch-dl-t">-</b></span>
+  <span class="chart" data-of="1" title="&uarr;"><svg id="ch-ul" viewBox="0 0 60 100" preserveAspectRatio="none"><polyline id="ch-ul-p"/></svg><b id="ch-ul-t">-</b></span>
   <button class="primary" id="btn-add">{{add_torrent_s}}</button>
   <button class="tool" id="btn-plugins" title="{{plugins}}" aria-label="{{plugins}}" hidden>
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.7 2.7 0 0 1 0 5.4H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.7 2.7 0 0 1 5.4 0V22H17a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
@@ -598,6 +732,8 @@ th .arrow { opacity: .75; font-size: .8em; }
     <h2>{{preferences}}</h2>
     <button type="button" id="drawer-close" aria-label="{{close}}">&times;</button>
   </header>
+  <div id="drawer-stats"></div>
+  <div id="drawer-tools"></div>
   <div id="drawer-body"></div>
   <div id="drawer-foot">
     <span id="drawer-note"></span>
@@ -711,34 +847,44 @@ th .arrow { opacity: .75; font-size: .8em; }
 <dialog id="tdet">
   <form method="dialog">
     <div class="dlg-head" id="tdet-name"></div>
+    <div class="tabs" id="tdet-tabs" role="tablist">
+      <button type="button" role="tab" data-pane="tdet-p-files" aria-selected="true">{{files}}</button>
+      <button type="button" role="tab" data-pane="tdet-p-trackers" aria-selected="false">{{trackers}}</button>
+      <button type="button" role="tab" data-pane="tdet-p-tags" aria-selected="false">{{tags}}</button>
+      <button type="button" role="tab" data-pane="tdet-p-limits" aria-selected="false">{{share_limits}}</button>
+    </div>
     <div class="dlg-body">
-      <div class="sec-title">{{files}}</div>
-      <div id="tdet-files"></div>
-
-      <div class="sec-title">{{trackers}}</div>
-      <div id="tdet-trackers"></div>
-      <div class="addrow">
-        <input type="text" id="tdet-turl" placeholder="{{tracker_url}}">
-        <select id="tdet-tier"></select>
-        <button type="button" id="tdet-tadd">{{add_tracker}}</button>
+      <div class="pane on" id="tdet-p-files">
+        <div id="tdet-files"></div>
       </div>
 
-      <div class="sec-title">{{tags}}</div>
-      <div class="tagbox" id="tdet-tags"></div>
-      <div class="addrow">
-        <input type="text" id="tdet-newtag" placeholder="{{add_tag}}">
-        <button type="button" id="tdet-tagadd">{{add_tag}}</button>
+      <div class="pane" id="tdet-p-trackers">
+        <div id="tdet-trackers"></div>
+        <div class="addrow">
+          <input type="text" id="tdet-turl" placeholder="{{tracker_url}}">
+          <select id="tdet-tier"></select>
+          <button type="button" id="tdet-tadd">{{add_tracker}}</button>
+        </div>
       </div>
 
-      <div class="sec-title">{{share_limits}}</div>
-      <div class="limits">
-        <label>{{share_ratio_limit}}
-          <select id="tdet-ratio"></select>
-        </label>
-        <label>{{seed_time_limit}}
-          <select id="tdet-seed"></select>
-        </label>
-        <button type="button" id="tdet-reannounce">{{force_reannounce}}</button>
+      <div class="pane" id="tdet-p-tags">
+        <div class="tagbox" id="tdet-tags"></div>
+        <div class="addrow">
+          <input type="text" id="tdet-newtag" placeholder="{{add_tag}}">
+          <button type="button" id="tdet-tagadd">{{add_tag}}</button>
+        </div>
+      </div>
+
+      <div class="pane" id="tdet-p-limits">
+        <div class="limits">
+          <label>{{share_ratio_limit}}
+            <select id="tdet-ratio"></select>
+          </label>
+          <label>{{seed_time_limit}}
+            <select id="tdet-seed"></select>
+          </label>
+          <button type="button" id="tdet-reannounce">{{force_reannounce}}</button>
+        </div>
       </div>
     </div>
     <div class="dlg-foot">
@@ -747,8 +893,24 @@ th .arrow { opacity: .75; font-size: .8em; }
   </form>
 </dialog>
 
+<dialog id="ask">
+  <div class="dlg-head" id="ask-head"></div>
+  <div class="dlg-body">
+    <div id="ask-subject"></div>
+    <div id="ask-note" class="pl-note"></div>
+    <label class="remember" id="ask-remember-row">
+      <input type="checkbox" id="ask-remember"> <span>{{dont_ask_again}}</span>
+    </label>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" id="ask-cancel">{{cancel}}</button>
+    <button type="button" id="ask-second"></button>
+    <button type="button" class="primary" id="ask-first"></button>
+  </div>
+</dialog>
+
 <dialog id="browser">
-  <div class="dlg-head">{{choose_folder}}</div>
+  <div class="dlg-head">{{choose_folder_title}}</div>
   <div class="dlg-body">
     <div id="browser-path"></div>
     <div class="row">
@@ -785,12 +947,36 @@ function eta(s) {
   if (s < 86400) return Math.floor(s / 3600) + "h";
   return Math.floor(s / 86400) + "d";
 }
-const STATES = {
-  downloading: "Downloading", downloading_paused: "Paused", downloading_metadata: "Metadata",
-  downloading_checking: "Checking", downloading_queued: "Queued",
-  uploading: "Seeding", uploading_paused: "Paused", uploading_queued: "Queued",
-  checking_files: "Checking", checking_resume_data: "Checking", error: "Error", unknown: "Unknown",
-};
+// The status column's wording, from the same `state_*` keys `ui/format.rs`
+// reads, so the two front ends name a state identically rather than nearly.
+//
+// Built on first use, not here: `const T` is declared further down this script,
+// and a table at this point would capture eleven undefineds. Written out key by
+// key rather than by building the name at runtime: the server decides which
+// strings to send by scanning this file for literal table lookups, so one it
+// cannot see is one it does not send. That scan reads comments too - naming a
+// lookup in prose here would ask for a key by that name.
+let STATES = null;
+
+function stateText(t) {
+  if (t.error) return T.state_error.replace("{0}", t.error);
+  STATES ??= {
+    downloading: T.state_downloading,
+    downloading_paused: T.state_downloading_paused,
+    downloading_metadata: T.state_downloading_metadata,
+    downloading_checking: T.state_downloading_checking,
+    downloading_queued: T.state_downloading_queued,
+    uploading: T.state_uploading,
+    uploading_paused: T.state_uploading_paused,
+    uploading_queued: T.state_uploading_queued,
+    // The engine's one state with no key of its own - the desktop folds it
+    // into the same caption as downloading_checking.
+    checking_files: T.state_downloading_checking,
+    checking_resume_data: T.state_checking_resume_data,
+    unknown: T.state_unknown,
+  };
+  return STATES[t.state] || t.state;
+}
 
 function toast(message, kind) {
   const el = document.createElement("div");
@@ -838,6 +1024,171 @@ function fileTree(paths) {
   return rows;
 }
 
+// Which icon a file gets, from the end of its name. The same table as
+// `file_kind()` in src/ui_slint/mod.rs, and the same answer: `ts` is a
+// transport stream here, not TypeScript, and a name with no extension - or a
+// dotfile, whose whole name looks like one - is generic rather than matched on
+// something that is not a type.
+const KINDS = {
+  video: "mkv mp4 avi mov wmv m4v mpg mpeg flv webm ts m2ts mts vob ogv divx rm rmvb asf 3gp",
+  audio: "mp3 flac wav aac ogg oga opus m4a wma alac ape aiff aif mid midi mka wv dsf",
+  image: "jpg jpeg png gif bmp webp tif tiff svg heic avif jxl psd",
+  archive: "zip rar 7z tar gz bz2 xz zst tgz tbz cab arj ace lzh r00 r01",
+  disc: "iso img bin cue mdf mds nrg ccd",
+  document: "pdf epub mobi azw azw3 djvu cbz cbr doc docx odt rtf txt md nfo log xls xlsx ods ppt pptx odp",
+  subtitle: "srt sub idx ass ssa vtt sup smi",
+  program: "exe msi msix appx bat cmd ps1 sh apk dmg deb rpm appimage jar",
+  code: "json xml html htm css js py rs c cpp cc h hpp java cs go rb php sql yml yaml toml ini cfg conf csv tsv db sqlite",
+};
+const EXT_KIND = (() => {
+  const m = new Map();
+  for (const [kind, exts] of Object.entries(KINDS)) {
+    for (const e of exts.split(" ")) m.set(e, kind);
+  }
+  return m;
+})();
+
+function fileKind(name) {
+  const at = String(name).lastIndexOf(".");
+  if (at <= 0) return "generic";        // no dot, or a dotfile
+  return EXT_KIND.get(name.slice(at + 1).toLowerCase()) || "generic";
+}
+
+// The glyphs, as primitives on a 16x16 grid:
+//   ["r", x, y, w, h, radius, filled]   rectangle
+//   ["c", cx, cy, r, filled]            circle
+//   ["p", commands, filled]             path
+const GLYPHS = {
+  generic: [["p", "M 3.5 2 L 9.5 2 L 12.5 5 L 12.5 14 L 3.5 14 Z", 0],
+            ["p", "M 9.5 2 L 9.5 5 L 12.5 5", 0]],
+  document: [["p", "M 3.5 2 L 9.5 2 L 12.5 5 L 12.5 14 L 3.5 14 Z", 0],
+             ["p", "M 9.5 2 L 9.5 5 L 12.5 5", 0],
+             ["r", 5.4, 7.4, 5.4, 1.2, 0, 1], ["r", 5.4, 10, 5.4, 1.2, 0, 1]],
+  video: [["r", 2, 3.5, 12, 9, 2, 0], ["p", "M 6.3 6 L 10.3 8 L 6.3 10 Z", 1]],
+  audio: [["c", 5.4, 11.6, 2.5, 1], ["r", 7.2, 3.2, 1.5, 8.4, 0, 1],
+          ["p", "M 7.2 3.2 L 12.4 4.6 L 12.4 6.4 L 7.2 5 Z", 1]],
+  image: [["r", 2, 3.5, 12, 9, 2, 0], ["c", 5.6, 6.6, 1.3, 1],
+          ["p", "M 3.2 12 L 6.6 8.2 L 8.8 10.4 L 10.6 8.6 L 13 12 Z", 1]],
+  archive: [["r", 2.5, 2.5, 11, 11, 1.5, 0], ["r", 2.5, 5.85, 11, 1.5, 0, 1],
+            ["r", 6.7, 5.1, 2.6, 3.2, 0, 1]],
+  disc: [["c", 8, 8, 5.8, 0], ["c", 8, 8, 1.7, 1]],
+  subtitle: [["r", 2, 3.5, 12, 9, 2, 0], ["r", 4.2, 9, 5.2, 1.4, 0, 1],
+             ["r", 10.2, 9, 2.4, 1.4, 0, 1]],
+  program: [["r", 2, 3, 12, 10, 2, 0], ["r", 2, 3, 12, 3.2, 0, 1]],
+  code: [["p", "M 6.2 3.6 L 2.6 8 L 6.2 12.4", 0],
+         ["p", "M 9.8 3.6 L 13.4 8 L 9.8 12.4", 0]],
+  folder: [["r", 1, 3, 7, 2.5, 1, 1], ["r", 1, 5, 14, 8.5, 1.5, 0]],
+  // The row actions. Words here cost more room than the buttons need and
+  // change width with the language, which is the whole reason this column
+  // would not settle.
+  pause: [["r", 4, 3, 3, 10, 1, 1], ["r", 9, 3, 3, 10, 1, 1]],
+  play: [["p", "M 5 3 L 13 8 L 5 13 Z", 1]],
+  details: [["r", 3, 4, 10, 1.6, 0.8, 1], ["r", 3, 7.2, 10, 1.6, 0.8, 1],
+            ["r", 3, 10.4, 7, 1.6, 0.8, 1]],
+  trash: [["r", 2.5, 4, 11, 1.6, 0.8, 1], ["r", 6.2, 1.8, 3.6, 2.2, 0.6, 1],
+          ["p", "M 4.3 6.4 L 11.7 6.4 L 10.9 14 L 5.1 14 Z", 0]],
+  chevronRight: [["p", "M 5.5 3.5 L 10 7 L 5.5 10.5 Z", 1]],
+  chevronDown: [["p", "M 3.5 5.5 L 10.5 5.5 L 7 10 Z", 1]],
+};
+
+// Build one glyph as an <svg>, through the DOM. Nothing here is ever parsed as
+// markup, so a name out of a torrent cannot reach it even by accident.
+function glyph(kind) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  for (const s of GLYPHS[kind] || GLYPHS.generic) {
+    let el;
+    if (s[0] === "r") {
+      el = document.createElementNS(NS, "rect");
+      el.setAttribute("x", s[1]); el.setAttribute("y", s[2]);
+      el.setAttribute("width", s[3]); el.setAttribute("height", s[4]);
+      if (s[5]) { el.setAttribute("rx", s[5]); el.setAttribute("ry", s[5]); }
+      outline(el, s[6]);
+    } else if (s[0] === "c") {
+      el = document.createElementNS(NS, "circle");
+      el.setAttribute("cx", s[1]); el.setAttribute("cy", s[2]); el.setAttribute("r", s[3]);
+      outline(el, s[4]);
+    } else {
+      el = document.createElementNS(NS, "path");
+      el.setAttribute("d", s[1]);
+      outline(el, s[2]);
+    }
+    svg.append(el);
+  }
+  return svg;
+
+  function outline(el, filled) {
+    if (filled) {
+      el.setAttribute("fill", "currentColor");
+    } else {
+      el.setAttribute("fill", "none");
+      el.setAttribute("stroke", "currentColor");
+      el.setAttribute("stroke-width", "1.5");
+    }
+  }
+}
+
+// A glyph in its own span, sized by CSS.
+function twig(kind, extra) {
+  const span = document.createElement("span");
+  span.className = "tw" + (extra ? " " + extra : "");
+  span.append(glyph(kind));
+  return span;
+}
+
+// Work out each row's connector: which ancestor columns carry a line through
+// it, and whether it is the last of its siblings.
+//
+// The same two passes as `connectors()` in src/ui_slint/mod.rs, and for the
+// same reasons. Run BEFORE pruning: folding changes which rows are on screen,
+// never the shape of the ones that remain.
+function treeConnectors(rows) {
+  // Backwards: a row has a later sibling if another row at the same depth
+  // follows it before anything shallower does.
+  const later = new Array(rows.length).fill(false);
+  let seen = [];
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const d = rows[i].depth;
+    seen.length = d + 1;                 // anything deeper belonged to the subtree just left
+    later[i] = seen[d] === true;
+    seen[d] = true;
+  }
+
+  // Forwards, carrying the mask down. Shifted one place: a column belongs to
+  // the node whose elbow is drawn in it, which is the ancestor one level
+  // deeper - reading it straight draws a folder's line continuing past its own
+  // last child.
+  let mask = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const d = rows[i].depth;
+    rows[i].guides = d === 0 ? 0 : (mask >> 1) & ((1 << (d - 1)) - 1);
+    rows[i].last = !later[i];
+    mask = later[i] ? mask | (1 << d) : mask & ~(1 << d);
+    mask &= (1 << (d + 1)) - 1;
+  }
+  return rows;
+}
+
+// The gutter for one row: `depth` cells, the last of which is its elbow.
+function treeGutter(row) {
+  const gut = document.createElement("span");
+  gut.className = "gut";
+  for (let l = 0; l < row.depth; l++) {
+    const cell = document.createElement("span");
+    cell.className = "gcell";
+    if (l === row.depth - 1) {
+      cell.classList.add("el");
+      if (!row.last) cell.classList.add("cont");
+    } else if ((row.guides >> l) & 1) {
+      cell.classList.add("line");
+    }
+    gut.append(cell);
+  }
+  return gut;
+}
+
 // Drop every row under a folder that is shut. The folder row itself stays - it
 // is what you click to get the rest back.
 function pruneTree(rows, folded) {
@@ -860,11 +1211,17 @@ function folderRow(row, folded, cls, onToggle) {
   el.className = `${cls} f-dir`;
   const name = document.createElement("span");
   name.className = cls === "lrow" ? "grow" : "f-name";
-  name.style.paddingLeft = `${row.depth * 1.1}rem`;
   // Never innerHTML: a folder name comes out of the torrent.
-  name.textContent = `${folded.has(row.path) ? "\u25B8" : "\u25BE"} ${row.name}`;
+  name.textContent = row.name;
   name.title = row.path;
-  el.append(name);
+  // The marker is drawn rather than typed. U+25B8 and U+25BE are absent from
+  // some system fonts outright, which is what made the desktop's invisible.
+  el.append(
+    treeGutter(row),
+    twig(folded.has(row.path) ? "chevronRight" : "chevronDown"),
+    twig("folder", "ficon"),
+    name,
+  );
   el.addEventListener("click", () => {
     if (!folded.delete(row.path)) folded.add(row.path);
     onToggle();
@@ -896,6 +1253,20 @@ async function api(method, path, body) {
 }
 
 // --- torrent list -----------------------------------------------------------
+// An action drawn as a glyph. The words move to `title`, where they are still
+// read by anyone hovering or using a screen reader, but stop deciding how wide
+// the column has to be.
+function iconButton(kind, title, cls, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "ico" + (cls ? " " + cls : "");
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  b.append(glyph(kind));
+  b.addEventListener("click", onClick);
+  return b;
+}
+
 function actionButton(text, cls, onClick) {
   const b = document.createElement("button");
   b.textContent = text;
@@ -951,13 +1322,13 @@ function renderRows(all) {
     const state = cell(row);
     const s = document.createElement("div");
     s.className = "state" + (t.error ? " err" : t.state === "uploading" ? " up" : "");
-    s.textContent = t.error ? "Error" : STATES[t.state] || t.state;
+    s.textContent = stateText(t);
     if (t.error) s.title = t.error;
     state.append(s);
     if (!t.paused && t.eta_seconds !== null) {
       const e = document.createElement("div");
       e.className = "state";
-      e.textContent = "ETA " + eta(t.eta_seconds);
+      e.textContent = T.eta + " " + eta(t.eta_seconds);
       state.append(e);
     }
 
@@ -973,26 +1344,64 @@ function renderRows(all) {
     box.className = "actions";
     box.append(
       t.paused
-        ? actionButton(T.resume, "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/resume`)))
-        : actionButton(T.pause, "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/pause`))),
+        ? iconButton("play", T.resume, "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/resume`)))
+        : iconButton("pause", T.pause, "", () => act(() => api("POST", `/api/torrents/${t.info_hash}/pause`))),
       // Points the torrent at data that has already been moved; it does not
       // move anything. The browser opens at the current save path because the
       // new location is usually a sibling of the old one.
-      actionButton(T.set_location, "", () => {
+      iconButton("folder", T.set_location, "", () => {
         openBrowser(t.save_path || null, (path) => {
           act(() => api("POST", `/api/torrents/${t.info_hash}/location`, { path }));
         });
       }),
-      actionButton(T.details, "", () => openDetails(t)),
-      actionButton(T.remove, "danger", () => {
-        // Two questions, because the second one is unrecoverable.
-        if (!confirm(T.confirm_remove_torrents.replace("{0}", `"${t.name}"`))) return;
-        const withData = confirm(T.confirm_delete_files);
-        act(() => api("DELETE", `/api/torrents/${t.info_hash}?delete_files=${withData}`));
+      iconButton("details", T.details, "", () => openDetails(t)),
+      iconButton("trash", T.remove, "danger", async () => {
+        // One question with both answers on it. The trash button does not say
+        // what should happen to the files, so this is where that is decided.
+        const answer = await askFirst({
+          setting: "confirm-remove",
+          head: T.remove_confirm,
+          subject: t.name,
+          note: T.remove_keeps_files,
+          first: T.remove_torrent,
+          second: T.remove_torrent_and_files,
+        });
+        if (!answer) return;
+        act(() => api("DELETE",
+          `/api/torrents/${t.info_hash}?delete_files=${answer.secondary}`));
       }),
     );
     actions.append(box);
   }
+  sizeActionsColumn();
+}
+
+// Make the Actions column exactly as wide as its buttons.
+//
+// It cannot do this itself: the table is `table-layout: fixed`, which is what
+// stops the columns renegotiating their widths every refresh as torrent names
+// come and go - and under fixed layout a cell's own width is ignored, the
+// <col> elements decide. So the width has to be measured and set.
+//
+// Worth measuring rather than hard-coding even now the buttons are icons: a
+// paused torrent shows Resume where a running one shows Pause, and the set
+// could change again.
+//
+// A width dragged by hand wins, as everywhere else here.
+function sizeActionsColumn() {
+  const last = COL_DEFAULTS.length - 1;
+  if (store.get("cols", {})[last]) return;
+
+  const boxes = $("rows").querySelectorAll(".actions");
+  if (!boxes.length) return;
+  let widest = 0;
+  for (const b of boxes) widest = Math.max(widest, b.scrollWidth);
+  if (!widest) return;
+
+  const col = $("cols").children[last];
+  // The cell's own left and right padding, which the box inside knows nothing
+  // about: .5rem either side, plus a pixel of slack so nothing is clipped.
+  if (col) col.style.width = Math.ceil(widest) + 17 + "px";
 }
 
 // Translations for the strings this script builds. Injected by the server
@@ -1008,6 +1417,14 @@ let prefsLoaded = false;
 // name -> value, for the controls touched since the drawer was filled.
 const pending = new Map();
 
+// The captions come from the CLI, where "use the alternative speed limits now"
+// is the right way to describe `--set alt-speed`. As a label above a control it
+// wants a capital. Only the first character, and only if that character has a
+// case at all - `toLocaleUpperCase` is a no-op on scripts that do not.
+function sentence(text) {
+  return text ? text[0].toLocaleUpperCase() + text.slice(1) : text;
+}
+
 function prefControl(s) {
   const wrap = document.createElement("div");
   wrap.className = "pref";
@@ -1015,7 +1432,11 @@ function prefControl(s) {
   const id = "pref-" + s.name;
   const label = document.createElement("label");
   label.htmlFor = id;
-  label.textContent = s.description;
+  label.textContent = sentence(s.description);
+  // Whether this gets a tooltip depends on whether it ends up clipped, which
+  // is not known until it has been laid out. markClipped() decides, and reads
+  // the text back from here.
+  label.dataset.full = label.textContent;
   wrap.append(label);
 
   const row = document.createElement("div");
@@ -1036,7 +1457,10 @@ function prefControl(s) {
     tick.className = "tick";
     tick.textContent = "\u2713";
     const text = document.createElement("span");
-    text.textContent = s.description;
+    text.textContent = sentence(s.description);
+    // The clipped element is the span, but the tooltip belongs on the whole
+    // button - that is what the pointer is over.
+    toggle.dataset.full = text.textContent;
     toggle.append(input, tick, text);
     input.addEventListener("change", () => {
       toggle.classList.toggle("on", input.checked);
@@ -1061,6 +1485,15 @@ function prefControl(s) {
       input.append(opt);
     }
     input.value = s.value;
+    // A chosen option can outrun the box as easily as a caption can - a
+    // language endonym, a save path. The title follows the selection rather
+    // than being set once, so hovering always shows what is actually picked.
+    const showChosen = () => {
+      const chosen = input.selectedOptions[0];
+      input.title = chosen ? chosen.textContent : "";
+    };
+    showChosen();
+    input.addEventListener("change", showChosen);
   } else if (s.kind === "int") {
     input = document.createElement("input");
     input.type = "number";
@@ -1120,6 +1553,27 @@ function prefControl(s) {
   return wrap;
 }
 
+/* Give a caption a tooltip only when it is too long to read where it sits.
+   `scrollWidth` exceeds `clientWidth` exactly when the ellipsis is showing, so
+   the two can never disagree - which a hand-maintained "this one is long" list
+   certainly would. One pixel of slack for sub-pixel text measurement. */
+function markClipped(root) {
+  for (const el of root.querySelectorAll("[data-full]")) {
+    // On a toggle it is the caption span that overflows, not the button.
+    const measured = el.classList.contains("toggle")
+      ? el.querySelector("span:last-child")
+      : el;
+    if (!measured) continue;
+    if (measured.scrollWidth > measured.clientWidth + 1) {
+      el.title = el.dataset.full;
+      el.classList.add("clipped");
+    } else {
+      el.removeAttribute("title");
+      el.classList.remove("clipped");
+    }
+  }
+}
+
 async function loadPrefs() {
   const body = $("drawer-body");
   body.textContent = T.loading;
@@ -1132,6 +1586,7 @@ async function loadPrefs() {
       body.append(h);
       for (const s of sec.settings) body.append(prefControl(s));
     }
+    markClipped(body);
     prefsLoaded = true;
     pending.clear();
     $("drawer-save").disabled = true;
@@ -1180,6 +1635,12 @@ function openPrefs() {
   $("btn-prefs").setAttribute("aria-expanded", "true");
   if (!prefsLoaded) loadPrefs();
 }
+// The drawer is `min(30rem, 100vw)`, so a narrow window changes what fits and
+// therefore which captions are clipped.
+addEventListener("resize", () => {
+  if (prefsLoaded) markClipped($("drawer-body"));
+});
+
 function closePrefs() {
   $("drawer").classList.remove("open");
   $("scrim").classList.remove("open");
@@ -1187,6 +1648,123 @@ function closePrefs() {
   $("btn-prefs").setAttribute("aria-expanded", "false");
 }
 $("btn-prefs").addEventListener("click", openPrefs);
+
+/* Toolbar overflow.
+
+   Past the point where the bar no longer fits on one line, groups move into
+   the drawer - the one that already slides in from the right behind the
+   hamburger - in a fixed order: the sparklines first, the add buttons last.
+
+   The nodes MOVE; they are not copied. A button in the drawer is the same
+   button, with the id, handler and disabled state the rest of this script
+   already maintains. A comment holds its place so it returns to its own slot
+   in the bar rather than to the end of it.
+
+   Measured rather than driven by media queries. Fixed widths were tried and
+   are not knowable: how wide the bar needs to be depends on what is in it -
+   the version string, the DHT and client counts, and transfer rates that are
+   "0 B/s" idle and "12.3 MB/s" busy. Widths measured on an idle page were
+   ~70px short of a running one, so every breakpoint fired late and the bar
+   wrapped just above each one.
+
+   Each pass starts by restoring everything, so the outcome depends only on how
+   wide the window is now - not on the order it was dragged through to get
+   here. */
+const OF_ORDER = [1, 2, 3, 4, 5, 6];
+
+/* A sparkline's width is a preference, written inline by its resize grip - and
+   an inline width is exactly what a stylesheet cannot widen. Set it aside while
+   the chart is in the drawer, where it should span the panel, and put it back
+   when it returns to the bar. The stored preference is untouched either way. */
+function widthAside(el, away) {
+  const svg = el.querySelector?.("svg");
+  if (!svg) return;
+  if (away) {
+    el.dataset.barWidth = svg.style.width;
+    svg.style.width = "";
+  } else if ("barWidth" in el.dataset) {
+    svg.style.width = el.dataset.barWidth;
+    delete el.dataset.barWidth;
+  }
+}
+
+function setupOverflow() {
+  const bar = document.querySelector("header");
+  const h1 = bar.querySelector("h1");
+  const tools = $("drawer-tools");
+  const stats = $("drawer-stats");
+
+  const items = [...bar.querySelectorAll("[data-of]")].map((el) => {
+    const slot = document.createComment("");
+    el.parentNode.insertBefore(slot, el);
+    // Readouts go to the row at the top of the drawer; the rest stack below.
+    const home = el.classList.contains("stat") ? stats : tools;
+    return { el, slot, home, step: Number(el.dataset.of) };
+  });
+
+  // Is anything sitting on a second line?
+  //
+  // By centre, not by top. The bar is `align-items: center`, so items on the
+  // SAME line start at different heights - a 33px button at 11, a 17px readout
+  // at 19 - and comparing tops declared a wrap at every width, which collapsed
+  // the whole bar even on a 2200px screen. Centres agree to the pixel on one
+  // line and differ by a row height once something wraps.
+  //
+  // The title is excluded on purpose: under 620px a rule gives it a line of its
+  // own deliberately, and counting that as a wrap would collapse everything on
+  // every phone.
+  const wrapped = () => {
+    const kids = [...bar.children].filter((el) => el !== h1 && el.offsetParent);
+    if (kids.length === 0) return false;
+    const mid = kids.map((el) => el.offsetTop + el.offsetHeight / 2);
+    return Math.max(...mid) - Math.min(...mid) > 4;
+  };
+
+  let busy = false;
+  const apply = () => {
+    if (busy) return;
+    busy = true;
+
+    for (const { el, slot, home } of items) {
+      if (el.parentNode === home) {
+        slot.parentNode.insertBefore(el, slot);
+        widthAside(el, false);
+      }
+    }
+
+    for (const step of OF_ORDER) {
+      if (!wrapped()) break;
+      for (const it of items) {
+        if (it.step !== step) continue;
+        widthAside(it.el, true);
+        it.home.append(it.el);
+      }
+    }
+
+    // Collapsing appends group by group, which would leave the drawer in the
+    // order things happened to leave the bar - charts first, Add torrent last.
+    // Re-appending in document order gives it the bar's own left-to-right
+    // reading instead. (`append` moves a node the parent already holds.)
+    for (const { el, home } of items) if (el.parentNode === home) home.append(el);
+
+    busy = false;
+  };
+
+  // The header's own size is what matters, and it changes for two reasons: the
+  // window was resized, and the numbers in it grew. Watching the header covers
+  // both. Moving items changes that size too, which would re-enter - hence the
+  // guard above; a pass is deterministic for a given width, so it settles.
+  new ResizeObserver(apply).observe(bar);
+  apply();
+}
+
+// Using a command closes the drawer, the way picking from a menu does. The
+// theme picker is a control rather than a command, so it stays open - closing
+// under the pointer mid-choice would be the wrong answer.
+$("drawer-tools").addEventListener("click", (ev) => {
+  if (ev.target.closest("button")) closePrefs();
+});
+
 $("drawer-close").addEventListener("click", closePrefs);
 $("scrim").addEventListener("click", closePrefs);
 document.addEventListener("keydown", (e) => {
@@ -1272,6 +1850,66 @@ function startStream() {
   };
   es.onopen = () => setLink("ok");
   return es;
+}
+
+// --- asking first -----------------------------------------------------------
+//
+// Which confirmations are switched on. Read once at load rather than before
+// every question - a round trip in front of a dialog is a dialog that arrives
+// late - and re-read whenever the settings are saved.
+const ASK = { "confirm-remove": true, "confirm-tracker-change": true };
+
+async function loadAskPrefs() {
+  try {
+    for (const sec of await api("GET", "/api/settings")) {
+      for (const s of sec.settings) {
+        if (s.name in ASK) ASK[s.name] = s.value === "true";
+      }
+    }
+  } catch (e) { /* leave them on: asking is the safe default */ }
+}
+
+// Ask, unless this question has been switched off. Resolves to null for "no",
+// or `{ secondary }` for yes - `secondary` telling the caller which of the two
+// buttons was used, when there are two.
+//
+// A real dialog rather than `confirm()`: two stacked confirms is how the second
+// question gets answered by reflex, and `confirm()` has nowhere to put a
+// "do not ask again" box.
+function askFirst({ setting, head, subject, note, first, second }) {
+  if (setting && !ASK[setting]) return Promise.resolve({ secondary: false });
+
+  $("ask-head").textContent = head;
+  $("ask-subject").textContent = subject || "";
+  $("ask-subject").hidden = !subject;
+  $("ask-note").textContent = note || "";
+  $("ask-note").hidden = !note;
+  $("ask-first").textContent = first;
+  $("ask-second").textContent = second || "";
+  $("ask-second").hidden = !second;
+  // Unticked every time: a box that remembered its own last answer would turn
+  // "just this once" into a standing instruction.
+  $("ask-remember").checked = false;
+  $("ask-remember-row").hidden = !setting;
+
+  return new Promise((resolve) => {
+    const done = async (result) => {
+      if (result && setting && $("ask-remember").checked) {
+        ASK[setting] = false;
+        try {
+          await api("POST", "/api/settings", { name: setting, value: "false" });
+          await api("POST", "/api/settings/apply");
+        } catch (e) { toast(e.message); }
+      }
+      $("ask").close();
+      $("ask-first").onclick = $("ask-second").onclick = $("ask-cancel").onclick = null;
+      resolve(result);
+    };
+    $("ask-first").onclick = () => done({ secondary: false });
+    $("ask-second").onclick = () => done({ secondary: true });
+    $("ask-cancel").onclick = () => done(null);
+    $("ask").showModal();
+  });
 }
 
 // --- folder browser ---------------------------------------------------------
@@ -1422,7 +2060,8 @@ function renderFiles() {
   // `included` stays indexed by position in t.files, so folding a folder
   // cannot lose a tick: what is on screen and what will be added are two
   // different things, and only the first one folds.
-  for (const r of pruneTree(fileTree(t.files.map(f => f.path)), addFolded)) {
+  // connectors BEFORE prune - see drawFiles.
+  for (const r of pruneTree(treeConnectors(fileTree(t.files.map(f => f.path))), addFolded)) {
     if (r.index < 0) {
       list.append(folderRow(r, addFolded, "f-item", renderFiles));
       continue;
@@ -1441,13 +2080,15 @@ function renderFiles() {
     });
     const name = document.createElement("span");
     name.className = "f-name";
-    name.style.paddingLeft = `${r.depth * 1.1}rem`;
     name.textContent = r.name;                    // attacker-controlled
     name.title = f.path;
     const size = document.createElement("span");
     size.className = "f-size";
     size.textContent = bytes(f.size);
-    row.append(cb, name, size);
+    // The checkbox stays in its own column: indenting the whole row used to
+    // carry it along with the name, so a deeply nested file put its box
+    // somewhere else entirely.
+    row.append(cb, treeGutter(r), twig(fileKind(r.name), "ficon"), name, size);
     list.append(row);
   }
 }
@@ -1851,16 +2492,24 @@ $("tb-resume").onclick = () =>
 $("tb-pause").onclick = () =>
   act(() => Promise.all(chosen().filter((t) => !t.paused)
     .map((t) => api("POST", `/api/torrents/${t.info_hash}/pause`))));
-$("tb-remove").onclick = () => {
+$("tb-remove").onclick = async () => {
   const picked = chosen();
   if (!picked.length) return;
-  // Same two prompts the row's own Remove button asks, rather than a third
+  // The same question the row's own Remove button asks, rather than a second
   // wording for the same act.
   const what = picked.length === 1
     ? `"${picked[0].name}"`
     : T.num_torrents.replace("{0}", picked.length);
-  if (!confirm(T.confirm_remove_torrents.replace("{0}", what))) return;
-  const withData = confirm(T.confirm_delete_files);
+  const answer = await askFirst({
+    setting: "confirm-remove",
+    head: T.remove_confirm,
+    subject: what,
+    note: T.remove_keeps_files,
+    first: T.remove_torrent,
+    second: T.remove_torrent_and_files,
+  });
+  if (!answer) return;
+  const withData = answer.secondary;
   act(() => Promise.all(picked.map((t) =>
     api("DELETE", `/api/torrents/${t.info_hash}?delete_files=${withData}`))));
 };
@@ -1904,10 +2553,30 @@ function minutesLabel(m) {
   return m % 60 === 0 ? `${m / 60}h` : `${m}m`;
 }
 
+// One listener on the strip rather than one per button: the tabs are static
+// markup, so there is nothing to rebind when the dialog is reopened.
+$("tdet-tabs").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button[data-pane]");
+  if (!btn) return;
+  for (const b of $("tdet-tabs").querySelectorAll("button[data-pane]")) {
+    const on = b === btn;
+    b.setAttribute("aria-selected", on ? "true" : "false");
+    $(b.dataset.pane).classList.toggle("on", on);
+  }
+});
+
+// Back to the first tab whenever a torrent is opened. Leaving it where it was
+// last time means opening a torrent to read its files and landing on Tags.
+function resetDetailTabs() {
+  const first = $("tdet-tabs").querySelector("button[data-pane]");
+  if (first) first.click();
+}
+
 async function openDetails(t) {
   closeFileMenu();   // a menu left over from the last torrent is not this one's
   detHash = t.info_hash;
   $("tdet-name").textContent = t.name;          // never innerHTML - hostile input
+  resetDetailTabs();
   $("tdet").showModal();
   await drawDetails();
 }
@@ -1994,7 +2663,9 @@ function showFileMenu(x, y, f) {
 function drawFiles(files) {
   const box = $("tdet-files");
   box.textContent = "";
-  for (const r of pruneTree(fileTree(files.map(f => f.name)), detFolded)) {
+  // connectors BEFORE prune: folding changes which rows are on screen, never
+  // the shape of the ones that remain.
+  for (const r of pruneTree(treeConnectors(fileTree(files.map(f => f.name))), detFolded)) {
     if (r.index < 0) {
       box.append(folderRow(r, detFolded, "lrow", () => drawFiles(files)));
       continue;
@@ -2004,7 +2675,6 @@ function drawFiles(files) {
     row.className = "lrow";
     const name = document.createElement("span");
     name.className = "grow";
-    name.style.paddingLeft = `${r.depth * 1.1}rem`;
     name.textContent = r.name;                  // attacker-controlled
     name.title = f.name;
     const size = document.createElement("span");
@@ -2019,7 +2689,7 @@ function drawFiles(files) {
         index: f.index,
         priority: Number(pick.value),
       })));
-    row.append(name, size, pick);
+    row.append(treeGutter(r), twig(fileKind(r.name), "ficon"), name, size, pick);
 
     // Streaming, for the files there is any point streaming. The server serves
     // byte ranges out of a partial download, so these work before it finishes.
@@ -2115,11 +2785,27 @@ function drawTrackers(rows) {
         actionButton(T.edit, "", async () => {
           const next = prompt(T.tracker_url, r.label);
           if (next === null || next.trim() === r.label) return;
+          // Asked on apply, not when the box opened: until now nothing has
+          // changed, and the old URL is about to be gone for good.
+          if (!await askFirst({
+            setting: "confirm-tracker-change",
+            head: T.confirm_tracker_edit,
+            subject: next,
+            first: T.yes,
+          })) return;
           await act(() => api("POST", `/api/torrents/${detHash}/trackers/edit`,
             { from: r.label, url: next }));
           await drawDetails();
         }),
         actionButton(T.remove, "danger", async () => {
+          // Asked here rather than relying on the button being red: removing a
+          // tracker is not undoable from this screen, and the row it belongs to
+          // is one of several that look alike.
+          if (!await askFirst({
+            setting: "confirm-tracker-change",
+            head: T.confirm_remove_tracker.replace("{0}", r.label),
+            first: T.yes,
+          })) return;
           await act(() => api("POST", `/api/torrents/${detHash}/trackers/remove`, { url: r.label }));
           await drawDetails();
         }),
@@ -2304,7 +2990,10 @@ function pushRates(down, up) {
 // that have no width absorb whatever is left over, so on a wide screen the
 // slack goes to the torrent name instead of being shared out into eight
 // columns of whitespace. A width the user drags onto it wins, as it should.
-const COL_DEFAULTS = [null, 90, 130, 110, 90, 90, 80, 60, 250];
+// The last entry is the Actions column. It is a starting width only -
+// sizeActionsColumn() measures the buttons and replaces it on the first draw -
+// but it wants to be close, so the column does not visibly jump.
+const COL_DEFAULTS = [null, 90, 130, 110, 90, 90, 80, 60, 140];
 
 // Widths live in this browser, not on the server.
 //
@@ -2375,6 +3064,9 @@ function installGrips() {
   });
 }
 loadColumns();
+// Which confirmations are on. Not awaited: they default to on, so the worst a
+// slow answer costs is one question that was going to be asked anyway.
+loadAskPrefs();
 
 // --- plugin index -----------------------------------------------------------
 //
@@ -2391,6 +3083,30 @@ function plugNote(p) {
     return ["", T.plugins_access + ": " + p.permissions.join(", ")];
   }
   return ["", ""];
+}
+
+// The desktop's own gear, so the two windows show the same shape rather than
+// two drawings of one. Its grid is 24, not 16 - see GearIcon in app.slint.
+const GEAR_PATH = "M 22.67 9.34 L 22.67 14.66 L 20.18 14.66 L 19.66 15.90 " +
+  "L 21.43 17.67 L 17.67 21.43 L 15.90 19.66 L 14.66 20.18 L 14.66 22.67 " +
+  "L 9.34 22.67 L 9.34 20.18 L 8.10 19.66 L 6.33 21.43 L 2.57 17.67 " +
+  "L 4.34 15.90 L 3.82 14.66 L 1.33 14.66 L 1.33 9.34 L 3.82 9.34 " +
+  "L 4.34 8.10 L 2.57 6.33 L 6.33 2.57 L 8.10 4.34 L 9.34 3.82 L 9.34 1.33 " +
+  "L 14.66 1.33 L 14.66 3.82 L 15.90 4.34 L 17.67 2.57 L 21.43 6.33 " +
+  "L 19.66 8.10 L 20.18 9.34 Z";
+
+// Build an <svg> holding one path, through the DOM rather than innerHTML.
+// `d` is attribute content, never parsed as markup, so a path string cannot
+// become an element however it was written.
+function svgPath(d, grid) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${grid} ${grid}`);
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(NS, "path");
+  path.setAttribute("d", d);
+  svg.append(path);
+  return svg;
 }
 
 async function drawPlugList() {
@@ -2448,16 +3164,46 @@ async function drawPlugList() {
       main.append(n);
     }
 
+    // The plugin's own icon, once it is actually running with a window to
+    // open - before that there is nothing for it to stand for. Only ever built
+    // through the SVG DOM, never innerHTML: the string is sanitised host-side
+    // (see `ui_icon`), and this way it could not become markup even if it were
+    // not.
+    if (p.enabled && p.has_window && p.icon) {
+      const holder = document.createElement("span");
+      holder.className = "pl-icon";
+      holder.append(svgPath(p.icon, 16));
+      row.append(holder);
+    }
+
     row.append(on, main);
 
-    // Only a running plugin that has declared a window has anything to open.
-    if (p.has_window) {
-      const open = document.createElement("button");
-      open.type = "button";
-      open.textContent = T.open;
-      open.onclick = () => { $("plugs").close(); plugOpen(p.name); };
-      row.append(open);
-    }
+    // Both buttons always, disabled when they would do nothing. A row whose
+    // shape changes with what the plugin supports reads as something broken;
+    // a greyed button reads as "not this one".
+    const open = document.createElement("button");
+    open.type = "button";
+    open.textContent = T.open;
+    open.disabled = !p.has_window;
+    open.onclick = () => { $("plugs").close(); plugOpen(p.name); };
+
+    const cog = document.createElement("button");
+    cog.type = "button";
+    cog.className = "pl-cog";
+    cog.title = T.plugins_configure;
+    cog.disabled = !p.configurable;
+    cog.append(svgPath(GEAR_PATH, 24));
+    cog.onclick = async () => {
+      // Ask, then open. The plugin answers a Configure by filling its form, so
+      // the window has to be on screen to receive it - same order the desktop
+      // cog uses.
+      $("plugs").close();
+      plugCurrent = p.name;
+      await plugSend({ kind: "configure" });
+      plugOpen(p.name);
+    };
+
+    row.append(open, cog);
     box.append(row);
   }
 }
@@ -2624,7 +3370,7 @@ let page = 0;
 // otherwise "downloading_paused" files under d and the user sees Paused rows
 // scattered through the Downloading ones.
 const sortValue = (t, s) =>
-  s.key === "status" ? (t.error ? "Error" : STATES[t.state] || t.state) : t[s.key];
+  s.key === "status" ? stateText(t) : t[s.key];
 
 function sortAll(list) {
   const s = SORTS[sortCol];
@@ -2748,4 +3494,10 @@ function pageOf(sorted) {
 
 buildPageSizes();
 paintHeaders();
+
+// Last, deliberately: the sparklines take their stored width from an inline
+// style set further up this script, and the overflow has to see that width
+// before it can set it aside. Called earlier it stashed an empty string, and
+// the width was then re-applied to a chart already sitting in the drawer.
+setupOverflow();
 </script>

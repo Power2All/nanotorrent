@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Català (Espanya) - Partner Center: Catalan (Spain) (ca-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ El NanoTorrent és una adaptació en Rust del PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versió 0.4.0
+Versió 0.4.1
 
-- Reprodueix un vídeo mentre es baixa. Feu clic dret en un fitxer als detalls d'un torrent, o a la interfície web, i s'obre al VLC, a l'mpv o al vostre reproductor habitual: la reproducció comença abans que la baixada hagi acabat.
-- Una llista de fitxers millor: trieu-los amb el ratolí o amb les fletxes, obriu-ne un amb clic dret i plegueu les carpetes que no mireu. Tant a l'aplicació com a la interfície web.
-- Els connectors poden afegir elements al menú d'un fitxer, iniciar programes sota un nou permís "execute" que aproveu en llenguatge clar, i portar les seves pròpies traduccions. Quinze funcions més els donen allò que la interfície web ja podia fer.
-- Correccions de seguretat: un altre lloc ja no pot canviar res a través de la interfície web, un torrent ja no pot anomenar una unitat de Windows com a carpeta ni afegir una línia a una llista de reproducció, i els bloquejos per inicis de sessió fallits ja no compten les sol·licituds que no han provat cap contrasenya.
+- La vostra ràtio ja no es reinicia en canviar un ajust o reiniciar.
+- Més reproductors de vídeo: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA i Elmedia Player. Només s'ofereixen els que té el vostre sistema, i si no se'n troba un, se us pregunta on és.
+- Els rastrejadors s'anuncien per nivells, tal com demanava el torrent - un de reserva es manté com a reserva.
+- Eliminar un torrent, i canviar o eliminar un rastrejador, pregunten abans. Cada pregunta es pot respondre un cop i recordar-se.
+- Importar del PicoTorrent pregunta abans, pot buidar la llista actual i portar-ne els ajustos, i diu què ha arribat, què ja hi era i què ha fallat.
+- La interfície web es posa al dia: arbres de fitxers amb una icona per tipus, Detalls amb pestanyes, botons d'icona que dimensionen la seva columna i cap barra de desplaçament lateral.
+- Els connectors poden dur la seva pròpia icona, i els seus botons Open i de configuració es mostren sempre.
+- Per HTTPS la interfície web no podia canviar res: cada botó era rebutjat.
+- La barra d'eines es plega al menú en estrènyer-se, els títols llargs es retallen i els errors de fons es tradueixen.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

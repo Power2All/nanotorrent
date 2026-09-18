@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Afrikaans (Suid-Afrika) - Partner Center: Afrikaans (South Africa) (af-ZA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent is 'n Rust-oordrag van PicoTorrent deur Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Weergawe 0.4.0
+Weergawe 0.4.1
 
-- Stroom 'n video terwyl dit aflaai. Regskliek 'n lêer in 'n torrent se besonderhede, of in die webkoppelvlak, en dit open in VLC, mpv of jou gewone speler - die weergawe begin voordat die aflaai klaar is.
-- 'n Beter lêerlys: kies lêers met die muis of die pyltjiesleutels, open een met 'n regskliek, en vou die vouers toe waarna jy nie kyk nie. In die program sowel as in die webkoppelvlak.
-- Inproppe kan items by 'n lêer se kieslys voeg, programme begin onder 'n nuwe "execute"-toestemming wat jy in gewone taal goedkeur, en hul eie vertalings saambring. Vyftien verdere funksies gee hulle wat die webkoppelvlak reeds kon doen.
-- Sekuriteitsregstellings: 'n ander werf kan niks meer deur die webkoppelvlak verander nie, 'n torrent kan nie meer 'n Windows-skyf as 'n vouer benoem of 'n reël by 'n speellys voeg nie, en aanmeldsluitings tel nie meer versoeke wat nooit 'n wagwoord probeer het nie.
+- Jou verhouding stel nie meer terug wanneer jy 'n instelling verander of herbegin nie.
+- Meer videospelers: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA en Elmedia Player. Slegs dié wat jou stelsel het word aangebied, en as een nie gevind kan word nie, word jy gevra waar dit is.
+- Spoorders word per vlak aangekondig, soos die torrent gevra het - 'n rugsteunspoorder bly 'n rugsteun.
+- Die verwydering van 'n torrent, en die verandering of verwydering van 'n spoorder, vra eers. Elke vraag kan een keer beantwoord en onthou word.
+- Invoer vanaf PicoTorrent vra eers, kan die huidige lys skoonmaak en sy instellings oorbring, en sê wat aangekom het, wat reeds hier was en wat misluk het.
+- Die webkoppelvlak haal die program in: lêerbome met 'n ikoon per tipe, Besonderhede met oortjies, ikoonknoppies wat hul eie kolom se breedte stel, en geen sywaartse rolstaaf nie.
+- Inproppe kan hul eie ikoon dra, en hul Open- en instellingsknoppies word altyd gewys.
+- Oor HTTPS kon die webkoppelvlak niks verander nie - elke knoppie is geweier.
+- Die nutsbalk vou in die kieslys in soos dit smaller word, lang byskrifte word afgesny, en agtergrondfoute word vertaal.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

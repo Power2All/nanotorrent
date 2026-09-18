@@ -16,8 +16,6 @@
 //! module hands out is "the application talking to the internet", and a user
 //! who proxies their torrents did not mean to exempt the update check.
 
-use std::sync::Arc;
-
 use crate::core::configuration::Configuration;
 
 /// Proxy protocol, as stored in `libtorrent.proxy_type`.
@@ -75,13 +73,11 @@ pub fn client(cfg: &Configuration) -> reqwest::Result<reqwest::Client> {
     builder.build()
 }
 
-/// The same, for callers that hold the configuration behind an `Arc`.
-pub fn client_arc(cfg: &Arc<Configuration>) -> reqwest::Result<reqwest::Client> {
-    client(cfg.as_ref())
-}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     fn cfg() -> Configuration {

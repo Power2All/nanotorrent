@@ -143,6 +143,10 @@ export component PluginWindow inherits Window {
     in property <string> form-title;
     in-out property <[PluginField]> fields;
 
+    /// A `file` field's Browse button: `(field id, field label)`. The label is
+    /// the dialog's title, so the plugin's own wording names what is being
+    /// picked without the host having to guess.
+    callback pick-form-file(string, string);
     callback form-saved();
     callback form-cancelled();
     callback row-activated(string);
@@ -209,7 +213,24 @@ export component PluginWindow inherits Window {
                         selected(v) => { root.fields[i].value = v; }
                     }
 
-                    if f.kind != "check" && f.kind != "choice": LineEdit {
+                    // A file field is the same text box with a Browse button
+                    // beside it, rather than a read-only box: typing or pasting
+                    // a path has to keep working, because that is the only way
+                    // to fill one in from the web interface.
+                    if f.kind == "file": HorizontalLayout {
+                        spacing: 6px;
+                        LineEdit {
+                            horizontal-stretch: 1;
+                            text: f.value;
+                            edited(s) => { root.fields[i].value = s; }
+                        }
+                        Button {
+                            text: L.s(L.revision, "browse_folder");
+                            clicked => { root.pick-form-file(f.id, f.label); }
+                        }
+                    }
+
+                    if f.kind != "check" && f.kind != "choice" && f.kind != "file": LineEdit {
                         text: f.value;
                         input-type: f.kind == "number" ? InputType.number : InputType.text;
                         edited(s) => { root.fields[i].value = s; }

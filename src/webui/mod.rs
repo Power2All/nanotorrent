@@ -539,11 +539,15 @@ fn snapshot(state: &AppState) -> serde_json::Value {
         .collect();
     let (down, up) = state.session.session_rates();
 
-    let mut errors = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
     if let Ok(rx) = state.errors.lock() {
+        // The translator is built only when there is something to say with it:
+        // this runs on every poll and loading a locale is a file read.
+        let mut tr = None;
         while let Ok(event) = rx.try_recv() {
-            if let SessionEvent::Error(message) = event {
-                errors.push(message);
+            if let SessionEvent::Error(err) = event {
+                let tr = tr.get_or_insert_with(|| state.translator());
+                errors.push(err.text(tr));
             }
         }
     }
@@ -651,10 +655,12 @@ async fn h_errors(state: web::Data<AppState>) -> actix_web::Result<impl Responde
     let st = state.clone();
     let errors = web::block(move || {
         let rx = st.errors.lock().unwrap();
-        let mut drained = Vec::new();
+        let mut drained: Vec<String> = Vec::new();
+        let mut tr = None;
         while let Ok(event) = rx.try_recv() {
-            if let SessionEvent::Error(message) = event {
-                drained.push(message);
+            if let SessionEvent::Error(err) = event {
+                let tr = tr.get_or_insert_with(|| st.translator());
+                drained.push(err.text(tr));
             }
         }
         drained
@@ -1443,12 +1449,13 @@ async fn h_add_tracker(
         st.session.exists(&hash) && st.session.add_tracker(&hash, req.url.trim(), req.tier)
     })
     .await?;
-    match ok {
-        true => Ok(HttpResponse::NoContent().finish()),
+    if ok {
+        Ok(HttpResponse::NoContent().finish())
+    } else {
         // One message for both causes: a URL that is not a tracker address,
         // and a torrent that is no longer there. The caller can tell which by
         // whether the torrent is still in its list.
-        false => Err(ErrorBadRequest("not a usable tracker URL for that torrent")),
+        Err(ErrorBadRequest("not a usable tracker URL for that torrent"))
     }
 }
 
@@ -1469,9 +1476,10 @@ async fn h_edit_tracker(
         st.session.exists(&hash) && st.session.edit_tracker(&hash, &from, req.url.trim())
     })
     .await?;
-    match ok {
-        true => Ok(HttpResponse::NoContent().finish()),
-        false => Err(ErrorBadRequest("not a usable tracker URL for that torrent")),
+    if ok {
+        Ok(HttpResponse::NoContent().finish())
+    } else {
+        Err(ErrorBadRequest("not a usable tracker URL for that torrent"))
     }
 }
 
@@ -1571,9 +1579,10 @@ async fn h_set_tags(
         true
     })
     .await?;
-    match found {
-        true => Ok(HttpResponse::NoContent().finish()),
-        false => Err(ErrorNotFound("no torrent with that info hash")),
+    if found {
+        Ok(HttpResponse::NoContent().finish())
+    } else {
+        Err(ErrorNotFound("no torrent with that info hash"))
     }
 }
 
@@ -1785,6 +1794,10 @@ struct PluginListDto {
     /// The plugin's own window title, empty when it has declared no window.
     title: String,
     configurable: bool,
+    /// The plugin's own icon as SVG path data, empty when it declared none.
+    /// Drawn by the web interface at 16x16; see `ui_icon` in plugins/api.rs,
+    /// which is also what guarantees this cannot carry markup.
+    icon: String,
     /// The user's switch. Independent of whether it compiles: a broken plugin
     /// stays on and shows its error, because switching it off would hide the
     /// problem.
@@ -1888,7 +1901,7 @@ enum PluginEventBody {
 /// plugin that is disabled - or was never installed - would look to the host
 /// like one that simply had nothing on its surface.
 fn known_plugin(name: &str) -> bool {
-    crate::plugins::ui::windows().iter().any(|(n, _, _)| n == name)
+    crate::plugins::ui::windows().iter().any(|w| w.name == name)
         // A plugin may offer items on a file's context menu and have no window
         // at all - handing a file to a media player needs no window. Its
         // clicks still have to reach it.
@@ -1908,10 +1921,11 @@ async fn h_plugins(state: web::Data<AppState>) -> actix_web::Result<HttpResponse
     let list: Vec<PluginListDto> = crate::plugins::scan(&dir, &state.cfg)
         .into_iter()
         .map(|p| {
-            let window = windows.iter().find(|(n, _, _)| *n == p.name);
+            let window = windows.iter().find(|w| w.name == p.name);
             PluginListDto {
-                title: window.map(|(_, t, _)| t.clone()).unwrap_or_default(),
-                configurable: window.is_some_and(|(_, _, c)| *c),
+                title: window.map(|w| w.title.clone()).unwrap_or_default(),
+                configurable: window.is_some_and(|w| w.configurable),
+                icon: window.map(|w| w.icon.clone()).unwrap_or_default(),
                 has_window: window.is_some(),
                 enabled: p.enabled,
                 error: p.error,
@@ -2027,7 +2041,10 @@ async fn h_plugin_event(
         })));
     }
 
-    crate::plugins::ui::post(match body.into_inner() {
+    // From a browser, so `ui_show()` inside the plugin's handler stays a
+    // no-op: the browser opens its own panel, and nobody asked for a window on
+    // the machine running the session.
+    crate::plugins::ui::post_from(crate::plugins::ui::Origin::Web, match body.into_inner() {
         PluginEventBody::Opened => UiEvent::Opened { plugin },
         PluginEventBody::Row { id } => UiEvent::Row { plugin, id },
         PluginEventBody::Group { id } => UiEvent::Group { plugin, id },

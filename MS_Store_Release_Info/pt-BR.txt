@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Português (Brasil) - Partner Center: Portuguese (Brazil) (pt-BR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ O NanoTorrent é uma adaptação em Rust do PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versão 0.4.0
+Versão 0.4.1
 
-- Assista a um vídeo enquanto ele baixa. Clique com o botão direito em um arquivo nos detalhes do torrent, ou na interface web, e ele abre no VLC, no mpv ou no seu reprodutor de sempre: a reprodução começa antes de o download terminar.
-- Uma lista de arquivos melhor: escolha arquivos com o mouse ou as setas, abra um com o botão direito e recolha as pastas que você não está olhando. No aplicativo e na interface web.
-- Os plugins podem acrescentar itens ao menu de um arquivo, iniciar programas sob uma nova permissão "execute" que você aprova em linguagem clara, e trazer suas próprias traduções. Mais quinze funções dão a eles o que a interface web já fazia.
-- Correções de segurança: outro site não pode mais alterar nada pela interface web, um torrent não pode mais nomear uma unidade do Windows como pasta nem adicionar uma linha a uma lista de reprodução, e os bloqueios após logins malsucedidos não contam mais as solicitações que nunca tentaram uma senha.
+- Sua proporção não é mais zerada quando você muda uma configuração ou reinicia.
+- Mais reprodutores de vídeo: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA e Elmedia Player. Só são oferecidos os que existem no seu sistema, e se algum não for encontrado, perguntamos onde ele está.
+- Os rastreadores são anunciados por camadas, como o torrent pediu: um rastreador reserva continua sendo reserva.
+- Remover um torrent, e alterar ou remover um rastreador, perguntam antes. Cada pergunta pode ser respondida uma vez e lembrada.
+- A importação do PicoTorrent pergunta antes, pode esvaziar a lista atual e trazer as configurações dele, e diz o que chegou, o que já estava aqui e o que falhou.
+- A interface web alcançou o aplicativo: árvores de arquivos com um ícone por tipo, Detalhes em abas, botões de ícone que dimensionam a própria coluna e nada de barra de rolagem horizontal.
+- Os plugins podem ter o próprio ícone, e seus botões Abrir e de configurações aparecem sempre.
+- Por HTTPS a interface web não conseguia mudar nada: cada botão era recusado.
+- A barra de ferramentas recolhe no menu ao estreitar, legendas longas são cortadas e os erros de fundo são traduzidos.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

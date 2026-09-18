@@ -1,0 +1,99 @@
+// Confirming an import from PicoTorrent.
+//
+// One dialog rather than three prompts in a row: importing can add hundreds of
+// torrents, and with the first box ticked it also takes away everything already
+// here. Both choices sit next to the button that acts on them, where they can
+// be read together.
+//
+// The purge is deliberately NOT the default. It is the destructive half, and a
+// box that arrives ticked is one nobody reads.
+
+import { ScrollView, Button, CheckBox, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
+
+export component PicoImportDialog inherits Window {
+    icon: @image-url("../../res/app-256.png");
+    title: L.s(L.revision, "import_from_app");
+
+    min-width: 520px;
+    max-width: 520px;
+    min-height: min(body.preferred-height, root.screen-limit);
+    /// The tallest this window may be, in logical pixels - set from the
+    /// monitor work area. Huge by default so a build that cannot read it
+    /// behaves as if unclamped.
+    in property <length> screen-limit: 100000px;
+    max-height: min(body.preferred-height, root.screen-limit);
+    background: Palette.background;
+
+    /// The two captions that name the other client. Set from Rust rather than
+    /// looked up here: the name is an ARGUMENT, so the translations never carry
+    /// it - that is what keeps the rebranding guard honest, and it is how
+    /// `import_from_app` has always worked.
+    in property <string> ask-text;
+    in property <string> settings-text;
+
+    /// `(purge, settings)` - what was ticked when Import was pressed.
+    callback confirmed(bool, bool);
+    callback cancelled();
+
+    // Esc cancels, as in every other dialog here. No Enter binding: Import is
+    // not something a stray keypress should reach.
+    FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.cancelled();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    ScrollView {
+        vertical-scrollbar-policy: as-needed;
+        body := VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+
+            Text {
+                text: root.ask-text;
+                font-size: 13px;
+                font-weight: 700;
+                color: Palette.foreground;
+                wrap: word-wrap;
+            }
+
+            purge := CheckBox {
+                text: L.s(L.revision, "pico_import_purge");
+                checked: false;
+            }
+
+            settings := CheckBox {
+                text: root.settings-text;
+                checked: false;
+            }
+
+            Text {
+                text: L.s(L.revision, "pico_import_skips");
+                font-size: 12px;
+                color: #888;
+                wrap: word-wrap;
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: L.s(L.revision, "cancel");
+                    clicked => { root.cancelled(); }
+                }
+                Button {
+                    text: L.s(L.revision, "pico_import_go");
+                    primary: true;
+                    clicked => { root.confirmed(purge.checked, settings.checked); }
+                }
+            }
+        }
+    }
+}

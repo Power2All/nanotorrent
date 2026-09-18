@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Hrvatski (Hrvatska) - Partner Center: Croatian (Croatia) (hr-HR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent je prijenos PicoTorrenta Viktora Elofssona na Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzija 0.4.0
+Verzija 0.4.1
 
-- Gledajte video dok se preuzima. Desnom tipkom kliknite datoteku u pojedinostima torrenta ili u web sučelju i otvorit će se u VLC-u, mpv-u ili vašem uobičajenom playeru - reprodukcija počinje prije nego što preuzimanje završi.
-- Bolji popis datoteka: birajte datoteke mišem ili strelicama, otvorite jednu desnim klikom i sklopite mape koje trenutačno ne gledate. I u aplikaciji i u web sučelju.
-- Dodaci mogu dodavati stavke u izbornik datoteke, pokretati programe uz novo dopuštenje "execute" koje odobravate jednostavnim jezikom, i nositi vlastite prijevode. Još petnaest funkcija daje im ono što je web sučelje već moglo.
-- Sigurnosni popravci: druga stranica više ne može ništa promijeniti putem web sučelja, torrent više ne može imenovati Windows pogon kao mapu niti dodati redak u popis za reprodukciju, a zaključavanja nakon neuspjelih prijava više ne broje zahtjeve koji nisu pokušali lozinku.
+- Vaš omjer više se ne poništava kad promijenite postavku ili ponovno pokrenete program.
+- Više videoreproduktora: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA i Elmedia Player. Nude se samo oni koje vaš sustav ima, a ako se neki ne pronađe, pitat će vas gdje je.
+- Pratitelji se najavljuju po razinama, kako je torrent tražio - pričuvni pratitelj ostaje pričuva.
+- Uklanjanje torrenta te izmjena ili uklanjanje pratitelja najprije pitaju. Na svako se pitanje može odgovoriti jednom i odgovor se pamti.
+- Uvoz iz PicoTorrenta najprije pita, može isprazniti trenutačni popis i prenijeti njegove postavke te kaže što je stiglo, što je već bilo ovdje i što nije uspjelo.
+- Web sučelje sustiglo je aplikaciju: stabla datoteka s ikonom za svaku vrstu, Pojedinosti u karticama, ikonski gumbi koji sami određuju širinu svog stupca i nema vodoravne trake za pomicanje.
+- Dodaci mogu nositi vlastitu ikonu, a njihovi gumbi Otvori i postavke uvijek su prikazani.
+- Preko HTTPS-a web sučelje nije moglo ništa promijeniti - svaki gumb bio je odbijen.
+- Alatna traka sklapa se u izbornik kako se sužava, dugi natpisi se skraćuju, a pozadinske pogreške su prevedene.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

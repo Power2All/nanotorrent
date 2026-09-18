@@ -1,0 +1,33 @@
+diff --git a/src/session.rs b/src/session.rs
+index cc4a22c..d3cea46 100644
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -1968,10 +1968,27 @@ impl Session {
+             .lock()
+             .map(|mut m| m.entry(info_hash).or_default().clone())
+             .unwrap_or_default();
++        // NanoTorrent addition: hand the announcer the TIERS rather than a flat
++        // set, so it can follow BEP 12's order instead of announcing to
++        // everything at once.
++        //
++        // The recorded map is the .torrent's own grouping; `trackers` is what
++        // is actually live, which differs once trackers have been added or
++        // removed by hand. Reconciling the two here rather than trusting either
++        // means a tracker can be neither lost (missing from the map) nor
++        // announced to after being removed (stale in the map).
++        let tiers = tracker_comms::reconcile_tiers(
++            self.tracker_tiers
++                .lock()
++                .ok()
++                .and_then(|m| m.get(&info_hash).cloned())
++                .unwrap_or_default(),
++            trackers.iter().cloned().collect(),
++        );
+         let tracker_rx = TrackerComms::start(
+             info_hash,
+             self.peer_id,
+-            trackers.into_iter().collect(),
++            tiers,
+             Box::new(tracker_rx_stats),
+             force_tracker_interval,
+             self.announce_port().unwrap_or(4240),

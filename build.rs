@@ -50,41 +50,15 @@ fn main() {
         }
     }
 
-    // Build timestamp for the window title, so it's always obvious which
-    // build is actually running (the app is single-instance: launching a
-    // new exe while an old instance runs shows the OLD instance's window).
+    // No build timestamp is stamped in here any more, and `rerun-if-changed=src`
+    // went with it - that directive existed only to keep the stamp fresh, and
+    // nothing else in this file reads `src/` (the Slint compile declares
+    // `src/ui_slint` for itself).
     //
-    // This MUST re-run when any source file changes. Declaring the asset paths
-    // above narrows cargo's rerun set to exactly those, which froze the stamp
-    // across every code-only rebuild - the title then reports an older build
-    // than the one actually running, defeating the whole point of having it.
-    println!("cargo:rerun-if-changed=src");
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-
-    // Simple civil-date conversion (UTC) without pulling build dependencies.
-    let days = now / 86400;
-    let secs = now % 86400;
-    let (hh, mm) = (secs / 3600, (secs % 3600) / 60);
-
-    // Days-to-date (proleptic Gregorian), based on Howard Hinnant's algorithm.
-    let z = days as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-
-    println!(
-        "cargo:rustc-env=PT_BUILD_STAMP={:04}-{:02}-{:02} {:02}:{:02} UTC",
-        y, m, d, hh, mm
-    );
+    // A timestamp compiled into the binary makes two builds of identical source
+    // two different files, which costs anyone the ability to check a download
+    // against a hash they computed themselves. `buildinfo::build_stamp` reads
+    // the executable's own modification time at run time instead.
 }
 
 /// Compiles the Slint UI into OUT_DIR when the `ui-slint` feature is on.
@@ -249,6 +223,21 @@ fn verify_librqbit_patches() {
             "vendor/librqbit/src/session.rs",
             "tracker_tiers_snapshot",
             "patches/0005-tracker-stats.patch (announce tiers)",
+        ),
+        (
+            "vendor/librqbit-tracker-comms/src/tracker_comms.rs",
+            "pub fn reconcile_tiers",
+            "patches/0024-tracker-tier-failover-comms.patch (tier reconciliation)",
+        ),
+        (
+            "vendor/librqbit-tracker-comms/src/tracker_comms.rs",
+            "async fn run_tier",
+            "patches/0024-tracker-tier-failover-comms.patch (the tier runner)",
+        ),
+        (
+            "vendor/librqbit/src/session.rs",
+            "tracker_comms::reconcile_tiers",
+            "patches/0024-tracker-tier-failover.patch",
         ),
         (
             "vendor/librqbit-tracker-comms/src/tracker_comms.rs",

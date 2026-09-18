@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.0
+Versi 0.4.1
 
-- Putar video sambil diunduh. Klik kanan sebuah berkas di detail torrent, atau di antarmuka web, dan berkas itu terbuka di VLC, mpv, atau pemutar yang biasa Anda pakai - pemutaran dimulai sebelum unduhan selesai.
-- Daftar berkas yang lebih baik: pilih berkas dengan tetikus atau tombol panah, buka satu dengan klik kanan, dan lipat folder yang tidak sedang Anda lihat. Di aplikasi maupun di antarmuka web.
-- Plugin dapat menambahkan item ke menu sebuah berkas, menjalankan program di bawah izin baru "execute" yang Anda setujui dengan bahasa sederhana, dan membawa terjemahannya sendiri. Lima belas fungsi tambahan memberi plugin apa yang sudah bisa dilakukan antarmuka web.
-- Perbaikan keamanan: situs lain tidak lagi dapat mengubah apa pun melalui antarmuka web, torrent tidak lagi dapat menamai drive Windows sebagai folder atau menambahkan baris ke daftar putar, dan penguncian setelah login gagal tidak lagi menghitung permintaan yang tidak pernah mencoba kata sandi.
+- Rasio Anda tidak lagi kembali ke nol saat Anda mengubah pengaturan atau memulai ulang.
+- Lebih banyak pemutar video: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA, dan Elmedia Player. Hanya yang ada di sistem Anda yang ditawarkan, dan jika salah satu tidak ditemukan Anda akan ditanya di mana letaknya.
+- Pelacak diumumkan per tingkat, sesuai permintaan torrent - pelacak cadangan tetap menjadi cadangan.
+- Menghapus torrent, serta mengubah atau menghapus pelacak, bertanya lebih dulu. Setiap pertanyaan cukup dijawab sekali dan akan diingat.
+- Impor dari PicoTorrent bertanya lebih dulu, dapat mengosongkan daftar saat ini dan membawa pengaturannya, lalu memberi tahu apa yang masuk, apa yang sudah ada, dan apa yang gagal.
+- Antarmuka web menyusul aplikasi: pohon berkas dengan ikon per jenis, Detail bertab, tombol ikon yang mengatur lebar kolomnya sendiri, dan tanpa bilah gulir mendatar.
+- Plugin dapat membawa ikonnya sendiri, dan tombol Buka serta pengaturannya selalu ditampilkan.
+- Melalui HTTPS antarmuka web tidak dapat mengubah apa pun - setiap tombol ditolak.
+- Bilah alat melipat ke dalam menu saat menyempit, keterangan panjang dipangkas, dan galat latar diterjemahkan.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

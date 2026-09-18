@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Norsk bokmål (Norge) - Partner Center: Norwegian (Bokmal) (nb-NO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent er en Rust-portering av PicoTorrent av Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versjon 0.4.0
+Versjon 0.4.1
 
-- Se en video mens den lastes ned. Høyreklikk en fil i detaljene for en torrent, eller i webgrensesnittet, og den åpnes i VLC, mpv eller din vanlige avspiller - avspillingen starter før nedlastingen er ferdig.
-- En bedre filliste: velg filer med musen eller piltastene, åpne en med høyreklikk, og fold sammen mappene du ikke ser på. Både i appen og i webgrensesnittet.
-- Utvidelser kan legge til punkter i en fils meny, starte programmer under en ny "execute"-tillatelse som du godkjenner i klarspråk, og ha med sine egne oversettelser. Femten flere kall gir utvidelser det webgrensesnittet allerede kunne.
-- Sikkerhetsrettelser: et annet nettsted kan ikke lenger endre noe via webgrensesnittet, en torrent kan ikke lenger navngi en Windows-stasjon som mappe eller legge til en linje i en spilleliste, og låsing etter mislykkede innlogginger teller ikke lenger forespørsler som aldri prøvde et passord.
+- Forholdstallet ditt nullstilles ikke lenger når du endrer en innstilling eller starter på nytt.
+- Flere videospillere: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA og Elmedia Player. Bare de systemet ditt har blir tilbudt, og finnes ikke en av dem, blir du spurt hvor den er.
+- Sporere varsles etter nivå, slik torrenten ba om - en reservesporer blir værende reserve.
+- Å fjerne en torrent, og å endre eller fjerne en sporer, spør først. Hvert spørsmål kan besvares én gang og svaret huskes.
+- Import fra PicoTorrent spør først, kan tømme den gjeldende listen og ta med innstillingene, og forteller hva som kom, hva som allerede var her og hva som mislyktes.
+- Nettgrensesnittet har tatt igjen appen: filtrær med et ikon per type, Detaljer i faner, ikonknapper som bestemmer bredden på sin egen kolonne, og ingen vannrett rullefelt.
+- Utvidelser kan ha sitt eget ikon, og Åpne-knappen og innstillingsknappen deres vises alltid.
+- Over HTTPS kunne nettgrensesnittet ikke endre noe - hver knapp ble avvist.
+- Verktøylinjen brettes inn i menyen når den blir smalere, lange tekster kuttes, og bakgrunnsfeil er oversatt.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

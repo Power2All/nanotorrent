@@ -1,16 +1,23 @@
-// Confirming a removal, for when the request did not say what to do with the
-// downloaded data.
+// Confirming something that cannot be undone.
 //
-// The context menu does not use this: "Remove torrent" and "Remove torrent and
-// files" already say exactly what they will do, so a prompt on top of them
-// would only be a second click. Delete has no such wording behind it, which is
-// the whole reason this exists.
+// Every way of removing a torrent comes through here - the Delete key, the
+// toolbar's trash button and both context-menu entries - and so does changing
+// or removing a tracker. They want the same shape: a question, what it acts
+// on, one or two actions, and a box that stops it asking next time. Only the
+// wording differs, so the wording is a property rather than three dialogs. It used to be only the
+// first of those, on the reasoning that "Remove torrent and files" already
+// says what it will do and a prompt on top of it is a second click. That
+// reasoning holds right up until the click was a mis-click, and this is the
+// one action in the window that can destroy a finished download, so it now
+// asks whichever way it was reached.
 //
 // Two buttons rather than a checkbox: "remove" and "remove and erase the data"
 // are different acts, one of them irreversible, and a ticked box is easy to
-// miss on the way to a button that reads the same either way.
+// miss on the way to a button that reads the same either way. That is also why
+// the menu entry you picked does not preselect one here - the dialog states
+// both outcomes and makes you choose again.
 
-import { ScrollView, Button, Palette } from "std-widgets.slint";
+import { ScrollView, Button, CheckBox, Palette } from "std-widgets.slint";
 import { L } from "globals.slint";
 
 export component RemoveDialog inherits Window {
@@ -35,12 +42,30 @@ export component RemoveDialog inherits Window {
     max-height: min(body.preferred-height, root.screen-limit);
     background: Palette.background;
 
-    /// What is being removed: one torrent's name, or "N torrents".
+    /// The question, already worded by the caller.
+    in property <string> heading;
+    /// What it acts on: one torrent's name, "N torrents", a tracker's URL.
     in property <string> subject;
+    /// The grey line under it. Empty draws none.
+    in property <string> note;
 
-    /// True means the downloaded data goes too.
-    callback chosen(bool);
+    /// The safe action's caption. Always drawn.
+    in property <string> primary-text;
+    /// The second, less safe action - "and delete the files". Empty means
+    /// there is only one thing this can do, which is the case whenever the
+    /// caller already knows which was meant.
+    in property <string> secondary-text;
+
+    /// Whether to offer "do not ask again". Off where there is nothing
+    /// sensible to remember.
+    in property <bool> offer-remember: true;
+
+    /// `(secondary, remember)` - which action, and whether to stop asking.
+    callback chosen(bool, bool);
     callback cancelled();
+
+    /// The checkbox's state, kept here so either button can read it.
+    property <bool> remember: false;
 
     // Esc cancels, as in every other dialog here. Deliberately no Enter
     // binding: neither option should be reachable by a stray keypress.
@@ -63,14 +88,14 @@ export component RemoveDialog inherits Window {
             spacing: 12px;
 
             Text {
-                text: L.s(L.revision, "remove_confirm");
+                text: root.heading;
                 font-size: 13px;
                 font-weight: 700;
                 color: Palette.foreground;
                 wrap: word-wrap;
             }
 
-            Text {
+            if root.subject != "": Text {
                 text: root.subject;
                 font-size: 13px;
                 color: Palette.foreground;
@@ -78,11 +103,20 @@ export component RemoveDialog inherits Window {
                 overflow: elide;
             }
 
-            Text {
-                text: L.s(L.revision, "remove_keeps_files");
+            if root.note != "": Text {
+                text: root.note;
                 font-size: 12px;
                 color: #888;
                 wrap: word-wrap;
+            }
+
+            // Unticked every time it is shown. A box that remembers its own
+            // last answer would turn a deliberate "just this once" into a
+            // standing instruction the next time somebody was not reading.
+            if root.offer-remember: CheckBox {
+                text: L.s(L.revision, "dont_ask_again");
+                checked: false;
+                toggled => { root.remember = self.checked; }
             }
 
             Rectangle { vertical-stretch: 1; }
@@ -97,14 +131,14 @@ export component RemoveDialog inherits Window {
                 // The irreversible one is not primary: the safe choice is the one
                 // under the cursor's resting place and the one Enter would reach
                 // if Enter were bound.
-                Button {
-                    text: L.s(L.revision, "remove_torrent_and_files");
-                    clicked => { root.chosen(true); }
+                if root.secondary-text != "": Button {
+                    text: root.secondary-text;
+                    clicked => { root.chosen(true, root.remember); }
                 }
                 Button {
-                    text: L.s(L.revision, "remove_torrent");
+                    text: root.primary-text;
                     primary: true;
-                    clicked => { root.chosen(false); }
+                    clicked => { root.chosen(false, root.remember); }
                 }
             }
         }

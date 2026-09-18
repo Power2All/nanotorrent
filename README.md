@@ -682,6 +682,57 @@ one. Collected so nobody has to file them twice.
 
 ## History
 
+**v0.4.1** is the things 0.4.0 got wrong, and the web interface catching up.
+
+- Your ratio no longer resets when you change a setting or restart.
+
+- More video players: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid,
+  IINA and Elmedia Player. Only the ones your system has are offered, and if
+  one cannot be found you are asked where it is.
+
+- Trackers are announced by tier, as the torrent asked - a backup tracker is
+  kept as a backup.
+
+- Removing a torrent, and changing or removing a tracker, ask first. Each
+  question can be answered once and remembered.
+
+- Importing from PicoTorrent asks first, can clear the current list and bring
+  its settings over, and says what arrived, what was already here and what
+  failed.
+
+- The web interface catches up with the app: file trees with an icon per type,
+  tabbed Details, icon buttons that size their own column, and no sideways
+  scrollbar.
+
+- Plugins can carry their own icon, and their Open and settings buttons are
+  always shown.
+
+- Over HTTPS the web interface could not change anything: every button came
+  back refused. A modern browser speaks HTTP/2 to it, which sends no Host
+  header, and the check that keeps other sites out was reading only that.
+
+- Its toolbar folds into the menu as the window narrows, instead of wrapping
+  onto more and more lines, and a setting's caption is trimmed to fit with the
+  whole of it on hover.
+
+- A plugin window opened in the web interface stays there, rather than also
+  appearing on the machine running NanoTorrent.
+
+- Background errors are translated, and the web interface names a torrent's
+  state in your language instead of in English.
+
+- The address the release check asks is fixed in the program rather than being
+  a setting, so nothing that can write a settings file can redirect it.
+
+Two of those are worth a sentence more. The ratio was never persisted - it was
+read from a counter the engine started again every time it was rebuilt, which
+any settings change did, so changing something unrelated set every torrent back
+to 0.00. And the announce list was being flattened before it reached the
+announcer, so tiers existed in the Trackers tab and nowhere else; a torrent
+naming a backup tracker announced to it alongside the rest rather than keeping
+it in reserve. BEP 12's own wording on that is ambiguous, and
+`vendor/librqbit/PATCHES.md` records which reading this takes and why.
+
 **v0.4.0** is most of the world, one file handle held too long, and plugins
 that can finally do something with a file.
 

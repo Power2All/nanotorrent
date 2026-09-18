@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Italiano (Italia) - Partner Center: Italian (Italy) (it-IT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent è un port in Rust di PicoTorrent, di Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versione 0.4.0
+Versione 0.4.1
 
-- Guarda un video mentre viene scaricato. Fai clic destro su un file nei dettagli di un torrent, o nell'interfaccia web, e si apre in VLC, mpv o nel tuo lettore abituale: la riproduzione parte prima che il download sia finito.
-- Un elenco file migliore: scegli i file con il mouse o le frecce, aprine uno con il clic destro e richiudi le cartelle che non stai guardando. Nell'app come nell'interfaccia web.
-- I plugin possono aggiungere voci al menu di un file, avviare programmi sotto un nuovo permesso "execute" che approvi in parole chiare, e portare le proprie traduzioni. Altre quindici funzioni danno loro ciò che l'interfaccia web già sapeva fare.
-- Correzioni di sicurezza: un altro sito non può più modificare nulla tramite l'interfaccia web, un torrent non può più chiamare cartella un'unità Windows né aggiungere una riga a una playlist, e i blocchi dopo accessi falliti non contano più le richieste che non hanno mai provato una password.
+- Il tuo rapporto non si azzera più quando cambi un'impostazione o riavvii.
+- Altri lettori video: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA ed Elmedia Player. Vengono proposti solo quelli presenti sul tuo sistema e, se uno non viene trovato, ti viene chiesto dove si trova.
+- I tracker vengono annunciati per livelli, come chiedeva il torrent: un tracker di riserva resta di riserva.
+- Rimuovere un torrent, e modificare o rimuovere un tracker, chiedono prima. A ogni domanda si può rispondere una volta e la risposta viene ricordata.
+- L'importazione da PicoTorrent chiede prima, può svuotare l'elenco attuale e portare le sue impostazioni, e dice cosa è arrivato, cosa c'era già e cosa non è riuscito.
+- L'interfaccia web ha raggiunto l'applicazione: alberi di file con un'icona per tipo, Dettagli a schede, pulsanti a icona che dimensionano la propria colonna e niente barra di scorrimento orizzontale.
+- Le estensioni possono portare la propria icona, e i loro pulsanti Apri e impostazioni sono sempre visibili.
+- Su HTTPS l'interfaccia web non poteva cambiare nulla: ogni pulsante veniva rifiutato.
+- La barra degli strumenti si ripiega nel menu quando si restringe, le didascalie lunghe vengono tagliate e gli errori di fondo sono tradotti.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Oʻzbekcha (Oʻzbekiston) - Partner Center: Uzbek (Uzbekistan) (uz-Latn-UZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent — Viktor Elofsson yozgan PicoTorrent dasturining Rust versiyasi.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiya 0.4.0
+Versiya 0.4.1
 
-- Videoni yuklab olinayotgan paytda ko'ring. Torrent tafsilotlarida yoki veb-interfeysda faylni sichqonchaning o'ng tugmasi bilan bosing, u VLC, mpv yoki odatdagi pleyeringizda ochiladi - ijro yuklab olish tugashidan oldin boshlanadi.
-- Yaxshiroq fayl ro'yxati: fayllarni sichqoncha yoki o'q tugmalari bilan tanlang, o'ng tugma bilan bittasini oching va qaramayotgan papkalaringizni yig'ing. Ilovada ham, veb-interfeysda ham.
-- Plaginlar fayl menyusiga bandlar qo'shishi, siz sodda tilda tasdiqlaydigan yangi "execute" ruxsati ostida dasturlarni ishga tushirishi va o'z tarjimalarini olib yurishi mumkin. Yana o'n beshta funksiya ularga veb-interfeys allaqachon qila olganini beradi.
-- Xavfsizlik tuzatishlari: boshqa sayt endi veb-interfeys orqali hech narsani o'zgartira olmaydi, torrent endi Windows diskini papka deb nomlay yoki ijro ro'yxatiga satr qo'sha olmaydi, muvaffaqiyatsiz kirishlardan keyingi bloklashlar esa parol sinalmagan so'rovlarni sanamaydi.
+- Sozlamani o'zgartirganingizda yoki qayta ishga tushirganingizda nisbatingiz endi nolga tushmaydi.
+- Yana ko'proq video pleyer: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA va Elmedia Player. Faqat tizimingizda bor bo'lganlari taklif etiladi, biri topilmasa esa u qayerdaligi so'raladi.
+- Trekerlarga torrent so'raganidek, qatlam bo'yicha e'lon qilinadi - zaxira treker zaxira bo'lib qoladi.
+- Torrentni olib tashlash, shuningdek trekerni o'zgartirish yoki olib tashlash avval so'raydi. Har bir savolga bir marta javob berib, javobni eslab qolish mumkin.
+- PicoTorrent'dan import avval so'raydi, joriy ro'yxatni bo'shatib, uning sozlamalarini olib kela oladi va nima kelgani, nima allaqachon bor bo'lgani va nima muvaffaqiyatsiz bo'lganini aytadi.
+- Veb interfeys ilovaga yetib oldi: har bir tur uchun belgisi bo'lgan fayl daraxtlari, ichki oynali Tafsilotlar, o'z ustuni kengligini o'zi belgilaydigan belgili tugmalar va gorizontal aylantirish paneli yo'q.
+- Plaginlar o'z belgisini olib yura oladi va ularning Ochish hamda sozlamalar tugmalari doimo ko'rinadi.
+- HTTPS orqali veb interfeys hech narsani o'zgartira olmasdi - har bir tugma rad etilardi.
+- Torayganda asboblar paneli menyuga yig'iladi, uzun sarlavhalar qirqiladi va fondagi xatolar tarjima qilingan.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

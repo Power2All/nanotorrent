@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Slovenčina (Slovensko) - Partner Center: Slovak (Slovakia) (sk-SK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzia 0.4.0
+Verzia 0.4.1
 
-- Prehrajte video už počas sťahovania. Kliknite pravým tlačidlom na súbor v podrobnostiach torrentu alebo vo webovom rozhraní a otvorí sa vo VLC, mpv alebo vo vašom obvyklom prehrávači - prehrávanie sa začne skôr, ako sa sťahovanie skončí.
-- Lepší zoznam súborov: vyberajte myšou alebo šípkami, otvorte pravým tlačidlom a zbaľte priečinky, na ktoré sa práve nepozeráte. V aplikácii aj vo webovom rozhraní.
-- Doplnky môžu pridávať položky do ponuky súboru, spúšťať programy pod novým oprávnením "execute", ktoré schvaľujete zrozumiteľným jazykom, a niesť vlastné preklady. Ďalších pätnásť funkcií im dáva to, čo webové rozhranie vedelo už dávno.
-- Bezpečnostné opravy: iná stránka už nemôže nič zmeniť cez webové rozhranie, torrent už nemôže pomenovať disk Windows ako priečinok ani pridať riadok do zoznamu skladieb a blokovania po neúspešných prihláseniach už nepočítajú požiadavky, ktoré heslo nikdy neskúsili.
+- Váš pomer sa už nevynuluje, keď zmeníte nastavenie alebo reštartujete.
+- Viac videoprehrávačov: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA a Elmedia Player. Ponúkajú sa len tie, ktoré váš systém má, a ak sa niektorý nenájde, spýtame sa, kde je.
+- Trackerom sa oznamuje po úrovniach, ako si torrent vyžiadal - záložný tracker zostáva záložným.
+- Odstránenie torrentu, ako aj zmena či odstránenie trackera sa najprv spýtajú. Na každú otázku možno odpovedať raz a odpoveď si program zapamätá.
+- Import z PicoTorrentu sa najprv spýta, dokáže vyprázdniť aktuálny zoznam a preniesť jeho nastavenia a povie, čo prišlo, čo tu už bolo a čo zlyhalo.
+- Webové rozhranie dobehlo aplikáciu: stromy súborov s ikonou pre každý typ, Podrobnosti na kartách, ikonové tlačidlá, ktoré si samy určujú šírku stĺpca, a žiadny vodorovný posuvník.
+- Doplnky môžu mať vlastnú ikonu a ich tlačidlá Otvoriť a nastavení sú vždy zobrazené.
+- Cez HTTPS nemohlo webové rozhranie nič zmeniť - každé tlačidlo bolo odmietnuté.
+- Panel nástrojov sa pri zužovaní skladá do ponuky, dlhé popisy sa skracujú a chyby na pozadí sú preložené.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

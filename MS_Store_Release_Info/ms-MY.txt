@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.0 - Microsoft Store listing
+NanoTorrent 0.4.1 - Microsoft Store listing
 Language: Bahasa Melayu (Malaysia) - Partner Center: Malay (Malaysia) (ms-MY)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,12 +28,17 @@ NanoTorrent ialah versi Rust bagi PicoTorrent oleh Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.0
+Versi 0.4.1
 
-- Tonton video sambil ia dimuat turun. Klik kanan pada fail dalam butiran torrent, atau dalam antara muka web, dan ia akan dibuka dalam VLC, mpv atau pemain biasa anda - main balik bermula sebelum muat turun selesai.
-- Senarai fail yang lebih baik: pilih fail dengan tetikus atau kekunci anak panah, buka satu dengan klik kanan, dan lipat folder yang tidak sedang anda lihat. Dalam aplikasi mahupun dalam antara muka web.
-- Pemalam boleh menambah item pada menu fail, memulakan program di bawah kebenaran baharu "execute" yang anda luluskan dalam bahasa mudah, dan membawa terjemahan mereka sendiri. Lima belas panggilan tambahan memberi mereka apa yang sudah boleh dilakukan oleh antara muka web.
-- Pembetulan keselamatan: tapak lain tidak lagi boleh mengubah apa-apa melalui antara muka web, torrent tidak lagi boleh menamakan pemacu Windows sebagai folder atau menambah baris pada senarai main, dan kuncian selepas log masuk gagal tidak lagi mengira permintaan yang tidak pernah mencuba kata laluan.
+- Nisbah anda tidak lagi kembali ke sifar apabila anda menukar tetapan atau memulakan semula.
+- Lebih banyak pemain video: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA dan Elmedia Player. Hanya yang ada pada sistem anda ditawarkan, dan jika satu tidak dijumpai anda akan ditanya di mana ia berada.
+- Penjejak diumumkan mengikut peringkat, seperti yang diminta torrent - penjejak sandaran kekal sebagai sandaran.
+- Membuang torrent, serta menukar atau membuang penjejak, bertanya dahulu. Setiap soalan boleh dijawab sekali dan jawapannya diingati.
+- Import daripada PicoTorrent bertanya dahulu, boleh mengosongkan senarai semasa dan membawa tetapannya, serta memberitahu apa yang tiba, apa yang sudah ada dan apa yang gagal.
+- Antara muka web sudah setanding aplikasi: pepohon fail dengan ikon bagi setiap jenis, Butiran bertab, butang ikon yang menetapkan lebar lajurnya sendiri, dan tiada bar skrol melintang.
+- Pemalam boleh membawa ikon sendiri, dan butang Buka serta tetapannya sentiasa dipaparkan.
+- Melalui HTTPS antara muka web tidak dapat mengubah apa-apa - setiap butang ditolak.
+- Bar alat terlipat ke dalam menu apabila menyempit, kapsyen panjang dipotong, dan ralat latar diterjemahkan.
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 
