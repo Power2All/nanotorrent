@@ -69,30 +69,42 @@ mod pluginwindow;
 // replacements and associated redraw opportunities while a transfer is active.
 const UI_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// Use Slint's Skia renderer unless a caller explicitly chose a backend.
+/// Draw with Skia on the CPU, unless a caller explicitly chose a backend.
 ///
-/// Slint offers three: FemtoVG (the default, OpenGL), Skia, and a software
-/// rasteriser. FemtoVG was what pinned the GPU here.
+/// Slint offers FemtoVG (the default, OpenGL), Skia, and a software
+/// rasteriser. FemtoVG was what pinned the GPU here, and a torrent client
+/// idling in the background has no business holding a GPU context open: this
+/// is a list repainted about once a second, not a game.
 ///
-/// Skia rather than `winit-software`, which is the obvious answer and the
-/// wrong one: the software renderer does not pick up the display's scale
-/// factor the way the accelerated ones do, so on a HiDPI screen the whole
-/// window comes out mis-scaled. `SLINT_SCALE_FACTOR` can force it, but that
-/// is a number this application would have to guess per monitor.
+/// **`winit-skia-software`, not `winit-skia`.** Plain `winit-skia` asks Skia
+/// for its best surface, and Skia's own candidate list is OpenGL, then wgpu,
+/// then software - so it took the GPU after all, which was the thing being
+/// avoided. Measured on a box where OpenGL fails, plain `winit-skia` does not
+/// give up and fall to software; it maps Vulkan and every driver installed.
+/// The `-software` suffix pins Skia's CPU rasteriser and it maps none of
+/// them.
 ///
-/// Skia keeps the text quality and, measured on this application's workload -
-/// a list repainted about once a second - leaves the GPU essentially idle.
+/// Skia's CPU rasteriser rather than `winit-software`, which is the obvious
+/// answer and the wrong one: that renderer does not pick up the display's
+/// scale factor the way the others do, so on a HiDPI screen the whole window
+/// comes out mis-scaled. `SLINT_SCALE_FACTOR` can force it, but that is a
+/// number this application would have to guess per monitor. Skia keeps both
+/// the scale factor and the text quality.
+///
+/// It also removes a way to fail. Asking for OpenGL means a machine without
+/// it has nowhere to go, and the AppImage catalog's test harness runs each
+/// build under `firejail --net=none` with only Xvfb - no GL at all.
 ///
 /// `SLINT_BACKEND` is still honoured when it is already set, so
-/// `winit-femtovg` and `winit-software` remain available to anyone who wants
-/// to compare.
+/// `winit-femtovg`, `winit-skia` and `winit-software` remain available to
+/// anyone who wants to compare.
 fn select_default_renderer() {
     if std::env::var_os("SLINT_BACKEND").is_none() {
         // This runs before the first Slint component is created, so backend
         // selection has not happened yet. The Skia renderer is enabled in
         // Cargo.toml above.
         unsafe {
-            std::env::set_var("SLINT_BACKEND", "winit-skia");
+            std::env::set_var("SLINT_BACKEND", "winit-skia-software");
         }
     }
 }

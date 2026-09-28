@@ -73,6 +73,24 @@ The AppImage needs no installation - `chmod +x` it and run. It bundles its
 libraries but not glibc, so it needs 2.35 or newer too. For a desktop entry and
 icon, run it once with `--appimage-integrate`, or use the `.deb`/`.rpm`.
 
+### Rendering
+
+NanoTorrent draws on the CPU, on every platform, on purpose. It sets
+`SLINT_BACKEND=winit-skia-software` at startup: Skia's software rasteriser. A
+torrent client sits in the background for days repainting a list of rows about
+once a second, and holding a GPU context open for that is a cost with nothing
+to show for it.
+
+The `-software` suffix is the whole point. Plain `winit-skia` asks Skia for its
+best surface and takes the GPU when there is one — and when there is no working
+OpenGL it does not fall back quietly, it loads Vulkan and every driver on the
+machine instead.
+
+Drawing on the CPU also means it starts where there is no GPU at all: a
+container, a headless CI runner, a VM with no driver. Set `SLINT_BACKEND`
+yourself to override it — `winit-skia`, `winit-femtovg` and `winit-software`
+are all still there.
+
 ## Building
 
 Requires Rust 1.85+ (edition 2024), a C compiler and **cmake**. The last two
