@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Íslenska (Ísland) - Partner Center: Icelandic (Iceland) (is-IS)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent er Rust-útfærsla af PicoTorrent eftir Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Útgáfa 0.4.1
+Útgáfa 0.4.2
 
-- Hlutfallið þitt núllstillist ekki lengur þegar þú breytir stillingu eða endurræsir.
-- Fleiri myndspilarar: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA og Elmedia Player. Aðeins þeir sem eru til á kerfinu þínu eru í boði, og ef einhver finnst ekki er spurt hvar hann er.
-- Tilkynnt er til rekjara eftir þrepum, eins og torrentinn bað um - vararekjari er áfram til vara.
-- Að fjarlægja torrent, og að breyta eða fjarlægja rekjara, spyr fyrst. Hverri spurningu má svara einu sinni og svarið er munað.
-- Innflutningur frá PicoTorrent spyr fyrst, getur tæmt núverandi lista og flutt stillingar hans yfir, og segir hvað kom, hvað var þegar til staðar og hvað mistókst.
-- Vefviðmótið hefur náð forritinu: skráartré með tákni fyrir hverja gerð, Nánar í flipum, tákntakkar sem ákveða breidd eigin dálks, og engin lárétt skrunstika.
-- Viðbætur geta borið eigið tákn, og Opna-hnappur þeirra og stillingahnappur sjást alltaf.
-- Yfir HTTPS gat vefviðmótið engu breytt - hverjum hnappi var hafnað.
-- Tækjastikan fellur inn í valmyndina þegar þrengist, langir textar eru styttir og bakgrunnsvillur eru þýddar.
+- Flytja frá öðrum biðlara. Skrá > Flytja frá les fyrirliggjandi uppsetningu á qBittorrent, uTorrent, BitComet, Transmission eða PicoTorrent og sækir streymin með vistunarslóðum og merkimiðum. Finni hún enga á þessari tölvu spyr hún hvar eigi að leita, svo afrit virkar líka. Ekkert er afritað eða fært - skrárnar þínar verða áfram þar sem þær eru. Framvinda er sýnd og Hætta við stöðvar hana og skilar því sem þegar var bætt við.
+- Hlutastikan í Yfirliti er nú kort af streyminu í stað annarrar framvindustiku: einn dálkur á hvern hlut, upplýstur þar sem hluturinn er til, og hlutir sem er verið að sækja núna eru teiknaðir í eigin lit.
+- Rekjaraflipi blandaðs streymis sýnir báða hópana, ekki aðeins þann fyrri.
+- Tilkynningar birtast nú frá Store-útgáfunni og hnappur sem gat ekkert gert þar er ekki lengur sýndur.
+- Í vefviðmótinu er stærð eins og "392.91 MB" ekki lengur stytt.
+- Uppfært í Slint 1.18.1 ásamt uppfærslum á kerfiseiningum.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

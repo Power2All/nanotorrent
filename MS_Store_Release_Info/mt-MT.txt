@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Malti (Malta) - Partner Center: Maltese (Malta) (mt-MT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent huwa port bir-Rust ta' PicoTorrent ta' Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verżjoni 0.4.1
+Verżjoni 0.4.2
 
-- Il-proporzjon tiegħek ma jerġax lura għal żero meta tbiddel xi setting jew tibda mill-ġdid.
-- Aktar plejers tal-vidjow: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA u Elmedia Player. Jiġu offruti biss dawk li għandek fis-sistema tiegħek, u jekk wieħed ma jinstabx tiġi mistoqsi fejn qiegħed.
-- It-trackers jiġu mħabbra skont il-livell, kif talab it-torrent - tracker ta' riżerva jibqa' ta' riżerva.
-- It-tneħħija ta' torrent, u l-bidla jew it-tneħħija ta' tracker, jistaqsu l-ewwel. Kull mistoqsija tista' tiġi mwieġba darba u t-tweġiba tinżamm fil-memorja.
-- L-importazzjoni minn PicoTorrent tistaqsi l-ewwel, tista' tbattal il-lista attwali u ġġib is-settings tiegħu, u tgħid x'wasal, x'kien diġà hawn u x'falla.
-- L-interfaċċa tal-web laħqet l-applikazzjoni: siġar ta' fajls b'ikona għal kull tip, Dettalji bit-tabs, buttuni b'ikona li jiddeterminaw il-wisa' tal-kolonna tagħhom, u l-ebda scrollbar orizzontali.
-- Il-plugins jistgħu jġorru l-ikona tagħhom stess, u l-buttuni Iftaħ u tas-settings tagħhom dejjem jidhru.
-- Fuq HTTPS l-interfaċċa tal-web ma setgħet tbiddel xejn - kull buttuna kienet tiġi rifjutata.
-- It-toolbar tintewa fil-menu hekk kif tidjieq, il-kapzjonijiet twal jitqassru, u l-iżbalji fl-isfond huma tradotti.
+- Immigra minn klijent ieħor. Fajl > Immigra minn jaqra installazzjoni eżistenti ta' qBittorrent, uTorrent, BitComet, Transmission jew PicoTorrent u jġib it-torrents flimkien mal-mogħdijiet tal-ħażna u t-tikketti tagħhom. Jekk ma jsib l-ebda waħda fuq dan il-kompjuter, jistaqsik fejn għandu jfittex, allura taħdem ukoll kopja tas-sigurtà. Xejn ma jiġi kkupjat jew imċaqlaq - il-fajls tiegħek jibqgħu fejn huma. Juri l-progress, u Ikkanċella jwaqqfu u jerġa' jpoġġi lura dak li kien diġà żied.
+- Il-bar Biċċiet fil-Ħarsa Ġenerali issa hija mappa tat-torrent minflok tieni bar tal-progress: kolonna waħda għal kull biċċa, mixgħula fejn dik il-biċċa qiegħda, bil-biċċiet li qed jintalbu bħalissa mpinġija bil-kulur tagħhom.
+- It-tab Trackers ta' torrent ibridu juri ż-żewġ qatgħat, mhux l-ewwel waħda biss.
+- In-notifiki issa jidhru mill-verżjoni tal-Istore, u buttuna li ma setgħet tagħmel xejn hemm m'għadhiex tintwera.
+- Fl-interfaċċja tal-web daqs bħal "392.91 MB" m'għadux jinqata'.
+- Aġġornat għal Slint 1.18.1, b'sensiela ta' aġġornamenti tad-dipendenzi.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

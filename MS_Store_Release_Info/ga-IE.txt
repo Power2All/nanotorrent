@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Gaeilge (Éire) - Partner Center: Irish (Ireland) (ga-IE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ Is leagan Rust de PicoTorrent le Viktor Elofsson é NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Leagan 0.4.1
+Leagan 0.4.2
 
-- Ní athshocraítear do chóimheas a thuilleadh nuair a athraíonn tú socrú nó nuair a atosaíonn tú.
-- Tuilleadh seinnteoirí físe: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA agus Elmedia Player. Ní thairgtear ach na cinn atá ar do chóras, agus mura bhfaightear ceann fiafraítear díot cá bhfuil sé.
-- Fógraítear do lorgairí de réir sraithe, mar a d'iarr an torrent - coinnítear lorgaire cúltaca mar chúltaca.
-- Fiafraítear díot sula mbaintear torrent, agus sula n-athraítear nó sula mbaintear lorgaire. Is féidir gach ceist a fhreagairt uair amháin agus í a choinneáil i gcuimhne.
-- Fiafraítear díot sula n-iompórtáiltear ó PicoTorrent, is féidir an liosta reatha a ghlanadh agus a chuid socruithe a thabhairt leis, agus insítear duit cad a tháinig, cad a bhí anseo cheana agus cad a theip.
-- Tá an comhéadan gréasáin ar comhchéim leis an bhfeidhmchlár anois: crainn chomhad le deilbhín do gach cineál, Sonraí i gcluaisíní, cnaipí deilbhín a shocraíonn leithead a gcolúin féin, agus gan scrollbharra cothrománach.
-- Is féidir le breiseáin a ndeilbhín féin a iompar, agus taispeántar a gcnaipí Oscail agus socruithe i gcónaí.
-- Thar HTTPS níorbh fhéidir leis an gcomhéadan gréasáin aon rud a athrú - diúltaíodh do gach cnaipe.
-- Fillfidh an barra uirlisí isteach sa roghchlár de réir mar a chúngaíonn sé, bearrtar fotheidil fhada, agus aistrítear earráidí cúlra.
+- Aistrigh ó chliant eile. Comhad > Aistrigh ó a léann suiteáil qBittorrent, uTorrent, BitComet, Transmission nó PicoTorrent atá ann cheana agus a thugann na torrents anall lena gconairí sábhála agus lipéid. Mura bhfaigheann sé ceann ar an ríomhaire seo, fiafraíonn sé díot cá bhfuil sé le cuardach, mar sin oibríonn cúltaca freisin. Ní chóipeáiltear ná ní bhogtar aon rud - fanann do chomhaid san áit a bhfuil siad. Taispeánann sé dul chun cinn, agus stopann Cealaigh é agus cuireann ar ais a raibh curtha leis.
+- Is léarscáil den torrent é barra na bPíosaí san Fhorbhreathnú anois seachas dara barra dul chun cinn: colún amháin in aghaidh an phíosa, lasta san áit a bhfuil an píosa sin agat, agus na píosaí atá á lorg anois ina ndath féin.
+- Taispeánann cluaisín Lorgairí torrent hibrideach an dá scaoth, ní hé an chéad cheann amháin.
+- Taispeántar fógraí ón leagan Store anois, agus ní thaispeántar cnaipe nach raibh in ann aon rud a dhéanamh ann a thuilleadh.
+- San chomhéadan gréasáin ní ghearrtar méid ar nós "392.91 MB" a thuilleadh.
+- Nuashonraithe go Slint 1.18.1, le babhta nuashonruithe spleáchais.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

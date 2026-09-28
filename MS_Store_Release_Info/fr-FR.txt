@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Français (France) - Partner Center: French (France) (fr-FR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent est un portage en Rust de PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.1
+Version 0.4.2
 
-- Votre ratio ne repart plus de zéro quand vous changez un réglage ou redémarrez.
-- Davantage de lecteurs vidéo : Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA et Elmedia Player. Seuls ceux présents sur votre système sont proposés, et si l'un reste introuvable, on vous demande où il se trouve.
-- Les traqueurs sont annoncés par niveau, comme le torrent le demandait - un traqueur de secours reste de secours.
-- Retirer un torrent, et modifier ou retirer un traqueur, demandent d'abord. On peut répondre une fois à chaque question et la réponse est retenue.
-- L'import depuis PicoTorrent demande d'abord, peut vider la liste actuelle et reprendre ses réglages, et indique ce qui est arrivé, ce qui était déjà là et ce qui a échoué.
-- L'interface web rattrape l'application : arborescences de fichiers avec une icône par type, Détails en onglets, boutons à icône qui dimensionnent leur propre colonne, et plus de barre de défilement horizontale.
-- Les extensions peuvent porter leur propre icône, et leurs boutons Ouvrir et réglages sont toujours affichés.
-- En HTTPS, l'interface web ne pouvait rien changer : chaque bouton était refusé.
-- La barre d'outils se replie dans le menu quand elle rétrécit, les légendes longues sont tronquées et les erreurs de fond sont traduites.
+- Migration depuis un autre client. Fichier > Migrer depuis lit une installation existante de qBittorrent, uTorrent, BitComet, Transmission ou PicoTorrent et récupère les torrents avec leurs chemins d'enregistrement et leurs étiquettes. S'il n'en trouve aucune sur cet ordinateur, il vous demande où chercher : une sauvegarde fonctionne donc aussi. Rien n'est copié ni déplacé : vos fichiers restent où ils sont. La progression s'affiche, et Annuler l'arrête et remet ce qui avait déjà été ajouté.
+- La barre Morceaux de la vue d'ensemble est désormais une carte du torrent plutôt qu'une seconde barre de progression : une colonne par morceau, allumée là où le morceau est présent, les morceaux demandés en ce moment étant dessinés dans leur propre couleur.
+- L'onglet Trackers d'un torrent hybride affiche ses deux essaims, pas seulement le premier.
+- Les notifications apparaissent maintenant depuis la version du Store, et un bouton qui n'y pouvait rien faire n'est plus affiché.
+- Dans l'interface web, une taille comme "392.91 MB" n'est plus tronquée.
+- Mise à jour vers Slint 1.18.1, avec une série de mises à jour de dépendances.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

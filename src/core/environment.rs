@@ -214,6 +214,28 @@ pub fn package_family_name() -> Option<String> {
     None
 }
 
+/// Whether this process has to establish its own Windows identity: drop a
+/// Start Menu shortcut carrying an AUMID, and write the file-association keys.
+///
+/// An unpackaged build must, because Windows will not treat it as a
+/// notification source otherwise. A packaged one must NOT, and this is the
+/// direction that is easy to get backwards:
+///
+/// - its identity comes from the manifest, and `core::toast`'s hand-made AUMID
+///   would replace it with one the package does not own - which is why toasts
+///   from a Store install did not appear;
+/// - the association writes are virtualised into the package hive where the
+///   shell cannot see them, so the Preferences button does nothing. The
+///   manifest already declares those associations, making the button redundant
+///   rather than broken.
+///
+/// Neither can be observed from an unpackaged dev build, so both callers are
+/// decided here rather than testing `package_family_name()` in two places and
+/// inverting one of them.
+pub fn needs_own_windows_identity() -> bool {
+    package_family_name().is_none()
+}
+
 /// Recursively copy a directory, skipping anything that cannot be read.
 ///
 /// Used only by the one-time PicoTorrent data takeover. Best-effort by design:
@@ -285,6 +307,18 @@ mod tests {
     #[test]
     fn a_plain_build_reports_no_package() {
         assert_eq!(package_family_name(), None);
+    }
+
+    /// The direction of the packaged check, which is the part that breaks
+    /// silently. Both callers - the toast AUMID dance and the Preferences
+    /// associations button - must act when this is TRUE, and an inverted
+    /// `is_some()` here would turn toasts off for every installer user while
+    /// leaving the Store build exactly as broken as before. Neither symptom is
+    /// visible from an unpackaged build, so pin it where it is decided.
+    #[test]
+    fn an_unpackaged_build_establishes_its_own_identity() {
+        assert!(needs_own_windows_identity());
+        assert_eq!(needs_own_windows_identity(), package_family_name().is_none());
     }
 
     /// Guards the per-platform branching in `user_data_dir`. Only the host's

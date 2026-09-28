@@ -1129,3 +1129,39 @@ Tested in the comms crate, not here: `librqbit` is not a workspace member and
 needs dev-dependencies, so `cargo test -p librqbit` refuses to run. The tier
 reconciliation and the shuffle therefore live in **librqbit-tracker-comms**,
 where `cargo test -p librqbit-tracker-comms` does run them.
+
+## 0025 - which pieces are in flight, not just how many
+
+The Overview's pieces bar draws a map: one column per piece, lit where that
+piece is held. Colouring a piece that is *on its way* differently needs the
+set of in-flight pieces, and an embedder could not reach it.
+
+The data was already there and already public at the bottom:
+`PieceTracker::get_inflight`, `is_inflight` and `inflight_count` are all `pub`.
+What is not public is the path to a `PieceTracker` - `TorrentStateLive::
+get_pieces` is `pub(crate)` - so from outside the crate the in-flight set is
+unreachable however public its accessors are. That is the same shape as 0001,
+which opened `with_chunk_tracker` for the held-pieces bitfield; this is its
+in-flight counterpart.
+
+`0025-inflight-piece-indices.patch` adds two things:
+
+- `PieceTracker::inflight_pieces()` - an iterator over the reserved pieces.
+  `inflight_count` answers "how many"; the map needs "which", and the
+  `inflight` map's keys are exactly that.
+- `TorrentStateLive::inflight_piece_indices()` - the public way in. Takes the
+  read lock, and returns **raw `u32` indices** rather than `ValidPieceIndex`,
+  which cannot be constructed outside this crate; the caller only compares
+  them against a piece count it already holds.
+
+Both return empty rather than erroring when there is no tracker yet: a magnet
+still resolving its metadata has nothing in flight, which is what an empty set
+says.
+
+One trap worth recording, because it cost a build cycle. `inflight_count`
+carries a doc comment and `#[allow(dead_code)]` (it is used only by the
+crate's own tests). Inserting the new method immediately above the `pub fn`
+line separated that attribute from the function it belonged to and silently
+re-attached it to the new one - which compiled, and produced a `dead_code`
+warning pointing at `inflight_count` that looked like an upstream problem. The
+new method goes ABOVE the doc comment, not between it and the function.

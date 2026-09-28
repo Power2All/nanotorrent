@@ -13,7 +13,10 @@ import { L } from "globals.slint";
 
 export component PicoImportDialog inherits Window {
     icon: @image-url("../../res/app-256.png");
-    title: L.s(L.revision, "import_from_app");
+    // Set from Rust: the title names the client, and `L.s` passes no
+    // arguments - bound to the key directly it showed "Import from {0}...".
+    title: root.window-title;
+    in property <string> window-title;
 
     min-width: 520px;
     max-width: 520px;
@@ -31,6 +34,17 @@ export component PicoImportDialog inherits Window {
     /// `import_from_app` has always worked.
     in property <string> ask-text;
     in property <string> settings-text;
+    /// Whether this client's settings can be read into this build's schema.
+    /// Only PicoTorrent's can; the others keep their preferences in formats
+    /// whose keys mean different things, so the box is hidden rather than
+    /// offered and quietly ignored.
+    in property <bool> can-settings: true;
+    /// The warning that purging cannot be undone by Cancel. Built in Rust so
+    /// it can stay one sentence in the translations.
+    in property <string> purge-warning;
+    /// The settings box lives inside an `if`, and an element in a conditional
+    /// cannot be reached by id from outside it - so its state lives here.
+    in-out property <bool> settings-checked: false;
 
     /// `(purge, settings)` - what was ticked when Import was pressed.
     callback confirmed(bool, bool);
@@ -67,9 +81,18 @@ export component PicoImportDialog inherits Window {
                 checked: false;
             }
 
-            settings := CheckBox {
+            if root.can-settings: CheckBox {
                 text: root.settings-text;
-                checked: false;
+                checked <=> root.settings-checked;
+            }
+
+            // Shown only when the destructive box is ticked: a warning that is
+            // always on screen is one nobody reads by the time it matters.
+            if purge.checked && root.purge-warning != "": Text {
+                text: root.purge-warning;
+                font-size: 12px;
+                color: #c08040;
+                wrap: word-wrap;
             }
 
             Text {
@@ -91,7 +114,7 @@ export component PicoImportDialog inherits Window {
                 Button {
                     text: L.s(L.revision, "pico_import_go");
                     primary: true;
-                    clicked => { root.confirmed(purge.checked, settings.checked); }
+                    clicked => { root.confirmed(purge.checked, root.can-settings && root.settings-checked); }
                 }
             }
         }

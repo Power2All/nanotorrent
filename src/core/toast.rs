@@ -96,6 +96,16 @@ fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
 /// any failure is logged, never fatal.
 #[cfg(windows)]
 pub fn register() {
+    // A packaged build already has an identity, from its manifest. Doing the
+    // dance below on top of it tags the process with an AUMID the package does
+    // not own, and Windows then has no notification registration for what the
+    // toast claims to be - which is why toasts from a Store install did not
+    // appear. Leave the manifest identity alone.
+    if !crate::core::environment::needs_own_windows_identity() {
+        tracing::debug!("toast: packaged build, keeping the manifest identity");
+        return;
+    }
+
     // Legacy/registry hint (taskbar grouping display name + notification icon).
     let key = format!("Software\\Classes\\AppUserModelId\\{AUMID}");
     let _ = crate::core::file_assoc::set_string(&key, Some("DisplayName"), "NanoTorrent");

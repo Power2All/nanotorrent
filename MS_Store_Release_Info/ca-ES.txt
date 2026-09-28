@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Català (Espanya) - Partner Center: Catalan (Spain) (ca-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ El NanoTorrent és una adaptació en Rust del PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versió 0.4.1
+Versió 0.4.2
 
-- La vostra ràtio ja no es reinicia en canviar un ajust o reiniciar.
-- Més reproductors de vídeo: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA i Elmedia Player. Només s'ofereixen els que té el vostre sistema, i si no se'n troba un, se us pregunta on és.
-- Els rastrejadors s'anuncien per nivells, tal com demanava el torrent - un de reserva es manté com a reserva.
-- Eliminar un torrent, i canviar o eliminar un rastrejador, pregunten abans. Cada pregunta es pot respondre un cop i recordar-se.
-- Importar del PicoTorrent pregunta abans, pot buidar la llista actual i portar-ne els ajustos, i diu què ha arribat, què ja hi era i què ha fallat.
-- La interfície web es posa al dia: arbres de fitxers amb una icona per tipus, Detalls amb pestanyes, botons d'icona que dimensionen la seva columna i cap barra de desplaçament lateral.
-- Els connectors poden dur la seva pròpia icona, i els seus botons Open i de configuració es mostren sempre.
-- Per HTTPS la interfície web no podia canviar res: cada botó era rebutjat.
-- La barra d'eines es plega al menú en estrènyer-se, els títols llargs es retallen i els errors de fons es tradueixen.
+- Migra des d'un altre client. Fitxer > Migra des de llegeix una instal·lació existent de qBittorrent, uTorrent, BitComet, Transmission o PicoTorrent i porta els torrents amb els seus camins de desament i etiquetes. Si no en troba cap en aquest ordinador, us pregunta on mirar, de manera que una còpia de seguretat també funciona. No es copia ni es mou res - els vostres fitxers es queden on són. Mostra el progrés, i Cancel·la l'atura i retorna el que ja havia afegit.
+- La barra de Peces de la Visió general ara és un mapa del torrent en lloc d'una segona barra de progrés: una columna per peça, encesa on es té aquella peça, amb les peces que s'estan demanant ara dibuixades amb el seu color.
+- La pestanya de Rastrejadors d'un torrent híbrid mostra els dos eixams, no només el primer.
+- Les notificacions ara apareixen des de la versió de la Botiga, i un botó que allà no podia fer res ja no es mostra.
+- A la interfície web una mida com "392.91 MB" ja no es retalla.
+- Actualitzat a Slint 1.18.1, amb una ronda d'actualitzacions de dependències.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -73,6 +73,24 @@ The AppImage needs no installation - `chmod +x` it and run. It bundles its
 libraries but not glibc, so it needs 2.35 or newer too. For a desktop entry and
 icon, run it once with `--appimage-integrate`, or use the `.deb`/`.rpm`.
 
+### Rendering
+
+NanoTorrent draws on the CPU, on every platform, on purpose. It sets
+`SLINT_BACKEND=winit-skia-software` at startup: Skia's software rasteriser. A
+torrent client sits in the background for days repainting a list of rows about
+once a second, and holding a GPU context open for that is a cost with nothing
+to show for it.
+
+The `-software` suffix is the whole point. Plain `winit-skia` asks Skia for its
+best surface and takes the GPU when there is one — and when there is no working
+OpenGL it does not fall back quietly, it loads Vulkan and every driver on the
+machine instead.
+
+Drawing on the CPU also means it starts where there is no GPU at all: a
+container, a headless CI runner, a VM with no driver. Set `SLINT_BACKEND`
+yourself to override it — `winit-skia`, `winit-femtovg` and `winit-software`
+are all still there.
+
 ## Building
 
 Requires Rust 1.85+ (edition 2024), a C compiler and **cmake**. The last two
@@ -210,8 +228,11 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **Details tabs** — Overview (with a piece-availability bar), Files (per-file
   include toggles), Peers (with GeoIP country **and its flag**), and
   **Trackers** grouped into announce tiers with per-tracker
-  seeds/leeches/fails/next-announce plus DHT/LSD/PeX source rows. Any value
-  that is too long to fit shows in full on hover, and a click copies it.
+  seeds/leeches/fails/next-announce plus DHT/LSD/PeX source rows. A hybrid
+  announces to two swarms and gets a section for each, listed separately
+  rather than added together — a client that speaks both announces to both,
+  so summing them would count it twice. Any value that is too long to fit
+  shows in full on hover, and a click copies it.
   Overview labels the info hash by what the torrent actually carries — a v1
   torrent shows **Info hash**, a hybrid shows **Info hash (v1)** and **Info
   hash (v2)** — read from the torrent's own info dictionary, because librqbit
@@ -606,10 +627,6 @@ require-encryption toggles for each.
   with iteration order as the tiebreak. So priorities still decide which file
   gets attention, and the first/last-piece behaviour survives wherever rarity
   does not discriminate — which is most of the time in a healthy swarm.
-- **Announce stats for a hybrid are its v1 swarm's**, because the Trackers tab
-  keys them by the torrent's primary info hash. The second announce happens and
-  finds peers; it is just not counted in that column. The DHT/LSD/PeX rows
-  beside it do now carry real seeds/leeches numbers, attributed per source.
 - **v2 seeding works for the session a torrent was added in.** A torrent added
   from a `.torrent` serves its piece layers, so someone else can bootstrap a v2
   magnet from us, and the v2 handshake bit goes on for exactly those torrents.
@@ -640,17 +657,6 @@ require-encryption toggles for each.
   `a_real_v2_magnet_resolves_against_the_live_swarm` therefore fails for want of
   a seed rather than for want of code; `who_has_this_infohash` tells those two
   apart before you go looking for a bug.
-- The **translations are machine-assisted**. They started as PicoTorrent's
-  original files, which stopped well short of covering this port, and the gaps
-  were filled in during development rather than by native speakers. Any
-  inherited string still naming the old product is renamed on load — except
-  the credit in About, which is meant to say PicoTorrent. Corrections are
-  welcome, and the easiest way to send one is a
-  [GitHub issue](https://github.com/Power2All/nanotorrent/issues) — the locale,
-  the key or the English text, and what it should say. The failure mode here is
-  a wrong word in a language none of us reads, not a missing one, so a report
-  from someone who reads it is worth more than any amount of re-checking from
-  this end.
 
 ## Platform notes
 
@@ -681,6 +687,86 @@ one. Collected so nobody has to file them twice.
   yet.
 
 ## History
+
+**v0.4.2** is the Microsoft Store build behaving like the installer one, and a
+hybrid torrent reporting both of its swarms.
+
+- Notifications appear from the Store build. It announced itself under a name
+  Windows had no registration for, so every toast was addressed to nobody; a
+  packaged copy now uses the identity its manifest already carries.
+
+- The Store build no longer offers a "Set as default for .torrent files &
+  magnet links" button that could not do anything — inside the package those
+  writes go somewhere the shell cannot read. The package declares the
+  associations itself, so the button was redundant rather than broken.
+
+- A hybrid torrent's Trackers tab shows both swarms. It always announced to the
+  v1 and v2 swarms both, and the engine always recorded each announce under the
+  hash it was made with; the tab only ever asked for the primary. The v2
+  announce now gets its own rows, kept separate rather than summed — a client
+  in both swarms announces to both, so adding them would count it twice.
+
+- In the web interface a size like "392.91 MB" is no longer trimmed to fit its
+  column: `table-layout: fixed` gives a column exactly what it is told, and it
+  was told 90px.
+
+- The Overview's Pieces bar is a map, not a progress bar. One column per piece
+  - one per piece exactly, until there are more pieces than the bar has pixels
+  - lit where that piece is held, with pieces currently being requested drawn
+  in their own colour. Drawn as an image rather than a row of rectangles
+  because a torrent can have six figures of pieces; the held half reads the
+  engine's bitfield through the already-public `with_chunk_tracker`, the
+  in-flight half needed engine patch 0025.
+
+- **Migrate from another client.** File ▸ Migrate from reads an existing
+  qBittorrent, µTorrent, BitComet or Transmission profile — alongside
+  PicoTorrent, which it already did — and brings the torrents across with
+  their save paths and labels. A client with no profile in the usual place is
+  still offered: picking it opens a folder chooser, which is how a backup — or
+  an install somewhere unusual — is imported. `Source::resolve` is
+  deliberately forgiving about which folder that is: the profile itself, the
+  folder it sits in, the client's folder inside it, and (for PicoTorrent,
+  whose profile is a single `.sqlite`) the database within. A folder holding
+  none of those markers is refused before the confirmation dialog, not after.
+
+  Nothing is copied or moved: the data stays where the other client left it,
+  and the engine rechecks it to recover the progress. Three of the four keep
+  their state in bencode (`src/core/bencode.rs` is the shared reader);
+  BitComet's XML schema is not documented anywhere public, so its save path is
+  found by heuristic and the torrents themselves come from the `.torrent`
+  files, which are an ordinary format.
+
+  One trap worth naming: µTorrent's `path` includes the torrent's own name, so
+  the save path is its parent — using it as-is buries every torrent a folder
+  deep. Transmission's `destination` is already the parent and is used as-is.
+
+  The run reports progress and can be cancelled — during the scan as well as
+  the import, since reading a large profile is thousands of file reads and
+  used to have to finish first. Cancelling rolls back the torrents it added,
+  the settings it overwrote and the labels it created. Files on disk are never
+  touched. Purging the existing list is the one step Cancel cannot undo, and
+  the dialog says so.
+
+  Removals go through `Session::remove_many`, which renumbers the queue once
+  rather than after each torrent. `remove` renumbers every remaining torrent,
+  which is right for one and quadratic for a list: rolling back ten thousand
+  was removing them at about one every five seconds. A second quadratic cost
+  remains in the engine — `session_persistence::delete` flushes the whole
+  session file per call — so a purge of many thousands is still slow.
+
+  While a migration runs its per-torrent notifications are suppressed and a
+  single one at the end reports the total. The suppression ends on three
+  consecutive quiet ticks rather than when the worker returns: `add_torrent`
+  returns as soon as the engine accepts a torrent and `TorrentAdded` follows
+  later, so the first tick after the worker finishes is quiet only because the
+  backlog has not arrived yet.
+
+- Slint 1.18.1, and a round of dependency updates. `notify-rust 4.18.1` no
+  longer pulls `tauri-winrt-notification 0.7`, which took a duplicate `windows`
+  0.61 tree with it — ten crates out of the build, and one `windows` version
+  instead of two. Its Windows backend is not a loss: `core::toast` is
+  hand-rolled there for the AUMID dance, and the `notify_rust` call sites are
+  macOS and Linux only.
 
 **v0.4.1** is the things 0.4.0 got wrong, and the web interface catching up.
 
@@ -1353,19 +1439,28 @@ history up to that tag.
 
 ## A note on the translations
 
-**Every language other than English is machine-translated.** The 40 non-English
-locales in `lang/`, and the `--help` text they render, were produced by an AI
-without review by a native speaker of any of them. English (`en-US`) is the
-source and the only one written by hand.
+**Every language other than English is machine-assisted.** The 75 non-English
+locales in `lang/`, and the `--help` text they render, started as PicoTorrent's
+original files, which stopped well short of covering this port; the rest was
+filled in by an AI during development rather than by a native speaker. English
+(`en-US`) is the source and the only one written by hand. Any inherited string
+still naming the old product is renamed on load — except the credit in About,
+which is meant to say PicoTorrent.
 
 Expect the usual failure modes: wording that is grammatical but not what a
 person would say, an inconsistent choice between two valid terms, and technical
 strings — "TLS handshakes in flight", "grace period on shutdown" — that read
 more literally than they should. Nothing here is a placeholder or an empty
-stub; the files are complete, and the risk is quality rather than coverage.
+stub; the files are complete and carry an identical key set, and the risk is
+quality rather than coverage.
 
-Corrections are welcome and cheap to make: each locale is a flat
-`lang/<code>.json`, and a `lang/` folder placed next to the executable
-overrides the compiled-in copy per locale, so a fix can be tested without
-rebuilding. See also [AI-DECLARATION.md](AI-DECLARATION.md), which covers the
-rest of the project.
+**Corrections are welcome, and they are the point of this section.** The
+failure mode is a wrong word in a language none of us reads, not a missing one,
+so a report from someone who reads it is worth more than any amount of
+re-checking from this end. The easiest way to send one is a
+[GitHub issue](https://github.com/Power2All/nanotorrent/issues) — the locale,
+the key or the English text, and what it should say. Fixes are also cheap to
+test: each locale is a flat `lang/<code>.json`, and a `lang/` folder placed
+next to the executable overrides the compiled-in copy per locale, so a
+correction can be tried without rebuilding. See also
+[AI-DECLARATION.md](AI-DECLARATION.md), which covers the rest of the project.

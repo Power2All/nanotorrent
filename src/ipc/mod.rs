@@ -68,10 +68,28 @@ pub fn init(args: &[String]) -> anyhow::Result<Instance> {
 
             Ok(Instance::Primary(Server { rx }))
         }
+        // Nothing holds the port - the port itself is unusable. A sandbox
+        // with no usable loopback looks exactly like this, and so does a
+        // machine where a policy blocks the bind.
+        //
+        // Carrying on is the only sensible answer. Single-instance detection
+        // is a convenience; refusing to start over it means the application
+        // does not run at all, which is the very thing the error below was
+        // written to avoid. The hand-off is lost, so a second copy opens its
+        // own window instead of passing its arguments over.
+        Err(bind_err) if bind_err.kind() != std::io::ErrorKind::AddrInUse => {
+            tracing::warn!(
+                "cannot use {IPC_ADDR} for single-instance detection ({bind_err});                  carrying on as the only instance"
+            );
+            // A receiver whose sender is already gone: it never yields, which
+            // is exactly right when nothing can send to it.
+            let (_tx, rx) = channel();
+            Ok(Instance::Primary(Server { rx }))
+        }
         Err(bind_err) => {
-            // Something holds the port. Normally that is another NanoTorrent
-            // and the hand-off is the whole point - but if it will not take
-            // our arguments it is not one, and exiting quietly would leave the
+            // The port IS held. Normally that is another NanoTorrent and the
+            // hand-off is the whole point - but if it will not take our
+            // arguments it is not one, and exiting quietly would leave the
             // user with an application that simply does not start.
             let mut stream = TcpStream::connect(IPC_ADDR).map_err(|connect_err| {
                 anyhow::anyhow!(
@@ -112,6 +130,45 @@ fn accept_loop(listener: TcpListener, tx: Sender<Vec<String>>) {
             && let Ok(args) = serde_json::from_slice::<Vec<String>>(&buf)
         {
             let _ = tx.send(args);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The distinction the AppImage catalog's test harness turned up: it runs
+    /// each AppImage under `firejail --net=none`, and a startup that refuses
+    /// to continue when it cannot take a loopback port never reaches a window.
+    ///
+    /// A port that is merely BUSY still means "another copy is running", and
+    /// must keep the existing hand-off. A port that cannot be taken at all
+    /// means nothing of the sort.
+    #[test]
+    fn only_a_busy_port_means_another_instance() {
+        use std::io::ErrorKind;
+        // Busy: hand off (or report a program that will not take it).
+        assert!(matches!(ErrorKind::AddrInUse, ErrorKind::AddrInUse));
+        // Unusable: carry on alone. These are what a sandbox or a policy
+        // gives back, and none of them is AddrInUse.
+        for kind in [
+            ErrorKind::PermissionDenied,
+            ErrorKind::AddrNotAvailable,
+            ErrorKind::Unsupported,
+        ] {
+            assert_ne!(kind, ErrorKind::AddrInUse, "{kind:?} must not be read as a busy port");
+        }
+    }
+
+    /// The primary that could not listen still answers polls - it simply never
+    /// has anything. A receiver whose sender is gone must not panic or block.
+    #[test]
+    fn a_primary_with_no_listener_polls_empty_forever() {
+        let (_tx, rx) = channel();
+        let server = Server { rx };
+        for _ in 0..3 {
+            assert!(server.try_recv().is_none());
         }
     }
 }

@@ -190,6 +190,16 @@ fn verify_librqbit_patches() {
             "patches/0001-engine-visibility.patch (per-peer have-pieces)",
         ),
         (
+            "vendor/librqbit/src/torrent_state/live/mod.rs",
+            "pub fn inflight_piece_indices",
+            "patches/0025-inflight-piece-indices.patch (the public accessor)",
+        ),
+        (
+            "vendor/librqbit/src/piece_tracker.rs",
+            "pub fn inflight_pieces",
+            "patches/0025-inflight-piece-indices.patch (the iterator it reads)",
+        ),
+        (
             "vendor/librqbit/src/stream_connect.rs",
             "pub trait StreamTransform",
             "patches/0002-stream-transform-seams.patch (outgoing half)",

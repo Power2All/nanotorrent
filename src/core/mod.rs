@@ -1,3 +1,4 @@
+pub mod bencode;
 pub mod configuration;
 pub mod database;
 pub mod dbcli;
@@ -7,6 +8,7 @@ pub mod environment;
 pub mod file_assoc;
 pub mod geoip;
 pub mod http;
+pub mod migrate;
 pub mod netguard;
 pub mod pico_import;
 pub mod toast;

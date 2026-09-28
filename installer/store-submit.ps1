@@ -335,7 +335,7 @@ if (-not (Test-Phase 'build')) {
 # Resolved out here rather than in the build block above: resuming at `upload`
 # skips the build but still has to know which package to send, and the phases
 # after it need no package at all.
-if ((Test-Phase 'upload') -and -not (Test-Phase 'listings')) {
+if (Test-Phase 'upload') {
     if (-not $Msix) {
         $Msix = Join-Path $PSScriptRoot "NanoTorrent-$version-x64.msix"
     }
@@ -370,7 +370,7 @@ if ((Test-Phase 'upload') -and -not (Test-Phase 'listings')) {
 # it is one already sent for certification: the delete would pull back a
 # release that is part-way through. The states below are the ones that mean
 # Microsoft already has it.
-if ((Test-Phase 'upload') -and -not (Test-Phase 'listings') -and -not $DryRun) {
+if ((Test-Phase 'upload') -and -not $DryRun) {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     $state = (& msstore submission status $ProductId 2>&1 | Out-String)

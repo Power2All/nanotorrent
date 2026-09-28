@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Deutsch (Deutschland) - Partner Center: German (Germany) (de-DE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent ist eine Rust-Portierung von PicoTorrent von Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.1
+Version 0.4.2
 
-- Ihr Verhältnis wird nicht mehr zurückgesetzt, wenn Sie eine Einstellung ändern oder neu starten.
-- Weitere Videoplayer: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA und Elmedia Player. Angeboten wird nur, was Ihr System hat, und wird einer nicht gefunden, werden Sie gefragt, wo er liegt.
-- Tracker werden nach Ebene angesprochen, wie es der Torrent wollte - ein Ersatztracker bleibt ein Ersatz.
-- Das Entfernen eines Torrents sowie das Ändern oder Entfernen eines Trackers fragen zuerst. Jede Frage lässt sich einmal beantworten und merken.
-- Der Import aus PicoTorrent fragt zuerst, kann die aktuelle Liste leeren und dessen Einstellungen übernehmen, und sagt, was ankam, was schon da war und was fehlschlug.
-- Die Weboberfläche zieht nach: Dateibäume mit einem Symbol je Typ, Details mit Reitern, Symbolschaltflächen, die ihre Spalte selbst bemessen, und keine waagerechte Bildlaufleiste.
-- Erweiterungen können ein eigenes Symbol tragen, und ihre Open- und Einstellungsschaltflächen sind immer sichtbar.
-- Über HTTPS konnte die Weboberfläche nichts ändern - jede Schaltfläche wurde abgewiesen.
-- Die Symbolleiste klappt beim Schmalerwerden ins Menü, lange Beschriftungen werden gekürzt, und Hintergrundfehler sind übersetzt.
+- Von einem anderen Client migrieren. Datei > Migrieren von liest eine vorhandene Installation von qBittorrent, uTorrent, BitComet, Transmission oder PicoTorrent und übernimmt die Torrents samt Speicherpfaden und Labels. Findet es auf diesem Computer keine, fragt es, wo es suchen soll - so funktioniert auch eine Sicherung. Nichts wird kopiert oder verschoben - Ihre Dateien bleiben, wo sie sind. Der Fortschritt wird angezeigt, und Abbrechen hält an und macht bereits Hinzugefügtes rückgängig.
+- Die Teile-Leiste in der Übersicht ist jetzt eine Karte des Torrents statt einer zweiten Fortschrittsanzeige: eine Spalte je Teil, dort hell, wo das Teil vorliegt, und die gerade angeforderten Teile in eigener Farbe.
+- Der Tracker-Reiter eines Hybrid-Torrents zeigt beide Schwärme, nicht nur den ersten.
+- Benachrichtigungen erscheinen jetzt auch in der Store-Version, und eine Schaltfläche, die dort nichts bewirken konnte, wird nicht mehr angezeigt.
+- In der Weboberfläche wird eine Größe wie "392.91 MB" nicht mehr abgeschnitten.
+- Aktualisiert auf Slint 1.18.1, mit einer Runde Abhängigkeits-Updates.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

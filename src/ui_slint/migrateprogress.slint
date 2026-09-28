@@ -1,0 +1,155 @@
+// A migration in progress, with a way to stop it.
+//
+// Migrating can add hundreds of torrents and takes long enough that a frozen
+// window would look like a crash, so the work happens on a worker thread and
+// this reports what it is doing.
+//
+// The bar is two Rectangles rather than a ProgressIndicator: the scanning
+// phase has no total to divide by, and a bar that has to sit at zero while
+// something is clearly happening reads as stuck. `indeterminate` gives that
+// phase a moving block instead.
+
+import { Button, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
+
+export component MigrateProgressDialog inherits Window {
+    icon: @image-url("../../res/app-256.png");
+    title: root.heading;
+
+    min-width: 480px;
+    max-width: 480px;
+    min-height: min(body.preferred-height, root.screen-limit);
+    /// The tallest this window may be, set from the monitor work area.
+    in property <length> screen-limit: 100000px;
+    max-height: min(body.preferred-height, root.screen-limit);
+    background: Palette.background;
+
+    /// "Migrating from qBittorrent" - built in Rust, because the client's name
+    /// is an argument and the translations never carry it.
+    in property <string> heading;
+    /// The line under the bar: what is being worked on right now.
+    in property <string> current;
+    /// "34 / 120", or empty while scanning.
+    in property <string> counts;
+    /// 0..1. Ignored while `indeterminate` is set.
+    in property <float> fraction;
+    /// Scanning, or rolling back: there is no meaningful total to show.
+    in property <bool> indeterminate;
+    /// The run is over - the buttons change from Cancel to Close.
+    in property <bool> finished;
+    /// Cancel has been pressed and the rollback is running. Pressing it twice
+    /// must not start a second one, so the button goes inert rather than away:
+    /// a button that vanishes under the cursor is worse than one that greys.
+    in property <bool> cancelling;
+    /// What happened, once it has. Several lines.
+    in property <string> summary;
+
+    callback cancel();
+    callback closed();
+
+    // Esc is Cancel while running and Close once finished, which is what Esc
+    // means in both cases: "I am done with this window".
+    FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                if (root.finished) {
+                    root.closed();
+                } else if (!root.cancelling) {
+                    root.cancel();
+                }
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    body := VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        Text {
+            text: root.heading;
+            font-size: 13px;
+            font-weight: 700;
+            color: Palette.foreground;
+            wrap: word-wrap;
+        }
+
+        if !root.finished: Rectangle {
+            height: 18px;
+            background: #00000022;
+            border-radius: 3px;
+            clip: true;
+            // Determinate: a bar from the left, as far as the fraction says.
+            if !root.indeterminate: Rectangle {
+                x: 0;
+                width: parent.width * max(0.0, min(1.0, root.fraction));
+                height: parent.height;
+                background: Palette.accent-background;
+                border-radius: 3px;
+            }
+            // Indeterminate: a block that slides, so a phase with no total
+            // still looks like something is happening.
+            if root.indeterminate: Rectangle {
+                width: parent.width * 0.3;
+                height: parent.height;
+                background: Palette.accent-background;
+                border-radius: 3px;
+                x: slide.value * (parent.width - self.width);
+                slide := Timer {
+                    interval: 40ms;
+                    running: root.indeterminate && !root.finished;
+                    // Ping-pong, so it never jumps back to the start.
+                    property <float> value: 0;
+                    property <float> step: 0.02;
+                    triggered => {
+                        self.value += self.step;
+                        if (self.value >= 1.0) { self.value = 1.0; self.step = -0.02; }
+                        if (self.value <= 0.0) { self.value = 0.0; self.step = 0.02; }
+                    }
+                }
+            }
+        }
+
+        if !root.finished: HorizontalLayout {
+            Text {
+                text: root.current;
+                font-size: 12px;
+                color: #888;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.counts;
+                font-size: 12px;
+                color: #888;
+            }
+        }
+
+        if root.finished: Text {
+            text: root.summary;
+            font-size: 12px;
+            color: Palette.foreground;
+            wrap: word-wrap;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Rectangle { horizontal-stretch: 1; }
+            if !root.finished: Button {
+                text: root.cancelling
+                    ? L.s(L.revision, "migrate_undoing")
+                    : L.s(L.revision, "cancel");
+                enabled: !root.cancelling;
+                clicked => { root.cancel(); }
+            }
+            if root.finished: Button {
+                text: L.s(L.revision, "close");
+                primary: true;
+                clicked => { root.closed(); }
+            }
+        }
+    }
+}

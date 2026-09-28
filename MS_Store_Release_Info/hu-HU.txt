@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-0.4.1-s verzió
+0.4.2-s verzió
 
-- Az aránya többé nem áll vissza nullára, ha megváltoztat egy beállítást vagy újraindít.
-- További videolejátszók: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA és Elmedia Player. Csak azokat kínálja fel, amelyek a rendszerén megvannak, és ha valamelyik nem található, megkérdezi, hol van.
-- A követők szintenként kapnak bejelentést, ahogy a torrent kérte - a tartalék követő tartalék marad.
-- A torrent eltávolítása, valamint a követő módosítása vagy eltávolítása előbb rákérdez. Minden kérdésre elég egyszer válaszolni, a válasz megjegyezhető.
-- A PicoTorrentből való importálás előbb rákérdez, kiürítheti a jelenlegi listát és áthozhatja a beállításait, majd elmondja, mi érkezett meg, mi volt már itt és mi hiúsult meg.
-- A webes felület utolérte az alkalmazást: fájlfák típusonkénti ikonnal, lapokra osztott Részletek, ikongombok, amelyek maguk szabják meg az oszlopuk szélességét, és nincs vízszintes görgetősáv.
-- A bővítmények saját ikont hozhatnak magukkal, és a Megnyitás, illetve a beállítások gombjuk mindig látszik.
-- HTTPS felett a webes felület semmit sem tudott megváltoztatni - minden gombot elutasított.
-- Az eszköztár szűküléskor a menübe hajlik, a hosszú feliratok levágásra kerülnek, a háttérhibák pedig le vannak fordítva.
+- Átköltöztetés másik kliensből. Fájl > Átköltöztetés innen beolvas egy meglévő qBittorrent, uTorrent, BitComet, Transmission vagy PicoTorrent telepítést, és áthozza a torrenteket a mentési útvonalukkal és címkéikkel. Ha nem talál ilyet ezen a gépen, megkérdezi, hol keresse - így egy mentés is működik. Semmi sem másolódik vagy mozdul el - a fájljai ott maradnak, ahol vannak. Mutatja a haladást, és a Mégse leállítja, majd visszaveszi, amit már hozzáadott.
+- Az Áttekintés Darabok sávja mostantól a torrent térképe, nem egy második folyamatjelző: darabonként egy oszlop, ott világítva, ahol a darab megvan, az éppen kért darabok pedig saját színnel.
+- Egy hibrid torrent Követők lapja mindkét rajt mutatja, nem csak az elsőt.
+- Az értesítések mostantól a Store-változatból is megjelennek, és egy gomb, amely ott semmit sem tehetett, már nem látszik.
+- A webes felületen egy méret, mint a "392.91 MB", már nem csonkolódik.
+- Frissítve a Slint 1.18.1-re, egy kör függőségfrissítéssel.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Afrikaans (Suid-Afrika) - Partner Center: Afrikaans (South Africa) (af-ZA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent is 'n Rust-oordrag van PicoTorrent deur Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Weergawe 0.4.1
+Weergawe 0.4.2
 
-- Jou verhouding stel nie meer terug wanneer jy 'n instelling verander of herbegin nie.
-- Meer videospelers: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA en Elmedia Player. Slegs dié wat jou stelsel het word aangebied, en as een nie gevind kan word nie, word jy gevra waar dit is.
-- Spoorders word per vlak aangekondig, soos die torrent gevra het - 'n rugsteunspoorder bly 'n rugsteun.
-- Die verwydering van 'n torrent, en die verandering of verwydering van 'n spoorder, vra eers. Elke vraag kan een keer beantwoord en onthou word.
-- Invoer vanaf PicoTorrent vra eers, kan die huidige lys skoonmaak en sy instellings oorbring, en sê wat aangekom het, wat reeds hier was en wat misluk het.
-- Die webkoppelvlak haal die program in: lêerbome met 'n ikoon per tipe, Besonderhede met oortjies, ikoonknoppies wat hul eie kolom se breedte stel, en geen sywaartse rolstaaf nie.
-- Inproppe kan hul eie ikoon dra, en hul Open- en instellingsknoppies word altyd gewys.
-- Oor HTTPS kon die webkoppelvlak niks verander nie - elke knoppie is geweier.
-- Die nutsbalk vou in die kieslys in soos dit smaller word, lang byskrifte word afgesny, en agtergrondfoute word vertaal.
+- Migreer vanaf 'n ander kliënt. Lêer > Migreer vanaf lees 'n bestaande qBittorrent-, uTorrent-, BitComet-, Transmission- of PicoTorrent-installasie en bring die torrents oor met hul stoorpaaie en etikette. As dit nie een op hierdie rekenaar kan vind nie, vra dit waar om te kyk, sodat 'n rugsteun ook werk. Niks word gekopieer of geskuif nie - jou lêers bly waar hulle is. Dit wys vordering, en Kanselleer stop dit en sit terug wat reeds bygevoeg is.
+- Die Stukke-balk in die Oorsig is nou 'n kaart van die torrent in plaas van 'n tweede vorderingsbalk: een kolom per stuk, verlig waar daardie stuk gehou word, met die stukke wat nou aangevra word in hul eie kleur.
+- 'n Hibriede torrent se Spoorsnyers-oortjie wys albei swerms, nie net die eerste nie.
+- Kennisgewings verskyn nou vanaf die Winkel-weergawe, en 'n knoppie wat daar niks kon doen nie word nie meer gewys nie.
+- In die webkoppelvlak word 'n grootte soos "392.91 MB" nie meer afgesny nie.
+- Opgedateer na Slint 1.18.1, met 'n rondte afhanklikheidsopdaterings.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

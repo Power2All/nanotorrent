@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Italiano (Italia) - Partner Center: Italian (Italy) (it-IT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent è un port in Rust di PicoTorrent, di Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versione 0.4.1
+Versione 0.4.2
 
-- Il tuo rapporto non si azzera più quando cambi un'impostazione o riavvii.
-- Altri lettori video: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA ed Elmedia Player. Vengono proposti solo quelli presenti sul tuo sistema e, se uno non viene trovato, ti viene chiesto dove si trova.
-- I tracker vengono annunciati per livelli, come chiedeva il torrent: un tracker di riserva resta di riserva.
-- Rimuovere un torrent, e modificare o rimuovere un tracker, chiedono prima. A ogni domanda si può rispondere una volta e la risposta viene ricordata.
-- L'importazione da PicoTorrent chiede prima, può svuotare l'elenco attuale e portare le sue impostazioni, e dice cosa è arrivato, cosa c'era già e cosa non è riuscito.
-- L'interfaccia web ha raggiunto l'applicazione: alberi di file con un'icona per tipo, Dettagli a schede, pulsanti a icona che dimensionano la propria colonna e niente barra di scorrimento orizzontale.
-- Le estensioni possono portare la propria icona, e i loro pulsanti Apri e impostazioni sono sempre visibili.
-- Su HTTPS l'interfaccia web non poteva cambiare nulla: ogni pulsante veniva rifiutato.
-- La barra degli strumenti si ripiega nel menu quando si restringe, le didascalie lunghe vengono tagliate e gli errori di fondo sono tradotti.
+- Migrazione da un altro client. File > Migra da legge un'installazione esistente di qBittorrent, uTorrent, BitComet, Transmission o PicoTorrent e porta i torrent con i loro percorsi di salvataggio ed etichette. Se non ne trova una su questo computer, chiede dove cercare: funziona quindi anche un backup. Nulla viene copiato o spostato: i tuoi file restano dove sono. Mostra l'avanzamento e Annulla lo ferma e rimette a posto quanto già aggiunto.
+- La barra Parti nella Panoramica è ora una mappa del torrent anziché una seconda barra di avanzamento: una colonna per parte, accesa dove quella parte è presente, con le parti richieste in questo momento disegnate con un colore proprio.
+- La scheda Tracker di un torrent ibrido mostra entrambi gli sciami, non solo il primo.
+- Le notifiche ora compaiono dalla versione dello Store e un pulsante che lì non poteva fare nulla non viene più mostrato.
+- Nell'interfaccia web una dimensione come "392.91 MB" non viene più troncata.
+- Aggiornato a Slint 1.18.1, con una serie di aggiornamenti delle dipendenze.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

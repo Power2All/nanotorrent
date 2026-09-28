@@ -300,6 +300,25 @@ impl TorrentStateLive {
         *self.availability.write() = counts;
     }
 
+    /// NanoTorrent addition: the pieces currently being requested from peers.
+    ///
+    /// `get_pieces` is crate-private, so an embedder cannot reach the in-flight
+    /// set at all - and the Overview's piece map wants it to colour a piece
+    /// that is on its way differently from one already held.
+    ///
+    /// Raw `u32` indices rather than `ValidPieceIndex`, which cannot be
+    /// constructed outside this crate; the caller only ever compares them
+    /// against a piece count it already has. Empty rather than an error when
+    /// there is no tracker yet: a magnet still resolving has nothing in
+    /// flight, which is exactly what an empty set says.
+    pub fn inflight_piece_indices(&self) -> Vec<u32> {
+        let g = self.lock_read("inflight_piece_indices");
+        match g.get_pieces() {
+            Ok(pt) => pt.inflight_pieces().map(|p| p.get()).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     /// How many connected peers hold `piece`. 0 when nothing is known yet,
     /// which makes every piece look equally rare and the ordering fall back to
     /// the file-priority order it had before.

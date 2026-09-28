@@ -69,30 +69,42 @@ mod pluginwindow;
 // replacements and associated redraw opportunities while a transfer is active.
 const UI_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// Use Slint's Skia renderer unless a caller explicitly chose a backend.
+/// Draw with Skia on the CPU, unless a caller explicitly chose a backend.
 ///
-/// Slint offers three: FemtoVG (the default, OpenGL), Skia, and a software
-/// rasteriser. FemtoVG was what pinned the GPU here.
+/// Slint offers FemtoVG (the default, OpenGL), Skia, and a software
+/// rasteriser. FemtoVG was what pinned the GPU here, and a torrent client
+/// idling in the background has no business holding a GPU context open: this
+/// is a list repainted about once a second, not a game.
 ///
-/// Skia rather than `winit-software`, which is the obvious answer and the
-/// wrong one: the software renderer does not pick up the display's scale
-/// factor the way the accelerated ones do, so on a HiDPI screen the whole
-/// window comes out mis-scaled. `SLINT_SCALE_FACTOR` can force it, but that
-/// is a number this application would have to guess per monitor.
+/// **`winit-skia-software`, not `winit-skia`.** Plain `winit-skia` asks Skia
+/// for its best surface, and Skia's own candidate list is OpenGL, then wgpu,
+/// then software - so it took the GPU after all, which was the thing being
+/// avoided. Measured on a box where OpenGL fails, plain `winit-skia` does not
+/// give up and fall to software; it maps Vulkan and every driver installed.
+/// The `-software` suffix pins Skia's CPU rasteriser and it maps none of
+/// them.
 ///
-/// Skia keeps the text quality and, measured on this application's workload -
-/// a list repainted about once a second - leaves the GPU essentially idle.
+/// Skia's CPU rasteriser rather than `winit-software`, which is the obvious
+/// answer and the wrong one: that renderer does not pick up the display's
+/// scale factor the way the others do, so on a HiDPI screen the whole window
+/// comes out mis-scaled. `SLINT_SCALE_FACTOR` can force it, but that is a
+/// number this application would have to guess per monitor. Skia keeps both
+/// the scale factor and the text quality.
+///
+/// It also removes a way to fail. Asking for OpenGL means a machine without
+/// it has nowhere to go, and the AppImage catalog's test harness runs each
+/// build under `firejail --net=none` with only Xvfb - no GL at all.
 ///
 /// `SLINT_BACKEND` is still honoured when it is already set, so
-/// `winit-femtovg` and `winit-software` remain available to anyone who wants
-/// to compare.
+/// `winit-femtovg`, `winit-skia` and `winit-software` remain available to
+/// anyone who wants to compare.
 fn select_default_renderer() {
     if std::env::var_os("SLINT_BACKEND").is_none() {
         // This runs before the first Slint component is created, so backend
         // selection has not happened yet. The Skia renderer is enabled in
         // Cargo.toml above.
         unsafe {
-            std::env::set_var("SLINT_BACKEND", "winit-skia");
+            std::env::set_var("SLINT_BACKEND", "winit-skia-software");
         }
     }
 }
@@ -173,6 +185,26 @@ struct Ui {
     db_prompt: RefCell<Option<DbPromptDialog>>,
     remove_dialog: RefCell<Option<RemoveDialog>>,
     pico_dialog: RefCell<Option<PicoImportDialog>>,
+    migrate_dialog: RefCell<Option<MigrateProgressDialog>>,
+    /// True while a migration's torrents are still arriving. The per-add
+    /// toasts are suppressed for its duration: it adds hundreds at a time and
+    /// reports its own total at the end, so one toast per UI tick is noise.
+    ///
+    /// NOT cleared when the worker finishes. `add_torrent` returns as soon as
+    /// the engine accepts a torrent and the `TorrentAdded` event follows
+    /// later, so a run of a few hundred is still draining events seconds
+    /// after it reported itself done - and those were toasting. It is cleared
+    /// by the first drain that finds nothing left, once `migrate_done` is set.
+    migrating: Arc<std::sync::atomic::AtomicBool>,
+    /// The worker has finished; the events may not have.
+    migrate_done: Arc<std::sync::atomic::AtomicBool>,
+    /// Consecutive drains that found nothing, once the worker is done.
+    ///
+    /// One quiet drain is not enough and that was the bug: the worker returns
+    /// long before the engine has emitted its `TorrentAdded` events, so the
+    /// very first drain after it finishes is quiet simply because the backlog
+    /// has not started arriving. Any drain that sees something resets this.
+    migrate_quiet: std::cell::Cell<u8>,
     /// The .torrent currently in the Add dialog, and any queued behind it.
     /// argv can name several, and only one dialog is shown at a time.
     pending: RefCell<Vec<Vec<u8>>>,
@@ -373,6 +405,10 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         db_prompt: RefCell::new(None),
         remove_dialog: RefCell::new(None),
         pico_dialog: RefCell::new(None),
+        migrate_dialog: RefCell::new(None),
+        migrating: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        migrate_done: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        migrate_quiet: std::cell::Cell::new(0),
     });
 
     let model: Rc<VecModel<Row>> = Rc::new(VecModel::from(Vec::new()));
@@ -402,6 +438,28 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         Some(_) => ui.tr.borrow().i18n1("import_from_app", "PicoTorrent").into(),
         None => SharedString::new(),
     });
+
+    // The Migrate-from submenu. Detected once at startup, like the line above:
+    // somebody who installs qBittorrent while NanoTorrent is running is not a
+    // case worth a filesystem watcher.
+    {
+        use crate::core::migrate::Source;
+        let names: Vec<SharedString> = Source::ALL.iter().map(|s| s.label().into()).collect();
+        let found: Vec<bool> = Source::ALL.iter().map(|s| s.detect().is_some()).collect();
+        window.set_migrate_names(ModelRc::new(VecModel::from(names)));
+        window.set_migrate_found(ModelRc::new(VecModel::from(found)));
+    }
+
+    {
+        let (w, u) = (window.as_weak(), ui.clone());
+        window.on_migrate(move |index| {
+            let Some(window) = w.upgrade() else { return };
+            let Some(source) = crate::core::migrate::Source::ALL.get(index as usize) else {
+                return;
+            };
+            open_migrate(&window, &u, *source);
+        });
+    }
 
     // A plugin's window is created on demand, long after this, so it cannot be
     // wired here - it is given the lookup to use when it makes one.
@@ -1641,6 +1699,7 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     // Details follow the first selected row, matching the Win32 panel.
     if let Some(first) = rows.iter().find(|r| selected.contains(&r.info_hash)) {
         set_details(window, first, &ui.tr.borrow());
+        set_pieces(window, ui, &first.info_hash);
 
         // A click has usually switched the panel already; this catches the
         // cases that do not go through one, such as the selected torrent
@@ -1787,6 +1846,26 @@ fn drain_notifications(window: &MainWindow, ui: &Rc<Ui>) {
     if !duplicates.is_empty() {
         parts.push(tr.i18n1("torrents_duplicate", &duplicates.len().to_string()));
     }
+    // A migration speaks for itself when it finishes. Without this a run of a
+    // few thousand torrents toasts on every UI tick for the whole import.
+    if ui.migrating.load(std::sync::atomic::Ordering::Relaxed) {
+        // Several quiet drains in a row, with the worker finished, mean the
+        // backlog really is gone - then the next torrent added by hand says so
+        // again. Anything arriving resets the count.
+        const QUIET_DRAINS: u8 = 3;
+        if added.is_empty() && duplicates.is_empty() {
+            if ui.migrate_done.load(std::sync::atomic::Ordering::Relaxed) {
+                ui.migrate_quiet.set(ui.migrate_quiet.get().saturating_add(1));
+                if ui.migrate_quiet.get() >= QUIET_DRAINS {
+                    ui.migrating.store(false, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        } else {
+            ui.migrate_quiet.set(0);
+        }
+        return;
+    }
+
     if !parts.is_empty() {
         show_toast(window, &parts.join(" - "));
     }
@@ -2294,7 +2373,35 @@ fn set_details(window: &MainWindow, t: &TorrentStatus, tr: &Translator) {
     window.set_d_peers(format!("{} ({})", t.peers_current, t.peers_total).into());
     window.set_d_added(format::date_text(&t.added_on).into());
     window.set_d_completed(format::opt_date_text(&t.completed_on).into());
-    window.set_d_progress(t.progress);
+}
+
+/// Paint the Overview's pieces map for one torrent.
+///
+/// Kept out of `set_details`, which formats a `TorrentStatus` and has no
+/// business reaching into the session: this comes from the engine's live
+/// bitfield, not from the row.
+fn set_pieces(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
+    // One column per pixel the bar actually has. Logical pixels: asking for
+    // more columns than the bar can draw would just be resampled away again.
+    let columns = window.get_d_pieces_width().max(0.0) as usize;
+    let map = ui.session.piece_map(hash, columns);
+    window.set_d_pieces(pieces_image(&map.have));
+    window.set_d_pieces_inflight(pieces_image(&map.inflight));
+}
+
+/// One pixel per column, white, with alpha set to how much of that column is
+/// held. The colour is applied by `colorize` in the markup, so the theme stays
+/// in the markup rather than being duplicated here.
+fn pieces_image(map: &[u8]) -> slint::Image {
+    if map.is_empty() {
+        return slint::Image::default();
+    }
+    let rgba: Vec<u8> = map.iter().flat_map(|&v| [255, 255, 255, v]).collect();
+    slint::Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(
+        &rgba,
+        map.len() as u32,
+        1,
+    ))
 }
 
 /// Blank the Overview fields, for when nothing is selected.
@@ -2320,7 +2427,8 @@ fn clear_details(window: &MainWindow, tr: &Translator) {
     // "(v2)" does not linger over the next selection.
     window.set_d_hash2(SharedString::new());
     window.set_d_hash2_label(SharedString::new());
-    window.set_d_progress(0.0);
+    window.set_d_pieces(slint::Image::default());
+    window.set_d_pieces_inflight(slint::Image::default());
 }
 
 /// Click, ctrl-click and shift-click, over a selection the model owns.
@@ -2692,6 +2800,7 @@ fn repaint_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>
         .find(|r| selected.contains(&r.info_hash))
     {
         set_details(window, first, &ui.tr.borrow());
+        set_pieces(window, ui, &first.info_hash);
         switch_details(window, ui, &first.info_hash);
     } else {
         clear_details(window, &ui.tr.borrow());
@@ -2712,89 +2821,6 @@ fn repaint_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>
 /// Only Delete reaches this. The context menu's two Remove entries say which
 /// they are and go straight to the session - a prompt on top of a choice
 /// already made is just a second click.
-/// Ask before importing from PicoTorrent, then report what happened.
-///
-/// A dialog rather than a toast-and-go: this can add hundreds of torrents, and
-/// with purging ticked it removes everything already here first. Both choices
-/// are made in one place, and the answer afterwards says what actually landed
-/// rather than only what succeeded.
-fn open_pico_import(window: &MainWindow, ui: &Rc<Ui>) {
-    let dialog = match PicoImportDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the import dialog: {err}");
-            return;
-        }
-    };
-
-    {
-        let tr = ui.tr.borrow();
-        dialog.set_ask_text(tr.i18n1("pico_import_ask", "PicoTorrent").into());
-        dialog.set_settings_text(tr.i18n1("pico_import_settings", "PicoTorrent").into());
-    }
-
-    {
-        let (weak, u, owner) = (dialog.as_weak(), ui.clone(), window.as_weak());
-        dialog.on_confirmed(move |purge, settings| {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-            *u.pico_dialog.borrow_mut() = None;
-
-            let Some(window) = owner.upgrade() else { return };
-            let tr = u.tr.borrow();
-            let Some(path) = u.env.get_picotorrent_db_path() else {
-                show_error_toast(&window, &tr.i18n("nothing_to_add"));
-                return;
-            };
-
-            let options = crate::bittorrent::session::ImportOptions { purge, settings };
-            match u.session.import_from_picotorrent(&path, options) {
-                Err(err) => show_error_toast(&window, &err.to_string()),
-                Ok(report) => {
-                    // Imported and skipped every time, including the zeroes: a
-                    // line that changes shape with the outcome is one nobody
-                    // learns to read. The other two are only worth the words
-                    // when they happened.
-                    let mut text = tr.i18n_args(
-                        "pico_import_done",
-                        &[&report.imported.to_string(), &report.skipped.to_string()],
-                    );
-                    if report.failed > 0 {
-                        text.push(' ');
-                        text.push_str(
-                            &tr.i18n1("pico_import_failed", &report.failed.to_string()),
-                        );
-                    }
-                    if report.settings > 0 {
-                        text.push(' ');
-                        text.push_str(
-                            &tr.i18n1("pico_import_copied", &report.settings.to_string()),
-                        );
-                    }
-                    show_toast(&window, &text);
-                }
-            }
-        });
-    }
-
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_cancelled(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-            *u.pico_dialog.borrow_mut() = None;
-        });
-    }
-
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    let _ = window; // owner is set by wire_dialog_close
-    *ui.pico_dialog.borrow_mut() = Some(dialog);
-}
-
 /// The setting behind both removal prompts.
 pub const CONFIRM_REMOVE_KEY: &str = "ui.confirm_remove_torrent";
 
@@ -3033,7 +3059,7 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
                 // torrents and - if purging was ticked - take away everything
                 // already here. The dialog carries both choices so there is one
                 // decision point rather than three prompts in a row.
-                open_pico_import(&window, &u);
+                open_migrate(&window, &u, crate::core::migrate::Source::PicoTorrent);
             }
             // The manual switch only. The schedule can also have the limits on,
             // and this must not silently turn that off - the scheduler will put
@@ -4718,7 +4744,11 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     d.set_notify_complete(cfg.get_bool(crate::core::toast::ENABLED_KEY));
     d.set_check_updates(cfg.get_bool("update_checks.enabled"));
     d.set_show_padding_files(cfg.get_bool("ui.show_padding_files"));
-    d.set_can_associate(cfg!(windows));
+    // Windows only, and not inside the MSIX container: there the writes are
+    // virtualised where the shell cannot see them, so the button would claim to
+    // do something and do nothing. The manifest declares the associations for a
+    // packaged install anyway.
+    d.set_can_associate(cfg!(windows) && crate::core::environment::needs_own_windows_identity());
 
     d.set_save_path(
         cfg.get_string("default_save_path")
@@ -6905,4 +6935,285 @@ mod chart_tests {
             }
         }
     }
+}
+
+/// Ask before migrating from `source`, then run it with a progress window.
+///
+/// A dialog rather than a toast-and-go: this can add hundreds of torrents, and
+/// with purging ticked it removes everything already here first. Both choices
+/// are made in one place, and the answer afterwards says what actually landed
+/// rather than only what succeeded.
+fn open_migrate(window: &MainWindow, ui: &Rc<Ui>, source: crate::core::migrate::Source) {
+    // Where the client usually keeps its profile - or, when it is not
+    // installed here, wherever the person says it is. A backup copied off
+    // another machine is the case this exists for, and it is also the way
+    // round that cannot be wrong: nothing is assumed about a folder that was
+    // chosen deliberately.
+    let path = match source.detect() {
+        Some(found) => found,
+        None => {
+            let title = {
+                let tr = ui.tr.borrow();
+                tr.i18n1("migrate_pick_folder", source.label())
+            };
+            // Cancelling the picker is an answer, not an error.
+            let Some(picked) = rfd::FileDialog::new().set_title(title).pick_folder() else {
+                return;
+            };
+            // Checked here rather than after the confirmation dialog: being
+            // told the folder is wrong is only useful before deciding what to
+            // do with it.
+            match source.resolve(&picked) {
+                Some(root) => root,
+                None => {
+                    let tr = ui.tr.borrow();
+                    show_error_toast(window, &tr.i18n1("migrate_not_found", source.label()));
+                    return;
+                }
+            }
+        }
+    };
+
+    let dialog = match PicoImportDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the migration dialog: {err}");
+            return;
+        }
+    };
+
+    {
+        let tr = ui.tr.borrow();
+        // Slint's `L.s` passes no arguments, so a title with a {0} in it would
+        // show the placeholder. Built here, where the name is known.
+        dialog.set_window_title(tr.i18n1("import_from_app", source.label()).into());
+        dialog.set_ask_text(tr.i18n1("pico_import_ask", source.label()).into());
+        dialog.set_settings_text(tr.i18n1("pico_import_settings", source.label()).into());
+        dialog.set_can_settings(source.carries_settings());
+        // Cancel rolls back everything except this. Said where the tick box
+        // is, not in the progress window, because by then it is too late.
+        dialog.set_purge_warning(tr.i18n("migrate_purge_warning").into());
+    }
+
+    {
+        let (weak, u, owner) = (dialog.as_weak(), ui.clone(), window.as_weak());
+        dialog.on_confirmed(move |purge, settings| {
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+            *u.pico_dialog.borrow_mut() = None;
+            let Some(window) = owner.upgrade() else { return };
+            run_migration(&window, &u, source, path.clone(), purge, settings);
+        });
+    }
+    {
+        let (weak, u) = (dialog.as_weak(), ui.clone());
+        dialog.on_cancelled(move || {
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+            *u.pico_dialog.borrow_mut() = None;
+        });
+    }
+
+    // Globals are per top-level component: an unwired L returns "" for every
+    // caption, which is a dialog with blank buttons.
+    wire_dialog_close(&dialog, ui);
+    let _ = dialog.show();
+    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
+    let _ = window; // owner is set by wire_dialog_close
+    *ui.pico_dialog.borrow_mut() = Some(dialog);
+}
+
+/// Run the migration on a worker thread, reporting into a progress window.
+///
+/// Off the UI thread because it adds torrents one at a time and rechecks each
+/// against the disk: on the event loop the window would stop painting and look
+/// like a crash, which is exactly what the progress window exists to prevent.
+fn run_migration(
+    window: &MainWindow,
+    ui: &Rc<Ui>,
+    source: crate::core::migrate::Source,
+    path: std::path::PathBuf,
+    purge: bool,
+    settings: bool,
+) {
+    use crate::core::migrate::Phase;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let progress = match MigrateProgressDialog::new() {
+        Ok(d) => d,
+        Err(err) => {
+            tracing::error!("cannot create the progress window: {err}");
+            return;
+        }
+    };
+
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let tr = ui.tr.borrow();
+        progress.set_heading(tr.i18n1("migrate_heading", source.label()).into());
+        progress.set_indeterminate(true);
+        progress.set_current(tr.i18n1("migrate_scanning", source.label()).into());
+    }
+
+    // Cancel sets the flag and greys itself; the worker notices between
+    // torrents and rolls back. Nothing is killed mid-add.
+    {
+        let (weak, c) = (progress.as_weak(), cancel.clone());
+        progress.on_cancel(move || {
+            c.store(true, Ordering::Relaxed);
+            if let Some(d) = weak.upgrade() {
+                d.set_cancelling(true);
+            }
+        });
+    }
+    {
+        let (weak, u) = (progress.as_weak(), ui.clone());
+        progress.on_closed(move || {
+            if let Some(d) = weak.upgrade() {
+                dismiss(&u, &d);
+            }
+            *u.migrate_dialog.borrow_mut() = None;
+        });
+    }
+
+    wire_dialog_close(&progress, ui);
+    let _ = progress.show();
+    clamp_to_screen(&progress, |d, h| d.set_screen_limit(h));
+    let handle = progress.as_weak();
+    *ui.migrate_dialog.borrow_mut() = Some(progress);
+
+    let session = ui.session.clone();
+    // Raised for the worker's lifetime, so the per-add toasts stay quiet
+    // while it runs. Lowered in the completion handler below, whatever the
+    // outcome - an early return would leave every later add silent.
+    let migrating = ui.migrating.clone();
+    let migrate_done = ui.migrate_done.clone();
+    migrating.store(true, Ordering::Relaxed);
+    migrate_done.store(false, Ordering::Relaxed);
+    ui.migrate_quiet.set(0);
+    // For the one toast that IS wanted: the total, once, at the end.
+    let owner = window.as_weak();
+    let tr_done = {
+        // The report is formatted on the worker, so the strings are looked up
+        // once here while the translator is still reachable from this thread.
+        let tr = ui.tr.borrow();
+        MigrateStrings {
+            scanning: tr.i18n1("migrate_scanning", source.label()),
+            purging: tr.i18n("migrate_purging"),
+            adding: tr.i18n("migrate_adding"),
+            reverting: tr.i18n("migrate_undoing"),
+            done_template: tr.i18n("pico_import_done"),
+            failed_template: tr.i18n("pico_import_failed"),
+            copied_template: tr.i18n("pico_import_copied"),
+            reverted_template: tr.i18n("migrate_reverted"),
+        }
+    };
+
+    std::thread::spawn(move || {
+        let options = crate::bittorrent::session::ImportOptions { purge, settings };
+        let strings = tr_done;
+
+        let on_progress = |p: crate::core::migrate::Progress| {
+            let h = handle.clone();
+            // The phase names itself. `p.current` is an info hash, which is
+            // not something to put in front of anyone - the counts carry the
+            // detail instead.
+            let label = match p.phase {
+                Phase::Scanning => strings.scanning.clone(),
+                Phase::Purging => strings.purging.clone(),
+                Phase::Adding => strings.adding.clone(),
+                Phase::Reverting => strings.reverting.clone(),
+                Phase::Done => String::new(),
+            };
+            let counts = if p.total > 0 {
+                format!("{} / {}", p.done, p.total)
+            } else {
+                String::new()
+            };
+            let fraction = if p.total > 0 {
+                p.done as f32 / p.total as f32
+            } else {
+                0.0
+            };
+            // Scanning is the only phase with no total to divide by. Purging
+            // and reverting both know theirs, so they get a real bar.
+            let indeterminate = matches!(p.phase, Phase::Scanning);
+            let _ = h.upgrade_in_event_loop(move |d| {
+                d.set_current(label.into());
+                d.set_counts(counts.into());
+                d.set_fraction(fraction);
+                d.set_indeterminate(indeterminate);
+            });
+        };
+
+        let result = session.migrate_from(source, &path, options, &cancel, on_progress);
+        let summary = match &result {
+            Err(err) => err.to_string(),
+            Ok(report) => {
+                let sub = |t: &str, args: &[&str]| {
+                    let mut s = t.to_string();
+                    for (i, a) in args.iter().enumerate() {
+                        s = s.replace(&format!("{{{i}}}"), a);
+                    }
+                    s
+                };
+                if report.cancelled {
+                    sub(&strings.reverted_template, &[&report.reverted.to_string()])
+                } else {
+                    let mut text = sub(
+                        &strings.done_template,
+                        &[&report.imported.to_string(), &report.skipped.to_string()],
+                    );
+                    if report.failed > 0 {
+                        text.push(' ');
+                        text.push_str(&sub(
+                            &strings.failed_template,
+                            &[&report.failed.to_string()],
+                        ));
+                    }
+                    if report.settings > 0 {
+                        text.push(' ');
+                        text.push_str(&sub(
+                            &strings.copied_template,
+                            &[&report.settings.to_string()],
+                        ));
+                    }
+                    text
+                }
+            }
+        };
+
+        // The worker is done; the engine's events are not. The drain clears
+        // `migrating` once it sees a quiet tick.
+        migrate_done.store(true, Ordering::Relaxed);
+        let shown = summary.clone();
+        let _ = handle.upgrade_in_event_loop(move |d| {
+            d.set_finished(true);
+            d.set_summary(summary.into());
+        });
+        // The progress window says it too, but that window is one someone
+        // closes and forgets; the toast is what is still there afterwards.
+        let _ = owner.upgrade_in_event_loop(move |w| {
+            show_toast(&w, &shown);
+        });
+    });
+}
+
+/// The few translated strings the worker needs, looked up before it starts.
+///
+/// The translator lives behind a `RefCell` on the UI thread and cannot cross
+/// to a worker, so what the worker will say is decided here while it still
+/// can be.
+struct MigrateStrings {
+    scanning: String,
+    purging: String,
+    adding: String,
+    reverting: String,
+    done_template: String,
+    failed_template: String,
+    copied_template: String,
+    reverted_template: String,
 }
