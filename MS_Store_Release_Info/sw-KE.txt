@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Kiswahili (Kenya) - Partner Center: Swahili (Kenya) (sw-KE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent ni toleo la Rust la PicoTorrent ya Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Toleo 0.4.1
+Toleo 0.4.2
 
-- Uwiano wako hauruki tena hadi sifuri unapobadilisha mpangilio au kuanzisha upya.
-- Vichezaji vya video zaidi: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA na Elmedia Player. Vinavyotolewa ni vile tu vilivyopo kwenye mfumo wako, na kimoja kisipopatikana utaulizwa kiko wapi.
-- Vifuatiliaji vinatangaziwa kwa madaraja, kama torrent ilivyoomba - kifuatiliaji cha akiba kinabaki cha akiba.
-- Kuondoa torrent, na kubadilisha au kuondoa kifuatiliaji, huuliza kwanza. Kila swali linaweza kujibiwa mara moja na jibu likakumbukwa.
-- Kuleta kutoka PicoTorrent huuliza kwanza, kunaweza kufuta orodha ya sasa na kuleta mipangilio yake, na kusema nini kilifika, nini kilikuwepo tayari na nini kilishindikana.
-- Kiolesura cha wavuti kimeifikia programu: miti ya faili yenye aikoni kwa kila aina, Maelezo yenye vichupo, vitufe vya aikoni vinavyojipimia upana wa safu yao, na hakuna upau wa kusogeza mlalo.
-- Programu-jalizi zinaweza kubeba aikoni yake yenyewe, na vitufe vyake vya Fungua na mipangilio huonyeshwa daima.
-- Kupitia HTTPS kiolesura cha wavuti hakikuweza kubadilisha chochote - kila kitufe kilikataliwa.
-- Upau wa vidhibiti hukunjwa ndani ya menyu unaposongamana, maandishi marefu hukatwa, na hitilafu za nyuma hutafsiriwa.
+- Hamisha kutoka kwa programu nyingine. Faili > Hamisha kutoka husoma usakinishaji uliopo wa qBittorrent, uTorrent, BitComet, Transmission au PicoTorrent na kuleta toreni pamoja na njia zao za kuhifadhi na lebo. Kama haipati kwenye kompyuta hii, hukuuliza pa kutafuta, hivyo nakala rudufu pia hufanya kazi. Hakuna kinachonakiliwa au kuhamishwa - faili zako zinabaki zilipo. Huonyesha maendeleo, na Ghairi husimamisha na kurudisha kile kilichokwisha ongezwa.
+- Upau wa Vipande katika Muhtasari sasa ni ramani ya toreni badala ya upau wa pili wa maendeleo: safu moja kwa kila kipande, ikiwaka pale kipande kilipo, na vipande vinavyoombwa sasa vinachorwa kwa rangi yao wenyewe.
+- Kichupo cha Vifuatiliaji cha toreni mseto huonyesha makundi yote mawili, si la kwanza tu.
+- Arifa sasa zinaonekana kutoka toleo la Store, na kitufe ambacho hakikuweza kufanya chochote hapo hakionyeshwi tena.
+- Katika kiolesura cha wavuti, ukubwa kama "392.91 MB" haukatwi tena.
+- Imesasishwa hadi Slint 1.18.1, pamoja na masasisho ya vitegemezi.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

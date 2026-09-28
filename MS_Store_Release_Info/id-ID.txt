@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.1
+Versi 0.4.2
 
-- Rasio Anda tidak lagi kembali ke nol saat Anda mengubah pengaturan atau memulai ulang.
-- Lebih banyak pemutar video: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA, dan Elmedia Player. Hanya yang ada di sistem Anda yang ditawarkan, dan jika salah satu tidak ditemukan Anda akan ditanya di mana letaknya.
-- Pelacak diumumkan per tingkat, sesuai permintaan torrent - pelacak cadangan tetap menjadi cadangan.
-- Menghapus torrent, serta mengubah atau menghapus pelacak, bertanya lebih dulu. Setiap pertanyaan cukup dijawab sekali dan akan diingat.
-- Impor dari PicoTorrent bertanya lebih dulu, dapat mengosongkan daftar saat ini dan membawa pengaturannya, lalu memberi tahu apa yang masuk, apa yang sudah ada, dan apa yang gagal.
-- Antarmuka web menyusul aplikasi: pohon berkas dengan ikon per jenis, Detail bertab, tombol ikon yang mengatur lebar kolomnya sendiri, dan tanpa bilah gulir mendatar.
-- Plugin dapat membawa ikonnya sendiri, dan tombol Buka serta pengaturannya selalu ditampilkan.
-- Melalui HTTPS antarmuka web tidak dapat mengubah apa pun - setiap tombol ditolak.
-- Bilah alat melipat ke dalam menu saat menyempit, keterangan panjang dipangkas, dan galat latar diterjemahkan.
+- Migrasi dari klien lain. Berkas > Migrasi dari membaca instalasi qBittorrent, uTorrent, BitComet, Transmission atau PicoTorrent yang ada dan membawa torrent beserta jalur penyimpanan dan labelnya. Jika tidak menemukannya di komputer ini, ia menanyakan di mana harus mencari, sehingga cadangan pun berfungsi. Tidak ada yang disalin atau dipindahkan - berkas Anda tetap di tempatnya. Kemajuan ditampilkan, dan Batal menghentikannya serta mengembalikan yang sudah ditambahkan.
+- Bilah Bagian di Ikhtisar kini adalah peta torrent, bukan bilah kemajuan kedua: satu kolom per bagian, menyala di tempat bagian itu dimiliki, dan bagian yang sedang diminta digambar dengan warnanya sendiri.
+- Tab Pelacak pada torrent hibrida menampilkan kedua kawanan, bukan hanya yang pertama.
+- Notifikasi kini muncul dari versi Store, dan tombol yang di sana tidak bisa melakukan apa pun tidak lagi ditampilkan.
+- Di antarmuka web, ukuran seperti "392.91 MB" tidak lagi dipotong.
+- Diperbarui ke Slint 1.18.1, dengan serangkaian pembaruan dependensi.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

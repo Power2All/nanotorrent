@@ -352,6 +352,14 @@ impl PieceTracker {
         self.inflight.contains_key(&piece)
     }
 
+    /// NanoTorrent addition: the pieces currently reserved from a peer.
+    ///
+    /// `inflight_count` alone answers "how many", and the Overview's piece map
+    /// needs "which" - a piece being requested is drawn in its own colour.
+    pub fn inflight_pieces(&self) -> impl Iterator<Item = ValidPieceIndex> + '_ {
+        self.inflight.keys().copied()
+    }
+
     /// Get the number of pieces currently in-flight.
     #[allow(dead_code)]
     pub fn inflight_count(&self) -> usize {

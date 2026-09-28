@@ -61,6 +61,11 @@ pub struct ImportReport {
     /// inside the engine's own task after it accepted the torrent is not
     /// counted here - it arrives as an error event instead.
     pub failed: usize,
+    /// Torrents removed again because the migration was cancelled or failed.
+    /// Non-zero only on a run that did not finish.
+    pub reverted: usize,
+    /// True when the run stopped early and was rolled back.
+    pub cancelled: bool,
     /// Settings copied across. Zero when the option was off.
     pub settings: usize,
     /// Torrents removed first, when purging was asked for.
@@ -223,6 +228,20 @@ pub enum TrackerRowKind {
     Tier,
     /// A real tracker URL.
     Tracker,
+}
+
+/// The two layers the Overview's pieces bar draws, one entry per column.
+///
+/// Both vectors are the same length. A piece cannot be held and in flight at
+/// once - the engine reserves it, then marks it held - so per PIECE they are
+/// disjoint. Per COLUMN both can be non-zero, once there are more pieces than
+/// pixels and one column covers a run containing some of each.
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct PieceMap {
+    /// How much of each column is downloaded and verified.
+    pub have: Vec<u8>,
+    /// How much of it is being requested from a peer right now.
+    pub inflight: Vec<u8>,
 }
 
 pub struct TrackerRow {
@@ -1969,9 +1988,53 @@ impl Session {
         pico_db: &std::path::Path,
         options: ImportOptions,
     ) -> Result<ImportReport> {
-        use crate::core::pico_import::{ImportSource, read_settings, read_torrents};
+        self.migrate_from(
+            crate::core::migrate::Source::PicoTorrent,
+            pico_db,
+            options,
+            &std::sync::atomic::AtomicBool::new(false),
+            |_| {},
+        )
+    }
 
-        let scan = read_torrents(pico_db)?;
+    /// Migrate from another client, reporting progress and stopping on demand.
+    ///
+    /// # Cancelling
+    ///
+    /// `cancel` is checked between torrents. When it is set the run stops and
+    /// **rolls back**: every torrent THIS RUN added is removed again, and any
+    /// setting it overwrote is put back. Torrents that were already here are
+    /// untouched, and no downloaded file is ever deleted - the data belongs to
+    /// the other client's download and this migration did not create it.
+    ///
+    /// # The one thing rolling back cannot undo
+    ///
+    /// `options.purge` empties the current list before anything is added, so
+    /// that the "already here" check sees an empty session. Those torrents are
+    /// gone before the first one arrives and nothing here kept a copy of them,
+    /// so a cancelled run restores the additions but NOT the purge. The dialog
+    /// that offers purging has to say so: it is the only irreversible step in
+    /// the whole operation.
+    pub fn migrate_from(
+        &self,
+        source: crate::core::migrate::Source,
+        root: &std::path::Path,
+        options: ImportOptions,
+        cancel: &std::sync::atomic::AtomicBool,
+        mut on_progress: impl FnMut(crate::core::migrate::Progress),
+    ) -> Result<ImportReport> {
+        use crate::core::migrate::{Phase, Progress};
+        use crate::core::pico_import::ImportSource;
+        use std::sync::atomic::Ordering;
+
+        on_progress(Progress {
+            phase: Phase::Scanning,
+            done: 0,
+            total: 0,
+            current: source.label().to_string(),
+        });
+        let scan = source.scan(root, cancel)?;
+        let total = scan.entries.len();
 
         // Before anything is added, so the "already here" check below sees an
         // empty session and nothing is skipped for colliding with a torrent
@@ -1980,11 +2043,22 @@ impl Session {
         if options.purge {
             let all: Vec<String> = self.meta.lock().unwrap().keys().cloned().collect();
             purged = all.len();
-            for hash in all {
-                // Never the files. Purging is about this list, and someone who
-                // wanted the data gone would have removed the torrents
-                // themselves - this is not the place to guess otherwise.
-                self.remove(&hash, false);
+            // Reported in chunks. Without this the window went on saying
+            // "Reading ..." for the whole purge, because nothing between the
+            // scan and the first added torrent ever spoke - which on a big
+            // list looks exactly like a hang.
+            //
+            // Never the files. Purging is about this list, and someone who
+            // wanted the data gone would have removed the torrents themselves -
+            // this is not the place to guess otherwise.
+            for (i, chunk) in all.chunks(64).enumerate() {
+                on_progress(Progress {
+                    phase: Phase::Purging,
+                    done: (i * 64).min(all.len()),
+                    total: all.len(),
+                    current: String::new(),
+                });
+                self.remove_many(chunk, false);
             }
         }
 
@@ -1997,51 +2071,157 @@ impl Session {
             ..Default::default()
         };
 
-        for entry in scan.entries {
+        // Set here, not only inside the add loop below: a scan cancelled
+        // early returns no entries at all, so the loop would never run and the
+        // run would report itself as a clean import of nothing.
+        if cancel.load(Ordering::Relaxed) {
+            report.cancelled = true;
+        }
+
+        let cfg = Configuration::new(self.db.clone());
+        // The journal. Only what THIS run created, so rolling back cannot
+        // touch anything that was already here.
+        let mut added: Vec<String> = Vec::new();
+        let mut created_labels: Vec<i32> = Vec::new();
+        let mut changed_settings: Vec<(String, Option<String>)> = Vec::new();
+
+        for (i, entry) in scan.entries.into_iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                report.cancelled = true;
+                break;
+            }
+            on_progress(Progress {
+                phase: Phase::Adding,
+                done: i,
+                total,
+                current: entry.info_hash.clone(),
+            });
+
             if existing.contains(&entry.info_hash) {
                 report.skipped += 1;
                 continue;
             }
-            let source = match entry.source {
+            // A label by name belongs to the other client's database; resolve
+            // it here, creating one if this build has never seen that name.
+            let label_id = match entry.label_name.as_deref() {
+                Some(name) => Self::ensure_label(&cfg, name, &mut created_labels),
+                None => entry.label_id,
+            };
+            let source_kind = match entry.source {
                 ImportSource::TorrentBytes(bytes) => AddTorrentSource::TorrentFileBytes(bytes),
                 ImportSource::Magnet(uri) => AddTorrentSource::MagnetUri(uri),
             };
             match self.add_torrent(
-                source,
+                source_kind,
                 AddParams {
                     save_path: entry.save_path,
                     start_torrent: true,
                     only_files: None,
-                    label_id: entry.label_id,
+                    label_id,
                 },
             ) {
-                true => report.imported += 1,
+                true => {
+                    report.imported += 1;
+                    added.push(entry.info_hash);
+                }
                 // Refused before the engine saw it, so it is a failure this
                 // side can actually see and count.
                 false => report.failed += 1,
             }
         }
 
-        if options.settings {
-            let cfg = Configuration::new(self.db.clone());
-            match read_settings(pico_db) {
+        if options.settings && !report.cancelled {
+            match source.settings(root) {
                 Ok(pairs) => {
                     for (key, value) in pairs {
+                        // Snapshot BEFORE writing, so a later cancel can put
+                        // the old value back exactly - NULL included.
+                        let before = cfg.export_value(&key);
                         // A key this build does not have writes nothing, which
                         // is how "what is supported" stays a fact about the
                         // schema rather than a list to keep up to date.
                         if cfg.import_value(&key, &value) {
                             report.settings += 1;
+                            if let Some(before) = before {
+                                changed_settings.push((key, before));
+                            }
                         }
                     }
                 }
                 // The torrents are already in; a settings table that cannot be
                 // read is worth saying so about, not worth undoing them for.
-                Err(err) => tracing::warn!("could not read PicoTorrent settings: {err:#}"),
+                Err(err) => {
+                    tracing::warn!("could not read {} settings: {err:#}", source.label())
+                }
             }
         }
 
+        if report.cancelled {
+            // In chunks rather than one at a time, so the progress window
+            // keeps moving, and in chunks rather than one batch so it is not
+            // silent for the whole rollback.
+            for (i, chunk) in added.chunks(64).enumerate() {
+                on_progress(Progress {
+                    phase: Phase::Reverting,
+                    done: (i * 64).min(added.len()),
+                    total: added.len(),
+                    current: String::new(),
+                });
+                // `false`: the files stay. They were the other client's
+                // download and this run only pointed at them.
+                self.remove_many(chunk, false);
+            }
+            report.reverted = added.len();
+            report.imported = 0;
+            for (key, value) in &changed_settings {
+                cfg.restore_value(key, value.as_deref());
+            }
+            report.settings = 0;
+            // Labels this run invented now have nothing pointing at them.
+            for id in created_labels {
+                cfg.delete_label(id);
+            }
+        }
+
+        on_progress(Progress {
+            phase: Phase::Done,
+            done: total,
+            total,
+            current: String::new(),
+        });
         Ok(report)
+    }
+
+    /// The id of the label called `name`, creating it if this build has never
+    /// seen it.
+    ///
+    /// Matched case-insensitively: "Films" and "films" are one label to a
+    /// person, and importing both would split a collection in two.
+    fn ensure_label(cfg: &Configuration, name: &str, created: &mut Vec<i32>) -> Option<i32> {
+        let wanted = name.trim();
+        if wanted.is_empty() {
+            return None;
+        }
+        if let Some(found) = cfg
+            .get_labels()
+            .into_iter()
+            .find(|l| l.name.eq_ignore_ascii_case(wanted))
+        {
+            return Some(found.id);
+        }
+        cfg.upsert_label(&crate::core::configuration::Label {
+            id: -1,
+            name: wanted.to_string(),
+            ..Default::default()
+        });
+        // Read back to learn the id the database assigned.
+        let id = cfg
+            .get_labels()
+            .into_iter()
+            .find(|l| l.name.eq_ignore_ascii_case(wanted))
+            .map(|l| l.id)?;
+        created.push(id);
+        Some(id)
     }
 
     /// Record a newly added torrent in the database.
@@ -2309,6 +2489,31 @@ fn on_torrent_added(
     /// Also clears the app's own row for it - otherwise the next start would
     /// restore a torrent the engine no longer has.
     pub fn remove(&self, hash: &str, delete_files: bool) {
+        self.remove_one(hash, delete_files);
+        // Close the gap the removal left, otherwise the next added torrent
+        // (positioned at meta.len()) collides with an existing position and two
+        // rows show the same "#".
+        self.normalize_queue_positions();
+    }
+
+    /// Remove several torrents in one pass.
+    ///
+    /// The renumbering below is done ONCE, at the end, and that is the whole
+    /// reason this exists. `remove` renumbers every remaining torrent after
+    /// each one, which is right for a single removal and quadratic for a
+    /// list: rolling back a migration of ten thousand torrents was removing
+    /// them at roughly one every five seconds - hours of work for something
+    /// that added them in three seconds - because each removal rewrote the
+    /// positions of all ten thousand.
+    pub fn remove_many(&self, hashes: &[String], delete_files: bool) {
+        for hash in hashes {
+            self.remove_one(hash, delete_files);
+        }
+        self.normalize_queue_positions();
+    }
+
+    /// One removal, without renumbering the queue.
+    fn remove_one(&self, hash: &str, delete_files: bool) {
         if let Some(handle) = self.find(hash) {
             let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
             if let Err(err) = self.rt.block_on(self.rq().delete(id, delete_files)) {
@@ -2326,11 +2531,6 @@ fn on_torrent_added(
             )?;
             conn.execute("delete from torrent where info_hash = ?1", [hash])
         });
-
-        // Close the gap the removal left, otherwise the next added torrent
-        // (positioned at meta.len()) collides with an existing position and two
-        // rows show the same "#".
-        self.normalize_queue_positions();
     }
 
     /// Move a torrent within the queue.
@@ -3488,47 +3688,150 @@ fn on_torrent_added(
             }
         }
 
+        // One tracker row, from whichever swarm's stats were handed in.
+        // Lifted out of the tier loop because the v2 pass below builds the
+        // same row from a different stats map.
+        let tracker_row = |label: String, s: Option<&librqbit::TrackerStat>| -> TrackerRow {
+            if paused {
+                TrackerRow {
+                    kind: TrackerRowKind::Tracker,
+                    label,
+                    status: tr.i18n("tracker_paused"),
+                    seeders: None,
+                    leechers: None,
+                    fails: s.map(|s| s.fails).unwrap_or(0),
+                    next_announce: None,
+                }
+            } else {
+                TrackerRow {
+                    kind: TrackerRowKind::Tracker,
+                    label,
+                    // Engine emits the literal "Working" (translate it);
+                    // error strings pass through as-is.
+                    status: s
+                        .map(|s| s.status.clone())
+                        .filter(|s| !s.is_empty())
+                        .map(|st| {
+                            if st == "Working" {
+                                tr.i18n("tracker_working")
+                            } else {
+                                st
+                            }
+                        })
+                        .unwrap_or_else(|| tr.i18n("tracker_updating")),
+                    seeders: s.and_then(|s| s.seeders),
+                    leechers: s.and_then(|s| s.leechers),
+                    fails: s.map(|s| s.fails).unwrap_or(0),
+                    next_announce: s.and_then(|s| s.next_announce),
+                }
+            }
+        };
+
         for (i, tier) in tiers.iter().enumerate() {
             rows.push(TrackerRow::tier(format!("Tier #{i}")));
             for url in tier {
-                let s = stats.get(url);
-                let row = if paused {
-                    TrackerRow {
-                        kind: TrackerRowKind::Tracker,
-                        label: url.to_string(),
-                        status: tr.i18n("tracker_paused"),
-                        seeders: None,
-                        leechers: None,
-                        fails: s.map(|s| s.fails).unwrap_or(0),
-                        next_announce: None,
-                    }
-                } else {
-                    TrackerRow {
-                        kind: TrackerRowKind::Tracker,
-                        label: url.to_string(),
-                        // Engine emits the literal "Working" (translate it);
-                        // error strings pass through as-is.
-                        status: s
-                            .map(|s| s.status.clone())
-                            .filter(|s| !s.is_empty())
-                            .map(|st| {
-                                if st == "Working" {
-                                    tr.i18n("tracker_working")
-                                } else {
-                                    st
-                                }
-                            })
-                            .unwrap_or_else(|| tr.i18n("tracker_updating")),
-                        seeders: s.and_then(|s| s.seeders),
-                        leechers: s.and_then(|s| s.leechers),
-                        fails: s.map(|s| s.fails).unwrap_or(0),
-                        next_announce: s.and_then(|s| s.next_announce),
-                    }
-                };
-                rows.push(row);
+                rows.push(tracker_row(url.to_string(), stats.get(url)));
             }
         }
+
+        // A hybrid announces to the same trackers twice, once per info hash,
+        // and the engine files each announce under the hash it was made with
+        // (`make_peer_rx` keys the stats map by the hash it is given). The
+        // loop above asks only for the primary, so the v2 announce was
+        // happening, finding peers, and going unreported - which is what made
+        // the Trackers tab look like a hybrid only had a v1 swarm.
+        //
+        // Its own rows rather than added to the v1 figures: these are two
+        // different swarms, and a client that speaks both announces to both,
+        // so summing them would count it twice. The label is a protocol name,
+        // left untranslated like the DHT/LSD/PeX rows above it.
+        if let Some(secondary) = handle.secondary_info_hash() {
+            let v2: std::collections::HashMap<String, librqbit::TrackerStat> =
+                rq.tracker_stats_snapshot(secondary).into_iter().collect();
+            if !v2.is_empty() {
+                rows.push(TrackerRow::tier("BitTorrent v2".to_string()));
+                let mut urls: Vec<&String> = v2.keys().collect();
+                urls.sort();
+                for url in urls {
+                    rows.push(tracker_row(url.clone(), v2.get(url)));
+                }
+            }
+        }
+
         rows
+    }
+
+    /// Fold `total` pieces into at most `columns` fill levels, 0..=255.
+    ///
+    /// Separate from `piece_map` because this is the half that can be wrong in a
+    /// way nothing visible catches: an off-by-one in the range arithmetic drops
+    /// the last piece, or double-counts one, and the bar still looks plausible.
+    /// With fewer pieces than columns every piece gets exactly one column.
+    fn fold_pieces(total: usize, columns: usize, have: impl Fn(usize) -> bool) -> Vec<u8> {
+        let columns = columns.min(total);
+        if columns == 0 {
+            return Vec::new();
+        }
+        (0..columns)
+            .map(|i| {
+                // Proportional split, so the columns tile [0, total) exactly:
+                // each starts where the previous ended, and the last ends at
+                // `total` however the division rounds.
+                let start = i * total / columns;
+                let end = (i + 1) * total / columns;
+                let run = start..end.max(start + 1);
+                let len = run.len();
+                let held = run.filter(|&i| have(i)).count();
+                (held * 255 / len) as u8
+            })
+            .collect()
+    }
+
+    /// How much of each column of the pieces bar is downloaded, 0..=255.
+    ///
+    /// The Overview's bar is a MAP, not a progress bar: column *i* covers a
+    /// contiguous run of pieces and is filled by the fraction of that run we
+    /// hold, so a torrent downloading out of order looks like what it is.
+    /// `columns` is the width the bar has on screen, so when a torrent has
+    /// fewer pieces than that every piece gets its own column and nothing is
+    /// aggregated - which is the case the "exact amount of pieces" wording
+    /// cares about.
+    ///
+    /// Empty when there is no chunk tracker yet: a magnet has no piece count
+    /// until its metadata arrives, and drawing zero pieces as "none held"
+    /// would show a stripe of empty for a torrent that is merely unopened.
+    pub fn piece_map(&self, hash: &str, columns: usize) -> PieceMap {
+        if columns == 0 {
+            return PieceMap::default();
+        }
+        let Some(handle) = self.find(hash) else {
+            return PieceMap::default();
+        };
+        // Taken before the chunk-tracker lock and used inside it, so both
+        // layers describe the same moment rather than one a tick older.
+        let inflight: std::collections::HashSet<u32> = handle
+            .live()
+            .map(|l| l.inflight_piece_indices().into_iter().collect())
+            .unwrap_or_default();
+        // Reads under the torrent's lock, and works while paused as well as
+        // live - a paused torrent still has a map worth looking at.
+        handle
+            .with_chunk_tracker(|ct| {
+                let total = ct.get_lengths().total_pieces() as usize;
+                if total == 0 {
+                    return PieceMap::default();
+                }
+                // `as_slice` is padded out to a byte boundary; the bits past
+                // `total` are not pieces and must not be counted.
+                let bits = &ct.get_have_pieces().as_slice()[..total];
+                PieceMap {
+                    have: Self::fold_pieces(total, columns, |i| bits[i]),
+                    inflight: Self::fold_pieces(total, columns, |i| {
+                        inflight.contains(&(i as u32))
+                    }),
+                }
+            })
+            .unwrap_or_default()
     }
 
     /// Magnet URI for a torrent (used by the copy-magnet context menu item).
@@ -4976,5 +5279,205 @@ mod rarest_first_tests {
                 .map(|(_, p)| p);
             assert_eq!(got, want, "seed {seed} disagreed");
         }
+    }
+}
+
+#[cfg(test)]
+mod piece_map_tests {
+    use super::Session;
+
+    /// Every piece lands in exactly one column, and no column is empty.
+    /// An off-by-one here drops the last piece or double-counts one, and the
+    /// bar still looks plausible - which is why this is pinned rather than
+    /// eyeballed.
+    #[test]
+    fn the_columns_tile_the_pieces_exactly() {
+        for total in [1usize, 2, 3, 7, 64, 999, 100_003] {
+            for columns in [1usize, 2, 3, 10, 256, 1920] {
+                let seen = std::cell::RefCell::new(Vec::new());
+                let out = Session::fold_pieces(total, columns, |i| {
+                    seen.borrow_mut().push(i);
+                    false
+                });
+                assert_eq!(out.len(), columns.min(total), "total={total} columns={columns}");
+                let mut seen = seen.into_inner();
+                seen.sort_unstable();
+                assert_eq!(
+                    seen,
+                    (0..total).collect::<Vec<_>>(),
+                    "total={total} columns={columns}: pieces were skipped or visited twice"
+                );
+            }
+        }
+    }
+
+    /// The thing that makes it a map rather than a progress bar: a torrent
+    /// holding only its LAST piece must light the last column and nothing
+    /// else. A progress-bar implementation fills from the left and fails this.
+    #[test]
+    fn a_single_late_piece_lights_only_its_own_column() {
+        let total = 1000;
+
+        // One column per piece: that column is wholly lit.
+        let out = Session::fold_pieces(total, total, |i| i == total - 1);
+        assert_eq!(out[total - 1], 255, "the last column should be full");
+        assert!(
+            out[..total - 1].iter().all(|&v| v == 0),
+            "everything before it should be empty"
+        );
+
+        // Aggregated ten-to-one: the column is PARTLY lit - one piece of ten -
+        // and still the only one lit. Partial, not full, is the correct answer
+        // here; asserting 255 was this test's own first bug.
+        let out = Session::fold_pieces(total, 100, |i| i == total - 1);
+        assert_eq!(out.len(), 100);
+        assert_eq!(out[99], 255 / 10, "one piece of the last ten");
+        assert!(
+            out[..99].iter().all(|&v| v == 0),
+            "everything before it should be empty, got {:?}",
+            &out[..5]
+        );
+    }
+
+    /// Fewer pieces than columns is the "exact amount of pieces" case: one
+    /// column per piece, each wholly on or wholly off, never a partial shade.
+    #[test]
+    fn fewer_pieces_than_columns_gives_one_column_each() {
+        let out = Session::fold_pieces(5, 1920, |i| i % 2 == 0);
+        assert_eq!(out, vec![255, 0, 255, 0, 255]);
+    }
+
+    /// Aggregation reports the fraction held, so a half-done run reads as half
+    /// lit rather than as done or as empty.
+    #[test]
+    fn an_aggregated_column_reports_its_fraction() {
+        // 10 pieces into 2 columns; the first run is half held.
+        let out = Session::fold_pieces(10, 2, |i| i < 3);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0], (3 * 255 / 5) as u8, "3 of the first 5");
+        assert_eq!(out[1], 0);
+    }
+
+    /// Degenerate inputs must not panic or divide by zero - a magnet with no
+    /// metadata yet reports zero pieces every second until it resolves.
+    #[test]
+    fn nothing_to_draw_is_empty_not_a_panic() {
+        assert!(Session::fold_pieces(0, 100, |_| true).is_empty());
+        assert!(Session::fold_pieces(100, 0, |_| true).is_empty());
+        assert!(Session::fold_pieces(0, 0, |_| true).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod migrate_label_tests {
+    use super::Session;
+    use crate::core::configuration::{Configuration, Label};
+    use crate::core::database::Database;
+    use std::sync::Arc;
+
+    fn cfg() -> Configuration {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        db.migrate().unwrap();
+        Configuration::new(db)
+    }
+
+    /// A label the other client had and this one does not is created, and
+    /// recorded as ours - that record is what a rollback deletes.
+    #[test]
+    fn a_new_label_is_created_and_journalled() {
+        let cfg = cfg();
+        let mut created = Vec::new();
+
+        let id = Session::ensure_label(&cfg, "Films", &mut created).unwrap();
+        assert_eq!(created, vec![id], "the new label must be journalled");
+        assert!(cfg.get_labels().iter().any(|l| l.name == "Films"));
+    }
+
+    /// A label this build ALREADY has is reused, and must NOT be journalled:
+    /// rolling back a cancelled migration may not delete a label that was
+    /// here before it started.
+    #[test]
+    fn an_existing_label_is_reused_and_not_journalled() {
+        let cfg = cfg();
+        cfg.upsert_label(&Label {
+            id: -1,
+            name: "Music".to_string(),
+            ..Default::default()
+        });
+        let mine = cfg.get_labels()[0].id;
+
+        let mut created = Vec::new();
+        let id = Session::ensure_label(&cfg, "Music", &mut created).unwrap();
+
+        assert_eq!(id, mine);
+        assert!(created.is_empty(), "an existing label must not be rolled back");
+        assert_eq!(cfg.get_labels().len(), 1, "and must not be duplicated");
+    }
+
+    /// "Films" and "films" are one label to a person. Treating them as two
+    /// would split a collection in half on import.
+    #[test]
+    fn matching_ignores_case() {
+        let cfg = cfg();
+        let mut created = Vec::new();
+        let first = Session::ensure_label(&cfg, "Films", &mut created).unwrap();
+        let second = Session::ensure_label(&cfg, "FILMS", &mut created).unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(created.len(), 1, "the second lookup created nothing");
+        assert_eq!(cfg.get_labels().len(), 1);
+    }
+
+    /// Two torrents sharing a label must not create it twice.
+    #[test]
+    fn the_same_new_label_twice_is_created_once() {
+        let cfg = cfg();
+        let mut created = Vec::new();
+        Session::ensure_label(&cfg, "Linux ISOs", &mut created);
+        Session::ensure_label(&cfg, "Linux ISOs", &mut created);
+        assert_eq!(created.len(), 1);
+        assert_eq!(cfg.get_labels().len(), 1);
+    }
+
+    /// An empty or blank label is no label - creating one would leave an
+    /// unnamed entry in the sidebar that nobody can select or delete.
+    #[test]
+    fn a_blank_label_is_no_label() {
+        let cfg = cfg();
+        let mut created = Vec::new();
+        assert_eq!(Session::ensure_label(&cfg, "", &mut created), None);
+        assert_eq!(Session::ensure_label(&cfg, "   ", &mut created), None);
+        assert!(created.is_empty());
+        assert!(cfg.get_labels().is_empty());
+    }
+
+    /// Whitespace around a name is the other client's formatting, not part of
+    /// the name - " Films " and "Films" must land in the same label.
+    #[test]
+    fn surrounding_whitespace_is_not_part_of_the_name() {
+        let cfg = cfg();
+        let mut created = Vec::new();
+        let a = Session::ensure_label(&cfg, "Films", &mut created).unwrap();
+        let b = Session::ensure_label(&cfg, "  Films  ", &mut created).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(cfg.get_labels().len(), 1);
+    }
+
+    /// The settings snapshot a rollback depends on: an unset value must come
+    /// back unset, not as its default. Restoring the default would itself be
+    /// a change the user never asked for.
+    #[test]
+    fn a_setting_is_restored_exactly_including_unset() {
+        let cfg = cfg();
+        // A key this build really seeds, so this tests the storage not a typo.
+        let key = "default_save_path";
+        let before = cfg
+            .export_value(key)
+            .expect("default_save_path should be a setting this build has");
+        cfg.import_value(key, "\"xx-XX\"");
+        assert_eq!(cfg.export_value(key).unwrap().as_deref(), Some("\"xx-XX\""));
+
+        cfg.restore_value(key, before.as_deref());
+        assert_eq!(cfg.export_value(key).unwrap(), before, "not put back as it was");
     }
 }

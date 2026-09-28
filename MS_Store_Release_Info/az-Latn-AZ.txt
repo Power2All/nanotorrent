@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Azərbaycan dili (Azərbaycan) - Partner Center: Azerbaijani (Azerbaijan) (az-Latn-AZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent, Viktor Elofsson-un PicoTorrent proqramının Rust versiyasıdır.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiya 0.4.1
+Versiya 0.4.2
 
-- Parametr dəyişdirdikdə və ya yenidən başlatdıqda nisbətiniz artıq sıfırlanmır.
-- Əlavə video pleyerlər: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA və Elmedia Player. Yalnız sisteminizdə olanlar təklif olunur, tapılmasa harada olduğu soruşulur.
-- Trekerlər torrentin istədiyi kimi təbəqə üzrə elan olunur - ehtiyat treker ehtiyat olaraq qalır.
-- Torrentin silinməsi və trekerin dəyişdirilməsi və ya silinməsi əvvəlcə soruşur. Hər sual bir dəfə cavablandırılıb yadda saxlanıla bilər.
-- PicoTorrent-dən idxal əvvəlcə soruşur, cari siyahını təmizləyə və parametrləri gətirə bilər, nəyin gəldiyini, nəyin artıq olduğunu və nəyin alınmadığını bildirir.
-- Veb interfeys proqramı haqlayır: hər növ üçün nişanlı fayl ağacları, tablı Təfərrüatlar, öz sütununu ölçən nişan düymələri və üfüqi sürüşdürmə zolağı yoxdur.
-- Plaginlər öz nişanını daşıya bilər, Open və parametrlər düymələri isə həmişə göstərilir.
-- HTTPS üzərindən veb interfeys heç nəyi dəyişə bilmirdi - hər düymə rədd edilirdi.
-- Pəncərə daraldıqca alətlər paneli menyuya qatlanır, uzun başlıqlar kəsilir və fon xətaları tərcümə olunur.
+- Başqa müştəridən köçürün. Fayl > Buradan köçür mövcud qBittorrent, uTorrent, BitComet, Transmission və ya PicoTorrent quraşdırmasını oxuyur və torrentləri saxlama yolları və etiketləri ilə gətirir. Bu kompüterdə tapa bilməsə, harada axtaracağını soruşur, beləcə ehtiyat nüsxə də işləyir. Heç nə kopyalanmır və ya köçürülmür - fayllarınız olduğu yerdə qalır. Gedişatı göstərir, Ləğv et isə dayandırıb artıq əlavə etdiklərini geri qaytarır.
+- İcmaldakı Hissələr zolağı indi ikinci gedişat zolağı yox, torrentin xəritəsidir: hər hissə üçün bir sütun, həmin hissə mövcud olduqda işıqlanır, indi tələb olunan hissələr öz rəngində çəkilir.
+- Hibrid torrentin İzləyicilər tabı yalnız birincisini deyil, hər iki dəstəni göstərir.
+- Bildirişlər indi Store versiyasından görünür və orada heç nə edə bilməyən düymə artıq göstərilmir.
+- Veb interfeysində "392.91 MB" kimi ölçü artıq kəsilmir.
+- Slint 1.18.1-ə yeniləndi, asılılıq yeniləmələri ilə birlikdə.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -21,7 +21,12 @@ pub struct ImportEntry {
     pub info_hash: String,
     pub source: ImportSource,
     pub save_path: Option<String>,
+    /// PicoTorrent's own numeric label, which shares this build's schema.
     pub label_id: Option<i32>,
+    /// A label by NAME, which is all the other clients have. Resolved to an
+    /// id by the driver, creating the label if it is new - the id in
+    /// `label_id` means nothing in another program's database.
+    pub label_name: Option<String>,
 }
 
 /// Read every torrent PicoTorrent has stored in `db_path`.
@@ -61,7 +66,7 @@ pub fn read_settings(db_path: &Path) -> Result<Vec<(String, String)>> {
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
-pub fn read_torrents(db_path: &Path) -> Result<Scan> {
+pub fn read_torrents(db_path: &Path, cancel: &std::sync::atomic::AtomicBool) -> Result<Scan> {
     let conn = rusqlite::Connection::open_with_flags(
         db_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -89,17 +94,22 @@ pub fn read_torrents(db_path: &Path) -> Result<Scan> {
     let mut out = Vec::new();
     let mut unreadable = 0usize;
     for row in rows {
+        // Rows are cheap, but a database with thousands of them
+        // still rebuilds a .torrent per row.
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
         let (info_hash, magnet, resume, mut save_path, label_id) = row?;
         let magnet = magnet.filter(|m| !m.is_empty());
 
         // Prefer reconstructing a .torrent from the resume blob's info dict;
         // fall back to the magnet link if there's no embedded metadata.
         let source = match resume.as_deref().filter(|b| !b.is_empty()) {
-            Some(blob) => match bencode_dict_get(blob, b"info") {
+            Some(blob) => match crate::core::bencode::dict_get(blob, b"info") {
                 Some(info) => {
                     if save_path.as_deref().unwrap_or("").is_empty() {
-                        save_path = bencode_dict_get(blob, b"save_path")
-                            .and_then(bencode_string)
+                        save_path = crate::core::bencode::dict_get(blob, b"save_path")
+                            .and_then(crate::core::bencode::string)
                             .map(|b| String::from_utf8_lossy(b).into_owned());
                     }
                     // A minimal but valid metainfo: d 4:info <info> e.
@@ -120,6 +130,7 @@ pub fn read_torrents(db_path: &Path) -> Result<Scan> {
                 source,
                 save_path: save_path.filter(|s| !s.is_empty()),
                 label_id: label_id.filter(|&id| id > 0),
+                label_name: None,
             }),
             // No metadata and no magnet: the row names a torrent this cannot
             // reconstruct. Counted, so the user is told rather than left to
@@ -137,54 +148,6 @@ pub fn read_torrents(db_path: &Path) -> Result<Scan> {
 // Minimal bencode scanning. We work on raw byte spans (rather than decoding and
 // re-encoding) so the extracted `info` dict is byte-identical and keeps its
 // original info-hash.
-
-/// Index just past the bencoded value starting at `i`.
-fn bencode_skip(data: &[u8], i: usize) -> Option<usize> {
-    match data.get(i)? {
-        b'i' => {
-            let e = data[i + 1..].iter().position(|&b| b == b'e')?;
-            Some(i + 1 + e + 1)
-        }
-        b'l' | b'd' => {
-            let mut j = i + 1;
-            while *data.get(j)? != b'e' {
-                j = bencode_skip(data, j)?;
-            }
-            Some(j + 1)
-        }
-        b'0'..=b'9' => {
-            let colon = data[i..].iter().position(|&b| b == b':')? + i;
-            let len: usize = std::str::from_utf8(data.get(i..colon)?).ok()?.parse().ok()?;
-            Some(colon + 1 + len)
-        }
-        _ => None,
-    }
-}
-
-/// Raw bytes of `key`'s value in the top-level bencoded dict (`data` starts 'd').
-fn bencode_dict_get<'a>(data: &'a [u8], key: &[u8]) -> Option<&'a [u8]> {
-    if *data.first()? != b'd' {
-        return None;
-    }
-    let mut i = 1;
-    while *data.get(i)? != b'e' {
-        let kend = bencode_skip(data, i)?;
-        let k = bencode_string(data.get(i..kend)?)?;
-        let vend = bencode_skip(data, kend)?;
-        if k == key {
-            return data.get(kend..vend);
-        }
-        i = vend;
-    }
-    None
-}
-
-/// Decode a bencoded string token (`<len>:<bytes>`) into its raw bytes.
-fn bencode_string(data: &[u8]) -> Option<&[u8]> {
-    let colon = data.iter().position(|&b| b == b':')?;
-    let len: usize = std::str::from_utf8(&data[..colon]).ok()?.parse().ok()?;
-    data.get(colon + 1..colon + 1 + len)
-}
 
 #[cfg(test)]
 mod tests {
@@ -260,7 +223,7 @@ mod tests {
             ],
         );
 
-        let scan = read_torrents(&db.0).expect("scan");
+        let scan = read_torrents(&db.0, &std::sync::atomic::AtomicBool::new(false)).expect("scan");
         assert_eq!(scan.entries.len(), 2, "aaa and bbb are addable");
         assert_eq!(scan.unreadable, 2, "ccc and ddd have nothing to add from");
     }
@@ -295,27 +258,27 @@ mod tests {
 
     #[test]
     fn skip_values() {
-        assert_eq!(bencode_skip(b"i42e", 0), Some(4));
-        assert_eq!(bencode_skip(b"3:abc", 0), Some(5));
-        assert_eq!(bencode_skip(b"l3:abci7ee", 0), Some(10));
-        assert_eq!(bencode_skip(b"d3:key5:valuee", 0), Some(14));
+        assert_eq!(crate::core::bencode::skip(b"i42e", 0), Some(4));
+        assert_eq!(crate::core::bencode::skip(b"3:abc", 0), Some(5));
+        assert_eq!(crate::core::bencode::skip(b"l3:abci7ee", 0), Some(10));
+        assert_eq!(crate::core::bencode::skip(b"d3:key5:valuee", 0), Some(14));
     }
 
     #[test]
     fn dict_get_raw_span() {
         // { "info": { "length": 100, "name": "abc" }, "save_path": "/tmp/x" }
         let blob = b"d4:infod6:lengthi100e4:name3:abce9:save_path6:/tmp/xe";
-        let info = bencode_dict_get(blob, b"info").unwrap();
+        let info = crate::core::bencode::dict_get(blob, b"info").unwrap();
         assert_eq!(info, b"d6:lengthi100e4:name3:abce");
-        let sp = bencode_dict_get(blob, b"save_path").unwrap();
-        assert_eq!(bencode_string(sp).unwrap(), b"/tmp/x");
-        assert!(bencode_dict_get(blob, b"missing").is_none());
+        let sp = crate::core::bencode::dict_get(blob, b"save_path").unwrap();
+        assert_eq!(crate::core::bencode::string(sp).unwrap(), b"/tmp/x");
+        assert!(crate::core::bencode::dict_get(blob, b"missing").is_none());
     }
 
     #[test]
     fn reconstructed_torrent_wraps_info() {
         let blob = b"d4:infod6:lengthi5e4:name1:aee";
-        let info = bencode_dict_get(blob, b"info").unwrap();
+        let info = crate::core::bencode::dict_get(blob, b"info").unwrap();
         let mut torrent = Vec::new();
         torrent.extend_from_slice(b"d4:info");
         torrent.extend_from_slice(info);

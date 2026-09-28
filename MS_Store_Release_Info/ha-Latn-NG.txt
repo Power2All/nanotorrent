@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Hausa (Najeriya) - Partner Center: Hausa (Nigeria) (ha-Latn-NG)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent shi ne sigar Rust na PicoTorrent na Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sigar 0.4.1
+Sigar 0.4.2
 
-- Rabon ka ba ya sake komawa sifili idan ka canja saiti ko ka sake kunnawa.
-- Ƙarin na'urorin kunna bidiyo: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA da Elmedia Player. Wadanda ke kan na'urarka kawai ake bayarwa, kuma idan ba a sami ɗaya ba sai a tambaye ka inda yake.
-- Ana sanar da masu bin diddigi bisa matakai, kamar yadda torrent ɗin ya nema - mai bin diddigi na ajiya yana nan a matsayin ajiya.
-- Cire torrent, da canja ko cire mai bin diddigi, suna tambaya tukuna. Ana iya amsa kowace tambaya sau ɗaya a kuma tuna amsar.
-- Shigo da bayanai daga PicoTorrent yana tambaya tukuna, yana iya share jerin na yanzu ya kuma kawo saitunansa, kuma yana faɗin abin da ya zo, abin da ya riga ya kasance da abin da ya kasa.
-- Yanayin gidan yanar gizo ya kama manhajar: itatuwan fayiloli da alama ga kowane nau'i, Bayanai masu shafuka, maɓallan alama da ke auna ginshiƙinsu, kuma babu sandar gungurawa a kwance.
-- Plugins na iya ɗaukar alamarsu, kuma koyaushe ana nuna maɓallan Buɗe da na saiti.
-- Ta HTTPS yanayin gidan yanar gizo bai iya canza komai ba - an ƙi kowane maɓalli.
-- Sandar kayan aiki tana nannaɗewa cikin menu yayin da take ƙunci, ana yanke dogayen rubutu, kuma ana fassara kurakuran baya.
+- Ƙaura daga wani abokin ciniki. Fayil > Ƙaura daga yana karanta shigarwar qBittorrent, uTorrent, BitComet, Transmission ko PicoTorrent da ke akwai kuma yana kawo torrents tare da hanyoyin ajiyarsu da lakabinsu. Idan bai sami ɗaya a wannan kwamfutar ba, zai tambaye ka inda zai duba, don haka madadin ma yana aiki. Ba a kwafi ko matsar da komai - fayilolinku sun kasance inda suke. Yana nuna ci gaba, kuma Soke yana dakatar da shi ya mayar da abin da aka riga aka ƙara.
+- Sandar Guda a cikin Bayani yanzu taswirar torrent ce maimakon sandar ci gaba ta biyu: shafi ɗaya kowane guda, mai haske inda ake da wannan guda, tare da guduwar da ake nema yanzu a zana da launinsu.
+- Shafin Trackers na torrent haɗaɗɗe yana nuna ƙungiyoyi biyu, ba na farko kawai ba.
+- Sanarwa yanzu suna bayyana daga sigar Store, kuma maɓallin da ba zai iya yin komai a can ba ba a sake nuna shi.
+- A cikin hanyar sadarwar yanar gizo girman kamar "392.91 MB" ba a sake yanke shi ba.
+- An sabunta zuwa Slint 1.18.1, tare da sabunta dogaro.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Lietuvių (Lietuva) - Partner Center: Lithuanian (Lithuania) (lt-LT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent yra Viktoro Elofssono PicoTorrent perkėlimas į Rust kalbą.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.1
+Versija 0.4.2
 
-- Jūsų santykis nebeatstatomas į nulį, kai pakeičiate nuostatą arba paleidžiate iš naujo.
-- Daugiau vaizdo grotuvų: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA ir Elmedia Player. Siūlomi tik tie, kuriuos turi jūsų sistema, o jei kurio nors nerandama, paklausiama, kur jis yra.
-- Sekikliams pranešama pagal lygius, kaip prašė torentas - atsarginis sekiklis lieka atsarginiu.
-- Torento šalinimas, taip pat sekiklio keitimas ar šalinimas pirma paklausia. Į kiekvieną klausimą galima atsakyti kartą ir atsakymą įsiminti.
-- Importavimas iš PicoTorrent pirma paklausia, gali išvalyti dabartinį sąrašą ir perkelti jo nuostatas bei pasako, kas atkeliavo, kas jau buvo ir kas nepavyko.
-- Žiniatinklio sąsaja pasivijo programą: failų medžiai su piktograma kiekvienam tipui, kortelėmis suskirstyta Išsami informacija, piktogramų mygtukai, patys nustatantys savo stulpelio plotį, ir jokios horizontalios slinkties juostos.
-- Papildiniai gali turėti savo piktogramą, o jų Atverti ir nuostatų mygtukai rodomi visada.
-- Per HTTPS žiniatinklio sąsaja nieko negalėjo pakeisti - kiekvienas mygtukas buvo atmestas.
-- Siaurėjant įrankių juosta sulankstoma į meniu, ilgi užrašai sutrumpinami, o fono klaidos išverstos.
+- Perkėlimas iš kitos programos. Failas > Perkelti iš perskaito esamą qBittorrent, uTorrent, BitComet, Transmission arba PicoTorrent diegimą ir perkelia torentus kartu su įrašymo keliais bei etiketėmis. Jei tokio šiame kompiuteryje neranda, paklausia, kur ieškoti, tad tinka ir atsarginė kopija. Niekas nekopijuojama ir neperkeliama - jūsų failai lieka ten, kur buvo. Rodoma eiga, o Atsisakyti sustabdo ir grąžina tai, kas jau buvo pridėta.
+- Apžvalgos juosta Dalys dabar yra torento žemėlapis, o ne antra eigos juosta: po vieną stulpelį kiekvienai daliai, šviečiantį ten, kur dalis turima, o dabar prašomos dalys piešiamos sava spalva.
+- Hibridinio torento Sekikliai kortelė rodo abu spiečius, ne tik pirmąjį.
+- Pranešimai dabar rodomi ir iš Store versijos, o mygtukas, kuris ten nieko negalėjo, nebėra rodomas.
+- Žiniatinklio sąsajoje dydis, pvz., "392.91 MB", nebetrumpinamas.
+- Atnaujinta iki Slint 1.18.1 kartu su priklausomybių atnaujinimais.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

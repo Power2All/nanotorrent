@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: 简体中文 (中国) - app locale zh-CN - Partner Center: Chinese (Simplified) (zh-Hans)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-版本 0.4.1
+版本 0.4.2
 
-- 更改设置或重新启动后，分享率不会再归零。
-- 更多视频播放器：Media Player、MPC-HC、PotPlayer、SMPlayer、Celluloid、IINA 和 Elmedia Player。只列出你系统中已有的，若某个找不到，会询问它在哪里。
-- 按种子的要求逐层向 Tracker 通告 - 备用 Tracker 依然作为备用保留。
-- 删除种子，以及修改或删除 Tracker，都会先询问。每个问题只需回答一次，答案可以记住。
-- 从 PicoTorrent 导入会先询问，可以清空当前列表并带入它的设置，并说明哪些导入了、哪些已存在、哪些失败了。
-- 网页界面追上了应用：按类型显示图标的文件树、分页的详细信息、自行决定列宽的图标按钮，横向滚动条也没有了。
-- 插件可以带有自己的图标，其打开按钮和设置按钮始终显示。
-- 在 HTTPS 下网页界面无法更改任何内容，每个按钮都被拒绝。
-- 变窄时工具栏折入菜单，过长的文字会被截断，后台错误也已翻译。
+- 从其他客户端迁移。文件 > 迁移自 会读取已有的 qBittorrent、uTorrent、BitComet、Transmission 或 PicoTorrent 安装，把种子连同保存路径和标签一起接过来。如果在这台计算机上找不到，它会询问去哪里找，因此备份同样可用。不复制也不移动任何内容——你的文件仍在原处。迁移过程中会显示进度，取消会停止并把已添加的内容撤回。
+- 概览中的分块条现在是种子的地图，而不是第二条进度条：每个分块一列，已拥有的分块处点亮，正在请求的分块以自己的颜色绘制。
+- 混合种子的 Tracker 标签页会显示两个群，而不只是第一个。
+- 商店版本现在也会弹出通知，在那里本就无法生效的一个按钮不再显示。
+- 在网页界面中，像 "392.91 MB" 这样的大小不再被截断。
+- 已更新至 Slint 1.18.1，并同步更新了依赖项。
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

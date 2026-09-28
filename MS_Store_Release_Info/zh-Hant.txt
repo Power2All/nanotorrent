@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: 繁體中文 (台灣) - app locale zh-TW - Partner Center: Chinese (Traditional) (zh-Hant)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-版本 0.4.1
+版本 0.4.2
 
-- 變更設定或重新啟動後，分享率不會再歸零。
-- 更多影片播放器：Media Player、MPC-HC、PotPlayer、SMPlayer、Celluloid、IINA 和 Elmedia Player。只列出你系統中已有的，若某個找不到，會詢問它在哪裡。
-- 依種子的要求逐層向 Tracker 通告 - 備用 Tracker 仍作為備用保留。
-- 刪除種子，以及修改或刪除 Tracker，都會先詢問。每個問題只需回答一次，答案可以記住。
-- 從 PicoTorrent 匯入會先詢問，可以清空目前清單並帶入它的設定，並說明哪些匯入了、哪些已存在、哪些失敗了。
-- 網頁介面追上了應用程式：依類型顯示圖示的檔案樹、分頁的詳細資料、自行決定欄寬的圖示按鈕，橫向捲軸也沒有了。
-- 外掛可以帶有自己的圖示，其開啟按鈕與設定按鈕一律顯示。
-- 在 HTTPS 下網頁介面無法變更任何內容，每個按鈕都被拒絕。
-- 變窄時工具列收入選單，過長的文字會被截斷，背景錯誤也已翻譯。
+- 從其他用戶端移轉。檔案 > 移轉自 會讀取既有的 qBittorrent、uTorrent、BitComet、Transmission 或 PicoTorrent 安裝，將種子連同儲存路徑與標籤一併接過來。若在這台電腦上找不到，它會詢問要去哪裡找，因此備份同樣可用。不會複製也不會移動任何內容——您的檔案仍在原處。移轉過程會顯示進度，取消會停止並將已新增的內容撤回。
+- 概覽中的分塊列現在是種子的地圖，而不是第二條進度列：每個分塊一欄，已擁有的分塊處點亮，正在請求的分塊以自己的顏色繪製。
+- 混合種子的 Tracker 分頁會顯示兩個群，而不只是第一個。
+- 市集版本現在也會顯示通知，在那裡原本就無法生效的按鈕不再顯示。
+- 在網頁介面中，像 "392.91 MB" 這樣的大小不再被截斷。
+- 已更新至 Slint 1.18.1，並同步更新相依套件。
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

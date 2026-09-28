@@ -142,6 +142,32 @@ impl Configuration {
     /// The value is stored as-is. PicoTorrent's `setting` table holds JSON in
     /// the same column for the same reason this one does, so a value copied
     /// across is already in the right shape.
+    /// The value column exactly as stored, for a migration that may have to
+    /// put it back. `None` means the key does not exist here at all; `Some(None)`
+    /// means it exists and is unset, which is NOT the same as its default -
+    /// restoring the default would be a change of its own.
+    pub fn export_value(&self, key: &str) -> Option<Option<String>> {
+        self.db
+            .with(|conn| {
+                conn.query_row("SELECT value FROM setting WHERE key = ?1", [key], |row| {
+                    row.get::<_, Option<String>>(0)
+                })
+                .optional()
+            })
+            .ok()
+            .flatten()
+    }
+
+    /// Put a value back exactly as `export_value` found it, NULL included.
+    pub fn restore_value(&self, key: &str, value: Option<&str>) {
+        let _ = self.db.with(|conn| {
+            conn.execute(
+                "UPDATE setting SET value = ?1 WHERE key = ?2",
+                rusqlite::params![value, key],
+            )
+        });
+    }
+
     pub fn import_value(&self, key: &str, json: &str) -> bool {
         self.db
             .with(|conn| {

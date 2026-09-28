@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Eesti (Eesti) - Partner Center: Estonian (Estonia) (et-EE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioon 0.4.1
+Versioon 0.4.2
 
-- Sinu suhtarv ei lähe enam nulli, kui muudad mõnda sätet või taaskäivitad.
-- Rohkem videomängijaid: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA ja Elmedia Player. Pakutakse ainult neid, mis su süsteemis olemas on, ja kui mõnda ei leita, küsitakse, kus see asub.
-- Jälgijatele teatatakse tasemete kaupa, nagu torrent palus - varujälgija jääb varuks.
-- Torrenti eemaldamine ning jälgija muutmine või eemaldamine küsivad enne üle. Igale küsimusele saab vastata korra ja vastus jäetakse meelde.
-- PicoTorrentist importimine küsib enne üle, võib praeguse loendi tühjendada ja sätted kaasa tuua ning ütleb, mis saabus, mis oli juba olemas ja mis ebaõnnestus.
-- Veebiliides jõuab rakendusele järele: failipuud igale tüübile oma ikooniga, sakkidega Üksikasjad, ikooninupud, mis ise oma veeru laiuse määravad, ja rõhtkerimisriba pole enam.
-- Pluginad võivad kaasa tuua oma ikooni ning nende Ava- ja sättenupp on alati näha.
-- HTTPS-i kaudu ei saanud veebiliides midagi muuta - iga nupp lükati tagasi.
-- Tööriistariba voldib kitsenedes menüüsse, pikad pealdised lõigatakse ja taustavead on tõlgitud.
+- Migreerimine teisest kliendist. Fail > Migreeri rakendusest loeb olemasolevat qBittorrenti, uTorrenti, BitCometi, Transmissioni või PicoTorrenti paigaldust ja toob torrentid üle koos salvestusteede ja siltidega. Kui ta seda arvutist ei leia, küsib ta, kust vaadata - nii toimib ka varukoopia. Midagi ei kopeerita ega teisaldata - teie failid jäävad sinna, kus nad on. Edenemist näidatakse ja Loobu peatab ning paneb juba lisatu tagasi.
+- Tükkide riba Ülevaates on nüüd torrenti kaart, mitte teine edenemisriba: üks veerg tüki kohta, valgustatud seal, kus tükk olemas on, ning praegu küsitavad tükid on omaette värvi.
+- Hübriidtorrenti Trackerite kaart näitab mõlemat parve, mitte ainult esimest.
+- Teated ilmuvad nüüd ka Store'i versioonist ja nuppu, mis seal midagi teha ei saanud, enam ei näidata.
+- Veebiliideses ei lõigata suurust nagu "392.91 MB" enam ära.
+- Uuendatud Slint 1.18.1 peale koos sõltuvuste uuendustega.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

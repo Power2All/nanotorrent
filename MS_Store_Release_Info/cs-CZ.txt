@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Čeština (Česko) - Partner Center: Czech (Czechia) (cs-CZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verze 0.4.1
+Verze 0.4.2
 
-- Váš poměr se už neresetuje při změně nastavení ani po restartu.
-- Další přehrávače: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA a Elmedia Player. Nabízejí se jen ty, které váš systém má, a když se některý nenajde, zeptáme se, kde je.
-- Trackery se oznamují po úrovních, jak torrent žádal - záložní tracker zůstává záložní.
-- Odebrání torrentu i změna nebo odebrání trackeru se nejdřív zeptají. Na každou otázku lze odpovědět jednou a zapamatovat si to.
-- Import z PicoTorrentu se nejdřív zeptá, umí vyčistit současný seznam a přenést nastavení, a řekne, co dorazilo, co tu už bylo a co selhalo.
-- Webové rozhraní dohání aplikaci: stromy souborů s ikonou podle typu, Podrobnosti s kartami, ikonová tlačítka, která si určí šířku sloupce, a žádný vodorovný posuvník.
-- Zásuvné moduly mohou nést vlastní ikonu a jejich tlačítka Open a nastavení jsou vždy vidět.
-- Přes HTTPS nemohlo webové rozhraní nic změnit - každé tlačítko bylo odmítnuto.
-- Panel nástrojů se při zúžení skládá do nabídky, dlouhé popisky se zkracují a chyby na pozadí jsou přeložené.
+- Migrace z jiného klienta. Soubor > Migrovat z přečte stávající instalaci qBittorrent, uTorrent, BitComet, Transmission nebo PicoTorrent a přenese torrenty i s cestami pro ukládání a štítky. Pokud žádnou v tomto počítači nenajde, zeptá se, kde hledat, takže funguje i záloha. Nic se nekopíruje ani nepřesouvá - vaše soubory zůstávají tam, kde jsou. Ukazuje průběh a Zrušit jej zastaví a vrátí zpět to, co už přidal.
+- Pruh Části v Přehledu je nyní mapa torrentu místo druhého ukazatele průběhu: jeden sloupec na část, rozsvícený tam, kde část máte, a části právě požadované jsou vykresleny vlastní barvou.
+- Karta Trackery hybridního torrentu zobrazuje oba roje, nejen první.
+- Oznámení se nyní zobrazují i ve verzi ze Store a tlačítko, které tam nemohlo nic udělat, se už nezobrazuje.
+- Ve webovém rozhraní se velikost jako "392.91 MB" už nezkracuje.
+- Aktualizováno na Slint 1.18.1 spolu s aktualizacemi závislostí.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

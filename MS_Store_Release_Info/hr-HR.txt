@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Hrvatski (Hrvatska) - Partner Center: Croatian (Croatia) (hr-HR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent je prijenos PicoTorrenta Viktora Elofssona na Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzija 0.4.1
+Verzija 0.4.2
 
-- Vaš omjer više se ne poništava kad promijenite postavku ili ponovno pokrenete program.
-- Više videoreproduktora: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA i Elmedia Player. Nude se samo oni koje vaš sustav ima, a ako se neki ne pronađe, pitat će vas gdje je.
-- Pratitelji se najavljuju po razinama, kako je torrent tražio - pričuvni pratitelj ostaje pričuva.
-- Uklanjanje torrenta te izmjena ili uklanjanje pratitelja najprije pitaju. Na svako se pitanje može odgovoriti jednom i odgovor se pamti.
-- Uvoz iz PicoTorrenta najprije pita, može isprazniti trenutačni popis i prenijeti njegove postavke te kaže što je stiglo, što je već bilo ovdje i što nije uspjelo.
-- Web sučelje sustiglo je aplikaciju: stabla datoteka s ikonom za svaku vrstu, Pojedinosti u karticama, ikonski gumbi koji sami određuju širinu svog stupca i nema vodoravne trake za pomicanje.
-- Dodaci mogu nositi vlastitu ikonu, a njihovi gumbi Otvori i postavke uvijek su prikazani.
-- Preko HTTPS-a web sučelje nije moglo ništa promijeniti - svaki gumb bio je odbijen.
-- Alatna traka sklapa se u izbornik kako se sužava, dugi natpisi se skraćuju, a pozadinske pogreške su prevedene.
+- Migracija s drugog klijenta. Datoteka > Migriraj iz čita postojeću instalaciju qBittorrent, uTorrent, BitComet, Transmission ili PicoTorrent i prenosi torrente zajedno s putanjama spremanja i oznakama. Ako je ne pronađe na ovom računalu, pita gdje tražiti, pa radi i sigurnosna kopija. Ništa se ne kopira niti premješta - vaše datoteke ostaju gdje jesu. Prikazuje napredak, a Odustani ga zaustavlja i vraća ono što je već dodano.
+- Traka Dijelovi u Pregledu sada je karta torrenta umjesto druge trake napretka: jedan stupac po dijelu, osvijetljen gdje je taj dio dostupan, a dijelovi koji se upravo traže crtaju se vlastitom bojom.
+- Kartica Pratitelji hibridnog torrenta prikazuje oba roja, ne samo prvi.
+- Obavijesti se sada pojavljuju iz verzije iz Trgovine, a gumb koji ondje nije mogao ništa više se ne prikazuje.
+- U web sučelju veličina poput "392.91 MB" više se ne skraćuje.
+- Ažurirano na Slint 1.18.1 uz niz ažuriranja ovisnosti.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

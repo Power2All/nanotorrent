@@ -23,10 +23,12 @@ import { CreateTorrentDialog } from "create.slint";
 import { ClosePromptDialog } from "closeprompt.slint";
 import { DbPromptDialog } from "dbprompt.slint";
 import { PicoImportDialog } from "picoimport.slint";
+import { MigrateProgressDialog } from "migrateprogress.slint";
 import { RemoveDialog } from "remove.slint";
 import { PluginWindow, PluginRowItem, PluginButton } from "plugin.slint";
 export { PreferencesDialog, AboutDialog, CliHelpDialog, UpdateDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
 export { PicoImportDialog }
+export { MigrateProgressDialog }
 export { DbPromptDialog }
 export { PluginWindow, PluginRowItem, PluginButton }
 
@@ -1470,7 +1472,17 @@ export component MainWindow inherits Window {
     in property <string> d-peers: "-";
     in property <string> d-added: "-";
     in property <string> d-completed: "-";
-    in property <float> d-progress: 0;
+    // The pieces MAP - one column per piece, lit where that piece is held.
+    in property <image> d-pieces;
+    // The same columns again, lit where a piece is being requested from a
+    // peer right now. A separate layer rather than a third colour baked into
+    // one image, so both tints stay in the markup with the rest of the theme.
+    in property <image> d-pieces-inflight;
+    // Reported by the bar itself below, so the Rust side can fold the bitfield
+    // into exactly one column per pixel: building a coarser image and letting
+    // it stretch would smear a single piece across its neighbours, or drop it.
+    // A root binding cannot reach a child's id, so the bar pushes it out.
+    in-out property <length> d-pieces-width;
 
     // Detail tabs. Only the visible one is refreshed - see current-tab.
     in property <[FileEntryRow]> detail-files;
@@ -1910,10 +1922,19 @@ export component MainWindow inherits Window {
     in-out property <bool> filters-open;
     in-out property <bool> labels-open;
     in-out property <bool> theme-open;
+    /// File > Migrate from, expanded in place like View > Theme.
+    in-out property <bool> migrate-open;
     /// "Import from PicoTorrent...", or empty when no PicoTorrent database is
     /// on this machine - in which case the row is not drawn at all. Built in
     /// Rust: the string takes the application name as an argument.
     in property <string> import-label;
+    /// The clients that can be migrated from, in `Source::ALL` order, and
+    /// whether a profile for each was found. Built in Rust: these are product
+    /// names, never translated.
+    in property <[string]> migrate-names;
+    in property <[bool]> migrate-found;
+    /// A client was picked, by its index in `migrate-names`.
+    callback migrate(int);
     /// Which menu-bar dropdown is open: 0 none, 1 File, 2 View, 3 Help.
     in-out property <int> open-menu;
     changed open-menu => {
@@ -1922,6 +1943,7 @@ export component MainWindow inherits Window {
         root.filters-open = false;
         root.labels-open = false;
         root.theme-open = false;
+        root.migrate-open = false;
     }
     in-out property <bool> ctx-labels-open;
     in-out property <bool> ctx-queue-open;
@@ -2627,16 +2649,41 @@ export component MainWindow inherits Window {
                     spacing: 8px;
 
                     Text { text: L.s(L.revision, "pieces"); font-weight: 700; font-size: 13px; }
-                    Rectangle {
+                    pieces-bar := Rectangle {
                         height: 18px;
                         background: #00000022;
                         border-radius: 3px;
-                        Rectangle {
-                            x: 0;
-                            width: parent.width * root.d-progress;
-                            height: parent.height;
-                            background: #2f6fb5;
-                            border-radius: 3px;
+                        clip: true;
+                        init => { root.d-pieces-width = self.width; }
+                        changed width => { root.d-pieces-width = self.width; }
+                        // A map, not a progress bar. Each column is one piece
+                        // (or, once there are more pieces than pixels, the
+                        // fraction held of the run it covers), so a torrent
+                        // downloading out of order looks like what it is.
+                        //
+                        // An image rather than a row of rectangles because a
+                        // torrent can have six figures of pieces; `pixelated`
+                        // keeps a lone held piece a crisp line instead of
+                        // letting interpolation fade it out.
+                        Image {
+                            width: 100%;
+                            height: 100%;
+                            source: root.d-pieces;
+                            image-fit: fill;
+                            image-rendering: pixelated;
+                            colorize: #2f6fb5;
+                        }
+                        // Drawn over the held layer: a piece in flight is not
+                        // held yet, so the two never claim the same piece -
+                        // they can only share a column once one column covers
+                        // several pieces.
+                        Image {
+                            width: 100%;
+                            height: 100%;
+                            source: root.d-pieces-inflight;
+                            image-fit: fill;
+                            image-rendering: pixelated;
+                            colorize: #d9883a;
                         }
                     }
 
@@ -3310,13 +3357,28 @@ export component MainWindow inherits Window {
                 MenuRow { label: L.s(L.revision, "amp_add_torrent"); activated => { root.action("add-torrent"); root.open-menu = 0; } }
                 MenuRow { label: L.s(L.revision, "add_magnet_link_s"); activated => { root.action("add-magnet"); root.open-menu = 0; } }
                 MenuRow { label: L.s(L.revision, "create_torrent"); activated => { root.action("create"); root.open-menu = 0; } }
-                // Only when there is something to import from. The label is
-                // built in Rust because its string takes the application name
-                // as an argument, and `L.s` passes none.
-                if root.import-label != "": MenuSep { }
-                if root.import-label != "": MenuRow {
-                    label: root.import-label;
-                    activated => { root.action("import-pico"); root.open-menu = 0; }
+                MenuSep { }
+                MenuRow {
+                    label: L.s(L.revision, "migrate_from") + "  " + (root.migrate-open ? "-" : "+");
+                    activated => { root.migrate-open = !root.migrate-open; }
+                }
+                // Expanded in place rather than as a flyout, matching
+                // View > Theme - one submenu idiom in the whole menu bar.
+                Rectangle {
+                    height: root.migrate-open ? root.migrate-names.length * 24px : 0px;
+                    clip: true;
+                    VerticalLayout {
+                        for name[i] in root.migrate-names: MenuRow {
+                            // Every client stays selectable, including one
+                            // with no profile in the usual place: that opens a
+                            // folder picker instead of refusing, which is how
+                            // a backup - or an install somewhere unusual -
+                            // gets imported. The ellipsis is the usual promise
+                            // that a dialog follows.
+                            label: "    " + name + (root.migrate-found[i] ? "" : "...");
+                            activated => { root.migrate(i); root.open-menu = 0; }
+                        }
+                    }
                 }
                 MenuSep { }
                 MenuRow { label: L.s(L.revision, "amp_exit"); activated => { root.action("exit"); root.open-menu = 0; } }

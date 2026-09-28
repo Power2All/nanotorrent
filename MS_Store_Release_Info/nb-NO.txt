@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Norsk bokmål (Norge) - Partner Center: Norwegian (Bokmal) (nb-NO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent er en Rust-portering av PicoTorrent av Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versjon 0.4.1
+Versjon 0.4.2
 
-- Forholdstallet ditt nullstilles ikke lenger når du endrer en innstilling eller starter på nytt.
-- Flere videospillere: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA og Elmedia Player. Bare de systemet ditt har blir tilbudt, og finnes ikke en av dem, blir du spurt hvor den er.
-- Sporere varsles etter nivå, slik torrenten ba om - en reservesporer blir værende reserve.
-- Å fjerne en torrent, og å endre eller fjerne en sporer, spør først. Hvert spørsmål kan besvares én gang og svaret huskes.
-- Import fra PicoTorrent spør først, kan tømme den gjeldende listen og ta med innstillingene, og forteller hva som kom, hva som allerede var her og hva som mislyktes.
-- Nettgrensesnittet har tatt igjen appen: filtrær med et ikon per type, Detaljer i faner, ikonknapper som bestemmer bredden på sin egen kolonne, og ingen vannrett rullefelt.
-- Utvidelser kan ha sitt eget ikon, og Åpne-knappen og innstillingsknappen deres vises alltid.
-- Over HTTPS kunne nettgrensesnittet ikke endre noe - hver knapp ble avvist.
-- Verktøylinjen brettes inn i menyen når den blir smalere, lange tekster kuttes, og bakgrunnsfeil er oversatt.
+- Migrer fra en annen klient. Fil > Migrer fra leser en eksisterende qBittorrent-, uTorrent-, BitComet-, Transmission- eller PicoTorrent-installasjon og henter torrentene med lagringsstier og etiketter. Finner den ingen på denne datamaskinen, spør den hvor den skal lete, så en sikkerhetskopi fungerer også. Ingenting kopieres eller flyttes - filene dine blir der de er. Den viser framdrift, og Avbryt stopper den og legger tilbake det som allerede var lagt til.
+- Deler-linjen i Oversikt er nå et kart over torrenten i stedet for enda en framdriftslinje: én kolonne per del, opplyst der delen finnes, og delene som hentes akkurat nå tegnes i sin egen farge.
+- Sporere-fanen for en hybridtorrent viser begge svermene, ikke bare den første.
+- Varsler vises nå fra Store-versjonen, og en knapp som ikke kunne gjøre noe der vises ikke lenger.
+- I webgrensesnittet blir en størrelse som "392.91 MB" ikke lenger avkortet.
+- Oppdatert til Slint 1.18.1, med en runde avhengighetsoppdateringer.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

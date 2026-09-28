@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Filipino (Pilipinas) - Partner Center: Filipino (Philippines) (fil-PH)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ Ang NanoTorrent ay bersyong Rust ng PicoTorrent ni Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Bersyon 0.4.1
+Bersyon 0.4.2
 
-- Hindi na nare-reset ang iyong ratio kapag nagpalit ka ng setting o nag-restart.
-- Mas maraming video player: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA at Elmedia Player. Ang nasa sistema mo lang ang inaalok, at kung hindi matagpuan ang isa, tatanungin ka kung nasaan ito.
-- Ang mga tracker ay ina-announce ayon sa tier, gaya ng hiningi ng torrent - ang backup na tracker ay nananatiling backup.
-- Ang pag-alis ng torrent, at ang pagbabago o pag-alis ng tracker, ay nagtatanong muna. Bawat tanong ay masasagot nang isang beses at maaalala.
-- Ang pag-import mula sa PicoTorrent ay nagtatanong muna, kayang linisin ang kasalukuyang listahan at dalhin ang mga setting nito, at sinasabi kung ano ang dumating, ano ang nandito na at ano ang nabigo.
-- Naabutan na ng web interface ang app: mga file tree na may icon bawat uri, Details na may mga tab, mga icon button na sumusukat ng sariling column, at walang pahalang na scrollbar.
-- Maaaring magdala ang mga plugin ng sariling icon, at laging nakikita ang kanilang Buksan at mga pindutan ng setting.
-- Sa HTTPS ay walang mababago ang web interface - tinatanggihan ang bawat pindutan.
-- Nakatiklop sa menu ang toolbar habang umiipit, pinuputol ang mahahabang caption, at isinasalin na ang mga error sa likod.
+- Mag-migrate mula sa ibang kliyente. File > Mag-migrate mula sa ay nagbabasa ng umiiral na qBittorrent, uTorrent, BitComet, Transmission o PicoTorrent at dinadala ang mga torrent kasama ang save path at label nila. Kung wala itong makita sa computer na ito, tatanungin ka nito kung saan titingin, kaya gumagana rin ang backup. Walang kinokopya o inililipat - nananatili ang iyong mga file kung nasaan sila. Nagpapakita ito ng progreso, at pinapahinto ito ng Kanselahin at ibinabalik ang naidagdag na.
+- Ang Pieces bar sa Overview ay mapa na ngayon ng torrent sa halip na pangalawang progress bar: isang kolum bawat piraso, nakailaw kung nasa iyo ang pirasong iyon, at ang mga pirasong hinihingi ngayon ay may sariling kulay.
+- Ang Trackers tab ng hybrid na torrent ay nagpapakita ng parehong swarm, hindi lang ang una.
+- Lumalabas na ngayon ang mga notification mula sa bersyon ng Store, at hindi na ipinapakita ang isang button na wala namang magagawa doon.
+- Sa web interface, hindi na pinuputol ang sukat na tulad ng "392.91 MB".
+- Na-update sa Slint 1.18.1, kasama ang ilang update sa dependency.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Euskara (Espainia) - Partner Center: Basque (Spain) (eu-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent Viktor Elofsson-en PicoTorrent-en Rust portua da.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-0.4.1 bertsioa
+0.4.2 bertsioa
 
-- Zure ratioa ez da berrezartzen ezarpen bat aldatzean edo berrabiaraztean.
-- Bideo-erreproduzitzaile gehiago: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA eta Elmedia Player. Sisteman dituzunak baino ez dira eskaintzen, eta bat aurkitzen ez bada, non dagoen galdetuko zaizu.
-- Aztarnariei mailaka jakinarazten zaie, torrentak eskatu bezala: ordezko aztarnari bat ordezko gisa gordetzen da.
-- Torrent bat kentzeak, eta aztarnari bat aldatzeak edo kentzeak, lehenik galdetzen dute. Galdera bakoitzari behin erantzun eta gogoratu daiteke.
-- PicoTorrentetik inportatzeak lehenik galdetzen du, uneko zerrenda hustu eta bere ezarpenak ekar ditzake, eta zer iritsi den, zer zegoen jada eta zerk huts egin duen esaten du.
-- Web interfazea aplikazioarekin parekatu da: fitxategi-zuhaitzak mota bakoitzeko ikono batekin, Xehetasunak fitxatan, beren zutabea neurtzen duten ikono-botoiak, eta alboko korritze-barrarik ez.
-- Pluginek beren ikonoa eraman dezakete, eta haien Ireki eta ezarpen botoiak beti erakusten dira.
-- HTTPS bidez web interfazeak ezin zuen ezer aldatu: botoi bakoitza baztertzen zen.
-- Tresna-barra menuan tolesten da estutu ahala, epigrafe luzeak moztu egiten dira eta atzeko planoko erroreak itzulita daude.
+- Migratu beste bezero batetik. Fitxategia > Migratu hemendik dagoen qBittorrent, uTorrent, BitComet, Transmission edo PicoTorrent instalazio bat irakurtzen du eta torrentak ekartzen ditu beren gordetze-bideekin eta etiketekin. Ordenagailu honetan aurkitzen ez badu, non begiratu galdetzen du, beraz babeskopia batek ere balio du. Ez da ezer kopiatzen edo mugitzen - zure fitxategiak dauden lekuan gelditzen dira. Aurrerapena erakusten du, eta Utzi aukerak gelditu eta gehitutakoa itzultzen du.
+- Ikuspegi orokorreko Zatiak barra orain torrentaren mapa da, bigarren aurrerapen-barra bat izan beharrean: zutabe bat zati bakoitzeko, zati hori dagoen tokian piztuta, eta orain eskatzen ari diren zatiak beren kolorez marraztuta.
+- Torrent hibrido baten Aztarnariak fitxak bi multzoak erakusten ditu, ez lehena bakarrik.
+- Jakinarazpenak Dendako bertsiotik agertzen dira orain, eta han ezer egin ezin zuen botoi bat ez da jada erakusten.
+- Web interfazean "392.91 MB" bezalako tamaina bat ez da jada mozten.
+- Slint 1.18.1 bertsiora eguneratua, mendekotasunen eguneraketa sorta batekin.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

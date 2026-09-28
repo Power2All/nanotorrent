@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Português (Portugal) - Partner Center: Portuguese (Portugal) (pt-PT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ O NanoTorrent é uma adaptação em Rust do PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versão 0.4.1
+Versão 0.4.2
 
-- A sua proporção deixou de ser reposta a zero quando muda uma definição ou reinicia.
-- Mais leitores de vídeo: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA e Elmedia Player. Só são oferecidos os que existem no seu sistema e, se algum não for encontrado, perguntamos onde está.
-- Os rastreadores são anunciados por camadas, como o torrent pediu: um rastreador de reserva mantém-se como reserva.
-- Remover um torrent, e alterar ou remover um rastreador, perguntam primeiro. Cada pergunta pode ser respondida uma vez e memorizada.
-- A importação do PicoTorrent pergunta primeiro, pode esvaziar a lista atual e trazer as definições dele, e diz o que chegou, o que já estava aqui e o que falhou.
-- A interface web alcançou a aplicação: árvores de ficheiros com um ícone por tipo, Detalhes em separadores, botões de ícone que ajustam a sua própria coluna e sem barra de deslocamento horizontal.
-- Os plugins podem ter o seu próprio ícone, e os seus botões Abrir e de definições são sempre mostrados.
-- Por HTTPS a interface web não conseguia alterar nada: cada botão era recusado.
-- A barra de ferramentas recolhe no menu ao estreitar, as legendas longas são cortadas e os erros de fundo são traduzidos.
+- Migre de outro cliente. Ficheiro > Migrar de lê uma instalação existente do qBittorrent, uTorrent, BitComet, Transmission ou PicoTorrent e traz os torrents com os respetivos caminhos de destino e etiquetas. Se não encontrar nenhuma neste computador, pergunta onde procurar, por isso uma cópia de segurança também funciona. Nada é copiado nem movido - os seus ficheiros ficam onde estão. Mostra o progresso, e Cancelar interrompe e repõe o que já tinha sido adicionado.
+- A barra Partes na Vista geral é agora um mapa do torrent em vez de uma segunda barra de progresso: uma coluna por parte, acesa onde a parte existe, e as partes pedidas neste momento desenhadas com cor própria.
+- O separador Rastreadores de um torrent híbrido mostra os dois enxames, não apenas o primeiro.
+- As notificações aparecem agora na versão da Loja, e um botão que ali não podia fazer nada deixou de ser mostrado.
+- Na interface web, um tamanho como "392.91 MB" já não é cortado.
+- Atualizado para Slint 1.18.1, com uma ronda de atualizações de dependências.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

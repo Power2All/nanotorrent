@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.1 - Microsoft Store listing
+NanoTorrent 0.4.2 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,17 +28,15 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versio 0.4.1
+Versio 0.4.2
 
-- Suhdelukusi ei enää nollaudu, kun muutat asetusta tai käynnistät uudelleen.
-- Lisää videosoittimia: Media Player, MPC-HC, PotPlayer, SMPlayer, Celluloid, IINA ja Elmedia Player. Vain järjestelmästäsi löytyvät tarjotaan, ja jos jotakin ei löydy, sinulta kysytään missä se on.
-- Seurantapalvelimille ilmoitetaan tasoittain, kuten torrent pyysi - varaseurantapalvelin pysyy varalla.
-- Torrentin poistaminen sekä seurantapalvelimen muuttaminen tai poistaminen kysyvät ensin. Jokaiseen kysymykseen voi vastata kerran ja vastaus muistetaan.
-- PicoTorrentista tuonti kysyy ensin, voi tyhjentää nykyisen luettelon ja tuoda asetukset mukanaan, ja kertoo mitä saapui, mitä oli jo täällä ja mikä epäonnistui.
-- Verkkokäyttöliittymä saavuttaa sovelluksen: tiedostopuut kuvakkeineen kullekin tyypille, välilehdellinen Tiedot, kuvakepainikkeet jotka mitoittavat oman sarakkeensa, eikä vaakavierityspalkkia.
-- Laajennukset voivat tuoda oman kuvakkeensa, ja niiden Avaa- ja asetuspainikkeet näkyvät aina.
-- HTTPS:n yli verkkokäyttöliittymä ei voinut muuttaa mitään - jokainen painallus torjuttiin.
-- Työkalupalkki taittuu valikkoon ikkunan kaventuessa, pitkät tekstit katkaistaan ja taustavirheet on käännetty.
+- Siirry toisesta ohjelmasta. Tiedosto > Siirrä ohjelmasta lukee olemassa olevan qBittorrent-, uTorrent-, BitComet-, Transmission- tai PicoTorrent-asennuksen ja tuo torrentit mukanaan tallennuspolkuineen ja tunnisteineen. Jos sitä ei löydy tästä tietokoneesta, se kysyy mistä katsoa, joten varmuuskopiokin käy. Mitään ei kopioida eikä siirretä - tiedostosi pysyvät paikallaan. Se näyttää edistymisen, ja Peruuta pysäyttää sen ja palauttaa jo lisätyn.
+- Yleiskatsauksen Palat-palkki on nyt torrentin kartta eikä toinen edistymispalkki: yksi sarake palaa kohti, valaistuna siellä missä pala on, ja juuri nyt pyydetyt palat piirretään omalla värillään.
+- Hybriditorrentin Seurantapalvelimet-välilehti näyttää molemmat parvet, ei vain ensimmäistä.
+- Ilmoitukset näkyvät nyt myös Store-versiossa, eikä painiketta, joka ei siellä voinut tehdä mitään, enää näytetä.
+- Verkkokäyttöliittymässä kokoa kuten "392.91 MB" ei enää katkaista.
+- Päivitetty versioon Slint 1.18.1 sekä kierros riippuvuuspäivityksiä.
+
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
 

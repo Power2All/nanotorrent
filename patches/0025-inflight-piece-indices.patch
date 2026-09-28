@@ -1,0 +1,49 @@
+diff --git a/src/piece_tracker.rs b/src/piece_tracker.rs
+index 9ebf02a..e3eb68e 100644
+--- a/src/piece_tracker.rs
++++ b/src/piece_tracker.rs
+@@ -352,6 +352,14 @@ impl PieceTracker {
+         self.inflight.contains_key(&piece)
+     }
+ 
++    /// NanoTorrent addition: the pieces currently reserved from a peer.
++    ///
++    /// `inflight_count` alone answers "how many", and the Overview's piece map
++    /// needs "which" - a piece being requested is drawn in its own colour.
++    pub fn inflight_pieces(&self) -> impl Iterator<Item = ValidPieceIndex> + '_ {
++        self.inflight.keys().copied()
++    }
++
+     /// Get the number of pieces currently in-flight.
+     #[allow(dead_code)]
+     pub fn inflight_count(&self) -> usize {
+diff --git a/src/torrent_state/live/mod.rs b/src/torrent_state/live/mod.rs
+index c053f79..87d6f47 100644
+--- a/src/torrent_state/live/mod.rs
++++ b/src/torrent_state/live/mod.rs
+@@ -300,6 +300,25 @@ impl TorrentStateLive {
+         *self.availability.write() = counts;
+     }
+ 
++    /// NanoTorrent addition: the pieces currently being requested from peers.
++    ///
++    /// `get_pieces` is crate-private, so an embedder cannot reach the in-flight
++    /// set at all - and the Overview's piece map wants it to colour a piece
++    /// that is on its way differently from one already held.
++    ///
++    /// Raw `u32` indices rather than `ValidPieceIndex`, which cannot be
++    /// constructed outside this crate; the caller only ever compares them
++    /// against a piece count it already has. Empty rather than an error when
++    /// there is no tracker yet: a magnet still resolving has nothing in
++    /// flight, which is exactly what an empty set says.
++    pub fn inflight_piece_indices(&self) -> Vec<u32> {
++        let g = self.lock_read("inflight_piece_indices");
++        match g.get_pieces() {
++            Ok(pt) => pt.inflight_pieces().map(|p| p.get()).collect(),
++            Err(_) => Vec::new(),
++        }
++    }
++
+     /// How many connected peers hold `piece`. 0 when nothing is known yet,
+     /// which makes every piece look equally rare and the ordering fall back to
+     /// the file-priority order it had before.
