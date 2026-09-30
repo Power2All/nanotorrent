@@ -1,0 +1,97 @@
+# Build the Microsoft Store package, and nothing else.
+#
+# For submissions made from a machine that cannot build it. The MSIX has to be
+# built on Windows - the exe carries a Win32 resource section that build.rs only
+# writes on a Windows host, and makeappx comes from the Windows SDK - but the
+# rest of a submission (upload, listings, screenshots, commit) runs anywhere
+# msstore and PowerShell 7 do. So on Linux, installer/store-submit.ps1 starts
+# this, waits for it, downloads the package and carries on from there:
+#
+#   pwsh installer/store-submit.ps1
+#
+# It can be started by hand too, and the artifact handed over explicitly:
+#
+#   gh workflow run store-msix.yml --ref <branch>
+#   pwsh installer/store-submit.ps1 -CiRun <run id>
+#
+# Nothing here signs in to Partner Center or submits anything - that is what
+# store-publish.yml does, the all-in-CI route. This builds exactly what
+# `build-msix.ps1 -NoSign` builds locally, from the commit it was started on.
+#
+# Needs STORE_IDENTITY_NAME and STORE_PUBLISHER, the same repository secrets as
+# store-publish.yml: a package whose identity does not match the reservation is
+# rejected at upload, and finding that out after a full build is the slow way.
+#
+# workflow_dispatch only runs from a file GitHub already knows about on the
+# default branch, so this has to be merged into master once before its first
+# use - from any other branch after that.
+
+name: Build the Store package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One build per ref at a time. Two would race to be "the latest run", which is
+# how store-submit.ps1 finds the one it started.
+concurrency:
+  group: store-msix-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  msix:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the secrets are set
+        shell: pwsh
+        env:
+          IDENTITY: ${{ secrets.STORE_IDENTITY_NAME }}
+          PUBLISHER: ${{ secrets.STORE_PUBLISHER }}
+        run: |
+          $missing = @()
+          foreach ($n in "IDENTITY", "PUBLISHER") {
+            if (-not (Get-Item "env:$n" -ErrorAction SilentlyContinue).Value) { $missing += $n }
+          }
+          if ($missing) {
+            throw "missing repository secrets: $($missing -join ', ') - see docs/MICROSOFT-STORE.md"
+          }
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # -NoSign is deliberate: the Store signs the package itself, and a
+      # self-signed one is rejected at upload.
+      - name: Build the MSIX
+        shell: pwsh
+        run: |
+          .\installer\build-msix.ps1 `
+            -IdentityName        "${{ secrets.STORE_IDENTITY_NAME }}" `
+            -Publisher           "${{ secrets.STORE_PUBLISHER }}" `
+            -PublisherDisplayName "Power2All" `
+            -NoSign
+
+      # By exact name, for the same reason store-submit.ps1 does: a glob could
+      # pick up a package some other step left behind.
+      - name: Locate the package
+        id: pkg
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          $msix = "installer\NanoTorrent-$version-x64.msix"
+          if (-not (Test-Path $msix)) { throw "expected $msix, but the build did not produce it" }
+          "path=$msix" >> $env:GITHUB_OUTPUT
+          Write-Host "packaged $msix ($([math]::Round((Get-Item $msix).Length/1MB,1)) MB)"
+
+      # Named `msix`, which is what store-submit.ps1 downloads.
+      - name: Keep the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix
+          path: ${{ steps.pkg.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Deutsch (Deutschland) - Partner Center: German (Germany) (de-DE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent ist eine Rust-Portierung von PicoTorrent von Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.2
+Version 0.4.3
 
-- Von einem anderen Client migrieren. Datei > Migrieren von liest eine vorhandene Installation von qBittorrent, uTorrent, BitComet, Transmission oder PicoTorrent und übernimmt die Torrents samt Speicherpfaden und Labels. Findet es auf diesem Computer keine, fragt es, wo es suchen soll - so funktioniert auch eine Sicherung. Nichts wird kopiert oder verschoben - Ihre Dateien bleiben, wo sie sind. Der Fortschritt wird angezeigt, und Abbrechen hält an und macht bereits Hinzugefügtes rückgängig.
-- Die Teile-Leiste in der Übersicht ist jetzt eine Karte des Torrents statt einer zweiten Fortschrittsanzeige: eine Spalte je Teil, dort hell, wo das Teil vorliegt, und die gerade angeforderten Teile in eigener Farbe.
-- Der Tracker-Reiter eines Hybrid-Torrents zeigt beide Schwärme, nicht nur den ersten.
-- Benachrichtigungen erscheinen jetzt auch in der Store-Version, und eine Schaltfläche, die dort nichts bewirken konnte, wird nicht mehr angezeigt.
-- In der Weboberfläche wird eine Größe wie "392.91 MB" nicht mehr abgeschnitten.
-- Aktualisiert auf Slint 1.18.1, mit einer Runde Abhängigkeits-Updates.
+- Magnet-Links warten nicht mehr auf ihre Details: Der Hinzufügen-Dialog öffnet sich sofort, und ein Magnet, der vor dem Eintreffen der Details hinzugefügt wird, erscheint in der Liste als „Metadaten herunterladen“, bis sie da sind - wie in qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

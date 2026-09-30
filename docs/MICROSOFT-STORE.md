@@ -244,6 +244,70 @@ listing that submits from one submits from the other. Pass `-KeepScreenshots`
 to leave the images alone - worth it for a submission that is only a rebuild,
 since replacing them sends seven pictures back through certification.
 
+### From Linux
+
+The same script, under PowerShell 7, submits from Linux too. Everything except
+the build runs there unchanged: `msstore` has a self-contained Linux build, and
+the listing and screenshot steps are plain PowerShell.
+
+The build is the exception. The package holds a Windows exe whose icon and
+Common-Controls manifest are a Win32 resource that `build.rs` only writes when
+the *host* is Windows. A cross-compile would leave them out without an error
+and give an exe that dies at launch looking for `GetWindowSubclass`.
+`makeappx` is also Windows SDK only. So off Windows the script has GitHub
+Actions build the package (`.github/workflows/store-msix.yml`, which builds
+and uploads an artifact and submits nothing), waits for that, downloads the
+MSIX, and carries on locally exactly as on Windows.
+
+One-time setup (CachyOS / Arch shown):
+
+```
+sudo pacman -S github-cli && gh auth login
+paru -S powershell-bin                # any pwsh 7 on PATH will do
+# msstore: MSStoreCLI-linux-x64.tar.gz from
+#   https://github.com/microsoft/msstore-cli/releases
+# unpacked anywhere, with that folder on PATH
+msstore reconfigure
+```
+
+`store-msix.yml` builds with the same `STORE_IDENTITY_NAME` and `STORE_PUBLISHER`
+repository secrets as `store-publish.yml`, so those have to be set on GitHub.
+The local settings file still supplies the Store ID. GitHub only dispatches a
+workflow it has seen on the default branch, so `store-msix.yml` has to be
+merged into `master` once before the first run.
+
+Then:
+
+```
+pwsh installer/store-submit.ps1 -DryRun
+pwsh installer/store-submit.ps1
+```
+
+GitHub builds the commit HEAD is on, not the working tree, so before starting
+anything the script checks two things:
+
+- **HEAD has been pushed.** GitHub can only build what it has.
+- **Nothing that goes into the package differs from HEAD** (`src`, `lang`,
+  `res`, `vendor`, `patches`, `build.rs`, `Cargo.toml`/`.lock`,
+  `installer/msix`). Otherwise the listings, read from this checkout, would
+  describe changes the package does not contain. Line-ending-only differences
+  do not count.
+
+If the wait is interrupted, the run carries on at GitHub. Pick it up without
+building again:
+
+| | |
+| --- | --- |
+| `-CiRun <id>` | Use that finished `store-msix.yml` run's package. It is still checked against HEAD |
+| `-BuildOn ci` | Build on GitHub Actions even on Windows |
+| `-BuildOn local` | Build here. Windows only; the default there |
+
+The tests for the script's logic run on both systems:
+
+```
+pwsh -NoProfile -File installer/test-store-submit.ps1
+```
+
 ### The listings go up with the package
 
 `msstore publish` uploads the package and nothing else - it does not touch

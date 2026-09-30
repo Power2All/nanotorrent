@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Français (France) - Partner Center: French (France) (fr-FR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent est un portage en Rust de PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.2
+Version 0.4.3
 
-- Migration depuis un autre client. Fichier > Migrer depuis lit une installation existante de qBittorrent, uTorrent, BitComet, Transmission ou PicoTorrent et récupère les torrents avec leurs chemins d'enregistrement et leurs étiquettes. S'il n'en trouve aucune sur cet ordinateur, il vous demande où chercher : une sauvegarde fonctionne donc aussi. Rien n'est copié ni déplacé : vos fichiers restent où ils sont. La progression s'affiche, et Annuler l'arrête et remet ce qui avait déjà été ajouté.
-- La barre Morceaux de la vue d'ensemble est désormais une carte du torrent plutôt qu'une seconde barre de progression : une colonne par morceau, allumée là où le morceau est présent, les morceaux demandés en ce moment étant dessinés dans leur propre couleur.
-- L'onglet Trackers d'un torrent hybride affiche ses deux essaims, pas seulement le premier.
-- Les notifications apparaissent maintenant depuis la version du Store, et un bouton qui n'y pouvait rien faire n'est plus affiché.
-- Dans l'interface web, une taille comme "392.91 MB" n'est plus tronquée.
-- Mise à jour vers Slint 1.18.1, avec une série de mises à jour de dépendances.
+- Les liens magnet n’attendent plus leurs détails : la fenêtre d’ajout s’ouvre immédiatement, et un magnet ajouté avant l’arrivée des détails apparaît dans la liste comme « Téléchargement de métadonnées » jusqu’à leur arrivée, comme dans qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

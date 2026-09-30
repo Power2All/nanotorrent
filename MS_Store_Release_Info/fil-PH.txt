@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Filipino (Pilipinas) - Partner Center: Filipino (Philippines) (fil-PH)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ Ang NanoTorrent ay bersyong Rust ng PicoTorrent ni Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Bersyon 0.4.2
+Bersyon 0.4.3
 
-- Mag-migrate mula sa ibang kliyente. File > Mag-migrate mula sa ay nagbabasa ng umiiral na qBittorrent, uTorrent, BitComet, Transmission o PicoTorrent at dinadala ang mga torrent kasama ang save path at label nila. Kung wala itong makita sa computer na ito, tatanungin ka nito kung saan titingin, kaya gumagana rin ang backup. Walang kinokopya o inililipat - nananatili ang iyong mga file kung nasaan sila. Nagpapakita ito ng progreso, at pinapahinto ito ng Kanselahin at ibinabalik ang naidagdag na.
-- Ang Pieces bar sa Overview ay mapa na ngayon ng torrent sa halip na pangalawang progress bar: isang kolum bawat piraso, nakailaw kung nasa iyo ang pirasong iyon, at ang mga pirasong hinihingi ngayon ay may sariling kulay.
-- Ang Trackers tab ng hybrid na torrent ay nagpapakita ng parehong swarm, hindi lang ang una.
-- Lumalabas na ngayon ang mga notification mula sa bersyon ng Store, at hindi na ipinapakita ang isang button na wala namang magagawa doon.
-- Sa web interface, hindi na pinuputol ang sukat na tulad ng "392.91 MB".
-- Na-update sa Slint 1.18.1, kasama ang ilang update sa dependency.
+- Hindi na naghihintay ang mga magnet link sa kanilang mga detalye: agad na bumubukas ang Add dialog, at ang magnet na idinagdag bago dumating ang mga detalye ay ipinapakita bilang “Nagda-download ng metadata” sa listahan hanggang dumating ang mga ito, gaya sa qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

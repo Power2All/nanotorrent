@@ -205,9 +205,12 @@ struct Ui {
     /// very first drain after it finishes is quiet simply because the backlog
     /// has not started arriving. Any drain that sees something resets this.
     migrate_quiet: std::cell::Cell<u8>,
-    /// The .torrent currently in the Add dialog, and any queued behind it.
-    /// argv can name several, and only one dialog is shown at a time.
-    pending: RefCell<Vec<Vec<u8>>>,
+    /// Torrents and magnets waiting for the Add dialog. argv can name several,
+    /// and only one dialog is shown at a time.
+    pending: RefCell<Vec<PendingAdd>>,
+    /// What the open Add dialog is showing, so metadata arriving for one of
+    /// its magnets can be put in front of it. `None` when no dialog is open.
+    add_batch: RefCell<Option<Rc<AddBatch>>>,
     /// Where magnets being resolved for the Add dialog leave their metadata.
     magnet_slot: Arc<std::sync::Mutex<Vec<crate::bittorrent::session::MagnetOutcome>>>,
     /// Set once the window exists, so a dialog can push a setting back into it
@@ -396,6 +399,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
         env: ctx.env.clone(),
         torrent_dialog: RefCell::new(None),
         pending: RefCell::new(Vec::new()),
+        add_batch: RefCell::new(None),
         magnet_slot: Arc::new(std::sync::Mutex::new(Vec::new())),
         main: RefCell::new(None),
         tray: RefCell::new(None),
@@ -1344,7 +1348,7 @@ fn handle_params(ui: &Rc<Ui>, args: &[String]) {
             magnets.push(arg.clone());
         } else if arg.to_lowercase().ends_with(".torrent") {
             match std::fs::read(arg) {
-                Ok(bytes) => ui.pending.borrow_mut().push(bytes),
+                Ok(bytes) => ui.pending.borrow_mut().push(PendingAdd::Torrent(bytes)),
                 // Not fatal: one unreadable path should not stop the others.
                 Err(err) => tracing::error!("cannot read {arg}: {err}"),
             }
@@ -1356,15 +1360,13 @@ fn handle_params(ui: &Rc<Ui>, args: &[String]) {
 
 /// Add magnet links, through the Add dialog unless Preferences says to skip it.
 ///
-/// A magnet carries no file list, so there is nothing to show a dialog ABOUT
-/// until its metadata has been fetched from the swarm. That is what
-/// [`crate::bittorrent::session::Session::resolve_magnet`] is for, and until
-/// now nothing called it: every magnet was added straight to the session, so a
-/// link opened from a browser started downloading with no dialog and no say in
-/// where it went - whatever the setting said.
-///
-/// The fetch is not instant and can fail, so it happens in the background and
-/// lands in `magnet_slot`; [`poll_magnets`] picks it up on the refresh tick.
+/// The dialog opens at once, the way qBittorrent's does. It used to wait for
+/// the swarm to hand over the metadata first - up to a minute and a half with
+/// only a toast to show for it - and a magnet nobody answered for never got a
+/// dialog at all. Now the metadata is fetched while the dialog is up: if it
+/// arrives, the file list fills in; if it has not by the time Add is pressed,
+/// the magnet goes in anyway and shows as "Downloading metadata" in the list
+/// until it does.
 fn add_magnets(ui: &Rc<Ui>, links: Vec<String>) {
     if links.is_empty() {
         return;
@@ -1378,49 +1380,33 @@ fn add_magnets(ui: &Rc<Ui>, links: Vec<String>) {
         return;
     }
 
-    // Asking the swarm for metadata takes as long as it takes. Without a word
-    // on screen, clicking a magnet link looks exactly like the application
-    // ignoring it.
-    if let Some(window) = ui.main.borrow().as_ref().and_then(|w| w.upgrade()) {
-        let text = ui.tr.borrow().i18n("fetching_magnet_metadata");
-        show_toast(&window, &text);
-    }
-    for magnet in links {
-        tracing::info!("resolving magnet metadata before the add dialog");
-        ui.session.resolve_magnet(magnet, ui.magnet_slot.clone());
-    }
+    ui.pending
+        .borrow_mut()
+        .extend(links.into_iter().map(PendingAdd::Magnet));
 }
 
-/// Drain magnets whose metadata has arrived. Called from the refresh tick.
+/// Deliver magnet metadata to the Add dialog row it was fetched for. Called
+/// from the refresh tick.
+///
+/// Also where a dialog closed with its X lets go of its fetches: the close
+/// drops the window but not the batch, which is held here too.
 fn poll_magnets(ui: &Rc<Ui>) {
-    let resolved = match ui.magnet_slot.lock() {
-        Ok(mut slot) if !slot.is_empty() => std::mem::take(&mut *slot),
-        _ => return,
-    };
+    if ui.torrent_dialog.borrow().is_none() {
+        // Dropping the batch aborts whatever it was still fetching.
+        ui.add_batch.borrow_mut().take();
+    }
 
-    let mut failed = 0;
-    for outcome in resolved {
-        match outcome {
-            crate::bittorrent::session::MagnetOutcome::Resolved(bytes) => {
-                ui.pending.borrow_mut().push(bytes)
-            }
-            // Nothing answered, or not in time. Adding it anyway is what the
-            // click asked for; it keeps looking for peers in the list, where
-            // it can be seen and stopped, rather than being dropped in silence.
-            crate::bittorrent::session::MagnetOutcome::Failed(uri) => {
-                failed += 1;
-                ui.session
-                    .add_torrent(AddTorrentSource::MagnetUri(uri), default_add_params());
-            }
+    let outcomes = match ui.magnet_slot.lock() {
+        Ok(mut slot) if !slot.is_empty() => std::mem::take(&mut *slot),
+        _ => Vec::new(),
+    };
+    let batch = ui.add_batch.borrow().clone();
+    if let Some(batch) = batch {
+        for outcome in outcomes {
+            batch.metadata_arrived(ui, outcome);
         }
     }
 
-    if failed > 0
-        && let Some(window) = ui.main.borrow().as_ref().and_then(|w| w.upgrade())
-    {
-        let text = ui.tr.borrow().i18n("magnet_metadata_unavailable");
-        show_error_toast(&window, &text);
-    }
     show_next_pending(ui);
 }
 
@@ -3312,6 +3298,7 @@ fn open_add_magnet(ui: &Rc<Ui>) {
             add_magnets(&u, links);
             d.set_links(SharedString::new());
             dismiss(&u, &d);
+            show_next_pending(&u);
         });
     }
 
@@ -3352,15 +3339,235 @@ fn pick_and_queue_torrents(ui: &Rc<Ui>) {
     );
     for path in paths {
         match std::fs::read(&path) {
-            Ok(bytes) => ui.pending.borrow_mut().push(bytes),
+            Ok(bytes) => ui.pending.borrow_mut().push(PendingAdd::Torrent(bytes)),
             Err(err) => tracing::error!("cannot read {}: {err}", path.display()),
         }
     }
     show_next_pending(ui);
 }
 
-/// Show the Add dialog for the next queued `.torrent`, if any and if one is
-/// not already up.
+/// Something waiting for the Add dialog.
+enum PendingAdd {
+    Torrent(Vec<u8>),
+    /// A link. Its metadata is fetched while the dialog is open, not before.
+    Magnet(String),
+}
+
+/// One torrent in the Add dialog.
+struct AddEntry {
+    /// The .torrent - read from a file, or rebuilt from a magnet's metadata
+    /// once that arrived. `None` for a magnet still waiting.
+    torrent: Option<(Vec<u8>, crate::ui::torrentfile::ParsedTorrent)>,
+    /// The link it came from, when it came from one.
+    magnet: Option<String>,
+    /// The metadata fetch for a magnet still waiting.
+    fetch: Option<tokio::task::AbortHandle>,
+    /// The fetch gave up. The magnet can still be added: it goes on asking
+    /// from the transfer list, where it can be seen.
+    failed: bool,
+}
+
+impl Drop for AddEntry {
+    /// A row the dialog has let go of - added, cancelled, closed - no longer
+    /// needs anything fetched for it.
+    fn drop(&mut self) {
+        if let Some(fetch) = self.fetch.take() {
+            fetch.abort();
+        }
+    }
+}
+
+impl AddEntry {
+    fn name(&self) -> String {
+        match (&self.torrent, &self.magnet) {
+            (Some((_, t)), _) => t.name.clone(),
+            (None, Some(uri)) => session::magnet_label(uri),
+            (None, None) => String::new(),
+        }
+    }
+
+    /// Unknown until the metadata is in - empty rather than a guess.
+    fn size(&self) -> String {
+        self.torrent
+            .as_ref()
+            .map(|(_, t)| utils::to_human_file_size(t.total_size))
+            .unwrap_or_default()
+    }
+
+    /// What stands in for the file list while there is none. Names the state
+    /// by the list's own word for it, so the two cannot drift apart.
+    fn files_note(&self, tr: &crate::ui::translator::Translator) -> String {
+        if self.torrent.is_some() {
+            return String::new();
+        }
+        let later = tr.i18n1(
+            "add_magnet_metadata_later",
+            &tr.i18n("state_downloading_metadata"),
+        );
+        if self.failed {
+            later
+        } else {
+            format!("{}\n\n{later}", tr.i18n("fetching_magnet_metadata"))
+        }
+    }
+
+    /// Hand this row to the session, as a .torrent when there is one and as
+    /// the link otherwise - which then waits in the list for its metadata.
+    fn add(&self, ui: &Ui, params: AddParams) {
+        match (&self.torrent, &self.magnet) {
+            (Some((bytes, _)), _) => {
+                ui.session
+                    .add_torrent(AddTorrentSource::TorrentFileBytes(bytes.clone()), params);
+            }
+            (None, Some(uri)) => {
+                // No file list was ever shown, so none was chosen from.
+                let params = AddParams { only_files: None, ..params };
+                ui.session
+                    .add_torrent(AddTorrentSource::MagnetUri(uri.clone()), params);
+            }
+            (None, None) => {}
+        }
+    }
+}
+
+/// The open Add dialog's state.
+///
+/// Reachable from `Ui` as well as from the dialog's callbacks, because the
+/// refresh tick is where a magnet's metadata turns up and it has to be put in
+/// front of the row it was fetched for.
+///
+/// Two pieces of state per torrent are held HERE and not in the model: which
+/// files are unticked, and which folders are shut. The model used to own the
+/// ticks, which worked only while every file had a row - fold a folder and the
+/// files inside it would vanish from the list Add reads.
+struct AddBatch {
+    dialog: slint::Weak<AddTorrentDialog>,
+    entries: RefCell<Vec<AddEntry>>,
+    excluded: Vec<RefCell<HashSet<usize>>>,
+    shut: Vec<RefCell<HashSet<String>>>,
+    /// One file model per torrent, kept for the life of the dialog so ticking
+    /// files in one, looking at another and coming back keeps the first one's
+    /// choices.
+    file_models: Vec<Rc<VecModel<FileRow>>>,
+    queue: Rc<VecModel<QueueRow>>,
+}
+
+impl AddBatch {
+    /// Draw one torrent's list from the state above. Called for every change -
+    /// a tick, a fold, metadata arriving - rather than patching rows in place:
+    /// a torrent's file list is hundreds of rows at the outside, and a full
+    /// rebuild cannot leave the picture disagreeing with the state behind it.
+    fn redraw(&self, i: usize) {
+        let entries = self.entries.borrow();
+        let (Some(entry), Some(model)) = (entries.get(i), self.file_models.get(i)) else {
+            return;
+        };
+        let Some((_, t)) = &entry.torrent else {
+            model.set_vec(Vec::new());
+            return;
+        };
+        // Padding files are dropped before the tree is built, so a row's
+        // position here is NOT its index in the torrent - that is why
+        // ParsedFile carries the index and this maps through `shown`.
+        let shown: Vec<&crate::ui::torrentfile::ParsedFile> =
+            t.files.iter().filter(|f| !f.padding).collect();
+        let out = self.excluded[i].borrow();
+        let folded = self.shut[i].borrow();
+        let rows: Vec<FileRow> = prune(file_tree(shown.iter().map(|f| f.path.as_str())), &folded)
+            .into_iter()
+            .map(|row| match row.index {
+                Some(at) => FileRow {
+                    index: shown[at].index as i32,
+                    depth: row.depth as i32,
+                    name: row.name.into(),
+                    size: utils::to_human_file_size(shown[at].size as i64).into(),
+                    included: !out.contains(&shown[at].index),
+                    path: SharedString::new(),
+                    expanded: false,
+                    guides: row.guides as i32,
+                    last: row.last,
+                    kind: file_kind(row.name) as i32,
+                },
+                None => FileRow {
+                    index: -1,
+                    depth: row.depth as i32,
+                    name: row.name.into(),
+                    size: SharedString::new(),
+                    included: true,
+                    expanded: !folded.contains(&row.path),
+                    guides: row.guides as i32,
+                    last: row.last,
+                    kind: 0,
+                    path: row.path.into(),
+                },
+            })
+            .collect();
+        model.set_vec(rows);
+    }
+
+    /// Selecting a torrent swaps which model the file list is bound to, and
+    /// repoints the name/size above it.
+    fn select(&self, ui: &Ui, index: i32) {
+        let (Some(d), Ok(i)) = (self.dialog.upgrade(), usize::try_from(index)) else {
+            return;
+        };
+        let entries = self.entries.borrow();
+        let Some(entry) = entries.get(i) else { return };
+        d.set_selected_torrent(index);
+        d.set_torrent_name(entry.name().into());
+        d.set_torrent_size(entry.size().into());
+        d.set_files(ModelRc::from(self.file_models[i].clone()));
+        d.set_files_note(entry.files_note(&ui.tr.borrow()).into());
+    }
+
+    /// A magnet's metadata came back - or will not. Either way the row stops
+    /// saying it is asking; with metadata it becomes a torrent like any other,
+    /// files and all, and without it it can still be added as it is.
+    fn metadata_arrived(&self, ui: &Ui, outcome: session::MagnetOutcome) {
+        let (uri, bytes) = match outcome {
+            session::MagnetOutcome::Resolved { uri, bytes } => (uri, Some(bytes)),
+            session::MagnetOutcome::Failed { uri } => (uri, None),
+        };
+        let i = {
+            let mut entries = self.entries.borrow_mut();
+            let Some(i) = entries
+                .iter()
+                .position(|e| e.torrent.is_none() && e.magnet.as_deref() == Some(uri.as_str()))
+            else {
+                return; // for a row that has since gone
+            };
+            let entry = &mut entries[i];
+            // Finished, so nothing to abort - dropping the handle leaves it be.
+            entry.fetch = None;
+            match bytes.map(|b| (crate::ui::torrentfile::parse(&b), b)) {
+                Some((Ok(parsed), b)) => {
+                    tracing::info!("add dialog: metadata arrived for {}", parsed.name);
+                    entry.torrent = Some((b, parsed));
+                }
+                Some((Err(err), _)) => {
+                    tracing::warn!("add dialog: magnet metadata would not parse: {err}");
+                    entry.failed = true;
+                }
+                None => entry.failed = true,
+            }
+            self.queue.set_row_data(
+                i,
+                QueueRow {
+                    name: entry.name().into(),
+                    size: entry.size().into(),
+                },
+            );
+            i
+        };
+        self.redraw(i);
+        if let Some(d) = self.dialog.upgrade()
+            && usize::try_from(d.get_selected_torrent()) == Ok(i)
+        {
+            self.select(ui, d.get_selected_torrent());
+        }
+    }
+}
+
 /// Show the Add-torrent dialog for everything sitting in `pending`.
 ///
 /// One dialog for the whole batch, not one per file: selecting eight torrents
@@ -3372,33 +3579,55 @@ fn pick_and_queue_torrents(ui: &Rc<Ui>) {
 /// Save path and start-immediately are batch-wide - they are the settings
 /// people want applied uniformly. File selection stays per torrent, which is
 /// why each gets its own model rather than one shared list.
+///
+/// Magnets are in the batch from the start, with their metadata fetched while
+/// the dialog is up. Add does not wait for it: see [`add_magnets`].
 fn show_next_pending(ui: &Rc<Ui>) {
     if ui.torrent_dialog.borrow().is_some() {
         return; // already showing a batch; these wait in `pending`
     }
 
-    let queued: Vec<Vec<u8>> = std::mem::take(&mut ui.pending.borrow_mut());
+    let queued: Vec<PendingAdd> = std::mem::take(&mut ui.pending.borrow_mut());
     if queued.is_empty() {
         return;
     }
 
     // Parse first, then build the dialog: a batch of unreadable files should
     // produce one error each and no empty dialog at the end of it.
-    let mut parsed = Vec::new();
+    let mut entries: Vec<AddEntry> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
-    for bytes in queued {
-        match crate::ui::torrentfile::parse(&bytes) {
-            // One bad file does not strand the rest of the batch.
-            Err(err) => {
-                tracing::error!("{err}");
-                // Deduplicated: picking five v2 torrents is one problem, not
-                // five, and the same sentence five times reads as a stutter.
-                if !failures.contains(&err) {
-                    failures.push(err);
-                }
+    for item in queued {
+        let torrent = match item {
+            PendingAdd::Magnet(uri) => {
+                entries.push(AddEntry {
+                    torrent: None,
+                    magnet: Some(uri),
+                    fetch: None,
+                    failed: false,
+                });
+                continue;
             }
-            Ok(p) => parsed.push((bytes, p)),
-        }
+            PendingAdd::Torrent(bytes) => match crate::ui::torrentfile::parse(&bytes) {
+                Ok(p) => (bytes, p),
+                // One bad file does not strand the rest of the batch.
+                Err(err) => {
+                    tracing::error!("{err}");
+                    // Deduplicated: picking five v2 torrents is one problem,
+                    // not five, and the same sentence five times reads as a
+                    // stutter.
+                    if !failures.contains(&err) {
+                        failures.push(err);
+                    }
+                    continue;
+                }
+            },
+        };
+        entries.push(AddEntry {
+            torrent: Some(torrent),
+            magnet: None,
+            fetch: None,
+            failed: false,
+        });
     }
 
     // Said out loud, not just logged. A file that cannot be parsed never
@@ -3411,7 +3640,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
         show_error_toast(&window, &format!("{headline}\n{}", failures.join("\n")));
     }
 
-    if parsed.is_empty() {
+    if entries.is_empty() {
         return;
     }
 
@@ -3423,20 +3652,17 @@ fn show_next_pending(ui: &Rc<Ui>) {
     // every file wanted. Choosing otherwise is exactly what the dialog is for,
     // and the setting says not to show it.
     if ui.cfg.get_bool("skip_add_torrent_dialog") {
-        tracing::info!("adding {} torrent(s) without the dialog", parsed.len());
-        for (bytes, _) in &parsed {
-            ui.session.add_torrent(
-                AddTorrentSource::TorrentFileBytes(bytes.clone()),
-                default_add_params(),
-            );
+        tracing::info!("adding {} torrent(s) without the dialog", entries.len());
+        for entry in &entries {
+            entry.add(ui, default_add_params());
         }
         return;
     }
 
     tracing::info!(
         "add dialog: {} torrent(s) in this batch: {:?}",
-        parsed.len(),
-        parsed.iter().map(|(b, t)| (t.name.as_str(), b.len())).collect::<Vec<_>>()
+        entries.len(),
+        entries.iter().map(AddEntry::name).collect::<Vec<_>>()
     );
 
     let dialog = match AddTorrentDialog::new() {
@@ -3447,30 +3673,25 @@ fn show_next_pending(ui: &Rc<Ui>) {
         }
     };
 
-    // One file model per torrent, kept alive for the life of the dialog so
-    // ticking files in one, looking at another and coming back does not lose
-    // the first one's choices.
-    //
-    // Two pieces of state per torrent, both held HERE and not in the model:
-    // which files are unticked, and which folders are shut. The model used to
-    // own the ticks, which worked only while every file had a row - fold a
-    // folder and the files inside it would vanish from the list Add reads.
-    let excluded: Rc<Vec<RefCell<HashSet<usize>>>> =
-        Rc::new(parsed.iter().map(|_| RefCell::new(HashSet::new())).collect());
-    let shut: Rc<Vec<RefCell<HashSet<String>>>> =
-        Rc::new(parsed.iter().map(|_| RefCell::new(HashSet::new())).collect());
-    let file_models: Vec<Rc<VecModel<FileRow>>> =
-        parsed.iter().map(|_| Rc::new(VecModel::default())).collect();
+    // The magnets start asking now. Whatever comes back is routed to its row
+    // by `poll_magnets`.
+    for entry in &mut entries {
+        if let (None, Some(uri)) = (&entry.torrent, &entry.magnet) {
+            tracing::info!("add dialog: fetching magnet metadata");
+            entry.fetch = ui.session.resolve_magnet(uri.clone(), ui.magnet_slot.clone());
+        }
+    }
 
-    dialog.set_queue(ModelRc::new(VecModel::from(
-        parsed
+    let queue = Rc::new(VecModel::from(
+        entries
             .iter()
-            .map(|(_, t)| QueueRow {
-                name: t.name.as_str().into(),
-                size: utils::to_human_file_size(t.total_size).into(),
+            .map(|e| QueueRow {
+                name: e.name().into(),
+                size: e.size().into(),
             })
             .collect::<Vec<_>>(),
-    )));
+    ));
+    dialog.set_queue(ModelRc::from(queue.clone()));
     dialog.set_save_path(
         ui.cfg
             .get_string("default_save_path")
@@ -3478,80 +3699,24 @@ fn show_next_pending(ui: &Rc<Ui>) {
             .into(),
     );
 
-    let parsed = Rc::new(parsed);
-    let file_models = Rc::new(file_models);
-
-    // Draw one torrent's list from the state above. Called for every change -
-    // a tick, a fold - rather than patching rows in place: a torrent's file
-    // list is hundreds of rows at the outside, and a full rebuild cannot leave
-    // the picture disagreeing with the state behind it.
-    let redraw = {
-        let (p, m, ex, sh) = (parsed.clone(), file_models.clone(), excluded.clone(), shut.clone());
-        move |i: usize| {
-            let (Some((_, t)), Some(model)) = (p.get(i), m.get(i)) else {
-                return;
-            };
-            // Padding files are dropped before the tree is built, so a row's
-            // position here is NOT its index in the torrent - that is why
-            // ParsedFile carries the index and this maps through `shown`.
-            let shown: Vec<&crate::ui::torrentfile::ParsedFile> =
-                t.files.iter().filter(|f| !f.padding).collect();
-            let out = ex[i].borrow();
-            let folded = sh[i].borrow();
-            let rows: Vec<FileRow> = prune(file_tree(shown.iter().map(|f| f.path.as_str())), &folded)
-                .into_iter()
-                .map(|row| match row.index {
-                    Some(at) => FileRow {
-                        index: shown[at].index as i32,
-                        depth: row.depth as i32,
-                        name: row.name.into(),
-                        size: utils::to_human_file_size(shown[at].size as i64).into(),
-                        included: !out.contains(&shown[at].index),
-                        path: SharedString::new(),
-                        expanded: false,
-                        guides: row.guides as i32,
-                        last: row.last,
-                        kind: file_kind(row.name) as i32,
-                    },
-                    None => FileRow {
-                        index: -1,
-                        depth: row.depth as i32,
-                        name: row.name.into(),
-                        size: SharedString::new(),
-                        included: true,
-                        expanded: !folded.contains(&row.path),
-                        guides: row.guides as i32,
-                        last: row.last,
-                        kind: 0,
-                        path: row.path.into(),
-                    },
-                })
-                .collect();
-            model.set_vec(rows);
-        }
-    };
-    for i in 0..parsed.len() {
-        redraw(i);
+    let batch = Rc::new(AddBatch {
+        dialog: dialog.as_weak(),
+        excluded: entries.iter().map(|_| RefCell::new(HashSet::new())).collect(),
+        shut: entries.iter().map(|_| RefCell::new(HashSet::new())).collect(),
+        file_models: entries.iter().map(|_| Rc::new(VecModel::default())).collect(),
+        entries: RefCell::new(entries),
+        queue,
+    });
+    for i in 0..batch.file_models.len() {
+        batch.redraw(i);
     }
-    let redraw = Rc::new(redraw);
+    *ui.add_batch.borrow_mut() = Some(batch.clone());
 
-    // Selecting a torrent swaps which model the file list is bound to, and
-    // repoints the name/size above it. Called once up front for the first.
-    let select = {
-        let (weak, p, m) = (dialog.as_weak(), parsed.clone(), file_models.clone());
-        move |index: i32| {
-            let (Some(d), Ok(i)) = (weak.upgrade(), usize::try_from(index)) else {
-                return;
-            };
-            let Some((_, t)) = p.get(i) else { return };
-            d.set_selected_torrent(index);
-            d.set_torrent_name(t.name.as_str().into());
-            d.set_torrent_size(utils::to_human_file_size(t.total_size).into());
-            d.set_files(ModelRc::from(m[i].clone()));
-        }
-    };
-    select(0);
-    dialog.on_select_torrent(select);
+    batch.select(ui, 0);
+    {
+        let (b, u) = (batch.clone(), ui.clone());
+        dialog.on_select_torrent(move |index| b.select(&u, index));
+    }
 
     // The queue column's width, kept across adds. Range-checked on the way in
     // for the same reason the panel splitters are: a stored value that no
@@ -3572,7 +3737,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
     }
 
     {
-        let (weak, ex, r) = (dialog.as_weak(), excluded.clone(), redraw.clone());
+        let (weak, b) = (dialog.as_weak(), batch.clone());
         dialog.on_toggle_file(move |index| {
             let Some(d) = weak.upgrade() else { return };
             let (Ok(sel), Ok(index)) = (
@@ -3581,25 +3746,25 @@ fn show_next_pending(ui: &Rc<Ui>) {
             ) else {
                 return;
             };
-            let Some(out) = ex.get(sel) else { return };
+            let Some(out) = b.excluded.get(sel) else { return };
             {
                 let mut out = out.borrow_mut();
                 if !out.remove(&index) {
                     out.insert(index);
                 }
             }
-            r(sel);
+            b.redraw(sel);
         });
     }
 
     {
-        let (weak, sh, r) = (dialog.as_weak(), shut.clone(), redraw.clone());
+        let (weak, b) = (dialog.as_weak(), batch.clone());
         dialog.on_toggle_folder(move |path| {
             let Some(d) = weak.upgrade() else { return };
             let Ok(sel) = usize::try_from(d.get_selected_torrent()) else {
                 return;
             };
-            let Some(folded) = sh.get(sel) else { return };
+            let Some(folded) = b.shut.get(sel) else { return };
             let path = path.to_string();
             {
                 let mut folded = folded.borrow_mut();
@@ -3607,7 +3772,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
                     folded.insert(path);
                 }
             }
-            r(sel);
+            b.redraw(sel);
         });
     }
 
@@ -3627,40 +3792,44 @@ fn show_next_pending(ui: &Rc<Ui>) {
     }
 
     {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        let (p, ex) = (parsed.clone(), excluded.clone());
+        let (weak, u, b) = (dialog.as_weak(), ui.clone(), batch.clone());
         dialog.on_accepted(move || {
             let Some(d) = weak.upgrade() else { return };
 
             let save_path = d.get_save_path().to_string();
             let save_path = (!save_path.trim().is_empty()).then_some(save_path);
             let start = d.get_start_torrent();
+            let entries = b.entries.borrow();
             tracing::info!(
                 "add dialog: adding {} torrent(s): {:?}",
-                p.len(),
-                p.iter().map(|(b, t)| (t.name.as_str(), b.len())).collect::<Vec<_>>()
+                entries.len(),
+                entries.iter().map(AddEntry::name).collect::<Vec<_>>()
             );
 
-            for (i, (bytes, t)) in p.iter().enumerate() {
+            for (i, entry) in entries.iter().enumerate() {
                 // Read off the torrent's own files rather than off the rows: a
                 // shut folder has no rows, and a file nobody can see is still a
-                // file the user left ticked.
-                let out = ex[i].borrow();
-                let shown = t.files.iter().filter(|f| !f.padding);
-                let mut total = 0;
-                let mut included: Vec<usize> = Vec::new();
-                for file in shown {
-                    total += 1;
-                    if !out.contains(&file.index) {
-                        included.push(file.index);
+                // file the user left ticked. A magnet still without metadata
+                // has no files, and takes all of them.
+                let only_files = entry.torrent.as_ref().and_then(|(_, t)| {
+                    let out = b.excluded[i].borrow();
+                    let shown = t.files.iter().filter(|f| !f.padding);
+                    let mut total = 0;
+                    let mut included: Vec<usize> = Vec::new();
+                    for file in shown {
+                        total += 1;
+                        if !out.contains(&file.index) {
+                            included.push(file.index);
+                        }
                     }
-                }
-                // None means "everything", which is not the same as an explicit
-                // list of all of them - keep the distinction the session expects.
-                let only_files = (included.len() != total).then_some(included);
+                    // None means "everything", which is not the same as an
+                    // explicit list of all of them - keep the distinction the
+                    // session expects.
+                    (included.len() != total).then_some(included)
+                });
 
-                u.session.add_torrent(
-                    AddTorrentSource::TorrentFileBytes(bytes.clone()),
+                entry.add(
+                    &u,
                     AddParams {
                         save_path: save_path.clone(),
                         start_torrent: start,
@@ -3669,9 +3838,11 @@ fn show_next_pending(ui: &Rc<Ui>) {
                     },
                 );
             }
+            drop(entries);
 
             dismiss(&u, &d);
             *u.torrent_dialog.borrow_mut() = None;
+            u.add_batch.borrow_mut().take();
             // Anything dropped in while the dialog was open gets its own batch.
             show_next_pending(&u);
         });
@@ -3684,6 +3855,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
                 dismiss(&u, &d);
             }
             *u.torrent_dialog.borrow_mut() = None;
+            u.add_batch.borrow_mut().take();
             show_next_pending(&u);
         });
     }

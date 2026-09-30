@@ -212,12 +212,307 @@ pub struct FileEntry {
 }
 
 /// Result of resolving a magnet's metadata (see `Session::resolve_magnet`).
+///
+/// Both carry the uri exactly as it was handed in, which is how the Add dialog
+/// knows which of its rows the answer belongs to.
 pub enum MagnetOutcome {
     /// Reconstructed .torrent bytes, ready to feed the add-torrent dialog.
-    Resolved(Vec<u8>),
-    /// Resolution failed/timed out; carries the original magnet uri so the UI
-    /// can fall back to adding it directly.
-    Failed(String),
+    Resolved { uri: String, bytes: Vec<u8> },
+    /// Resolution failed. The magnet can still be added - it then keeps
+    /// looking from the transfer list, which is where it can be seen.
+    Failed { uri: String },
+}
+
+/// A magnet the user has added whose metadata has not arrived yet.
+///
+/// librqbit only puts a magnet in its session once the info dictionary is in
+/// hand, and until then there is no handle - so without this the torrent is
+/// nowhere: not in the list, not removable, and lost on restart. qBittorrent
+/// shows such a torrent as "Downloading metadata", and this is what lets that
+/// row exist here too. The `torrent` and `torrent_magnet_uri` rows are written
+/// when it is accepted, so it survives a restart and keeps its queue slot.
+struct PendingMagnet {
+    /// As the user gave it; normalised again on every attempt.
+    uri: String,
+    /// The `dn=` of the link, or the info hash when it has none.
+    name: String,
+    params: AddParams,
+    /// The fetch in flight. `None` while stopped, or after it gave up.
+    task: Option<tokio::task::AbortHandle>,
+    /// Why the last attempt gave up; empty while it is still trying.
+    error: String,
+}
+
+/// What a background magnet fetch needs to finish adding the torrent, cloned
+/// into the task because the task outlives any borrow of the session.
+#[derive(Clone)]
+struct MagnetFetch {
+    rt: tokio::runtime::Handle,
+    inner: Arc<std::sync::RwLock<Arc<RqbitSession>>>,
+    db: Arc<Database>,
+    meta: Arc<Mutex<HashMap<String, TorrentMeta>>>,
+    events: EventBus,
+    pending: Arc<Mutex<HashMap<String, PendingMagnet>>>,
+}
+
+/// The identity a magnet will have in the engine, as lowercase hex: the v1
+/// hash, or for a v2-only link its truncated v2 hash - the same choice
+/// [`crate::bittorrent::v2::normalise_magnet`] makes. `None` for a link naming
+/// no hash this can read.
+fn magnet_wire_hash(uri: &str) -> Option<String> {
+    let hashes = crate::bittorrent::v2::magnet_hashes(uri);
+    let id: [u8; 20] = match (hashes.v1, hashes.v2) {
+        (Some(v1), _) => v1,
+        (None, Some(v2)) => v2[..20].try_into().ok()?,
+        (None, None) => return None,
+    };
+    Some(id.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// The `dn=` parameter of a magnet, percent- and plus-decoded.
+fn magnet_display_name(uri: &str) -> Option<String> {
+    let value = uri
+        .strip_prefix("magnet:?")?
+        .split('&')
+        .find_map(|p| p.strip_prefix("dn="))?
+        .replace('+', " ");
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = (bytes[i] == b'%')
+            .then(|| bytes.get(i + 1..i + 3))
+            .flatten()
+            .and_then(|h| std::str::from_utf8(h).ok())
+            .and_then(|h| u8::from_str_radix(h, 16).ok());
+        match hex {
+            Some(b) => {
+                out.push(b);
+                i += 3;
+            }
+            None => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    Some(String::from_utf8_lossy(&out).into_owned()).filter(|s| !s.trim().is_empty())
+}
+
+/// The magnets [`MagnetFetch::save`] recorded, and whether each was fetching.
+fn read_pending_magnets(db: &Arc<Database>) -> Vec<(String, bool)> {
+    use rusqlite::OptionalExtension;
+    let value: Option<String> = db
+        .with(|conn| {
+            conn.query_row(
+                "select value from persistent_object where key = 'session.pending_magnets'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+        })
+        .ok()
+        .flatten();
+    parse_pending_magnets(value.as_deref().unwrap_or_default())
+}
+
+/// `hash:1,hash:0` - split out so the format is tested without a database.
+fn parse_pending_magnets(value: &str) -> Vec<(String, bool)> {
+    value
+        .split(',')
+        .filter_map(|item| {
+            let (hash, running) = item.split_once(':')?;
+            (!hash.is_empty()).then(|| (hash.to_string(), running != "0"))
+        })
+        .collect()
+}
+
+/// What to call a magnet before its metadata says: its `dn=`, else its hash,
+/// else the link itself.
+pub fn magnet_label(uri: &str) -> String {
+    magnet_display_name(uri)
+        .or_else(|| magnet_wire_hash(uri))
+        .unwrap_or_else(|| uri.to_string())
+}
+
+/// The engine options for adding a magnet, rebuilt for every attempt because
+/// the v2 interceptor collects state and must not be shared between two.
+fn magnet_add_options(
+    db: &Arc<Database>,
+    uri: &str,
+    params: &AddParams,
+) -> AddTorrentOptions {
+    let mut opts = AddTorrentOptions {
+        paused: !params.start_torrent,
+        output_folder: incomplete_folder(&Configuration::new(db.clone()), params),
+        // See `add_torrent`: a fresh add names a destination.
+        output_folder_subfolder: true,
+        only_files: params.only_files.clone(),
+        overwrite: true,
+        ..Default::default()
+    };
+    // Promotes a hybrid magnet's v1 hash into `xt` where the engine will find
+    // it, and turns a v2-only link into a message rather than "didn't contain a
+    // BTv1 infohash".
+    let hashes = crate::bittorrent::v2::magnet_hashes(uri);
+    if hashes.v1.is_some()
+        && let Some(v2) = hashes.v2
+    {
+        // A hybrid magnet names both; announce under both.
+        let mut truncated = [0u8; 20];
+        truncated.copy_from_slice(&v2[..20]);
+        opts.secondary_info_hash = Some(librqbit::Id20::new(truncated));
+    } else if hashes.is_v2_only() {
+        // v2-only. The info dict arrives over BEP 9, but the piece hashes do
+        // not - they come from the peer over the BEP 52 hash exchange. One
+        // object does all of it and then becomes the torrent's piece verifier,
+        // so the layers it collected are exactly what pieces are checked
+        // against.
+        tracing::info!("resolving a v2-only magnet");
+        let magnet = Arc::new(crate::bittorrent::v2::V2Magnet::new());
+        opts.metadata_interceptor = Some(magnet.clone());
+        opts.piece_verifier = Some(magnet);
+    }
+    opts
+}
+
+impl MagnetFetch {
+    /// Start (or restart) fetching one pending magnet on the current engine.
+    ///
+    /// The engine's own add does the waiting: it asks DHT and the trackers for
+    /// peers, takes the info dictionary from the first that has it, and only
+    /// then creates the torrent. There is no timeout - a magnet nobody is
+    /// seeding right now may well be seeded tomorrow, and the row says what it
+    /// is doing in the meantime.
+    fn spawn(&self, hash: &str) {
+        let (uri, params) = {
+            let mut pending = self.pending.lock().unwrap();
+            let Some(entry) = pending.get_mut(hash) else { return };
+            if let Some(task) = entry.task.take() {
+                task.abort();
+            }
+            entry.error.clear();
+            (entry.uri.clone(), entry.params.clone())
+        };
+
+        let fixed = match crate::bittorrent::v2::normalise_magnet(&uri) {
+            Ok(fixed) => fixed,
+            Err(err) => {
+                self.give_up(hash, err);
+                return;
+            }
+        };
+
+        let this = self.clone();
+        let key = hash.to_string();
+        // Held across the spawn, so a fetch that fails at once cannot record
+        // its failure before its own handle is stored - which would then
+        // overwrite it and leave the row looking busy forever.
+        let mut pending = self.pending.lock().unwrap();
+        let task = self.rt.spawn(async move {
+            let rq = this.inner.read().unwrap().clone();
+            let opts = magnet_add_options(&this.db, &fixed, &params);
+            let result = rq.add_torrent(AddTorrent::from_url(fixed), Some(opts)).await;
+            let handle = match result {
+                Ok(AddTorrentResponse::Added(_, handle))
+                | Ok(AddTorrentResponse::AlreadyManaged(_, handle)) => handle,
+                Ok(AddTorrentResponse::ListOnly(_)) => return,
+                Err(err) => {
+                    this.give_up(&key, format!("{err:#}"));
+                    return;
+                }
+            };
+            // Removed while its metadata was on the way in: the engine has
+            // just been handed a torrent nobody wants any more.
+            let removed = this.pending.lock().unwrap().remove(&key).is_none();
+            if removed {
+                let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
+                let _ = rq.delete(id, false).await;
+                return;
+            }
+            this.save();
+            tracing::info!("magnet metadata arrived: {}", handle.name().unwrap_or_default());
+            // The rows were written when it was accepted; this refreshes the
+            // stored link and fills in anything a crash in between lost.
+            Session::on_torrent_added(
+                &this.db,
+                &this.meta,
+                &handle.info_hash().as_string(),
+                &AddTorrentSource::MagnetUri(uri),
+                &params,
+            );
+        });
+
+        match pending.get_mut(hash) {
+            Some(entry) => entry.task = Some(task.abort_handle()),
+            // Removed between the two locks.
+            None => task.abort(),
+        }
+        drop(pending);
+        self.save();
+    }
+
+    /// Remember which magnets are waiting, and whether each was fetching, so a
+    /// restart brings them back.
+    ///
+    /// A list of its own rather than "every `torrent_magnet_uri` row the engine
+    /// has no torrent for": that would also re-add, at a guessed save path,
+    /// every magnet-added torrent whose engine state was lost - which
+    /// [`quarantine_unreadable_session_index`] deliberately does not do.
+    fn save(&self) {
+        let value = self
+            .pending
+            .lock()
+            .unwrap()
+            .iter()
+            // One that gave up is tried again after a restart - it is likely
+            // to have been the network, not the link.
+            .map(|(hash, e)| {
+                let running = e.task.is_some() || !e.error.is_empty();
+                format!("{hash}:{}", u8::from(running))
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let _ = self.db.with(|conn| {
+            conn.execute(
+                "insert or replace into persistent_object (key, value) values \
+                 ('session.pending_magnets', ?1)",
+                [value],
+            )
+        });
+    }
+
+    /// Leave the row in the list, stopped, with the reason on it - removing it
+    /// would lose what the user asked for, and Resume tries again.
+    fn give_up(&self, hash: &str, reason: String) {
+        if let Some(entry) = self.pending.lock().unwrap().get_mut(hash) {
+            entry.task = None;
+            entry.error = reason.clone();
+        }
+        self.save();
+        report_error(
+            &self.events,
+            SessionError::new("error_add_torrent_failed", [reason]),
+        );
+    }
+
+    /// Stop every fetch in flight and say which they were, so they can be
+    /// started again on a rebuilt engine. Stopped first rather than left to
+    /// fail: a fetch whose session is torn down under it gives up with an
+    /// error, which would leave the row stopped and pop a message about what
+    /// was only a settings change.
+    fn suspend_running(&self) -> Vec<String> {
+        let mut pending = self.pending.lock().unwrap();
+        pending
+            .iter_mut()
+            .filter_map(|(hash, entry)| {
+                entry.task.take().map(|task| {
+                    task.abort();
+                    hash.clone()
+                })
+            })
+            .collect()
+    }
 }
 
 #[derive(PartialEq)]
@@ -554,6 +849,8 @@ pub struct Session {
     /// changing the proxy already tears the whole session down and rebuilds
     /// it, so a stale client cannot outlive the setting that made it.
     http: reqwest::Client,
+    /// Magnets accepted but not in the engine yet. See [`PendingMagnet`].
+    magnets: MagnetFetch,
 }
 
 /// Translate the settings database into librqbit's `SessionOptions`.
@@ -1129,36 +1426,53 @@ impl Session {
         let http = crate::core::http::client(cfg)
             .map_err(|e| anyhow::anyhow!("cannot build an HTTP client for web seeds: {e}"))?;
 
+        let inner = Arc::new(std::sync::RwLock::new(inner));
+        let meta = Arc::new(Mutex::new(HashMap::new()));
+        let events = EventBus::new();
+        let magnets = MagnetFetch {
+            rt: rt.handle().clone(),
+            inner: inner.clone(),
+            db: db.clone(),
+            meta: meta.clone(),
+            events: events.clone(),
+            pending: Arc::new(Mutex::new(HashMap::new())),
+        };
         let session = Session {
             rt,
-            inner: Arc::new(std::sync::RwLock::new(inner)),
+            inner,
             api: Arc::new(std::sync::RwLock::new(api)),
             db,
-            meta: Arc::new(Mutex::new(HashMap::new())),
-            events: EventBus::new(),
+            meta,
+            events,
             binding_lost: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             queue_paused: Arc::new(Mutex::new(std::collections::HashSet::new())),
             session_path: env.get_session_state_path(),
             http,
+            magnets,
         };
 
         session.spawn_low_disk_guard(cfg);
+        // Magnets still waiting for metadata have a `torrent` row and no engine
+        // torrent by design - they are not what the forgetting below is for.
+        let waiting = read_pending_magnets(&session.db);
         // Before the metadata is loaded, so nothing is read for a torrent that
         // is about to be forgotten.
         {
-            let present: std::collections::HashSet<String> = session
+            let mut present: std::collections::HashSet<String> = session
                 .rq()
                 .with_torrents(|torrents| {
                     torrents
                         .map(|(_, handle)| handle.info_hash().as_string())
                         .collect()
                 });
+            present.extend(waiting.iter().map(|(hash, _)| hash.clone()));
             session.forget_missing_torrents(&present);
         }
         session.load_torrent_meta();
         // Heal any duplicate/gapped queue positions persisted before positions
         // were compacted on removal.
         session.normalize_queue_positions();
+        session.restore_pending_magnets(&waiting);
 
         // Lifecycle detection, on a timer the session owns. It must not hang
         // off `torrents()`: that is called by the UI refresh tick and by web
@@ -1290,6 +1604,8 @@ impl Session {
         let inner_slot = self.inner.clone();
         let api_slot = self.api.clone();
         let events = self.events.clone();
+        let magnets = self.magnets.clone();
+        let fetching = magnets.suspend_running();
 
         self.rt.spawn(async move {
             let old = inner_slot.read().unwrap().clone();
@@ -1304,6 +1620,9 @@ impl Session {
                     *inner_slot.write().unwrap() = new_session.clone();
                     *api_slot.write().unwrap() = new_api;
                     tracing::info!("session rebuilt with new settings");
+                    for hash in &fetching {
+                        magnets.spawn(hash);
+                    }
                     resume_after_restore(new_session, running).await;
                 }
                 Err(err) => {
@@ -1770,8 +2089,8 @@ impl Session {
     ///
     /// Runs on the session runtime: for magnet links librqbit resolves the
     /// metadata before returning, which can take a long time (or forever for
-    /// dead magnets), so this must never block the UI thread.
-    /// Hand a torrent to the engine.
+    /// dead magnets), so this must never block the UI thread - and a magnet is
+    /// listed as "Downloading metadata" meanwhile, see [`Session::add_magnet`].
     ///
     /// Returns false only when it was refused HERE, before the engine saw it -
     /// a v2-only file that could not be reshaped, a source that would not
@@ -1779,6 +2098,12 @@ impl Session {
     /// returned and is reported as an error event instead, so a `true` means
     /// "accepted for adding", not "added".
     pub fn add_torrent(&self, source: AddTorrentSource, params: AddParams) -> bool {
+        if let AddTorrentSource::MagnetUri(uri) = &source
+            && let Some(accepted) = self.add_magnet(uri, &params)
+        {
+            return accepted;
+        }
+
         // Cloned before the spawn below: the task outlives this borrow of
         // `self`, so the client has to travel with it rather than be reached
         // for later.
@@ -1844,29 +2169,11 @@ impl Session {
                     Ok(V2Prep::V1Only) => AddTorrent::from_bytes(bytes.clone()),
                 }
             }
+            // Only a link naming no hash this can read gets here - the rest go
+            // through `add_magnet`. Handed to the engine as it is, which
+            // parses more spellings of a magnet than this does.
             AddTorrentSource::MagnetUri(uri) => {
-                // Promotes a hybrid magnet's v1 hash into `xt` where the
-                // engine will find it, and turns a v2-only link into a
-                // message rather than "didn't contain a BTv1 infohash".
-                let hashes = crate::bittorrent::v2::magnet_hashes(uri);
-                if hashes.v1.is_some()
-                    && let Some(v2) = hashes.v2
-                {
-                    // A hybrid magnet names both; announce under both.
-                    let mut truncated = [0u8; 20];
-                    truncated.copy_from_slice(&v2[..20]);
-                    opts.secondary_info_hash = Some(librqbit::Id20::new(truncated));
-                } else if hashes.is_v2_only() {
-                    // v2-only. The info dict arrives over BEP 9, but the piece
-                    // hashes do not - they come from the peer over the BEP 52
-                    // hash exchange. One object does all of it and then becomes
-                    // the torrent's piece verifier, so the layers it collected
-                    // are exactly what pieces are checked against.
-                    tracing::info!("resolving a v2-only magnet");
-                    let magnet = std::sync::Arc::new(crate::bittorrent::v2::V2Magnet::new());
-                    opts.metadata_interceptor = Some(magnet.clone());
-                    opts.piece_verifier = Some(magnet);
-                }
+                opts = magnet_add_options(&self.db, uri, &params);
                 match crate::bittorrent::v2::normalise_magnet(uri) {
                     Ok(fixed) => AddTorrent::from_url(fixed),
                     Err(err) => {
@@ -1885,7 +2192,7 @@ impl Session {
         self.rt.spawn(async move {
             match inner.add_torrent(add, Some(opts)).await {
                 Ok(AddTorrentResponse::Added(_, handle)) => {
-                    Self::on_torrent_added(&db, &meta, &handle, &source, &params);
+                    Self::on_torrent_added(&db, &meta, &handle.info_hash().as_string(), &source, &params);
                     // BEP 19. Only a real .torrent can carry `url-list`, and
                     // only after the torrent exists can a peer be attached to
                     // it - which is why this is here and not at build time.
@@ -1905,7 +2212,7 @@ impl Session {
                 // treating this as an add is what made "add 3, get 1" look
                 // like torrents were being dropped.
                 Ok(AddTorrentResponse::AlreadyManaged(_, handle)) => {
-                    Self::on_torrent_added(&db, &meta, &handle, &source, &params);
+                    Self::on_torrent_added(&db, &meta, &handle.info_hash().as_string(), &source, &params);
                     let hash = handle.info_hash().as_string();
                     let name = handle.name().unwrap_or_else(|| hash.clone());
                     tracing::info!("already in the session, not added again: {name}");
@@ -1926,57 +2233,159 @@ impl Session {
         true
     }
 
+    /// Accept a magnet straight into the list, then fetch its metadata behind
+    /// it - what qBittorrent does, and what "add" means to anyone who clicked
+    /// a link: the torrent is there, says "Downloading metadata", and can be
+    /// stopped or removed like any other while nobody has answered yet.
+    ///
+    /// `None` when the link names no hash this can read; the caller then hands
+    /// it to the engine as it is.
+    fn add_magnet(&self, uri: &str, params: &AddParams) -> Option<bool> {
+        let hash = magnet_wire_hash(uri)?;
+        if let Err(err) = crate::bittorrent::v2::normalise_magnet(uri) {
+            report_error(&self.events, SessionError::raw(err));
+            return Some(false);
+        }
+        let name = magnet_display_name(uri).unwrap_or_else(|| hash.clone());
+
+        let known = self.find(&hash).is_some()
+            || self.magnets.pending.lock().unwrap().contains_key(&hash);
+        if known {
+            tracing::info!("already in the session, not added again: {name}");
+            self.events.emit(SessionEvent::TorrentDuplicate { hash, name });
+            return Some(true);
+        }
+
+        // Written now, not when the metadata arrives: the row takes its place
+        // in the queue from the moment it is added, and a restart in between
+        // finds it.
+        let source = AddTorrentSource::MagnetUri(uri.to_string());
+        Self::on_torrent_added(&self.db, &self.meta, &hash, &source, params);
+
+        tracing::info!("magnet added, waiting for metadata: {name}");
+        self.magnets.pending.lock().unwrap().insert(
+            hash.clone(),
+            PendingMagnet {
+                uri: uri.to_string(),
+                name,
+                params: params.clone(),
+                task: None,
+                error: String::new(),
+            },
+        );
+        if params.start_torrent {
+            self.magnets.spawn(&hash);
+        } else {
+            // Added stopped: nothing goes on the network until it is started,
+            // which is what a stopped torrent means everywhere else.
+            self.magnets.save();
+        }
+        Some(true)
+    }
+
+    /// Bring back the magnets that were still waiting for metadata when the
+    /// application last closed. Their `torrent` rows are what keep their place
+    /// in the queue; the stored link and save path are what they are fetched
+    /// from.
+    fn restore_pending_magnets(&self, saved: &[(String, bool)]) {
+        for (hash, running) in saved {
+            if self.find(hash).is_some() {
+                continue; // resolved just before the close
+            }
+            let stored: Option<(String, String)> = self
+                .db
+                .with(|conn| {
+                    use rusqlite::OptionalExtension;
+                    conn.query_row(
+                        "select magnet_uri, save_path from torrent_magnet_uri where info_hash = ?1",
+                        [hash],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .optional()
+                })
+                .ok()
+                .flatten();
+            let Some((uri, save_path)) = stored else { continue };
+            let label_id = self
+                .meta
+                .lock()
+                .unwrap()
+                .get(hash)
+                .and_then(|m| m.label_id);
+            let name = magnet_display_name(&uri).unwrap_or_else(|| hash.clone());
+            self.magnets.pending.lock().unwrap().insert(
+                hash.clone(),
+                PendingMagnet {
+                    uri,
+                    name,
+                    params: AddParams {
+                        save_path: (!save_path.is_empty()).then_some(save_path),
+                        start_torrent: true,
+                        only_files: None,
+                        label_id,
+                    },
+                    task: None,
+                    error: String::new(),
+                },
+            );
+            if *running {
+                self.magnets.spawn(hash);
+            }
+        }
+        self.magnets.save();
+    }
+
     /// Resolve a magnet's metadata (file list, sizes, name) WITHOUT adding it,
-    /// so the UI can show the same add dialog as for a .torrent file. Uses
-    /// librqbit's `list_only` mode, which fetches the info dict over DHT/peers
-    /// and returns a reconstructed .torrent, bounded by a timeout. The outcome
-    /// (bytes, or the original uri on failure) is pushed to `slot` for the UI
-    /// to pick up on its next tick.
-    pub fn resolve_magnet(&self, uri: String, slot: Arc<Mutex<Vec<MagnetOutcome>>>) {
+    /// so the Add dialog can show its files. Uses librqbit's `list_only` mode,
+    /// which fetches the info dict over DHT/peers and returns a reconstructed
+    /// .torrent. The outcome is pushed to `slot` for the UI to pick up on its
+    /// next tick.
+    ///
+    /// No timeout: the dialog does not wait for this - the magnet can be added
+    /// whether or not it has answered - so it runs until it does, or until the
+    /// caller aborts it through the returned handle because the dialog row it
+    /// was for has gone.
+    pub fn resolve_magnet(
+        &self,
+        uri: String,
+        slot: Arc<Mutex<Vec<MagnetOutcome>>>,
+    ) -> Option<tokio::task::AbortHandle> {
         // Same normalisation as the add path, so the dialog and the add agree
         // on which magnets are usable rather than failing at different points.
-        let uri = match crate::bittorrent::v2::normalise_magnet(&uri) {
+        let fixed = match crate::bittorrent::v2::normalise_magnet(&uri) {
             Ok(fixed) => fixed,
             Err(err) => {
                 tracing::warn!("{err}");
-                report_error(&self.events, SessionError::raw(err));
-                slot.lock().unwrap().push(MagnetOutcome::Failed(uri));
-                return;
+                slot.lock().unwrap().push(MagnetOutcome::Failed { uri });
+                return None;
             }
         };
         let inner = self.rq();
-        self.rt.spawn(async move {
+        let task = self.rt.spawn(async move {
             let mut opts = AddTorrentOptions {
                 list_only: true,
                 ..Default::default()
             };
             // The preview needs the same treatment as the add, or a v2-only
             // magnet would resolve in the Add dialog and then fail on commit.
-            if crate::bittorrent::v2::magnet_hashes(&uri).is_v2_only() {
+            if crate::bittorrent::v2::magnet_hashes(&fixed).is_v2_only() {
                 let magnet = std::sync::Arc::new(crate::bittorrent::v2::V2Magnet::new());
                 opts.metadata_interceptor = Some(magnet);
             }
-            let outcome = match tokio::time::timeout(
-                std::time::Duration::from_secs(90),
-                inner.add_torrent(AddTorrent::from_url(uri.clone()), Some(opts)),
-            )
-            .await
-            {
-                Ok(Ok(AddTorrentResponse::ListOnly(r))) => {
-                    MagnetOutcome::Resolved(r.torrent_bytes.to_vec())
-                }
-                Ok(Err(e)) => {
+            let outcome = match inner.add_torrent(AddTorrent::from_url(fixed), Some(opts)).await {
+                Ok(AddTorrentResponse::ListOnly(r)) => MagnetOutcome::Resolved {
+                    uri,
+                    bytes: r.torrent_bytes.to_vec(),
+                },
+                Ok(_) => MagnetOutcome::Failed { uri },
+                Err(e) => {
                     tracing::warn!("magnet metadata resolve failed: {e:#}");
-                    MagnetOutcome::Failed(uri)
-                }
-                Ok(Ok(_)) => MagnetOutcome::Failed(uri),
-                Err(_) => {
-                    tracing::warn!("magnet metadata resolve timed out");
-                    MagnetOutcome::Failed(uri)
+                    MagnetOutcome::Failed { uri }
                 }
             };
             slot.lock().unwrap().push(outcome);
         });
+        Some(task.abort_handle())
     }
 
     /// One-shot import of every torrent from a PicoTorrent database. For each
@@ -2229,14 +2638,18 @@ impl Session {
 /// librqbit persists its own session state; this is the app's half - label,
 /// save path, added timestamp and the original source, none of which the
 /// engine knows or keeps.
+///
+/// Keyed by hash rather than by handle: a magnet is recorded when it is
+/// accepted, before the engine has a handle for it, and again (harmlessly -
+/// every write here keeps what is already there) once its metadata arrives.
 fn on_torrent_added(
         db: &Arc<Database>,
         meta: &Arc<Mutex<HashMap<String, TorrentMeta>>>,
-        handle: &Arc<ManagedTorrent>,
+        hash: &str,
         source: &AddTorrentSource,
         params: &AddParams,
     ) {
-        let hash = handle.info_hash().as_string();
+        let hash = hash.to_string();
         let now = Local::now();
 
         {
@@ -2280,6 +2693,24 @@ fn on_torrent_added(
     /// Pause one torrent. Unknown hashes are ignored: the list and the engine
     /// are refreshed on a tick, so a stale row can outlive its torrent.
     pub fn pause(&self, hash: &str) {
+        // Still waiting for metadata: stopping it means no longer asking.
+        let stopped = self
+            .magnets
+            .pending
+            .lock()
+            .unwrap()
+            .get_mut(hash)
+            .map(|entry| {
+                if let Some(task) = entry.task.take() {
+                    task.abort();
+                }
+                entry.error.clear();
+            })
+            .is_some();
+        if stopped {
+            self.magnets.save();
+            return;
+        }
         if let Some(handle) = self.find(hash)
             && let Err(err) = self.rt.block_on(self.rq().pause(&handle))
         {
@@ -2289,6 +2720,19 @@ fn on_torrent_added(
 
     /// Resume one torrent, ignoring an unknown hash.
     pub fn resume(&self, hash: &str) {
+        // Started by hand, so it is also started once its metadata is in -
+        // whatever the Add dialog said when it went in stopped.
+        let waiting = match self.magnets.pending.lock().unwrap().get_mut(hash) {
+            Some(entry) => {
+                entry.params.start_torrent = true;
+                entry.task.is_none()
+            }
+            None => false,
+        };
+        if waiting {
+            self.magnets.spawn(hash);
+            return;
+        }
         if let Some(handle) = self.find(hash)
             && let Err(err) = self.rt.block_on(self.rq().unpause(&handle))
         {
@@ -2514,6 +2958,18 @@ fn on_torrent_added(
 
     /// One removal, without renumbering the queue.
     fn remove_one(&self, hash: &str, delete_files: bool) {
+        // Waiting for metadata, so nothing on disk and nothing in the engine -
+        // unless the metadata lands in the same instant, which the fetch checks
+        // for once this entry is gone.
+        let waiting = self.magnets.pending.lock().unwrap().remove(hash);
+        if let Some(entry) = waiting {
+            if let Some(task) = entry.task {
+                task.abort();
+            }
+            self.magnets.save();
+            tracing::info!("removed before its metadata arrived: {}", entry.name);
+        }
+
         if let Some(handle) = self.find(hash) {
             let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
             if let Err(err) = self.rt.block_on(self.rq().delete(id, delete_files)) {
@@ -2787,7 +3243,7 @@ fn on_torrent_added(
     /// but wrong for the web API, where a typo would otherwise look like a
     /// success. Cheaper than scanning `torrents()` just to find out.
     pub fn exists(&self, hash: &str) -> bool {
-        self.find(hash).is_some()
+        self.find(hash).is_some() || self.magnets.pending.lock().unwrap().contains_key(hash)
     }
 
     /// Look up a live torrent by info hash. `None` for an unparseable hash as
@@ -2824,6 +3280,15 @@ fn on_torrent_added(
         // (hash, uploaded_total) pairs to persist once the lock is released -
         // the database must not be touched while `meta` is held.
         let mut to_flush: Vec<(String, i64)> = Vec::new();
+        // Where a magnet still waiting for metadata will go. Read out here for
+        // the same reason, and only when there is one to show it for.
+        let default_save_path = if self.magnets.pending.lock().unwrap().is_empty() {
+            String::new()
+        } else {
+            Configuration::new(self.db.clone())
+                .get_string("default_save_path")
+                .unwrap_or_default()
+        };
 
         {
             let mut meta_map = self.meta.lock().unwrap();
@@ -3028,6 +3493,62 @@ fn on_torrent_added(
                     total_wanted_remaining: stats.total_bytes.saturating_sub(stats.progress_bytes)
                         as i64,
                     upload_payload_rate: up_rate,
+                });
+            }
+
+            // Magnets the engine does not have yet. A hash it does have is
+            // one whose metadata landed a moment ago and is already listed
+            // above.
+            let pending = self.magnets.pending.lock().unwrap();
+            let live: std::collections::HashSet<String> =
+                result.iter().map(|r| r.info_hash.clone()).collect();
+            for (hash, entry) in pending.iter().filter(|(h, _)| !live.contains(*h)) {
+                let meta = meta_map.get(hash);
+                let running = entry.task.is_some();
+                let label_id = meta.and_then(|m| m.label_id);
+                result.push(TorrentStatus {
+                    added_on: meta.map_or_else(Local::now, |m| m.added_on),
+                    all_time_download: 0,
+                    all_time_upload: 0,
+                    availability: -1.0,
+                    completed_on: None,
+                    download_payload_rate: 0,
+                    error: entry.error.clone(),
+                    eta: None,
+                    info_hash_v1: None,
+                    info_hash_v2: None,
+                    info_hash: hash.clone(),
+                    label_id,
+                    label_name: label_id
+                        .and_then(|id| labels.get(&id).cloned())
+                        .unwrap_or_default(),
+                    name: entry.name.clone(),
+                    paused: !running,
+                    peers_current: 0,
+                    peers_total: 0,
+                    progress: 0.0,
+                    queue_position: meta.map_or(i64::MAX, |m| m.queue_position),
+                    ratio: 0.0,
+                    save_path: entry
+                        .params
+                        .save_path
+                        .clone()
+                        .unwrap_or_else(|| default_save_path.clone()),
+                    seeds_current: 0,
+                    seeds_total: 0,
+                    // Stopped reads as stopped, the way a paused torrent does,
+                    // so the queue scheduler can start it again; one that gave
+                    // up says why.
+                    state: if running {
+                        State::DownloadingMetadata
+                    } else if !entry.error.is_empty() {
+                        State::Error
+                    } else {
+                        State::DownloadingPaused
+                    },
+                    total_wanted: 0,
+                    total_wanted_remaining: 0,
+                    upload_payload_rate: 0,
                 });
             }
         }
@@ -5479,5 +6000,68 @@ mod migrate_label_tests {
 
         cfg.restore_value(key, before.as_deref());
         assert_eq!(cfg.export_value(key).unwrap(), before, "not put back as it was");
+    }
+}
+
+#[cfg(test)]
+mod pending_magnet_tests {
+    //! The pieces a magnet waiting for metadata is built from. The waiting
+    //! itself needs a live engine and a swarm; what it is keyed by, called and
+    //! remembered as does not.
+    use super::{magnet_display_name, magnet_label, magnet_wire_hash, parse_pending_magnets};
+
+    const HEX: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    /// The key has to be the engine's own spelling of the hash - lowercase
+    /// hex - or the row and the torrent it becomes would be two rows.
+    #[test]
+    fn hex_and_base32_hashes_key_the_same() {
+        let hex = format!("magnet:?xt=urn:btih:{}", HEX.to_uppercase());
+        let b32 = "magnet:?xt=urn:btih:AERUKZ4JVPG66AJDIVTYTK6N54ASGRLH";
+        assert_eq!(magnet_wire_hash(&hex).as_deref(), Some(HEX));
+        assert_eq!(magnet_wire_hash(b32).as_deref(), Some(HEX));
+    }
+
+    /// A v2-only link is known to the engine by its truncated hash, as
+    /// `normalise_magnet` makes it.
+    #[test]
+    fn a_v2_only_link_keys_by_its_truncated_hash() {
+        let v2 = "ab".repeat(32);
+        let uri = format!("magnet:?xt=urn:btmh:1220{v2}");
+        assert_eq!(magnet_wire_hash(&uri), Some("ab".repeat(20)));
+    }
+
+    #[test]
+    fn a_link_without_a_hash_has_no_key() {
+        assert_eq!(magnet_wire_hash("magnet:?dn=nothing"), None);
+        assert_eq!(magnet_wire_hash("http://example.com/x.torrent"), None);
+    }
+
+    /// Browsers hand over `dn` encoded both ways.
+    #[test]
+    fn the_display_name_is_decoded() {
+        let uri = format!("magnet:?xt=urn:btih:{HEX}&dn=Some+Thing%20%C3%A9&tr=udp%3A%2F%2Fx");
+        assert_eq!(magnet_display_name(&uri).as_deref(), Some("Some Thing é"));
+        // A stray % is kept, not an error.
+        let odd = format!("magnet:?xt=urn:btih:{HEX}&dn=100%");
+        assert_eq!(magnet_display_name(&odd).as_deref(), Some("100%"));
+    }
+
+    /// No name, or an empty one: the hash stands in, never a blank row.
+    #[test]
+    fn a_nameless_magnet_is_labelled_by_its_hash() {
+        assert_eq!(magnet_label(&format!("magnet:?xt=urn:btih:{HEX}")), HEX);
+        assert_eq!(magnet_label(&format!("magnet:?xt=urn:btih:{HEX}&dn=")), HEX);
+    }
+
+    #[test]
+    fn the_saved_list_round_trips() {
+        assert_eq!(
+            parse_pending_magnets("aa:1,bb:0"),
+            vec![("aa".to_string(), true), ("bb".to_string(), false)]
+        );
+        assert!(parse_pending_magnets("").is_empty());
+        // Damage is skipped rather than restored as nonsense.
+        assert_eq!(parse_pending_magnets(",junk,:1,cc:1"), vec![("cc".to_string(), true)]);
     }
 }

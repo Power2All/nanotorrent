@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Hausa (Najeriya) - Partner Center: Hausa (Nigeria) (ha-Latn-NG)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent shi ne sigar Rust na PicoTorrent na Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sigar 0.4.2
+Sigar 0.4.3
 
-- Ƙaura daga wani abokin ciniki. Fayil > Ƙaura daga yana karanta shigarwar qBittorrent, uTorrent, BitComet, Transmission ko PicoTorrent da ke akwai kuma yana kawo torrents tare da hanyoyin ajiyarsu da lakabinsu. Idan bai sami ɗaya a wannan kwamfutar ba, zai tambaye ka inda zai duba, don haka madadin ma yana aiki. Ba a kwafi ko matsar da komai - fayilolinku sun kasance inda suke. Yana nuna ci gaba, kuma Soke yana dakatar da shi ya mayar da abin da aka riga aka ƙara.
-- Sandar Guda a cikin Bayani yanzu taswirar torrent ce maimakon sandar ci gaba ta biyu: shafi ɗaya kowane guda, mai haske inda ake da wannan guda, tare da guduwar da ake nema yanzu a zana da launinsu.
-- Shafin Trackers na torrent haɗaɗɗe yana nuna ƙungiyoyi biyu, ba na farko kawai ba.
-- Sanarwa yanzu suna bayyana daga sigar Store, kuma maɓallin da ba zai iya yin komai a can ba ba a sake nuna shi.
-- A cikin hanyar sadarwar yanar gizo girman kamar "392.91 MB" ba a sake yanke shi ba.
-- An sabunta zuwa Slint 1.18.1, tare da sabunta dogaro.
+- Hanyoyin magnet ba sa jiran bayanansu kuma: tagar Ƙara tana buɗewa nan take, kuma magnet da aka ƙara kafin bayanan su iso yana bayyana a matsayin “Ana saukar da metadata” a jerin har sai sun iso, kamar a qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

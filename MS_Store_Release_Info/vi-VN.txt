@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Tiếng Việt (Việt Nam) - Partner Center: Vietnamese (Vietnam) (vi-VN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent là bản chuyển sang Rust của PicoTorrent do Viktor Elofsson vi
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Phiên bản 0.4.2
+Phiên bản 0.4.3
 
-- Chuyển từ ứng dụng khác. Tệp > Chuyển từ đọc bản cài đặt qBittorrent, uTorrent, BitComet, Transmission hoặc PicoTorrent hiện có và mang các torrent sang cùng với đường dẫn lưu và nhãn của chúng. Nếu không tìm thấy trên máy này, nó sẽ hỏi bạn tìm ở đâu, nên bản sao lưu cũng dùng được. Không có gì bị sao chép hay di chuyển - tệp của bạn vẫn ở nguyên chỗ cũ. Nó hiển thị tiến trình, và Hủy sẽ dừng lại và trả lại những gì đã thêm.
-- Thanh Mảnh trong Tổng quan nay là bản đồ của torrent thay vì một thanh tiến trình thứ hai: mỗi mảnh một cột, sáng ở nơi đã có mảnh đó, và các mảnh đang được yêu cầu ngay lúc này được vẽ bằng màu riêng.
-- Thẻ Trình theo dõi của torrent lai hiển thị cả hai bầy, không chỉ bầy đầu tiên.
-- Thông báo giờ đã xuất hiện từ phiên bản Store, và một nút không làm được gì ở đó không còn được hiển thị.
-- Trong giao diện web, kích thước như "392.91 MB" không còn bị cắt.
-- Cập nhật lên Slint 1.18.1, cùng một loạt cập nhật phụ thuộc.
+- Liên kết magnet không còn phải chờ thông tin chi tiết: hộp thoại Thêm mở ngay lập tức, và magnet được thêm trước khi có thông tin chi tiết sẽ hiển thị là “Đang tải siêu dữ liệu” trong danh sách cho đến khi có, giống như trong qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

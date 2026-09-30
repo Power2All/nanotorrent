@@ -256,8 +256,11 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   arrive in **one dialog**, listed down the side behind a draggable divider -
   long names need the room - with each one's file tree shown as you select it.
   The divider's position is remembered. File selection is per torrent; save
-  path and start apply to the batch. Add magnet, which **fetches the metadata
-  first** and then shows the same dialog with the real file list - and so does a
+  path and start apply to the batch. Add magnet opens the same dialog **at
+  once** and fetches the metadata while it is up: the real file list fills in
+  when it arrives, and Add does not wait for it - a magnet added without it is
+  listed as **Downloading metadata** until a peer sends it, as in qBittorrent,
+  and keeps waiting across a restart. So does a
   magnet opened from a browser, the shell or a second instance, which is the
   point: a magnet clicked outside the application gets the same say over save
   path and file selection as one typed into the dialog. Preferences ▸ **Skip
@@ -687,6 +690,20 @@ one. Collected so nobody has to file them twice.
   yet.
 
 ## History
+
+**v0.4.3** lets a magnet in before its metadata has arrived.
+
+- The Add dialog opens at once for a magnet, as it does in qBittorrent, and
+  fetches the metadata while it is up: the file list fills in if it arrives,
+  and Add does not wait for it. It used to wait up to ninety seconds with only
+  a toast on screen, and a magnet nobody answered in that time never got a
+  dialog at all.
+- A magnet added without its metadata is in the transfer list straight away as
+  **Downloading metadata** - from the dialog, the web interface, a plugin or
+  the command line alike. It can be stopped, started and removed like any
+  other torrent, and one still waiting at exit carries on waiting after the
+  next start. librqbit only creates a torrent once the info dictionary is in
+  hand, so until then the row is the session's own, not the engine's.
 
 **v0.4.2** is the Microsoft Store build behaving like the installer one, and a
 hybrid torrent reporting both of its swarms.

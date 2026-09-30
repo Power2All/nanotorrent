@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.2
+Versi 0.4.3
 
-- Migrasi dari klien lain. Berkas > Migrasi dari membaca instalasi qBittorrent, uTorrent, BitComet, Transmission atau PicoTorrent yang ada dan membawa torrent beserta jalur penyimpanan dan labelnya. Jika tidak menemukannya di komputer ini, ia menanyakan di mana harus mencari, sehingga cadangan pun berfungsi. Tidak ada yang disalin atau dipindahkan - berkas Anda tetap di tempatnya. Kemajuan ditampilkan, dan Batal menghentikannya serta mengembalikan yang sudah ditambahkan.
-- Bilah Bagian di Ikhtisar kini adalah peta torrent, bukan bilah kemajuan kedua: satu kolom per bagian, menyala di tempat bagian itu dimiliki, dan bagian yang sedang diminta digambar dengan warnanya sendiri.
-- Tab Pelacak pada torrent hibrida menampilkan kedua kawanan, bukan hanya yang pertama.
-- Notifikasi kini muncul dari versi Store, dan tombol yang di sana tidak bisa melakukan apa pun tidak lagi ditampilkan.
-- Di antarmuka web, ukuran seperti "392.91 MB" tidak lagi dipotong.
-- Diperbarui ke Slint 1.18.1, dengan serangkaian pembaruan dependensi.
+- Tautan magnet tidak lagi menunggu detailnya: dialog Tambah langsung terbuka, dan magnet yang ditambahkan sebelum detailnya tiba tampil sebagai “Mengunduh metadata” di daftar hingga detailnya tiba, seperti di qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

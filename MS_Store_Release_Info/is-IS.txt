@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Íslenska (Ísland) - Partner Center: Icelandic (Iceland) (is-IS)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent er Rust-útfærsla af PicoTorrent eftir Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Útgáfa 0.4.2
+Útgáfa 0.4.3
 
-- Flytja frá öðrum biðlara. Skrá > Flytja frá les fyrirliggjandi uppsetningu á qBittorrent, uTorrent, BitComet, Transmission eða PicoTorrent og sækir streymin með vistunarslóðum og merkimiðum. Finni hún enga á þessari tölvu spyr hún hvar eigi að leita, svo afrit virkar líka. Ekkert er afritað eða fært - skrárnar þínar verða áfram þar sem þær eru. Framvinda er sýnd og Hætta við stöðvar hana og skilar því sem þegar var bætt við.
-- Hlutastikan í Yfirliti er nú kort af streyminu í stað annarrar framvindustiku: einn dálkur á hvern hlut, upplýstur þar sem hluturinn er til, og hlutir sem er verið að sækja núna eru teiknaðir í eigin lit.
-- Rekjaraflipi blandaðs streymis sýnir báða hópana, ekki aðeins þann fyrri.
-- Tilkynningar birtast nú frá Store-útgáfunni og hnappur sem gat ekkert gert þar er ekki lengur sýndur.
-- Í vefviðmótinu er stærð eins og "392.91 MB" ekki lengur stytt.
-- Uppfært í Slint 1.18.1 ásamt uppfærslum á kerfiseiningum.
+- Segultenglar bíða ekki lengur eftir upplýsingum sínum: Bæta við-glugginn opnast strax og segull sem bætt er við áður en upplýsingarnar berast birtist sem „Hleð niður lýsigögnum“ á listanum þar til þær berast, eins og í qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

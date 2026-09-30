@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Lietuvių (Lietuva) - Partner Center: Lithuanian (Lithuania) (lt-LT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent yra Viktoro Elofssono PicoTorrent perkėlimas į Rust kalbą.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.2
+Versija 0.4.3
 
-- Perkėlimas iš kitos programos. Failas > Perkelti iš perskaito esamą qBittorrent, uTorrent, BitComet, Transmission arba PicoTorrent diegimą ir perkelia torentus kartu su įrašymo keliais bei etiketėmis. Jei tokio šiame kompiuteryje neranda, paklausia, kur ieškoti, tad tinka ir atsarginė kopija. Niekas nekopijuojama ir neperkeliama - jūsų failai lieka ten, kur buvo. Rodoma eiga, o Atsisakyti sustabdo ir grąžina tai, kas jau buvo pridėta.
-- Apžvalgos juosta Dalys dabar yra torento žemėlapis, o ne antra eigos juosta: po vieną stulpelį kiekvienai daliai, šviečiantį ten, kur dalis turima, o dabar prašomos dalys piešiamos sava spalva.
-- Hibridinio torento Sekikliai kortelė rodo abu spiečius, ne tik pirmąjį.
-- Pranešimai dabar rodomi ir iš Store versijos, o mygtukas, kuris ten nieko negalėjo, nebėra rodomas.
-- Žiniatinklio sąsajoje dydis, pvz., "392.91 MB", nebetrumpinamas.
-- Atnaujinta iki Slint 1.18.1 kartu su priklausomybių atnaujinimais.
+- Magnetinės nuorodos nebelaukia savo informacijos: pridėjimo langas atsidaro iškart, o magnetas, pridėtas prieš atkeliaujant informacijai, sąraše rodomas kaip „Parsiunčiami metaduomenys“, kol ji atkeliaus, kaip ir qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
