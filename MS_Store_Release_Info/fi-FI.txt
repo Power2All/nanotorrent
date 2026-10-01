@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versio 0.4.2
+Versio 0.4.3
 
-- Siirry toisesta ohjelmasta. Tiedosto > Siirrä ohjelmasta lukee olemassa olevan qBittorrent-, uTorrent-, BitComet-, Transmission- tai PicoTorrent-asennuksen ja tuo torrentit mukanaan tallennuspolkuineen ja tunnisteineen. Jos sitä ei löydy tästä tietokoneesta, se kysyy mistä katsoa, joten varmuuskopiokin käy. Mitään ei kopioida eikä siirretä - tiedostosi pysyvät paikallaan. Se näyttää edistymisen, ja Peruuta pysäyttää sen ja palauttaa jo lisätyn.
-- Yleiskatsauksen Palat-palkki on nyt torrentin kartta eikä toinen edistymispalkki: yksi sarake palaa kohti, valaistuna siellä missä pala on, ja juuri nyt pyydetyt palat piirretään omalla värillään.
-- Hybriditorrentin Seurantapalvelimet-välilehti näyttää molemmat parvet, ei vain ensimmäistä.
-- Ilmoitukset näkyvät nyt myös Store-versiossa, eikä painiketta, joka ei siellä voinut tehdä mitään, enää näytetä.
-- Verkkokäyttöliittymässä kokoa kuten "392.91 MB" ei enää katkaista.
-- Päivitetty versioon Slint 1.18.1 sekä kierros riippuvuuspäivityksiä.
+- Magneettilinkit eivät enää odota tietojaan: Lisää-ikkuna avautuu heti, ja ennen tietojen saapumista lisätty magneetti näkyy luettelossa tilassa ”Ladataan metadataa”, kunnes tiedot saapuvat, kuten qBittorrentissa.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

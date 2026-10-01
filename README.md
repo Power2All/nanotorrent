@@ -73,6 +73,48 @@ The AppImage needs no installation - `chmod +x` it and run. It bundles its
 libraries but not glibc, so it needs 2.35 or newer too. For a desktop entry and
 icon, run it once with `--appimage-integrate`, or use the `.deb`/`.rpm`.
 
+### Portable mode
+
+By default the profile (settings, torrents, session state, logs) lives in the
+user's profile folder: `%LOCALAPPDATA%\NanoTorrent` on Windows,
+`~/.local/share/nanotorrent` on Linux, `~/Library/Application Support/NanoTorrent`
+on macOS. A portable copy keeps it in its own folder instead, so the whole thing
+can live on a USB stick or be moved as one folder.
+
+```
+nanotorrent --portable
+```
+
+This writes a `portable.txt` beside the program and starts. Every later start
+then stays portable, however it starts: a shortcut, a magnet link clicked in a
+browser, a `.torrent` opened from the file manager, or the autostart entry. A
+flag that only lasted one run would lose all of those. Delete `portable.txt` to
+go back; the profile in that folder is left as it is. Creating the file by hand
+does the same thing, and `NANOTORRENT_PORTABLE=1` makes a single run portable.
+
+"Beside the program" means:
+
+- **Windows:** the folder `nanotorrent-gui.exe` is in.
+- **AppImage:** the folder the `.AppImage` file is in, not the temporary mount
+  it runs from.
+- **macOS:** the folder the `.app` is in, not inside the bundle.
+
+The folder has to be writable, so a copy under Program Files cannot be made
+portable, and the Microsoft Store version cannot either. `--portable` says so
+rather than quietly using the normal profile.
+
+The first time a portable copy starts on a machine that already has a normal
+profile, it asks whether to copy that profile across or start fresh. It asks
+once. The original is never changed. An encrypted profile is copied
+*unencrypted*: its key is tied to the Windows account, so an encrypted copy
+would open on this machine only. For the same reason a portable copy on Windows
+does not suggest encrypting its database.
+
+A portable copy has its own single-instance channel, so it can run alongside the
+installed one. A torrent or magnet opened through a copy goes to that copy's
+window, not the other one's. Two copies running at once each need their own
+listening port (Preferences ▸ Connection), since both default to 6881.
+
 ### Rendering
 
 NanoTorrent draws on the CPU, on every platform, on purpose. It sets
@@ -256,8 +298,11 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   arrive in **one dialog**, listed down the side behind a draggable divider -
   long names need the room - with each one's file tree shown as you select it.
   The divider's position is remembered. File selection is per torrent; save
-  path and start apply to the batch. Add magnet, which **fetches the metadata
-  first** and then shows the same dialog with the real file list - and so does a
+  path and start apply to the batch. Add magnet opens the same dialog **at
+  once** and fetches the metadata while it is up: the real file list fills in
+  when it arrives, and Add does not wait for it - a magnet added without it is
+  listed as **Downloading metadata** until a peer sends it, as in qBittorrent,
+  and keeps waiting across a restart. So does a
   magnet opened from a browser, the shell or a second instance, which is the
   point: a magnet clicked outside the application gets the same say over save
   path and file selection as one typed into the dialog. Preferences ▸ **Skip
@@ -687,6 +732,44 @@ one. Collected so nobody has to file them twice.
   yet.
 
 ## History
+
+**v0.4.3** lets a magnet in before its metadata has arrived, and gives
+portable mode a switch.
+
+- The Add dialog opens at once for a magnet, as it does in qBittorrent, and
+  fetches the metadata while it is up: the file list fills in if it arrives,
+  and Add does not wait for it. It used to wait up to ninety seconds with only
+  a toast on screen, and a magnet nobody answered in that time never got a
+  dialog at all.
+- A magnet added without its metadata is in the transfer list straight away as
+  **Downloading metadata** - from the dialog, the web interface, a plugin or
+  the command line alike. It can be stopped, started and removed like any
+  other torrent, and one still waiting at exit carries on waiting after the
+  next start. librqbit only creates a torrent once the info dictionary is in
+  hand, so until then the row is the session's own, not the engine's.
+- `nanotorrent --portable` keeps the profile beside the program from then on,
+  by writing a `portable.txt` there - so it stays portable however it is
+  started, not only from the shortcut that passed the flag. Before, portable
+  mode existed but only for those who knew to create that file by hand. See
+  [Portable mode](#portable-mode).
+- The first start of a new portable copy offers to copy the existing profile
+  across, once. An encrypted profile is copied unencrypted, because its key
+  only opens it on the Windows account that made it.
+- A portable copy runs alongside the installed one instead of handing every
+  launch to it: the single-instance channel is now per profile. An AppImage
+  keeps its portable profile beside the `.AppImage` file, and a macOS copy
+  beside the `.app`, rather than inside a folder that is read-only or
+  temporary. A folder that cannot be written to, and the Microsoft Store
+  version, say so instead of quietly using the normal profile.
+- The Windows installer's information page reads properly. It is generated
+  from this file, and raw `<img>` tags, a screenshot gallery of image tags,
+  literal asterisks and misaligned bullets no longer come through.
+- Microsoft Store submissions run from Linux too: `pwsh
+  installer/store-submit.ps1` has GitHub Actions build the package
+  (`store-msix.yml`) and does the rest locally. See
+  [docs/MICROSOFT-STORE.md](docs/MICROSOFT-STORE.md).
+- Under the hood: `rustls-pemfile`, unmaintained, is gone - rustls parses the
+  PEM itself - and a round of dead code and duplicated helpers was removed.
 
 **v0.4.2** is the Microsoft Store build behaving like the installer one, and a
 hybrid torrent reporting both of its swarms.

@@ -10,10 +10,15 @@
 
 param(
     [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')),
-    [string]$Out  = $PSScriptRoot
+    [string]$Out  = $PSScriptRoot,
+
+    # Leave installer.bmp alone. Drawing it needs System.Drawing, which .NET
+    # only has on Windows, so off Windows this is on regardless - that is
+    # enough to regenerate and check readme.rtf from Linux.
+    [switch]$SkipBitmap
 )
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Drawing
+if (-not (($PSVersionTable.PSEdition -eq 'Desktop') -or $IsWindows)) { $SkipBitmap = $true }
 
 # --- version.nsh from Cargo.toml ---
 # The wizard shows the version it is installing, so it must never drift from the
@@ -37,6 +42,8 @@ $fileVer = ($parts[0..3]) -join '.'
     (New-Object System.Text.ASCIIEncoding))
 
 # --- installer.bmp from app.png ---
+if (-not $SkipBitmap) {
+Add-Type -AssemblyName System.Drawing
 $png = [System.Drawing.Image]::FromFile((Join-Path $Root 'res\app.png'))
 $bmp = New-Object System.Drawing.Bitmap 164, 314
 $g   = [System.Drawing.Graphics]::FromImage($bmp)
@@ -48,22 +55,58 @@ $g.DrawString('NanoTorrent', $font, [System.Drawing.Brushes]::White, 12, 178)
 $font.Dispose(); $g.Dispose()
 $bmp.Save((Join-Path $Out 'installer.bmp'), [System.Drawing.Imaging.ImageFormat]::Bmp)
 $png.Dispose(); $bmp.Dispose()
+}
 
 # --- readme.rtf from README.md ---
 # RTF, not plain text: the RichEdit control NSIS uses for that page renders RTF
 # directly, and RTF is pure 7-bit ASCII on disk - every non-ASCII character
 # becomes a \uNNNN? escape. That sidesteps the encoding guess that mangled the
 # em dashes / arrows in the old readme.txt, and gives real formatting.
+#
+# README.md is written for GitHub, so it carries things a RichEdit control has
+# no use for: <img> tags and ![images], a screenshot gallery laid out as a
+# table, <sub> captions. Those are taken out or reduced to their text here
+# rather than shown as markup - which is what the installer used to do.
 
-# Inline markup -> RTF. Order matters: RTF's own specials are escaped FIRST,
-# so the control words inserted afterwards survive.
-function ConvertTo-RtfInline([string]$s) {
-    $s = $s.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}')
-    $s = [regex]::Replace($s, '\[([^\]]+)\]\([^)]+\)', '$1')   # [text](url) -> text
+# The HTML tags README.md is allowed to use, removed with their text kept.
+# Named rather than "anything in angle brackets": prose and code spans use
+# <ver>, <hash> and friends as placeholders, and those have to survive.
+$HtmlTags = 'img|sub|sup|br|p|div|span|picture|source|a|b|i|em|strong|kbd|details|summary|center'
+
+# Inline markup -> RTF, for text outside code spans. Order matters: images,
+# links and tags are removed from the raw text, then RTF's own specials are
+# escaped, and only then are control words inserted, so they survive.
+function ConvertTo-RtfText([string]$s) {
+    $s = [regex]::Replace($s, '!\[[^\]]*\]\([^)]*\)', '')                 # ![alt](src) -> nothing
+    $s = [regex]::Replace($s, "</?(?:$HtmlTags)\b[^>]*>", '')              # <img ...>, <sub> -> nothing
+    $s = [regex]::Replace($s, '\[([^\]]+)\]\([^)]+\)', '$1')              # [text](url) -> text
     $s = [regex]::Replace($s, '<((?:https?|mailto):[^>]+)>', '$1')
+    $s = $s.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}')
     $s = [regex]::Replace($s, '\*\*([^*]+)\*\*', '{\b $1}')
-    $s = [regex]::Replace($s, '`([^`]+)`', '{\f1 $1}')
+    # One star, hugging its text on both sides - so "a * b" and a bare "*"
+    # stay as they are.
+    $s = [regex]::Replace($s, '(?<![*\w])\*(?=\S)([^*]+?)(?<=\S)\*(?![*\w])', '{\i $1}')
     $s
+}
+
+# A whole line of inline Markdown. Code spans are swapped for placeholders
+# first, so nothing inside backticks is read as markup - `lang/*.json` keeps
+# its star and `<ver>` its brackets - and put back last. Placeholders rather
+# than splitting the line at them: bold that CONTAINS a code span, like
+# **the `.torrent` files**, has to stay one bold run.
+function ConvertTo-RtfInline([string]$s) {
+    $codes = New-Object System.Collections.ArrayList
+    $s = [regex]::Replace($s, '`([^`]+)`', [System.Text.RegularExpressions.MatchEvaluator] {
+            param($m)
+            "$([char]1)$($codes.Add($m.Groups[1].Value))$([char]2)"
+        })
+    $s = ConvertTo-RtfText $s
+    $s = [regex]::Replace($s, '\x01(\d+)\x02', [System.Text.RegularExpressions.MatchEvaluator] {
+            param($m)
+            $code = [string]$codes[[int]$m.Groups[1].Value]
+            '{\f1 ' + $code.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}') + '}'
+        })
+    $s.Trim()
 }
 
 # Non-ASCII -> \uNNNN? (\uc1 in the header says one fallback char follows).
@@ -77,18 +120,24 @@ function ConvertTo-RtfAscii([string]$s) {
     $sb.ToString()
 }
 
+# Sizes are in half-points: 18 is 9pt, the body text. Every paragraph resets to
+# it with \plain rather than trusting the previous one to have cleaned up -
+# a size left behind by one heading is how the whole page after it comes out
+# the wrong size.
+$Body = '\plain\f0\fs18'
+
 $rtf = New-Object System.Text.StringBuilder
 [void]$rtf.AppendLine('{\rtf1\ansi\ansicpg1252\deff0\uc1')
 [void]$rtf.AppendLine('{\fonttbl{\f0\fswiss\fcharset0 Segoe UI;}{\f1\fmodern\fcharset0 Consolas;}}')
-[void]$rtf.AppendLine('\viewkind4\f0\fs18')
+[void]$rtf.AppendLine("\viewkind4$Body")
 
 # -Encoding UTF8 is REQUIRED: PowerShell 5.1's Get-Content defaults to the
 # system ANSI codepage, which turns every em dash into "a<euro>" mojibake
 # before any of the conversion below runs.
 $lines = (Get-Content -Raw -Encoding UTF8 (Join-Path $Root 'README.md')) -split "\r?\n"
 
-# Pass 1: fold Markdown's hard-wrapped lines into logical blocks, so a bullet
-# or paragraph that spans three source lines stays ONE RTF paragraph.
+# Pass 1: fold Markdown's hard-wrapped lines into logical blocks, so a bullet,
+# quote or paragraph that spans three source lines stays ONE RTF paragraph.
 $blocks = New-Object System.Collections.ArrayList
 $inCode = $false
 $cur = $null
@@ -108,43 +157,82 @@ foreach ($line in $lines) {
         [void]$blocks.Add(@{ Kind = "h$($Matches[1].Length)"; Text = $Matches[2].Trim() })
         continue
     }
-    if ($line -match '^\s*>\s?(.*)')      { Close-Block; $cur = @{ Kind = 'quote';  Text = $Matches[1].Trim() }; continue }
-    if ($line -match '^\s*[-*]\s+(.*)')   { Close-Block; $cur = @{ Kind = 'bullet'; Text = $Matches[1].Trim() }; continue }
+    if ($line -match '^\s*>\s?(.*)') {
+        # A quote runs on over its `>` lines rather than one paragraph each.
+        if ($cur -and $cur.Kind -eq 'quote') { $cur.Text += ' ' + $Matches[1].Trim() }
+        else { Close-Block; $cur = @{ Kind = 'quote'; Text = $Matches[1].Trim() } }
+        continue
+    }
+    if ($line -match '^(\s*)[-*]\s+(.*)') {
+        Close-Block
+        # Two spaces of indent per level, as README.md is written.
+        $level = [Math]::Min([int][Math]::Floor($Matches[1].Length / 2), 2)
+        $cur = @{ Kind = 'bullet'; Text = $Matches[2].Trim(); Level = $level }
+        continue
+    }
     # Anything else continues the open block, or starts a paragraph.
     if ($cur) { $cur.Text += ' ' + $line.Trim() } else { $cur = @{ Kind = 'para'; Text = $line.Trim() } }
 }
 Close-Block
 
 # Pass 2: blocks -> RTF.
-$tableHeader = @()
+$tableHeader = $null
 foreach ($b in $blocks) {
-    if ($b.Kind -ne 'table') { $tableHeader = @() }
+    if ($b.Kind -ne 'table') { $tableHeader = $null }
+
+    # Headings, paragraphs and the like that were only an image or a tag have
+    # nothing left to show, and an empty paragraph is only a gap.
+    if ($b.Kind -ne 'code' -and $b.Kind -ne 'table') {
+        $text = ConvertTo-RtfInline $b.Text
+        if (-not $text) { continue }
+    }
+
     switch ($b.Kind) {
         'code' {
             $code = $b.Text.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}')
-            [void]$rtf.AppendLine("\pard\li280\f1\fs16 $code\par\pard\f0\fs18")
+            [void]$rtf.AppendLine("\pard\li280\sa0$Body\f1\fs16 $code\par")
         }
         'table' {
-            # The separator row (|---|---|) is dropped; the header row is
-            # remembered and used to label each cell, so a wide comparison
-            # table still reads top-to-bottom in a narrow installer window.
+            $cells = @(($b.Text -replace '^\||\|$', '') -split '\s*\|\s*' | ForEach-Object { ConvertTo-RtfInline $_ })
+            # The separator row (|---|---|) is dropped.
+            if (($b.Text -replace '[|\s]', '') -match '^[-:]*$' -and $b.Text -match '-') { break }
+            if ($null -eq $tableHeader) { $tableHeader = $cells; break }
+
+            if (-not ($tableHeader -join '')) {
+                # No header at all: a layout table, like the screenshot gallery -
+                # rows of pictures with a row of captions under each. With the
+                # pictures gone, each caption is simply a paragraph.
+                foreach ($cell in $cells) {
+                    if ($cell) { [void]$rtf.AppendLine("\pard\sa80$Body $cell\par") }
+                }
+                break
+            }
+
+            # A real table. The header row labels each cell, so a wide
+            # comparison table still reads top-to-bottom in a narrow window.
             # ponytail: label-per-cell instead of a real RTF \trowd table -
             # upgrade if a table ever needs to be read column-wise.
-            $cells = @(($b.Text -replace '^\||\|$', '') -split '\s*\|\s*' | ForEach-Object { $_.Trim() })
-            if (($cells -join '') -match '^[-: ]*$') { break }
-            if ($tableHeader.Count -eq 0) { $tableHeader = $cells; break }
-            [void]$rtf.AppendLine("\pard\sa40{\b $(ConvertTo-RtfInline $cells[0])}\par")
+            [void]$rtf.AppendLine("\pard\sa40$Body{\b $($cells[0])}\par")
             for ($i = 1; $i -lt $cells.Count; $i++) {
-                $label = if ($i -lt $tableHeader.Count) { ConvertTo-RtfInline $tableHeader[$i] } else { '' }
-                [void]$rtf.AppendLine("\pard\li280\sa40{\i $label}:  $(ConvertTo-RtfInline $cells[$i])\par")
+                $label = if ($i -lt $tableHeader.Count) { $tableHeader[$i] } else { '' }
+                [void]$rtf.AppendLine("\pard\li280\sa40$Body{\i $label}:  $($cells[$i])\par")
             }
         }
-        'h1'     { [void]$rtf.AppendLine("\pard\sa120{\b\fs32 $(ConvertTo-RtfInline $b.Text)}\par") }
-        'h2'     { [void]$rtf.AppendLine("\pard\sa100{\b\fs24 $(ConvertTo-RtfInline $b.Text)}\par") }
-        'quote'  { [void]$rtf.AppendLine("\pard\li280\sa60{\i $(ConvertTo-RtfInline $b.Text)}\par") }
-        'bullet' { [void]$rtf.AppendLine("\pard\li280\fi-140\sa60\bullet\tab $(ConvertTo-RtfInline $b.Text)\par") }
-        'para'   { [void]$rtf.AppendLine("\pard\sa80 $(ConvertTo-RtfInline $b.Text)\par") }
-        default  { [void]$rtf.AppendLine("\pard\sa80{\b $(ConvertTo-RtfInline $b.Text)}\par") }   # h3-h6
+        'h1'     { [void]$rtf.AppendLine("\pard\sb120\sa120$Body{\b\fs32 $text}\par") }
+        'h2'     { [void]$rtf.AppendLine("\pard\sb160\sa100$Body{\b\fs26 $text}\par") }
+        'h3'     { [void]$rtf.AppendLine("\pard\sb100\sa80$Body{\b\fs21 $text}\par") }
+        'quote'  { [void]$rtf.AppendLine("\pard\li280\sa80$Body{\i $text}\par") }
+        'bullet' {
+            # A hanging indent with a tab stop AT the indent: the bullet sits in
+            # the gap and the text lines up with its own wrapped lines. Without
+            # the \tx the tab jumps to the next default stop, half an inch on,
+            # and the first line starts well to the right of the rest.
+            $indent = 360 * ($b.Level + 1)
+            $mark = if ($b.Level -eq 0) { '\bullet' } else { '\endash' }
+            [void]$rtf.AppendLine("\pard\li$indent\fi-240\tx$indent\sa60$Body $mark\tab $text\par")
+        }
+        'para'   { [void]$rtf.AppendLine("\pard\sa80$Body $text\par") }
+        default  { [void]$rtf.AppendLine("\pard\sb80\sa60$Body{\b $text}\par") }   # h4-h6
     }
 }
 
@@ -156,4 +244,8 @@ foreach ($b in $blocks) {
     (ConvertTo-RtfAscii $rtf.ToString()),
     (New-Object System.Text.ASCIIEncoding))
 
-Write-Host "Generated version.nsh ($ver), installer.bmp and readme.rtf"
+if ($SkipBitmap) {
+    Write-Host "Generated version.nsh ($ver) and readme.rtf (installer.bmp skipped)"
+} else {
+    Write-Host "Generated version.nsh ($ver), installer.bmp and readme.rtf"
+}

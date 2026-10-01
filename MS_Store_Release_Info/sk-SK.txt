@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Slovenčina (Slovensko) - Partner Center: Slovak (Slovakia) (sk-SK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzia 0.4.2
+Verzia 0.4.3
 
-- Migrácia z iného klienta. Súbor > Migrovať z prečíta existujúcu inštaláciu qBittorrent, uTorrent, BitComet, Transmission alebo PicoTorrent a prenesie torrenty aj s cestami na ukladanie a menovkami. Ak žiadnu v tomto počítači nenájde, spýta sa, kde hľadať, takže funguje aj záloha. Nič sa nekopíruje ani nepresúva - vaše súbory zostanú tam, kde sú. Zobrazuje priebeh a Zrušiť ho zastaví a vráti späť to, čo už pridal.
-- Pruh Časti v Prehľade je teraz mapa torrentu namiesto druhého ukazovateľa priebehu: jeden stĺpec na časť, rozsvietený tam, kde časť máte, a práve vyžiadané časti sú vykreslené vlastnou farbou.
-- Karta Trackery hybridného torrentu zobrazuje oba roje, nielen prvý.
-- Upozornenia sa teraz zobrazujú aj vo verzii z Obchodu a tlačidlo, ktoré tam nemohlo nič urobiť, sa už nezobrazuje.
-- Vo webovom rozhraní sa veľkosť ako "392.91 MB" už neskracuje.
-- Aktualizované na Slint 1.18.1 spolu s aktualizáciami závislostí.
+- Magnet odkazy už nečakajú na svoje podrobnosti: dialóg Pridať sa otvorí hneď a magnet pridaný skôr, než podrobnosti prídu, sa do ich príchodu zobrazuje v zozname ako „Sťahovanie metadát“, rovnako ako v qBittorrente.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

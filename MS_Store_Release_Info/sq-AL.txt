@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Shqip (Shqipëri) - Partner Center: Albanian (Albania) (sq-AL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent është një port në Rust i PicoTorrent nga Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioni 0.4.2
+Versioni 0.4.3
 
-- Migro nga një klient tjetër. Skedar > Migro nga lexon një instalim ekzistues të qBittorrent, uTorrent, BitComet, Transmission ose PicoTorrent dhe sjell torrentët bashkë me shtigjet e ruajtjes dhe etiketat. Nëse nuk gjen ndonjë në këtë kompjuter, ju pyet ku të kërkojë, kështu që funksionon edhe një kopje rezervë. Asgjë nuk kopjohet as zhvendoset - skedarët tuaj mbeten aty ku janë. Tregon ecurinë, dhe Anulo e ndalon dhe kthen atë që ishte shtuar tashmë.
-- Shiriti Pjesët te Përmbledhja tani është një hartë e torrentit në vend të një shiriti të dytë ecurie: një kolonë për çdo pjesë, e ndezur aty ku pjesa ekziston, dhe pjesët që kërkohen tani vizatohen me ngjyrën e tyre.
-- Skeda Gjurmuesit e një torrenti hibrid shfaq të dyja tufat, jo vetëm të parën.
-- Njoftimet tani shfaqen nga versioni i Dyqanit, dhe një buton që atje nuk mund të bënte asgjë nuk shfaqet më.
-- Në ndërfaqen e uebit një madhësi si "392.91 MB" nuk pritet më.
-- Përditësuar në Slint 1.18.1, me një raund përditësimesh varësish.
+- Lidhjet magnet nuk presin më për detajet e tyre: dritarja Shto hapet menjëherë, dhe një magnet i shtuar para se të mbërrijnë detajet shfaqet në listë si “Po shkarkohen metadhënat” derisa ato të mbërrijnë, si në qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

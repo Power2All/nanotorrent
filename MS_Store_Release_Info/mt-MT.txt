@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Malti (Malta) - Partner Center: Maltese (Malta) (mt-MT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent huwa port bir-Rust ta' PicoTorrent ta' Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verżjoni 0.4.2
+Verżjoni 0.4.3
 
-- Immigra minn klijent ieħor. Fajl > Immigra minn jaqra installazzjoni eżistenti ta' qBittorrent, uTorrent, BitComet, Transmission jew PicoTorrent u jġib it-torrents flimkien mal-mogħdijiet tal-ħażna u t-tikketti tagħhom. Jekk ma jsib l-ebda waħda fuq dan il-kompjuter, jistaqsik fejn għandu jfittex, allura taħdem ukoll kopja tas-sigurtà. Xejn ma jiġi kkupjat jew imċaqlaq - il-fajls tiegħek jibqgħu fejn huma. Juri l-progress, u Ikkanċella jwaqqfu u jerġa' jpoġġi lura dak li kien diġà żied.
-- Il-bar Biċċiet fil-Ħarsa Ġenerali issa hija mappa tat-torrent minflok tieni bar tal-progress: kolonna waħda għal kull biċċa, mixgħula fejn dik il-biċċa qiegħda, bil-biċċiet li qed jintalbu bħalissa mpinġija bil-kulur tagħhom.
-- It-tab Trackers ta' torrent ibridu juri ż-żewġ qatgħat, mhux l-ewwel waħda biss.
-- In-notifiki issa jidhru mill-verżjoni tal-Istore, u buttuna li ma setgħet tagħmel xejn hemm m'għadhiex tintwera.
-- Fl-interfaċċja tal-web daqs bħal "392.91 MB" m'għadux jinqata'.
-- Aġġornat għal Slint 1.18.1, b'sensiela ta' aġġornamenti tad-dipendenzi.
+- Il-links magnet m’għadhomx jistennew id-dettalji tagħhom: it-tieqa Żid tinfetaħ mill-ewwel, u magnet miżjud qabel ma jaslu d-dettalji jidher bħala “Qed titniżżel il-metadata” fil-lista sakemm jaslu, bħal f’qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

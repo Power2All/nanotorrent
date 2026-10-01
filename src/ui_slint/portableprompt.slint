@@ -1,0 +1,63 @@
+// "Copy your existing profile into this portable copy?" - asked once, when a
+// portable copy starts for the first time on a machine that already has an
+// ordinary NanoTorrent profile. See core::portable.
+//
+// Shown before the main window exists, on an event loop of its own, so it is
+// wired to the translator directly rather than through a `Ui`.
+
+import { ScrollView, Button, Palette } from "std-widgets.slint";
+import { L } from "globals.slint";
+
+export component PortablePromptDialog inherits Window {
+    icon: @image-url("../../res/app-256.png");
+    title: L.s(L.revision, "portable_copy_title");
+    // Pinned width, content height - the same shape as the database prompt,
+    // so a long translation grows the window rather than being cut off.
+    min-width: 520px;
+    max-width: 520px;
+    min-height: body.preferred-height;
+    max-height: body.preferred-height;
+    background: Palette.background;
+
+    /// The question, with the two folders already filled in.
+    in property <string> body-text;
+
+    /// True to copy the profile, false to start with an empty one.
+    callback chosen(bool);
+
+    ScrollView {
+        vertical-scrollbar-policy: as-needed;
+        body := VerticalLayout {
+            padding: 18px;
+            spacing: 14px;
+
+            Text {
+                text: L.s(L.revision, "portable_copy_title");
+                font-size: 16px;
+                font-weight: 700;
+                color: Palette.foreground;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: root.body-text;
+                wrap: word-wrap;
+                color: Palette.foreground;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: L.s(L.revision, "portable_copy_no");
+                    clicked => { root.chosen(false); }
+                }
+                Button {
+                    text: L.s(L.revision, "portable_copy_yes");
+                    primary: true;
+                    clicked => { root.chosen(true); }
+                }
+            }
+        }
+    }
+}

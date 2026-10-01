@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-0.4.2-s verzió
+0.4.3-s verzió
 
-- Átköltöztetés másik kliensből. Fájl > Átköltöztetés innen beolvas egy meglévő qBittorrent, uTorrent, BitComet, Transmission vagy PicoTorrent telepítést, és áthozza a torrenteket a mentési útvonalukkal és címkéikkel. Ha nem talál ilyet ezen a gépen, megkérdezi, hol keresse - így egy mentés is működik. Semmi sem másolódik vagy mozdul el - a fájljai ott maradnak, ahol vannak. Mutatja a haladást, és a Mégse leállítja, majd visszaveszi, amit már hozzáadott.
-- Az Áttekintés Darabok sávja mostantól a torrent térképe, nem egy második folyamatjelző: darabonként egy oszlop, ott világítva, ahol a darab megvan, az éppen kért darabok pedig saját színnel.
-- Egy hibrid torrent Követők lapja mindkét rajt mutatja, nem csak az elsőt.
-- Az értesítések mostantól a Store-változatból is megjelennek, és egy gomb, amely ott semmit sem tehetett, már nem látszik.
-- A webes felületen egy méret, mint a "392.91 MB", már nem csonkolódik.
-- Frissítve a Slint 1.18.1-re, egy kör függőségfrissítéssel.
+- A magnet linkek már nem várnak a részleteikre: a Hozzáadás ablak azonnal megnyílik, és a részletek megérkezése előtt hozzáadott magnet „Metaadatok letöltése” állapotban látszik a listában, amíg meg nem érkeznek, ahogy a qBittorrentben.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

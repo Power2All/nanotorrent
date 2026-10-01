@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Română (România) - Partner Center: Romanian (Romania) (ro-RO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent este o portare în Rust a PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiunea 0.4.2
+Versiunea 0.4.3
 
-- Migrează de la alt client. Fișier > Migrează din citește o instalare existentă de qBittorrent, uTorrent, BitComet, Transmission sau PicoTorrent și aduce torentele cu căile de salvare și etichetele lor. Dacă nu găsește niciuna pe acest computer, întreabă unde să caute, așa că funcționează și o copie de rezervă. Nimic nu este copiat sau mutat - fișierele rămân unde sunt. Arată progresul, iar Anulare îl oprește și pune la loc ceea ce fusese deja adăugat.
-- Bara Bucăți din Prezentare generală este acum o hartă a torentului în loc de a doua bară de progres: o coloană pentru fiecare bucată, aprinsă acolo unde bucata există, iar bucățile cerute chiar acum sunt desenate cu propria culoare.
-- Fila Trackere a unui torent hibrid arată ambele roiuri, nu doar primul.
-- Notificările apar acum din versiunea din Magazin, iar un buton care acolo nu putea face nimic nu mai este afișat.
-- În interfața web, o dimensiune precum "392.91 MB" nu mai este tăiată.
-- Actualizat la Slint 1.18.1, cu o rundă de actualizări ale dependențelor.
+- Linkurile magnet nu își mai așteaptă detaliile: fereastra Adăugare se deschide imediat, iar un magnet adăugat înainte să sosească detaliile apare în listă ca „Descărcând metadata” până când sosesc, ca în qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

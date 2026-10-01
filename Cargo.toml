@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -175,7 +175,6 @@ rusqlite = { version = "0.40.2", features = ["bundled", "functions", "serialize"
 # Default features deliberately: that selects aws-lc-rs, which the tree already
 # resolves rustls to. Picking `ring` here would compile a second crypto library.
 rustls = "0.23"
-rustls-pemfile = "2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 # XML for plugins: parse_xml, so a feed reader plugin does not have to write a

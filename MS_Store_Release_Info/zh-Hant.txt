@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: 繁體中文 (台灣) - app locale zh-TW - Partner Center: Chinese (Traditional) (zh-Hant)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-版本 0.4.2
+版本 0.4.3
 
-- 從其他用戶端移轉。檔案 > 移轉自 會讀取既有的 qBittorrent、uTorrent、BitComet、Transmission 或 PicoTorrent 安裝，將種子連同儲存路徑與標籤一併接過來。若在這台電腦上找不到，它會詢問要去哪裡找，因此備份同樣可用。不會複製也不會移動任何內容——您的檔案仍在原處。移轉過程會顯示進度，取消會停止並將已新增的內容撤回。
-- 概覽中的分塊列現在是種子的地圖，而不是第二條進度列：每個分塊一欄，已擁有的分塊處點亮，正在請求的分塊以自己的顏色繪製。
-- 混合種子的 Tracker 分頁會顯示兩個群，而不只是第一個。
-- 市集版本現在也會顯示通知，在那裡原本就無法生效的按鈕不再顯示。
-- 在網頁介面中，像 "392.91 MB" 這樣的大小不再被截斷。
-- 已更新至 Slint 1.18.1，並同步更新相依套件。
+- 磁力連結不再需要等待詳細資料：「新增」對話框會立即開啟，在詳細資料送達前加入的磁力連結會在清單中顯示為「正在下載中繼資料」，直到資料送達，與 qBittorrent 相同。
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

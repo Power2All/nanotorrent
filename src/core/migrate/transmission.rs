@@ -16,9 +16,9 @@
 //! `destination`, `name`, `labels`, `added_date`, `paused`.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::core::bencode;
 use crate::core::pico_import::{ImportEntry, ImportSource, Scan};
@@ -45,29 +45,7 @@ pub fn detect() -> Option<PathBuf> {
 
 /// Every torrent Transmission has in `config`.
 pub fn scan(config: &Path, cancel: &AtomicBool) -> Result<Scan> {
-    let torrents = config.join("torrents");
-    let dir = std::fs::read_dir(&torrents)
-        .with_context(|| format!("reading {}", torrents.display()))?;
-
-    let mut entries = Vec::new();
-    let mut unreadable = 0usize;
-
-    for item in dir.flatten() {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        let path = item.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("torrent") {
-            continue;
-        }
-        match read_one(config, &path) {
-            Some(entry) => entries.push(entry),
-            None => unreadable += 1,
-        }
-    }
-
-    entries.sort_by(|a, b| a.info_hash.cmp(&b.info_hash));
-    Ok(Scan { entries, unreadable })
+    super::scan_dir(&config.join("torrents"), "torrent", cancel, |p| read_one(config, p))
 }
 
 fn read_one(config: &Path, torrent: &Path) -> Option<ImportEntry> {

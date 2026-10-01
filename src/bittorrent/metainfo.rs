@@ -100,7 +100,3 @@ fn bencode_skip(b: &[u8], i: usize, depth: u32) -> Option<usize> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-}
-

@@ -493,7 +493,7 @@ impl Database {
 /// Only the header is read: the answer decides how to open a file that may be
 /// megabytes, and a missing file is simply "not sealed" - [`Database::open`]
 /// goes on to create a plain one.
-fn file_is_sealed(path: &Path) -> bool {
+pub(crate) fn file_is_sealed(path: &Path) -> bool {
     use std::io::Read;
 
     let Ok(mut f) = std::fs::File::open(path) else {

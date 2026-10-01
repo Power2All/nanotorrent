@@ -351,32 +351,9 @@ mod tests {
     fn status(name: &str, state: State) -> TorrentStatus {
         TorrentStatus {
             added_on: Local::now(),
-            all_time_download: 0,
-            all_time_upload: 0,
-            availability: 0.0,
-            completed_on: None,
-            download_payload_rate: 0,
-            error: String::new(),
-            eta: None,
-            info_hash_v1: None,
-            info_hash_v2: None,
-            info_hash: String::new(),
-            label_id: None,
-            label_name: String::new(),
             name: name.into(),
-            paused: false,
-            peers_current: 0,
-            peers_total: 0,
-            progress: 0.0,
-            queue_position: 0,
-            ratio: 0.0,
-            save_path: String::new(),
-            seeds_current: 0,
-            seeds_total: 0,
             state,
-            total_wanted: 0,
-            total_wanted_remaining: 0,
-            upload_payload_rate: 0,
+            ..Default::default()
         }
     }
 

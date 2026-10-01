@@ -26,11 +26,33 @@
 # package, upload it, rewrite the "What's new" text for every language from
 # MS_Store_Release_Info, then commit the submission for certification.
 #
-# One-time setup on this machine:
+# On Linux (or macOS) the same command, under PowerShell 7:
+#
+#   pwsh installer/store-submit.ps1
+#
+# Everything but the build runs there unchanged. The package cannot be built
+# off Windows - the exe's icon and Common-Controls manifest are a Win32
+# resource that build.rs only writes on a Windows host, and makeappx is part of
+# the Windows SDK - so the build is handed to GitHub Actions instead
+# (.github/workflows/store-msix.yml), waited for, and the MSIX downloaded. That
+# builds the commit HEAD is on, so it has to be pushed, and the script refuses
+# to go on while anything that goes into the package differs from it.
+# -BuildOn picks the route explicitly; -CiRun reuses a finished build.
+#
+# One-time setup on Windows:
 #
 #   winget install Microsoft.DotNet.DesktopRuntime.9
 #   winget install "Microsoft Store Developer CLI"
 #   msstore                      # first run walks through signing in
+#
+# One-time setup on Linux (CachyOS/Arch shown):
+#
+#   sudo pacman -S github-cli    # then: gh auth login
+#   paru -S powershell-bin       # or any pwsh 7 on PATH
+#   # msstore: MSStoreCLI-linux-x64.tar.gz from
+#   #   https://github.com/microsoft/msstore-cli/releases
+#   # unpacked anywhere, with that folder on PATH. Self-contained - no .NET.
+#   msstore reconfigure
 #
 # Sign in with the Microsoft Entra ID account associated with the Partner
 # Center account, NOT a personal Microsoft account - the CLI rejects an MSA.
@@ -80,6 +102,17 @@ param(
     # folder: it belongs to the checkout, and a second clone should not
     # silently inherit the first one's Store identity.
     [string]$ConfigPath,
+
+    # Where the package is built. `local` runs build-msix.ps1 here, which
+    # needs Windows; `ci` has GitHub Actions build it from the pushed HEAD and
+    # downloads the result. `auto` is local on Windows and ci everywhere else.
+    [ValidateSet('auto', 'local', 'ci')]
+    [string]$BuildOn = 'auto',
+
+    # Take the package from this finished run of store-msix.yml instead of
+    # starting a new one - the run ID `gh run list` shows. It is still checked
+    # against HEAD, so a stale build cannot be submitted by mistake.
+    [long]$CiRun,
 
     # Leave the listing's screenshots alone. The default is to replace them
     # with `images/*.png`, which is what keeps them from going stale one
@@ -242,6 +275,149 @@ function Invoke-Step {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Building on GitHub Actions, for a machine that cannot build the package
+# ---------------------------------------------------------------------------
+
+# Whether this is Windows. $IsWindows only exists from PowerShell 6 on; 5.1
+# is Windows by definition.
+function Test-Windows {
+    return ($PSVersionTable.PSEdition -eq 'Desktop') -or [bool]$IsWindows
+}
+
+# Run a native command, fail on a non-zero exit, hand back its stdout. stderr
+# stays on the console instead of being merged: under ErrorActionPreference=
+# Stop each merged line becomes a terminating error of its own, and gh reports
+# progress there.
+function Invoke-Native([string]$What, [scriptblock]$Command) {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { $out = & $Command } finally { $ErrorActionPreference = $prev }
+    if ($LASTEXITCODE -ne 0) { throw "$What failed (exit code $LASTEXITCODE)" }
+    return $out
+}
+
+# Which of `gh run list --json databaseId,headSha,createdAt` is the run just
+# started: the newest one for this commit created since the dispatch. `gh
+# workflow run` does not say which run it made, and picking merely "the latest"
+# could adopt a build somebody else started from an older commit.
+#
+# $Since is taken a minute early by the caller: the timestamp is GitHub's
+# clock, the comparison is against this machine's.
+function Select-DispatchedRun([string]$RunsJson, [string]$Sha, [datetime]$Since) {
+    $runs = @($RunsJson | ConvertFrom-Json)
+    $mine = @($runs | Where-Object {
+            $_.headSha -eq $Sha -and
+            [datetime]::Parse($_.createdAt, [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::AdjustToUniversal) -ge $Since
+        } | Sort-Object { $_.databaseId } -Descending)
+    if ($mine.Count -eq 0) { return $null }
+    return $mine[0].databaseId
+}
+
+# Files that end up in the package, relative to the repository. A CI build is
+# of the pushed commit, so a change to any of these that is not committed would
+# be missing from what gets submitted - while the listings, read from this
+# checkout, would describe it.
+$PackagedPaths = @('src', 'res', 'lang', 'vendor', 'patches', 'build.rs',
+    'Cargo.toml', 'Cargo.lock', 'installer/msix', 'installer/build-msix.ps1')
+
+# Get the package built by .github/workflows/store-msix.yml and put it where a
+# local build would have, so every later phase - and a later `-From upload` -
+# finds it without knowing where it came from.
+function Get-CiPackage([string]$Destination) {
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw @"
+gh is not on PATH, and building off Windows goes through GitHub Actions.
+
+Install the GitHub CLI and sign in once:
+  sudo pacman -S github-cli      (or your distribution's package)
+  gh auth login
+"@
+    }
+
+    $head = (Invoke-Native "git rev-parse" { git -C $root rev-parse HEAD }).Trim()
+
+    # Uncommitted work in anything packaged. --ignore-cr-at-eol because a
+    # checkout converted to CRLF differs from the commit on every line without
+    # a single real change.
+    $dirty = @(Invoke-Native "git diff" {
+            git -C $root diff --ignore-cr-at-eol --name-only HEAD -- @PackagedPaths
+        }) + @(Invoke-Native "git ls-files" {
+            git -C $root ls-files --others --exclude-standard -- @PackagedPaths
+        }) | Where-Object { $_ }
+    if ($dirty) {
+        $shown = @($dirty | Select-Object -First 12)
+        if ($dirty.Count -gt $shown.Count) { $shown += "... and $($dirty.Count - $shown.Count) more" }
+        throw @"
+these differ from HEAD, and GitHub builds HEAD - the package would not contain them:
+  $($shown -join "`n  ")
+
+Commit and push them, then run this again.
+"@
+    }
+
+    if ($CiRun) {
+        $runId = $CiRun
+        $view = Invoke-Native "gh run view" {
+            gh run view $runId --json headSha,conclusion,workflowName
+        } | Out-String | ConvertFrom-Json
+        if ($view.headSha -ne $head) {
+            throw "run $runId built $($view.headSha), but HEAD is $head - that is not this commit's package"
+        }
+        if ($view.conclusion -ne 'success') {
+            throw "run $runId ($($view.workflowName)) did not succeed: $($view.conclusion)"
+        }
+    } else {
+        $branch = (Invoke-Native "git rev-parse" { git -C $root rev-parse --abbrev-ref HEAD }).Trim()
+        if ($branch -eq 'HEAD') {
+            throw "HEAD is detached; check out the branch to build, since GitHub runs a workflow on a branch"
+        }
+        # On the remote already? Otherwise GitHub would build whatever the
+        # branch there points at, which is not this.
+        $pushed = Invoke-Native "git branch" { git -C $root branch -r --contains $head }
+        if (-not $pushed) {
+            throw "HEAD ($head) is not on GitHub yet - push $branch, then run this again"
+        }
+
+        $since = (Get-Date).ToUniversalTime().AddMinutes(-1)
+        Write-Host "    starting store-msix.yml on $branch ($($head.Substring(0, 12)))"
+        Invoke-Native "gh workflow run" { gh workflow run store-msix.yml --ref $branch } | Out-Null
+
+        # The run takes a few seconds to be listed after the dispatch returns.
+        $runId = $null
+        for ($try = 0; $try -lt 20 -and -not $runId; $try++) {
+            Start-Sleep -Seconds 3
+            $json = Invoke-Native "gh run list" {
+                gh run list --workflow store-msix.yml --branch $branch --event workflow_dispatch `
+                    --limit 10 --json databaseId,headSha,createdAt
+            } | Out-String
+            $runId = Select-DispatchedRun $json $head $since
+        }
+        if (-not $runId) {
+            throw "started store-msix.yml, but no run for $head showed up - see: gh run list --workflow store-msix.yml"
+        }
+
+        Write-Host "    run $runId - waiting for the Windows build (a release build takes a while)"
+        Write-Host "    if this is interrupted, carry on with: -CiRun $runId"
+        Invoke-Native "the CI build (gh run view $runId --log-failed)" {
+            gh run watch $runId --exit-status --interval 30
+        } | Out-Null
+    }
+
+    $download = Join-Path ([System.IO.Path]::GetTempPath()) "nanotorrent-msix-$runId"
+    if (Test-Path $download) { Remove-Item -LiteralPath $download -Recurse -Force }
+    Invoke-Native "gh run download" { gh run download $runId --name msix --dir $download } | Out-Null
+
+    $built = Join-Path $download (Split-Path -Leaf $Destination)
+    if (-not (Test-Path $built)) {
+        throw "run $runId has no $(Split-Path -Leaf $Destination) - was it built from a different version?"
+    }
+    Copy-Item -LiteralPath $built -Destination $Destination -Force
+    Remove-Item -LiteralPath $download -Recurse -Force
+    Write-Host "    downloaded $Destination"
+}
+
 # The version the listings have to describe. Read from the manifest rather than
 # passed in, because the one thing worse than a stale listing is a listing that
 # describes a version nobody shipped.
@@ -249,8 +425,23 @@ $version = (Select-String -Path (Join-Path $root "Cargo.toml") -Pattern '^versio
     Select-Object -First 1).Matches[0].Groups[1].Value
 Write-Host "NanoTorrent $version -> Store product $ProductId"
 
+if ($BuildOn -eq 'auto') {
+    $BuildOn = if (Test-Windows) { 'local' } else { 'ci' }
+}
+if ($CiRun) { $BuildOn = 'ci' }
+if ($BuildOn -eq 'local' -and -not (Test-Windows)) {
+    throw "-BuildOn local needs Windows (build.rs, makeappx). Leave it out to build on GitHub Actions instead."
+}
+
 if (-not $DryRun -and -not (Get-Command msstore -ErrorAction SilentlyContinue)) {
-    throw "msstore is not on PATH. Install it with: winget install `"Microsoft Store Developer CLI`""
+    if (Test-Windows) {
+        throw "msstore is not on PATH. Install it with: winget install `"Microsoft Store Developer CLI`""
+    }
+    throw @"
+msstore is not on PATH. Download MSStoreCLI-linux-x64.tar.gz from
+  https://github.com/microsoft/msstore-cli/releases
+unpack it anywhere and put that folder on PATH - it is self-contained.
+"@
 }
 
 # Asked BEFORE the build. `msstore info` exits non-zero when the CLI has never
@@ -285,7 +476,14 @@ Partner Center account - the CLI refuses a personal Microsoft account.
 # 1. The package
 # ---------------------------------------------------------------------------
 
-if (-not $Msix -and (Test-Phase 'build')) {
+if (-not $Msix -and (Test-Phase 'build') -and $BuildOn -eq 'ci') {
+    # The identity is not checked here: CI builds with the repository's
+    # STORE_IDENTITY_NAME / STORE_PUBLISHER secrets, and store-msix.yml stops
+    # before the build when they are missing.
+    Invoke-Step "Build the MSIX on GitHub Actions" -Phase build -Do {
+        Get-CiPackage (Join-Path $PSScriptRoot "NanoTorrent-$version-x64.msix")
+    }
+} elseif (-not $Msix -and (Test-Phase 'build')) {
     # Checked BEFORE the build, not after it. build-msix.ps1 warns about a
     # placeholder identity and carries on, which is right for a local test
     # build and wrong here: the package would be rejected at upload, having
@@ -386,7 +584,7 @@ the way through certification. Nothing has been changed.
 If you are picking up after the wait died, the submission itself is fine -
 it just stopped being watched. Watch it again with:
 
-  installer\store-submit.ps1 -From wait
+  installer/store-submit.ps1 -From wait
 
 If you really do mean to replace it, withdraw it in Partner Center first.
 "@
@@ -422,10 +620,10 @@ a published one means the service simply refused; try once more.
 # MS_Store_Release_Info and screenshots from images/, which is why neither has
 # to be attached in Partner Center by hand, once per language.
 
-$draft = Join-Path $env:TEMP "nanotorrent-submission.json"
-$updated = Join-Path $env:TEMP "nanotorrent-submission-updated.json"
-$final = Join-Path $env:TEMP "nanotorrent-submission-final.json"
-$shots = Join-Path $env:TEMP "nanotorrent-listing-images.zip"
+$draft = Join-Path ([System.IO.Path]::GetTempPath()) "nanotorrent-submission.json"
+$updated = Join-Path ([System.IO.Path]::GetTempPath()) "nanotorrent-submission-updated.json"
+$final = Join-Path ([System.IO.Path]::GetTempPath()) "nanotorrent-submission-final.json"
+$shots = Join-Path ([System.IO.Path]::GetTempPath()) "nanotorrent-listing-images.zip"
 
 Invoke-Step "Read the draft submission" -Phase listings -Do {
     msstore submission get $ProductId | Out-File -Encoding utf8 $draft
@@ -499,7 +697,7 @@ try {
     Write-Host ""
     Write-Host "Nothing needs re-running. Check on it whenever you like:"
     Write-Host "  msstore submission status $ProductId"
-    Write-Host "  installer\store-submit.ps1 -From wait"
+    Write-Host "  installer/store-submit.ps1 -From wait"
     Write-Host ""
     Write-Host "Do NOT re-run this script from the top while it is in flight -" -ForegroundColor Yellow
     Write-Host "the upload phase would delete the submission." -ForegroundColor Yellow

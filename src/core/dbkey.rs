@@ -92,8 +92,17 @@ const NONCE: usize = 24;
 /// being that the file protects the database from other *accounts*, not from
 /// someone who takes the whole folder.
 pub fn key_path(env: &Environment) -> PathBuf {
-    env.get_application_data_path().join("NanoTorrent.key")
+    key_path_in(&env.get_application_data_path())
 }
+
+/// The key file of the profile in `dir` - which need not be this copy's own,
+/// as when a portable copy reads the ordinary profile it is taking over.
+pub fn key_path_in(dir: &std::path::Path) -> PathBuf {
+    dir.join(KEY_FILE)
+}
+
+/// The key file's name, beside `NanoTorrent.sqlite`.
+pub const KEY_FILE: &str = "NanoTorrent.key";
 
 /// A fresh 256-bit key.
 ///
@@ -165,7 +174,12 @@ pub fn unseal(key: &[u8; 32], file: &[u8]) -> Result<Vec<u8>> {
 
 /// Read the stored key, or `None` when there is no key file.
 pub fn load(env: &Environment) -> Result<Option<[u8; 32]>> {
-    let path = key_path(env);
+    load_from(&env.get_application_data_path())
+}
+
+/// [`load`], for the profile in `dir`.
+pub fn load_from(dir: &std::path::Path) -> Result<Option<[u8; 32]>> {
+    let path = key_path_in(dir);
     if !path.exists() {
         return Ok(None);
     }

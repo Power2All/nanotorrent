@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Türkçe (Türkiye) - Partner Center: Turkish (Turkey) (tr-TR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent, Viktor Elofsson'ın PicoTorrent uygulamasının Rust'a aktarımıd�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sürüm 0.4.2
+Sürüm 0.4.3
 
-- Başka bir istemciden taşıyın. Dosya > Şuradan taşı mevcut bir qBittorrent, uTorrent, BitComet, Transmission veya PicoTorrent kurulumunu okur ve torrentleri kayıt yolları ve etiketleriyle birlikte getirir. Bu bilgisayarda bulamazsa nereye bakacağını sorar, böylece bir yedek de çalışır. Hiçbir şey kopyalanmaz veya taşınmaz - dosyalarınız olduğu yerde kalır. İlerlemeyi gösterir ve İptal onu durdurup daha önce eklenenleri geri alır.
-- Genel Bakış'taki Parçalar çubuğu artık ikinci bir ilerleme çubuğu değil, torrentin haritası: her parça için bir sütun, o parçanın bulunduğu yerde yanar ve şu anda istenen parçalar kendi rengiyle çizilir.
-- Hibrit bir torrentin İzleyiciler sekmesi yalnızca ilkini değil, her iki sürüyü de gösterir.
-- Bildirimler artık Store sürümünde de görünüyor ve orada hiçbir şey yapamayan bir düğme artık gösterilmiyor.
-- Web arayüzünde "392.91 MB" gibi bir boyut artık kırpılmıyor.
-- Slint 1.18.1 sürümüne güncellendi, bağımlılık güncellemeleriyle birlikte.
+- Magnet bağlantıları artık ayrıntılarını beklemiyor: Ekle penceresi hemen açılır ve ayrıntılar gelmeden eklenen bir magnet, gelene kadar listede “Metadata indiriliyor” olarak görünür; tıpkı qBittorrent’te olduğu gibi.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

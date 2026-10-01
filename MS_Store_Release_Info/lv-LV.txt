@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Latviešu (Latvija) - Partner Center: Latvian (Latvia) (lv-LV)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent ir Viktora Elofsona PicoTorrent pārnesums uz Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.2
+Versija 0.4.3
 
-- Migrācija no citas programmas. Fails > Migrēt no nolasa esošu qBittorrent, uTorrent, BitComet, Transmission vai PicoTorrent instalāciju un pārceļ torentus kopā ar to saglabāšanas ceļiem un etiķetēm. Ja tādu šajā datorā neatrod, tas pajautā, kur meklēt, tāpēc der arī rezerves kopija. Nekas netiek kopēts vai pārvietots - jūsu faili paliek tur, kur bija. Tiek rādīta gaita, un Atcelt to aptur un atliek atpakaļ jau pievienoto.
-- Pārskata josla Daļas tagad ir torenta karte, nevis otra gaitas josla: viena kolonna katrai daļai, izgaismota tur, kur daļa ir, un šobrīd pieprasītās daļas zīmētas savā krāsā.
-- Hibrīda torenta cilne Sekotāji rāda abus barus, ne tikai pirmo.
-- Paziņojumi tagad parādās arī no Store versijas, un poga, kas tur neko nevarēja izdarīt, vairs netiek rādīta.
-- Tīmekļa saskarnē izmērs, piemēram, "392.91 MB", vairs netiek apgriezts.
-- Atjaunināts uz Slint 1.18.1 kopā ar atkarību atjauninājumiem.
+- Magnētsaites vairs negaida savu informāciju: pievienošanas logs atveras uzreiz, un magnēts, kas pievienots pirms informācijas saņemšanas, sarakstā tiek rādīts kā “Lejupielādē metadatus”, līdz tā pienāk, tāpat kā qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

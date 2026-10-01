@@ -22,6 +22,7 @@ import { AboutDialog } from "about.slint";
 import { CreateTorrentDialog } from "create.slint";
 import { ClosePromptDialog } from "closeprompt.slint";
 import { DbPromptDialog } from "dbprompt.slint";
+import { PortablePromptDialog } from "portableprompt.slint";
 import { PicoImportDialog } from "picoimport.slint";
 import { MigrateProgressDialog } from "migrateprogress.slint";
 import { RemoveDialog } from "remove.slint";
@@ -30,6 +31,7 @@ export { PreferencesDialog, AboutDialog, CliHelpDialog, UpdateDialog, CreateTorr
 export { PicoImportDialog }
 export { MigrateProgressDialog }
 export { DbPromptDialog }
+export { PortablePromptDialog }
 export { PluginWindow, PluginRowItem, PluginButton }
 
 import { ScrollView, ListView, Button, ComboBox, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette, Spinner } from "std-widgets.slint";
@@ -3638,6 +3640,9 @@ export component AddTorrentDialog inherits Window {
     in-out property <string> save-path;
     in-out property <bool> start-torrent: true;
     in property <[FileRow]> files;
+    /// Shown in place of the file list when there is none to show yet - a
+    /// magnet still waiting for its metadata. Empty otherwise.
+    in property <string> files-note;
 
     /// Every torrent in this batch. One entry for a single add, in which case
     /// the queue column is hidden and the dialog looks exactly as it did.
@@ -3838,6 +3843,21 @@ export component AddTorrentDialog inherits Window {
                         }
                     }
                 }
+            }
+
+            // A magnet whose metadata has not arrived has no files to list.
+            // Said where the files would be, so an empty list does not read as
+            // an empty torrent - and so it is plain that Add works anyway.
+            if root.files-note != "": Text {
+                x: 16px;
+                y: 26px;
+                width: parent.width - 32px;
+                height: parent.height - 26px;
+                text: root.files-note;
+                font-size: 13px;
+                wrap: word-wrap;
+                horizontal-alignment: center;
+                vertical-alignment: center;
             }
         }
 

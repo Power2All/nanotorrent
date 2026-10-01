@@ -37,7 +37,10 @@ fn main() -> ExitCode {
     // Wait only for the flags, which print and exit. A torrent, a magnet or a
     // bare launch opens the window instead, and holding the console for the
     // whole session would be worse than the problem this solves.
-    let is_flag_run = args.iter().any(|a| a.starts_with('-'));
+    //
+    // `--portable` is the exception: it switches the mode and then opens the
+    // window like a bare launch, so it must not hold the console either.
+    let is_flag_run = args.iter().any(|a| a.starts_with('-') && a != "--portable");
 
     // Tell the child a console is attached. Reached this way, a startup
     // failure should print, not put up a modal box nobody asked for - and this

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Polski (Polska) - Partner Center: Polish (Poland) (pl-PL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent to port PicoTorrenta autorstwa Viktora Elofssona na język Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Wersja 0.4.2
+Wersja 0.4.3
 
-- Migracja z innego klienta. Plik > Migruj z odczytuje istniejącą instalację qBittorrent, uTorrent, BitComet, Transmission lub PicoTorrent i przenosi torrenty wraz ze ścieżkami zapisu i etykietami. Jeśli nie znajdzie jej na tym komputerze, zapyta, gdzie szukać, więc kopia zapasowa też zadziała. Nic nie jest kopiowane ani przenoszone - pliki zostają tam, gdzie są. Pokazywany jest postęp, a Anuluj zatrzymuje go i przywraca to, co zostało już dodane.
-- Pasek Części w Przeglądzie jest teraz mapą torrenta zamiast drugiego paska postępu: jedna kolumna na część, rozświetlona tam, gdzie część jest posiadana, a części pobierane właśnie teraz rysowane są własnym kolorem.
-- Karta Trackery torrenta hybrydowego pokazuje oba roje, nie tylko pierwszy.
-- Powiadomienia pojawiają się teraz w wersji ze Sklepu, a przycisk, który nic tam nie mógł zrobić, nie jest już pokazywany.
-- W interfejsie webowym rozmiar taki jak "392.91 MB" nie jest już przycinany.
-- Zaktualizowano do Slint 1.18.1 wraz z serią aktualizacji zależności.
+- Linki magnet nie czekają już na szczegóły: okno dodawania otwiera się od razu, a magnet dodany przed nadejściem szczegółów jest widoczny na liście jako „Pobieranie Metadanych”, dopóki nie nadejdą - tak jak w qBittorrencie.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

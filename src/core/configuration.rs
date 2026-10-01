@@ -124,24 +124,22 @@ impl Configuration {
     /// that does not exist is a typo and silently doing nothing is the right
     /// outcome - it cannot invent a setting nothing reads.
     fn set_value(&self, key: &str, val: &str) {
-        let _ = self.db.with(|conn| {
-            conn.execute(
-                "UPDATE setting SET value = ?1 WHERE key = ?2",
-                rusqlite::params![val, key],
-            )
-        });
+        self.write_value(key, Some(val));
     }
 
-    /// Write a value that came from somewhere else, and say whether it landed.
-    ///
-    /// For importing another client's settings. `set_value` writes with an
-    /// UPDATE, so a key this build does not have touches no rows - which is
-    /// exactly the filter an import wants, and it is the honest definition of
-    /// "a setting we support" rather than a list that would go stale.
-    ///
-    /// The value is stored as-is. PicoTorrent's `setting` table holds JSON in
-    /// the same column for the same reason this one does, so a value copied
-    /// across is already in the right shape.
+    /// The one write every setter goes through. True when the key exists -
+    /// see `set_value` for why a missing one is left alone.
+    fn write_value(&self, key: &str, value: Option<&str>) -> bool {
+        self.db
+            .with(|conn| {
+                conn.execute(
+                    "UPDATE setting SET value = ?1 WHERE key = ?2",
+                    rusqlite::params![value, key],
+                )
+            })
+            .is_ok_and(|rows| rows > 0)
+    }
+
     /// The value column exactly as stored, for a migration that may have to
     /// put it back. `None` means the key does not exist here at all; `Some(None)`
     /// means it exists and is unset, which is NOT the same as its default -
@@ -160,24 +158,21 @@ impl Configuration {
 
     /// Put a value back exactly as `export_value` found it, NULL included.
     pub fn restore_value(&self, key: &str, value: Option<&str>) {
-        let _ = self.db.with(|conn| {
-            conn.execute(
-                "UPDATE setting SET value = ?1 WHERE key = ?2",
-                rusqlite::params![value, key],
-            )
-        });
+        self.write_value(key, value);
     }
 
+    /// Write a value that came from somewhere else, and say whether it landed.
+    ///
+    /// For importing another client's settings. `set_value` writes with an
+    /// UPDATE, so a key this build does not have touches no rows - which is
+    /// exactly the filter an import wants, and it is the honest definition of
+    /// "a setting we support" rather than a list that would go stale.
+    ///
+    /// The value is stored as-is. PicoTorrent's `setting` table holds JSON in
+    /// the same column for the same reason this one does, so a value copied
+    /// across is already in the right shape.
     pub fn import_value(&self, key: &str, json: &str) -> bool {
-        self.db
-            .with(|conn| {
-                conn.execute(
-                    "UPDATE setting SET value = ?1 WHERE key = ?2",
-                    rusqlite::params![json, key],
-                )
-            })
-            .map(|rows| rows > 0)
-            .unwrap_or(false)
+        self.write_value(key, Some(json))
     }
 
     /// Port of Configuration::Get<T> - the stored value is JSON.
@@ -425,38 +420,6 @@ impl Configuration {
         parsed.host_str().is_some_and(|host| !host.is_empty())
     }
 
-    /// Remember a tracker someone added. Adding the same one twice is not an
-    /// error and does not duplicate it.
-    ///
-    /// The URL is trimmed and checked for a scheme a tracker actually speaks.
-    /// Checked here rather than parsed as a generic URL because `file:///etc`
-    /// is a perfectly valid URL and not a tracker - the scheme is the part that
-    /// makes this a tracker address, and it is better caught where somebody
-    /// typed it than in the announce loop.
-    pub fn add_extra_tracker(&self, info_hash: &str, url: &str) -> bool {
-        let url = url.trim();
-        if !self.is_tracker_url(url) {
-            return false;
-        }
-        self.db
-            .with(|conn| {
-                conn.execute(
-                    "insert or ignore into torrent_tracker (info_hash, url) values (?1, ?2)",
-                    rusqlite::params![info_hash, url],
-                )
-            })
-            .is_ok()
-    }
-
-    pub fn remove_extra_tracker(&self, info_hash: &str, url: &str) {
-        let _ = self.db.with(|conn| {
-            conn.execute(
-                "delete from torrent_tracker where info_hash = ?1 and url = ?2",
-                rusqlite::params![info_hash, url],
-            )
-        });
-    }
-
     // --- Tags -------------------------------------------------------------
     //
     // A label is one per torrent and carries a colour, a save path and a
@@ -514,23 +477,6 @@ impl Configuration {
         });
     }
 
-    /// Rename a tag. A clash with an existing name is refused rather than
-    /// merging the two, which would silently retag every torrent on both.
-    pub fn rename_tag(&self, id: i32, name: &str) -> bool {
-        let name = name.trim();
-        if name.is_empty() {
-            return false;
-        }
-        self.db
-            .with(|conn| {
-                conn.execute(
-                    "update tag set name = ?1 where id = ?2",
-                    rusqlite::params![name, id],
-                )
-            })
-            .is_ok()
-    }
-
     /// The tags on one torrent, in name order.
     pub fn tags_for(&self, info_hash: &str) -> Vec<Tag> {
         self.db
@@ -570,34 +516,6 @@ impl Configuration {
                 rusqlite::params![info_hash, tag_id],
             )
         });
-    }
-
-    /// Every torrent's tag names, keyed by info hash.
-    ///
-    /// One query rather than one per torrent: this feeds the list, which is
-    /// redrawn every second, and a per-row lookup would be a query per torrent
-    /// per tick.
-    pub fn tags_by_torrent(&self) -> std::collections::HashMap<String, Vec<String>> {
-        self.db
-            .with(|conn| {
-                let mut stmt = conn.prepare(
-                    "select tt.info_hash, t.name from torrent_tag tt \
-                     join tag t on t.id = tt.tag_id order by t.name",
-                )?;
-                let rows = stmt
-                    .query_map([], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                    })?
-                    .collect::<rusqlite::Result<Vec<_>>>()?;
-
-                let mut out: std::collections::HashMap<String, Vec<String>> =
-                    std::collections::HashMap::new();
-                for (hash, name) in rows {
-                    out.entry(hash).or_default().push(name);
-                }
-                Ok(out)
-            })
-            .unwrap_or_default()
     }
 
     /// Remove a saved PQL filter.
@@ -830,7 +748,10 @@ mod tests {
         torrent(&cfg, "aaaa");
 
         assert!(cfg.is_tracker_url("  udp://tracker.example:80/announce  "));
-        cfg.add_extra_tracker("aaaa", "  udp://tracker.example:80/announce  ");
+        cfg.set_trackers(
+            "aaaa",
+            &[vec![String::from("  udp://tracker.example:80/announce  ")]],
+        );
         assert_eq!(
             cfg.extra_trackers("aaaa"),
             vec!["udp://tracker.example:80/announce"]
@@ -892,9 +813,8 @@ mod tests {
             "udp://tracker.example:1337",
             "wss://tracker.example",
         ] {
-            assert!(cfg.add_extra_tracker("aaaa", good), "{good} was refused");
+            assert!(cfg.is_tracker_url(good), "{good} was refused");
         }
-        assert_eq!(cfg.extra_trackers("aaaa").len(), 4);
 
         for bad in [
             "",
@@ -910,28 +830,8 @@ mod tests {
             // A sentence somebody pasted.
             "please add udp://tracker.example:80",
         ] {
-            assert!(!cfg.add_extra_tracker("aaaa", bad), "{bad:?} was accepted");
+            assert!(!cfg.is_tracker_url(bad), "{bad:?} was accepted");
         }
-        assert_eq!(cfg.extra_trackers("aaaa").len(), 4, "a bad one got in");
-    }
-
-    #[test]
-    fn extra_trackers_keep_their_order_and_do_not_duplicate() {
-        let cfg = cfg();
-        torrent(&cfg, "aaaa");
-
-        cfg.add_extra_tracker("aaaa", "udp://one.example:80");
-        cfg.add_extra_tracker("aaaa", "udp://two.example:80");
-        // Whitespace is trimmed, so this is the same tracker as the first.
-        cfg.add_extra_tracker("aaaa", "  udp://one.example:80  ");
-
-        assert_eq!(
-            cfg.extra_trackers("aaaa"),
-            vec!["udp://one.example:80", "udp://two.example:80"]
-        );
-
-        cfg.remove_extra_tracker("aaaa", "udp://one.example:80");
-        assert_eq!(cfg.extra_trackers("aaaa"), vec!["udp://two.example:80"]);
     }
 
     /// Tags are created by using them, so asking for the same name twice has
@@ -1006,54 +906,5 @@ mod tests {
         let fresh = cfg.ensure_tag("something else").unwrap();
         cfg.add_tag("aaaa", fresh);
         assert!(cfg.tags_for("bbbb").is_empty(), "a stale join row came back");
-    }
-
-    /// The list redraws every second, so it reads every torrent's tags in one
-    /// query rather than one per row.
-    #[test]
-    fn tags_by_torrent_groups_them_in_one_pass() {
-        let cfg = cfg();
-        torrent(&cfg, "aaaa");
-        torrent(&cfg, "bbbb");
-
-        let linux = cfg.ensure_tag("linux").unwrap();
-        let iso = cfg.ensure_tag("iso").unwrap();
-        cfg.add_tag("aaaa", linux);
-        cfg.add_tag("aaaa", iso);
-        cfg.add_tag("bbbb", linux);
-
-        let all = cfg.tags_by_torrent();
-        assert_eq!(all["aaaa"], vec!["iso", "linux"]);
-        assert_eq!(all["bbbb"], vec!["linux"]);
-        // A torrent with no tags is absent rather than present and empty.
-        assert!(!all.contains_key("cccc"));
-    }
-
-    #[test]
-    fn renaming_a_tag_keeps_its_torrents() {
-        let cfg = cfg();
-        torrent(&cfg, "aaaa");
-        let id = cfg.ensure_tag("linux").unwrap();
-        cfg.add_tag("aaaa", id);
-
-        assert!(cfg.rename_tag(id, "Linux ISOs"));
-        assert_eq!(cfg.tags_for("aaaa")[0].name, "Linux ISOs");
-
-        // Blank is refused rather than leaving a nameless tag behind.
-        assert!(!cfg.rename_tag(id, "   "));
-        assert_eq!(cfg.tags_for("aaaa")[0].name, "Linux ISOs");
-    }
-
-    /// Renaming onto a name that already exists must not merge the two: both
-    /// keep their own torrents, and the rename simply does not happen.
-    #[test]
-    fn renaming_onto_an_existing_name_is_refused() {
-        let cfg = cfg();
-        let linux = cfg.ensure_tag("linux").unwrap();
-        cfg.ensure_tag("iso").unwrap();
-
-        assert!(!cfg.rename_tag(linux, "iso"), "the unique index did not hold");
-        let names: Vec<String> = cfg.get_tags().into_iter().map(|t| t.name).collect();
-        assert_eq!(names, vec!["iso", "linux"]);
     }
 }

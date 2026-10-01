@@ -5,7 +5,18 @@ use std::time::SystemTime;
 
 pub struct Environment {
     startup_time: SystemTime,
+    /// Where the profile lives. Decided once, in `create`: a copy that
+    /// answered differently halfway through a run would split one profile
+    /// across two folders.
+    data_path: PathBuf,
+    /// Whether that is the portable folder rather than the per-user one.
+    portable: bool,
 }
+
+/// The files that make a copy portable, looked for in [`Environment::portable_root`].
+/// `portable.txt` is the one `--portable` writes; the bare name is kept because
+/// it has always worked, and someone may have made one by hand.
+pub const PORTABLE_MARKERS: [&str; 2] = ["portable.txt", "portable"];
 
 impl Environment {
     /// Work out where this installation keeps its data, logs and translations.
@@ -13,17 +24,73 @@ impl Environment {
     /// Resolved once at startup and passed around: every path in the app
     /// derives from here, so there is one answer rather than one per caller.
     pub fn create() -> Environment {
+        let portable = Self::portable_requested();
+        let data_path = if portable {
+            Self::portable_root()
+        } else {
+            Self::user_data_dir().unwrap_or_else(Self::portable_root)
+        };
         Environment {
             startup_time: SystemTime::now(),
+            data_path,
+            portable,
         }
     }
 
-    /// The directory where the executable lives.
-    pub fn get_application_path(&self) -> PathBuf {
+    /// Whether this copy keeps its profile beside the program.
+    pub fn is_portable(&self) -> bool {
+        self.portable
+    }
+
+    /// Asked for by a marker file beside the program, or by
+    /// NANOTORRENT_PORTABLE for a one-off run.
+    fn portable_requested() -> bool {
+        let root = Self::portable_root();
+        std::env::var_os("NANOTORRENT_PORTABLE").is_some()
+            || PORTABLE_MARKERS.iter().any(|m| root.join(m).exists())
+    }
+
+    /// The folder a portable copy keeps its profile in: "beside the program",
+    /// which is not always the folder the executable is in.
+    ///
+    /// - An AppImage runs from a read-only mount under /tmp that changes on
+    ///   every launch, so its executable's folder can neither hold a marker nor
+    ///   keep a profile. The runtime names the real file in `APPIMAGE`, and the
+    ///   folder that file sits in is the one the user sees.
+    /// - A macOS binary lives three folders down, in `X.app/Contents/MacOS`.
+    ///   The folder holding the `.app` is the one a user can see and write to;
+    ///   writing inside the bundle would break its signature.
+    pub fn portable_root() -> PathBuf {
+        #[cfg(not(windows))]
+        if let Some(image) = std::env::var_os("APPIMAGE").map(PathBuf::from)
+            && image.is_absolute()
+            && let Some(dir) = image.parent()
+        {
+            return dir.to_path_buf();
+        }
+
+        let exe_dir = Self::application_dir();
+        #[cfg(target_os = "macos")]
+        if exe_dir.ends_with("Contents/MacOS")
+            && let Some(bundle) = exe_dir.parent().and_then(|p| p.parent())
+            && bundle.extension().is_some_and(|e| e == "app")
+            && let Some(dir) = bundle.parent()
+        {
+            return dir.to_path_buf();
+        }
+        exe_dir
+    }
+
+    fn application_dir() -> PathBuf {
         std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
             .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    /// The directory where the executable lives.
+    pub fn get_application_path(&self) -> PathBuf {
+        Self::application_dir()
     }
 
     /// Port of Environment::GetApplicationDataPath.
@@ -31,28 +98,20 @@ impl Environment {
     /// The C++ version checks the Windows registry to see if the app is
     /// installed and uses %LOCALAPPDATA%\<app> in that case, falling
     /// back to the application directory for portable installs. Here a
-    /// `portable.txt` marker file (or the NANOTORRENT_PORTABLE env var) next
-    /// to the executable selects portable mode instead.
+    /// `portable.txt` marker beside the program (see [`Self::portable_root`]),
+    /// or the NANOTORRENT_PORTABLE env var, selects portable mode instead.
     pub fn get_application_data_path(&self) -> PathBuf {
-        let app_path = self.get_application_path();
-
-        let portable = std::env::var_os("NANOTORRENT_PORTABLE").is_some()
-            || app_path.join("portable.txt").exists()
-            || app_path.join("portable").exists();
-
-        if portable {
-            return app_path;
-        }
-
-        Self::user_data_dir().unwrap_or(app_path)
+        self.data_path.clone()
     }
 
-    /// Per-user data directory, following each platform's own convention.
+    /// Per-user data directory, following each platform's own convention -
+    /// where the profile lives when this copy is NOT portable, and so also
+    /// the profile offered to a new portable copy.
     ///
     /// Hand-rolled rather than pulling in `directories`: it is three rules, and
     /// the crate would be a dependency carried on every platform to answer a
     /// question each one answers differently anyway.
-    fn user_data_dir() -> Option<PathBuf> {
+    pub fn user_data_dir() -> Option<PathBuf> {
         #[cfg(windows)]
         {
             std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("NanoTorrent"))

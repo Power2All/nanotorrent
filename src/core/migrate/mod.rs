@@ -219,6 +219,45 @@ pub enum Phase {
     Done,
 }
 
+/// Read every `*.ext` in `dir` through `read_one`.
+///
+/// The loop the file-per-torrent importers share. A file that will not read is
+/// counted, never fatal: one unreadable torrent out of hundreds is a line in
+/// the report, not a failed migration. Cancel is checked per file, because the
+/// read is the expensive part and a profile with thousands of them is exactly
+/// when someone wants to stop.
+pub(crate) fn scan_dir(
+    dir: &Path,
+    ext: &str,
+    cancel: &AtomicBool,
+    mut read_one: impl FnMut(&Path) -> Option<crate::core::pico_import::ImportEntry>,
+) -> Result<Scan> {
+    use anyhow::Context;
+    use std::sync::atomic::Ordering;
+
+    let listing = std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))?;
+    let mut entries = Vec::new();
+    let mut unreadable = 0usize;
+    for item in listing.flatten() {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        let path = item.path();
+        if path.extension().and_then(|e| e.to_str()) != Some(ext) {
+            continue;
+        }
+        match read_one(&path) {
+            Some(entry) => entries.push(entry),
+            None => unreadable += 1,
+        }
+    }
+
+    // `read_dir` order is the filesystem's, which is arbitrary. Sort so a
+    // migration run twice adds them in the same order both times.
+    entries.sort_by(|a, b| a.info_hash.cmp(&b.info_hash));
+    Ok(Scan { entries, unreadable })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

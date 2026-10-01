@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Português (Portugal) - Partner Center: Portuguese (Portugal) (pt-PT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ O NanoTorrent é uma adaptação em Rust do PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versão 0.4.2
+Versão 0.4.3
 
-- Migre de outro cliente. Ficheiro > Migrar de lê uma instalação existente do qBittorrent, uTorrent, BitComet, Transmission ou PicoTorrent e traz os torrents com os respetivos caminhos de destino e etiquetas. Se não encontrar nenhuma neste computador, pergunta onde procurar, por isso uma cópia de segurança também funciona. Nada é copiado nem movido - os seus ficheiros ficam onde estão. Mostra o progresso, e Cancelar interrompe e repõe o que já tinha sido adicionado.
-- A barra Partes na Vista geral é agora um mapa do torrent em vez de uma segunda barra de progresso: uma coluna por parte, acesa onde a parte existe, e as partes pedidas neste momento desenhadas com cor própria.
-- O separador Rastreadores de um torrent híbrido mostra os dois enxames, não apenas o primeiro.
-- As notificações aparecem agora na versão da Loja, e um botão que ali não podia fazer nada deixou de ser mostrado.
-- Na interface web, um tamanho como "392.91 MB" já não é cortado.
-- Atualizado para Slint 1.18.1, com uma ronda de atualizações de dependências.
+- As ligações magnet já não esperam pelos detalhes: a janela Adicionar abre de imediato, e um magnet adicionado antes de os detalhes chegarem aparece na lista como «A transferir metadados» até chegarem, como no qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

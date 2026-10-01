@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Bosanski (Bosna i Hercegovina) - Partner Center: Bosnian (Bosnia and Herzegovina) (bs-Latn-BA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent je Rust port PicoTorrenta autora Viktora Elofssona.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzija 0.4.2
+Verzija 0.4.3
 
-- Migracija s drugog klijenta. Datoteka > Migriraj iz čita postojeću instalaciju qBittorrent, uTorrent, BitComet, Transmission ili PicoTorrent i prenosi torrente zajedno s putanjama spremanja i oznakama. Ako je ne nađe na ovom računaru, pita gdje da traži, pa radi i sigurnosna kopija. Ništa se ne kopira niti premješta - vaše datoteke ostaju gdje jesu. Prikazuje napredak, a Otkaži zaustavlja i vraća već dodano.
-- Traka Dijelovi u Pregledu sada je mapa torrenta umjesto druge trake napretka: jedan stupac po dijelu, osvijetljen gdje je taj dio dostupan, a dijelovi koji se upravo traže crtaju se vlastitom bojom.
-- Kartica Trackeri hibridnog torrenta prikazuje oba roja, ne samo prvi.
-- Obavijesti se sada pojavljuju iz Store verzije, a dugme koje tamo nije moglo ništa više se ne prikazuje.
-- U web sučelju veličina poput "392.91 MB" više se ne skraćuje.
-- Ažurirano na Slint 1.18.1 uz niz ažuriranja ovisnosti.
+- Magnet linkovi više ne čekaju na detalje: prozor za dodavanje otvara se odmah, a magnet dodan prije nego što detalji stignu prikazuje se u listi kao „Preuzimanje metapodataka” dok ne stignu, kao u qBittorrentu.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

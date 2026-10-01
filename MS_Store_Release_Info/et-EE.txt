@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Eesti (Eesti) - Partner Center: Estonian (Estonia) (et-EE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioon 0.4.2
+Versioon 0.4.3
 
-- Migreerimine teisest kliendist. Fail > Migreeri rakendusest loeb olemasolevat qBittorrenti, uTorrenti, BitCometi, Transmissioni või PicoTorrenti paigaldust ja toob torrentid üle koos salvestusteede ja siltidega. Kui ta seda arvutist ei leia, küsib ta, kust vaadata - nii toimib ka varukoopia. Midagi ei kopeerita ega teisaldata - teie failid jäävad sinna, kus nad on. Edenemist näidatakse ja Loobu peatab ning paneb juba lisatu tagasi.
-- Tükkide riba Ülevaates on nüüd torrenti kaart, mitte teine edenemisriba: üks veerg tüki kohta, valgustatud seal, kus tükk olemas on, ning praegu küsitavad tükid on omaette värvi.
-- Hübriidtorrenti Trackerite kaart näitab mõlemat parve, mitte ainult esimest.
-- Teated ilmuvad nüüd ka Store'i versioonist ja nuppu, mis seal midagi teha ei saanud, enam ei näidata.
-- Veebiliideses ei lõigata suurust nagu "392.91 MB" enam ära.
-- Uuendatud Slint 1.18.1 peale koos sõltuvuste uuendustega.
+- Magnetlingid ei oota enam oma üksikasju: lisamisdialoog avaneb kohe ja enne üksikasjade saabumist lisatud magnet kuvatakse loendis kui „Allalaaditakse metadata't“, kuni need saabuvad, nagu qBittorrentis.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

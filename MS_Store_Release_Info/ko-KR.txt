@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: 한국어 (대한민국) - Partner Center: Korean (Korea) (ko-KR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent은 Viktor Elofsson의 PicoTorrent을 Rust로 이식한 것입니다.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-버전 0.4.2
+버전 0.4.3
 
-- 다른 클라이언트에서 이전할 수 있습니다. 파일 > 다음에서 이전 은 기존 qBittorrent, uTorrent, BitComet, Transmission 또는 PicoTorrent 설치를 읽어 토렌트를 저장 경로와 레이블과 함께 가져옵니다. 이 컴퓨터에서 찾지 못하면 어디를 볼지 묻기 때문에 백업에서도 가져올 수 있습니다. 아무것도 복사하거나 옮기지 않습니다 - 파일은 있던 자리에 그대로 남습니다. 진행 상황을 보여주며, 취소하면 중단하고 이미 추가된 것을 되돌립니다.
-- 개요의 조각 막대가 두 번째 진행률 표시줄이 아니라 토렌트의 지도가 되었습니다. 조각마다 한 열씩, 보유한 조각 자리가 켜지고, 지금 요청 중인 조각은 고유한 색으로 그려집니다.
-- 하이브리드 토렌트의 트래커 탭이 첫 번째만이 아니라 두 무리를 모두 표시합니다.
-- 스토어 버전에서도 알림이 표시되며, 거기서는 아무 일도 할 수 없던 버튼이 더 이상 표시되지 않습니다.
-- 웹 인터페이스에서 "392.91 MB" 같은 크기가 더 이상 잘리지 않습니다.
-- Slint 1.18.1로 업데이트하고 의존성도 함께 갱신했습니다.
+- 마그넷 링크가 더 이상 세부 정보를 기다리지 않습니다. 추가 대화 상자가 바로 열리며, 세부 정보가 도착하기 전에 추가한 마그넷은 도착할 때까지 목록에 “메타데이터 다운로드”(으)로 표시됩니다. qBittorrent와 같은 방식입니다.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

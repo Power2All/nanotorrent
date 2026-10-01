@@ -109,7 +109,28 @@ if ($files.Count -gt $MaxScreenshots) {
     throw "$($files.Count) screenshots in $ImageDir, but a listing takes at most $MaxScreenshots"
 }
 
-Add-Type -AssemblyName System.Drawing
+# A PNG's width and height, read from its header. IHDR is always the first
+# chunk, so they are the two big-endian 32-bit integers at bytes 16-23.
+#
+# Not System.Drawing: .NET supports that on Windows only, and this runs on
+# Linux too - there it throws before reading a single pixel. Checking the
+# signature also catches a WebP that was renamed .png, which the Store would
+# refuse after the upload rather than before it.
+function Get-PngSize([string]$path) {
+    $head = [byte[]]::new(24)
+    $stream = [System.IO.File]::OpenRead($path)
+    try { $read = $stream.Read($head, 0, $head.Length) } finally { $stream.Dispose() }
+    $signature = @(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+    $isPng = $read -eq $head.Length -and
+        [System.Text.Encoding]::ASCII.GetString($head, 12, 4) -eq 'IHDR'
+    for ($i = 0; $isPng -and $i -lt $signature.Count; $i++) {
+        $isPng = $head[$i] -eq $signature[$i]
+    }
+    if (-not $isPng) { throw "$path is not a PNG" }
+    $be32 = { param($at) ([int64]$head[$at] -shl 24) -bor ([int64]$head[$at + 1] -shl 16) -bor
+        ([int64]$head[$at + 2] -shl 8) -bor [int64]$head[$at + 3] }
+    return @((& $be32 16), (& $be32 20))
+}
 
 $images = @()
 foreach ($file in $files) {
@@ -117,13 +138,7 @@ foreach ($file in $files) {
         throw "$($file.Name) is $([math]::Round($file.Length / 1MB, 1)) MB, over the 50 MB limit"
     }
 
-    $bitmap = [System.Drawing.Image]::FromFile($file.FullName)
-    try {
-        $w = $bitmap.Width
-        $h = $bitmap.Height
-    } finally {
-        $bitmap.Dispose()
-    }
+    $w, $h = Get-PngSize $file.FullName
 
     if ($w -lt $MinWidth -or $h -lt $MinHeight) {
         throw "$($file.Name) is ${w}x${h}, under the ${MinWidth}x${MinHeight} minimum"

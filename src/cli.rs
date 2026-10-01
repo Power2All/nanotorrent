@@ -276,6 +276,7 @@ fn help_key(s: &Setting) -> String {
 /// The web interface renders its Preferences drawer from these. Keeping the
 /// mapping here means a new Kind is handled in one place rather than in every
 /// front end that grew a switch on it.
+#[derive(Default)]
 pub struct Field {
     /// One of: bool, int, text, dir, choice.
     pub kind: &'static str,
@@ -294,27 +295,19 @@ pub struct Field {
 pub fn field(s: &Setting) -> Field {
     let plain = |kind| Field {
         kind,
-        options: Vec::new(),
-        labels: Vec::new(),
-        min: None,
-        max: None,
-        unit: "",
+        ..Default::default()
     };
     let choice = |v: &[&str]| Field {
         kind: "choice",
         options: v.iter().map(|s| String::from(*s)).collect(),
-        labels: Vec::new(),
-        min: None,
-        max: None,
-        unit: "",
+        ..Default::default()
     };
     let int = |lo, hi, unit| Field {
         kind: "int",
-        options: Vec::new(),
-        labels: Vec::new(),
         min: Some(lo),
         max: Some(hi),
         unit,
+        ..Default::default()
     };
 
     match &s.kind {
@@ -337,9 +330,7 @@ pub fn field(s: &Setting) -> Field {
                 .iter()
                 .map(|(l, _)| String::from(crate::ui::translator::endonym(l)))
                 .collect(),
-            min: None,
-            max: None,
-            unit: "",
+            ..Default::default()
         },
         Kind::ListenAddress => plain("text"),
         Kind::ListenPort => int(1, 65535, ""),
@@ -427,6 +418,17 @@ fn accepts(s: &Setting, tr: &Translator) -> String {
     }
 }
 
+/// Refuse a value that is not one of `names`, naming them all.
+fn one_of(s: &Setting, names: &[&str], value: &str) -> Result<()> {
+    anyhow::ensure!(
+        names.contains(&value),
+        "{} must be one of: {}",
+        s.name,
+        names.join(", ")
+    );
+    Ok(())
+}
+
 pub fn set(cfg: &Configuration, s: &Setting, value: &str, tr: &Translator) -> Result<()> {
     match &s.kind {
         Kind::Bool => {
@@ -487,12 +489,7 @@ pub fn set(cfg: &Configuration, s: &Setting, value: &str, tr: &Translator) -> Re
             cfg.set(s.key, &value);
         }
         Kind::Choice(names) => {
-            anyhow::ensure!(
-                names.contains(&value),
-                "{} must be one of: {}",
-                s.name,
-                names.join(", ")
-            );
+            one_of(s, names, value)?;
             cfg.set(s.key, &value);
         }
         Kind::Index(names) => {
@@ -503,12 +500,7 @@ pub fn set(cfg: &Configuration, s: &Setting, value: &str, tr: &Translator) -> Re
             cfg.set(s.key, &(i as i64));
         }
         Kind::Persist(names) => {
-            anyhow::ensure!(
-                names.contains(&value),
-                "{} must be one of: {}",
-                s.name,
-                names.join(", ")
-            );
+            one_of(s, names, value)?;
             cfg.set_persistent(s.key, value);
         }
         Kind::ListenAddress | Kind::ListenPort => {

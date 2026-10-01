@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Oʻzbekcha (Oʻzbekiston) - Partner Center: Uzbek (Uzbekistan) (uz-Latn-UZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ NanoTorrent — Viktor Elofsson yozgan PicoTorrent dasturining Rust versiyasi.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiya 0.4.2
+Versiya 0.4.3
 
-- Boshqa mijozdan ko'chirish. Fayl > Bu yerdan ko'chirish mavjud qBittorrent, uTorrent, BitComet, Transmission yoki PicoTorrent o'rnatmasini o'qib, torrentlarni saqlash yo'llari va yorliqlari bilan olib keladi. Bu kompyuterda topa olmasa, qayerga qarashni so'raydi, shuning uchun zaxira nusxa ham ishlaydi. Hech narsa nusxalanmaydi yoki ko'chirilmaydi - fayllaringiz joyida qoladi. U jarayonni ko'rsatadi, Bekor qilish esa to'xtatib, qo'shilganini qaytaradi.
-- Umumiy ko'rinishdagi Bo'laklar paneli endi ikkinchi jarayon paneli emas, torrent xaritasi: har bir bo'lak uchun bitta ustun, o'sha bo'lak mavjud joyda yonadi, hozir so'ralayotgan bo'laklar esa o'z rangida chiziladi.
-- Gibrid torrentning Kuzatuvchilar yorlig'i faqat birinchisini emas, ikkala to'dani ham ko'rsatadi.
-- Bildirishnomalar endi Store versiyasidan ham chiqadi, u yerda hech narsa qila olmaydigan tugma esa boshqa ko'rsatilmaydi.
-- Veb interfeysda "392.91 MB" kabi o'lcham endi qirqilmaydi.
-- Slint 1.18.1 ga yangilandi, bog'liqliklar yangilanishi bilan birga.
+- Magnit havolalar endi o‘z tafsilotlarini kutmaydi: Qo‘shish oynasi darhol ochiladi, tafsilotlar kelmasdan qo‘shilgan magnit esa ular kelguncha ro‘yxatda “Metamaʼlumotlar yuklab olinmoqda” sifatida ko‘rinadi - xuddi qBittorrent’dagidek.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

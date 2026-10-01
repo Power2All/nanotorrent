@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.2 - Microsoft Store listing
+NanoTorrent 0.4.3 - Microsoft Store listing
 Language: Cymraeg (Y Deyrnas Unedig) - Partner Center: Welsh (United Kingdom) (cy-GB)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,14 +28,9 @@ Trosiad Rust o PicoTorrent gan Viktor Elofsson yw NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Fersiwn 0.4.2
+Fersiwn 0.4.3
 
-- Mudo o gleient arall. Ffeil > Mudo o yn darllen gosodiad presennol o qBittorrent, uTorrent, BitComet, Transmission neu PicoTorrent ac yn dod â'r torrentiau drosodd gyda'u llwybrau cadw a'u labeli. Os na all ganfod un ar y cyfrifiadur hwn, mae'n gofyn ble i edrych, felly mae copi wrth gefn yn gweithio hefyd. Nid oes dim yn cael ei gopïo na'i symud - mae eich ffeiliau'n aros lle maent. Mae'n dangos cynnydd, ac mae Diddymu yn ei atal ac yn rhoi'n ôl yr hyn a ychwanegwyd.
-- Mae'r bar Darnau yn y Trosolwg bellach yn fap o'r torrent yn lle ail far cynnydd: un golofn fesul darn, wedi'i oleuo lle mae'r darn hwnnw gennych, gyda'r darnau sy'n cael eu gofyn amdanynt nawr mewn eu lliw eu hunain.
-- Mae tab Traciwyr torrent hybrid yn dangos y ddau heid, nid y cyntaf yn unig.
-- Mae hysbysiadau bellach yn ymddangos o fersiwn y Siop, ac nid yw botwm na allai wneud dim yno'n cael ei ddangos mwyach.
-- Yn y rhyngwyneb gwe nid yw maint fel "392.91 MB" yn cael ei dorri mwyach.
-- Diweddarwyd i Slint 1.18.1, gyda rownd o ddiweddariadau dibyniaethau.
+- Nid yw dolenni magnet yn aros am eu manylion mwyach: mae’r ffenestr Ychwanegu yn agor ar unwaith, ac mae magnet a ychwanegir cyn i’r manylion gyrraedd yn ymddangos fel “Yn lawrlwytho metadata” yn y rhestr nes iddynt gyrraedd, fel yn qBittorrent.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

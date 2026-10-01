@@ -22,9 +22,9 @@
 //! experimental is not.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::core::bencode;
 use crate::core::pico_import::{ImportEntry, ImportSource, Scan};
@@ -56,36 +56,7 @@ pub fn detect() -> Option<PathBuf> {
 /// `profile` is the directory holding `BT_backup`, not `BT_backup` itself, so
 /// a caller can hand over what a folder picker returned.
 pub fn scan(profile: &Path, cancel: &AtomicBool) -> Result<Scan> {
-    let backup = profile.join("BT_backup");
-    let dir = std::fs::read_dir(&backup)
-        .with_context(|| format!("reading {}", backup.display()))?;
-
-    let mut entries = Vec::new();
-    let mut unreadable = 0usize;
-
-    for item in dir.flatten() {
-        // Checked per file, not per torrent: the read below is the
-        // expensive part, and a profile with thousands of them is
-        // exactly when someone wants to stop.
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        let path = item.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("fastresume") {
-            continue;
-        }
-        match read_one(&path) {
-            Some(entry) => entries.push(entry),
-            // Counted, never fatal: one unreadable torrent out of hundreds is
-            // a line in the report, not a failed migration.
-            None => unreadable += 1,
-        }
-    }
-
-    // `read_dir` order is the filesystem's, which is arbitrary. Sort so a
-    // migration run twice adds them in the same order both times.
-    entries.sort_by(|a, b| a.info_hash.cmp(&b.info_hash));
-    Ok(Scan { entries, unreadable })
+    super::scan_dir(&profile.join("BT_backup"), "fastresume", cancel, read_one)
 }
 
 /// One `.fastresume`, plus the `.torrent` beside it.

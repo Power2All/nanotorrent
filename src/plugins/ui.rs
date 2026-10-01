@@ -22,7 +22,8 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// One line in a plugin's list.
-#[derive(Clone, Default)]
+/// Serialized as-is for the web interface, field for field.
+#[derive(Clone, Default, serde::Serialize)]
 pub struct Row {
     /// Handed back to `on_ui_row`. The plugin's own identifier - a feed URL, a
     /// torrent hash, whatever it needs to act on the click.
@@ -41,7 +42,8 @@ pub struct Row {
 /// nowhere near enough to edit a rule with eight settings on it. A form is the
 /// answer: the plugin describes the controls it wants, the window draws them,
 /// and the values come back in one go.
-#[derive(Clone, Default)]
+/// Serialized as-is for the web interface, field for field.
+#[derive(Clone, Default, serde::Serialize)]
 pub struct Field {
     /// The key this field's value arrives under.
     pub id: String,
