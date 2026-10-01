@@ -575,7 +575,17 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     // The one-time encryption question, asked only when there is something to
     // ask about: a database that is still plain, and nobody having answered
     // yet. Delayed so it arrives over a drawn window rather than an empty one.
-    if !ui.cfg.get_bool("database.encryption_prompted") && !ui.db.is_encrypted() {
+    //
+    // Not asked of a portable copy on Windows. There the key is bound to this
+    // Windows account, so encrypting would make the profile unreadable on the
+    // next machine it is carried to - suggesting it would be suggesting the
+    // one setting that defeats the point of portable. Preferences > Database
+    // still has the switch for anyone who wants it anyway.
+    let portable_on_windows = cfg!(windows) && ui.env.is_portable();
+    if !ui.cfg.get_bool("database.encryption_prompted")
+        && !ui.db.is_encrypted()
+        && !portable_on_windows
+    {
         let u = ui.clone();
         slint::Timer::single_shot(std::time::Duration::from_millis(600), move || {
             open_db_prompt(&u);
@@ -586,26 +596,16 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     // menus. Dialog layout is the one thing here that neither the compiler nor
     // a test can check, and every round of "does it fit now?" otherwise costs a
     // human. Off unless the variable is set.
+    //
+    // Any menu action works - "preferences", "create", "about", "cli-help" -
+    // and "check-update" is worth knowing too: it is the only path that
+    // reports "no update available".
     if let Ok(which) = std::env::var("NANOTORRENT_OPEN_DIALOG") {
-        let (u, w) = (ui.clone(), window.as_weak());
+        let w = window.as_weak();
         slint::Timer::single_shot(std::time::Duration::from_millis(400), move || {
-            let Some(window) = w.upgrade() else { return };
-            match which.as_str() {
-                "preferences" => open_preferences(&u),
-                "create" => open_create_torrent(&u),
-                "about" => open_about(&u),
-                "cli-help" => open_cli_help(&u),
-                // Not a dialog, but the same purpose: it exercises the manual
-                // check - the only path that reports "no update available".
-                "check-update" => crate::updatechecker::check(
-                    &u.session.handle(),
-                    &u.cfg,
-                    u.update_slot.clone(),
-                    true,
-                ),
-                other => tracing::warn!("unknown NANOTORRENT_OPEN_DIALOG: {other}"),
+            if let Some(window) = w.upgrade() {
+                window.invoke_action(which.into());
             }
-            let _ = window;
         });
     }
 
@@ -1208,6 +1208,57 @@ where
         set_modal(&u, false);
         slint::CloseRequestResponse::HideWindow
     });
+}
+
+/// Show a dialog and keep it: close handling and translations wired, its
+/// height clamped to the screen, and stored in its slot, which is what keeps
+/// it alive while it is open - `dialog_visible` drops it once it is not.
+fn present<T>(
+    ui: &Rc<Ui>,
+    slot: &RefCell<Option<T>>,
+    dialog: T,
+    set_limit: impl FnOnce(&T, f32) + 'static,
+) where
+    T: slint::ComponentHandle + 'static,
+    for<'a> L<'a>: slint::Global<'a, T>,
+{
+    wire_dialog_close(&dialog, ui);
+    let _ = dialog.show();
+    clamp_to_screen(&dialog, set_limit);
+    *slot.borrow_mut() = Some(dialog);
+}
+
+/// Whether every one of `selected` carries the tag - which is what its tick in
+/// the context menu shows. Nothing selected is "no": one click then tags them
+/// all, which is the useful direction.
+fn all_tagged(cfg: &crate::core::configuration::Configuration, selected: &[String], tag_id: i32) -> bool {
+    !selected.is_empty()
+        && selected
+            .iter()
+            .all(|hash| cfg.tags_for(hash).iter().any(|t| t.id == tag_id))
+}
+
+/// A remembered length - a splitter, a column - if it is still one that fits.
+/// A stored value outside `range` is ignored rather than trusted: one that no
+/// longer fits the window would leave nothing to grab.
+fn saved_len(
+    cfg: &crate::core::configuration::Configuration,
+    key: &str,
+    range: std::ops::RangeInclusive<f32>,
+) -> Option<f32> {
+    cfg.get_persistent(key)
+        .and_then(|v| v.parse::<f32>().ok())
+        .filter(|v| v.is_finite() && range.contains(v))
+}
+
+/// A handler that only closes `dialog` - Cancel, Close, and the like.
+fn closer<T: slint::ComponentHandle + 'static>(dialog: &T, ui: &Rc<Ui>) -> impl Fn() + 'static {
+    let (weak, u) = (dialog.as_weak(), ui.clone());
+    move || {
+        if let Some(d) = weak.upgrade() {
+            dismiss(&u, &d);
+        }
+    }
 }
 
 /// Dismiss a dialog.
@@ -2493,7 +2544,7 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     {
         let (w, u) = (window.as_weak(), ui.clone());
         window.on_commit_tracker_edit(move || {
-            let (Some(window), Some(hash)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
+            let (Some(window), Some(_)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
                 return;
             };
             let from = window.get_tracker_target().to_string();
@@ -2505,13 +2556,11 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             if to.trim() == from {
                 return;
             }
-            let _ = &hash;
             // Asked on APPLY, not when the field opened: until now nothing has
             // changed, and a question about an edit nobody has finished making
             // is a question about nothing.
             let heading = u.tr.borrow().i18n("confirm_tracker_edit");
             let weak = window.as_weak();
-            let (from, to) = (from, to);
             open_confirm(&u, CONFIRM_TRACKER_KEY, heading, to.clone(), move |u| {
                 let Some(hash) = u.detail_hash.borrow().clone() else { return };
                 let Some(window) = weak.upgrade() else { return };
@@ -2526,7 +2575,7 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     {
         let (w, u) = (window.as_weak(), ui.clone());
         window.on_remove_tracker(move || {
-            let (Some(window), Some(hash)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
+            let (Some(window), Some(_)) = (w.upgrade(), u.detail_hash.borrow().clone()) else {
                 return;
             };
             let url = window.get_tracker_target().to_string();
@@ -2540,7 +2589,6 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
                     window.set_tracker_editing_row(-1);
                 }
             });
-            let _ = hash;
         });
     }
     {
@@ -2611,10 +2659,8 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             };
             // Not checked for existence first: a file that is not there yet
             // fails in the shell's own words, which say more than a toast
-            // guessing why could.
-            if !utils::open_target(&path.to_string_lossy()) {
-                tracing::error!("cannot open {}", path.display());
-            }
+            // guessing why could. `open_target` logs a failure itself.
+            utils::open_target(&path.to_string_lossy());
         });
     }
 
@@ -2710,12 +2756,7 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             let selected = u.targets();
             let on: Vec<bool> = tags
                 .iter()
-                .map(|tag| {
-                    !selected.is_empty()
-                        && selected
-                            .iter()
-                            .all(|hash| u.cfg.tags_for(hash).iter().any(|t| t.id == tag.id))
-                })
+                .map(|tag| all_tagged(&u.cfg, &selected, tag.id))
                 .collect();
             window.set_ctx_tag_names(ModelRc::new(VecModel::from(
                 tags.into_iter()
@@ -2816,7 +2857,7 @@ pub const CONFIRM_REMOVE_KEY: &str = "ui.confirm_remove_torrent";
 /// downloaded data - Delete and the toolbar's trash - and the dialog offers
 /// both. It is `Some(..)` from the context menu, whose two entries already
 /// said which, so there the question is only whether it was meant.
-fn open_remove_prompt(window: &MainWindow, ui: &Rc<Ui>, files: Option<bool>) {
+fn open_remove_prompt(ui: &Rc<Ui>, files: Option<bool>) {
     let targets = ui.targets();
     if targets.is_empty() {
         return;
@@ -2835,12 +2876,10 @@ fn open_remove_prompt(window: &MainWindow, ui: &Rc<Ui>, files: Option<bool>) {
     // Re-using one dialog would mean it kept the previous selection alive; the
     // targets are captured below, so a fresh one each time is also the simplest
     // way to be sure they are current.
-    let dialog = match RemoveDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the remove dialog: {err}");
-            return;
-        }
+    let Ok(dialog) = RemoveDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the remove dialog: {err}"))
+    else {
+        return;
     };
 
     // The name when there is one, a count when there are several - a list of
@@ -2911,11 +2950,7 @@ fn open_remove_prompt(window: &MainWindow, ui: &Rc<Ui>, files: Option<bool>) {
         });
     }
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    let _ = window; // owner is set by wire_dialog_close
-    *ui.remove_dialog.borrow_mut() = Some(dialog);
+    present(ui, &ui.remove_dialog, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// The setting behind the tracker prompts.
@@ -2978,10 +3013,7 @@ fn open_confirm(
         });
     }
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    *ui.remove_dialog.borrow_mut() = Some(dialog);
+    present(ui, &ui.remove_dialog, dialog, |d, h| d.set_screen_limit(h));
 }
 
 fn remove_all(ui: &Rc<Ui>, targets: &[String], delete_files: bool) {
@@ -2998,21 +3030,13 @@ fn remove_all(ui: &Rc<Ui>, targets: &[String], delete_files: bool) {
 /// Menu and context-menu commands, dispatched by name.
 fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
     {
-        let (u, w) = (ui.clone(), window.as_weak());
-        window.on_remove_prompt(move || {
-            if let Some(window) = w.upgrade() {
-                open_remove_prompt(&window, &u, None);
-            }
-        });
+        let u = ui.clone();
+        window.on_remove_prompt(move || open_remove_prompt(&u, None));
     }
 
     {
-        let (u, w) = (ui.clone(), window.as_weak());
-        window.on_remove_confirm(move |files| {
-            if let Some(window) = w.upgrade() {
-                open_remove_prompt(&window, &u, Some(files));
-            }
-        });
+        let u = ui.clone();
+        window.on_remove_confirm(move |files| open_remove_prompt(&u, Some(files)));
     }
 
     let (u, w) = (ui.clone(), window.as_weak());
@@ -3129,14 +3153,10 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
             }
             "create" => open_create_torrent(&u),
             "docs" => {
-                if let Err(err) = open::that(WEBSITE) {
-                    tracing::error!("cannot open {WEBSITE}: {err}");
-                }
+                utils::open_target(WEBSITE);
             }
             "plugin-docs" => {
-                if let Err(err) = open::that(PLUGIN_DOCS) {
-                    tracing::error!("cannot open {PLUGIN_DOCS}: {err}");
-                }
+                utils::open_target(PLUGIN_DOCS);
             }
             "exit" => {
                 if let Some(window) = w.upgrade()
@@ -3275,12 +3295,10 @@ fn open_add_magnet(ui: &Rc<Ui>) {
         return;
     }
 
-    let dialog = match AddMagnetDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the add-magnet dialog: {err}");
-            return;
-        }
+    let Ok(dialog) = AddMagnetDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the add-magnet dialog: {err}"))
+    else {
+        return;
     };
 
     {
@@ -3302,19 +3320,9 @@ fn open_add_magnet(ui: &Rc<Ui>) {
         });
     }
 
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_cancelled(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-        });
-    }
+    dialog.on_cancelled(closer(&dialog, ui));
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    *ui.magnet_dialog.borrow_mut() = Some(dialog);
+    present(ui, &ui.magnet_dialog, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// File > Add torrent: pick one or more `.torrent` files, then run them
@@ -3353,13 +3361,18 @@ enum PendingAdd {
     Magnet(String),
 }
 
+/// What an Add dialog row holds.
+enum AddSource {
+    /// A .torrent - read from a file, or rebuilt from a magnet's metadata
+    /// once that arrived.
+    Torrent(Vec<u8>, crate::ui::torrentfile::ParsedTorrent),
+    /// A magnet whose metadata has not arrived (yet).
+    Magnet(String),
+}
+
 /// One torrent in the Add dialog.
 struct AddEntry {
-    /// The .torrent - read from a file, or rebuilt from a magnet's metadata
-    /// once that arrived. `None` for a magnet still waiting.
-    torrent: Option<(Vec<u8>, crate::ui::torrentfile::ParsedTorrent)>,
-    /// The link it came from, when it came from one.
-    magnet: Option<String>,
+    source: AddSource,
     /// The metadata fetch for a magnet still waiting.
     fetch: Option<tokio::task::AbortHandle>,
     /// The fetch gave up. The magnet can still be added: it goes on asking
@@ -3379,25 +3392,24 @@ impl Drop for AddEntry {
 
 impl AddEntry {
     fn name(&self) -> String {
-        match (&self.torrent, &self.magnet) {
-            (Some((_, t)), _) => t.name.clone(),
-            (None, Some(uri)) => session::magnet_label(uri),
-            (None, None) => String::new(),
+        match &self.source {
+            AddSource::Torrent(_, t) => t.name.clone(),
+            AddSource::Magnet(uri) => session::magnet_label(uri),
         }
     }
 
     /// Unknown until the metadata is in - empty rather than a guess.
     fn size(&self) -> String {
-        self.torrent
-            .as_ref()
-            .map(|(_, t)| utils::to_human_file_size(t.total_size))
-            .unwrap_or_default()
+        match &self.source {
+            AddSource::Torrent(_, t) => utils::to_human_file_size(t.total_size),
+            AddSource::Magnet(_) => String::new(),
+        }
     }
 
     /// What stands in for the file list while there is none. Names the state
     /// by the list's own word for it, so the two cannot drift apart.
     fn files_note(&self, tr: &crate::ui::translator::Translator) -> String {
-        if self.torrent.is_some() {
+        if let AddSource::Torrent(..) = self.source {
             return String::new();
         }
         let later = tr.i18n1(
@@ -3414,18 +3426,17 @@ impl AddEntry {
     /// Hand this row to the session, as a .torrent when there is one and as
     /// the link otherwise - which then waits in the list for its metadata.
     fn add(&self, ui: &Ui, params: AddParams) {
-        match (&self.torrent, &self.magnet) {
-            (Some((bytes, _)), _) => {
+        match &self.source {
+            AddSource::Torrent(bytes, _) => {
                 ui.session
                     .add_torrent(AddTorrentSource::TorrentFileBytes(bytes.clone()), params);
             }
-            (None, Some(uri)) => {
+            AddSource::Magnet(uri) => {
                 // No file list was ever shown, so none was chosen from.
                 let params = AddParams { only_files: None, ..params };
                 ui.session
                     .add_torrent(AddTorrentSource::MagnetUri(uri.clone()), params);
             }
-            (None, None) => {}
         }
     }
 }
@@ -3462,7 +3473,7 @@ impl AddBatch {
         let (Some(entry), Some(model)) = (entries.get(i), self.file_models.get(i)) else {
             return;
         };
-        let Some((_, t)) = &entry.torrent else {
+        let AddSource::Torrent(_, t) = &entry.source else {
             model.set_vec(Vec::new());
             return;
         };
@@ -3532,7 +3543,7 @@ impl AddBatch {
             let mut entries = self.entries.borrow_mut();
             let Some(i) = entries
                 .iter()
-                .position(|e| e.torrent.is_none() && e.magnet.as_deref() == Some(uri.as_str()))
+                .position(|e| matches!(&e.source, AddSource::Magnet(m) if *m == uri))
             else {
                 return; // for a row that has since gone
             };
@@ -3542,7 +3553,7 @@ impl AddBatch {
             match bytes.map(|b| (crate::ui::torrentfile::parse(&b), b)) {
                 Some((Ok(parsed), b)) => {
                     tracing::info!("add dialog: metadata arrived for {}", parsed.name);
-                    entry.torrent = Some((b, parsed));
+                    entry.source = AddSource::Torrent(b, parsed);
                 }
                 Some((Err(err), _)) => {
                     tracing::warn!("add dialog: magnet metadata would not parse: {err}");
@@ -3597,18 +3608,10 @@ fn show_next_pending(ui: &Rc<Ui>) {
     let mut entries: Vec<AddEntry> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
     for item in queued {
-        let torrent = match item {
-            PendingAdd::Magnet(uri) => {
-                entries.push(AddEntry {
-                    torrent: None,
-                    magnet: Some(uri),
-                    fetch: None,
-                    failed: false,
-                });
-                continue;
-            }
+        let source = match item {
+            PendingAdd::Magnet(uri) => AddSource::Magnet(uri),
             PendingAdd::Torrent(bytes) => match crate::ui::torrentfile::parse(&bytes) {
-                Ok(p) => (bytes, p),
+                Ok(p) => AddSource::Torrent(bytes, p),
                 // One bad file does not strand the rest of the batch.
                 Err(err) => {
                     tracing::error!("{err}");
@@ -3623,8 +3626,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
             },
         };
         entries.push(AddEntry {
-            torrent: Some(torrent),
-            magnet: None,
+            source,
             fetch: None,
             failed: false,
         });
@@ -3665,20 +3667,18 @@ fn show_next_pending(ui: &Rc<Ui>) {
         entries.iter().map(AddEntry::name).collect::<Vec<_>>()
     );
 
-    let dialog = match AddTorrentDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the add-torrent dialog: {err}");
-            return;
-        }
+    let Ok(dialog) = AddTorrentDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the add-torrent dialog: {err}"))
+    else {
+        return;
     };
 
     // The magnets start asking now. Whatever comes back is routed to its row
     // by `poll_magnets`.
     for entry in &mut entries {
-        if let (None, Some(uri)) = (&entry.torrent, &entry.magnet) {
+        if let AddSource::Magnet(uri) = &entry.source {
             tracing::info!("add dialog: fetching magnet metadata");
-            entry.fetch = ui.session.resolve_magnet(uri.clone(), ui.magnet_slot.clone());
+            entry.fetch = Some(ui.session.resolve_magnet(uri.clone(), ui.magnet_slot.clone()));
         }
     }
 
@@ -3721,12 +3721,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
     // The queue column's width, kept across adds. Range-checked on the way in
     // for the same reason the panel splitters are: a stored value that no
     // longer fits the dialog would leave nothing to grab.
-    if let Some(w) = ui
-        .cfg
-        .get_persistent("ui.add_queue_width")
-        .and_then(|v| v.parse::<f32>().ok())
-        .filter(|v| v.is_finite() && (120.0..=1200.0).contains(v))
-    {
+    if let Some(w) = saved_len(&ui.cfg, "ui.add_queue_width", 120.0..=1200.0) {
         dialog.set_queue_width(w);
     }
     {
@@ -3811,22 +3806,25 @@ fn show_next_pending(ui: &Rc<Ui>) {
                 // shut folder has no rows, and a file nobody can see is still a
                 // file the user left ticked. A magnet still without metadata
                 // has no files, and takes all of them.
-                let only_files = entry.torrent.as_ref().and_then(|(_, t)| {
-                    let out = b.excluded[i].borrow();
-                    let shown = t.files.iter().filter(|f| !f.padding);
-                    let mut total = 0;
-                    let mut included: Vec<usize> = Vec::new();
-                    for file in shown {
-                        total += 1;
-                        if !out.contains(&file.index) {
-                            included.push(file.index);
+                let only_files = match &entry.source {
+                    AddSource::Torrent(_, t) => {
+                        let out = b.excluded[i].borrow();
+                        let shown = t.files.iter().filter(|f| !f.padding);
+                        let mut total = 0;
+                        let mut included: Vec<usize> = Vec::new();
+                        for file in shown {
+                            total += 1;
+                            if !out.contains(&file.index) {
+                                included.push(file.index);
+                            }
                         }
+                        // None means "everything", which is not the same as an
+                        // explicit list of all of them - keep the distinction
+                        // the session expects.
+                        (included.len() != total).then_some(included)
                     }
-                    // None means "everything", which is not the same as an
-                    // explicit list of all of them - keep the distinction the
-                    // session expects.
-                    (included.len() != total).then_some(included)
-                });
+                    AddSource::Magnet(_) => None,
+                };
 
                 entry.add(
                     &u,
@@ -3860,10 +3858,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
         });
     }
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    *ui.torrent_dialog.borrow_mut() = Some(dialog);
+    present(ui, &ui.torrent_dialog, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// Themes and close actions, in the order the combo boxes show them. Kept
@@ -4000,11 +3995,11 @@ fn web_warning(d: &PreferencesDialog, tr: &Translator, password_set: bool) -> St
     }
     let bind = d.get_web_bind();
     let loopback = bind.is_empty() || bind == "127.0.0.1" || bind == "::1" || bind == "localhost";
-    if TLS_MODES[d.get_web_tls_index().max(0) as usize % TLS_MODES.len()] == "off" && !loopback {
+    let tls = pick(&TLS_MODES, d.get_web_tls_index());
+    if tls == "off" && !loopback {
         return tr.i18n("web_needs_tls");
     }
-    if TLS_MODES[d.get_web_tls_index().max(0) as usize % TLS_MODES.len()] == "custom"
-        && (d.get_web_cert_path().is_empty() || d.get_web_key_path().is_empty())
+    if tls == "custom" && (d.get_web_cert_path().is_empty() || d.get_web_key_path().is_empty())
     {
         return tr.i18n("web_needs_cert");
     }
@@ -4213,14 +4208,9 @@ fn save_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
     // field leaves the existing setting alone rather than resetting it. The
     // ranges are Advanced::load's business - it clamps on the way out too, so
     // a value edited into the database by hand is bounded the same way.
-    let num = |key: &str, text: SharedString| {
-        if let Ok(v) = text.trim().parse::<i64>() {
-            cfg.set(key, &v);
-        }
-    };
-    num("webui.auth_max_failures", d.get_web_auth_max_failures());
-    num("webui.auth_window", d.get_web_auth_window());
-    num("webui.auth_block", d.get_web_auth_block());
+    set_num(cfg, "webui.auth_max_failures", &d.get_web_auth_max_failures());
+    set_num(cfg, "webui.auth_window", &d.get_web_auth_window());
+    set_num(cfg, "webui.auth_block", &d.get_web_auth_block());
 
     // Empty means "keep the stored hash". Anything else is hashed here - the
     // password itself is never written to the database.
@@ -4493,7 +4483,7 @@ fn refresh_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
             let mut what: Vec<String> = p
                 .requested
                 .iter()
-                .map(|perm| tr.i18n(perm.describe_key()))
+                .map(|perm| tr.i18n(&perm.describe_key()))
                 .collect();
             // A typo in the header is shown rather than hidden: it means the
             // script expects access it will not get.
@@ -4645,12 +4635,10 @@ fn open_preferences(ui: &Rc<Ui>) {
         return;
     }
 
-    let dialog = match PreferencesDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the preferences dialog: {err}");
-            return;
-        }
+    let Ok(dialog) = PreferencesDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the preferences dialog: {err}"))
+    else {
+        return;
     };
 
     load_preferences(&dialog, ui);
@@ -4689,14 +4677,7 @@ fn open_preferences(ui: &Rc<Ui>) {
             }
         });
     }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_cancelled(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-        });
-    }
+    dialog.on_cancelled(closer(&dialog, ui));
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_browse_save_path(move || {
@@ -4847,10 +4828,7 @@ fn open_preferences(ui: &Rc<Ui>) {
         Err(err) => tracing::error!("could not register associations: {err:#}"),
     });
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    *ui.prefs_dialog.borrow_mut() = Some(dialog);
+    present(ui, &ui.prefs_dialog, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// Fill every Preferences tab from the settings database.
@@ -5461,32 +5439,12 @@ mod tests {
     fn status(name: &str, size: i64, ratio: f32) -> TorrentStatus {
         TorrentStatus {
             added_on: chrono::Local::now(),
-            all_time_download: 0,
-            all_time_upload: 0,
-            availability: 0.0,
-            completed_on: None,
-            download_payload_rate: 0,
-            error: String::new(),
-            eta: None,
-            info_hash_v1: None,
-            info_hash_v2: None,
             info_hash: name.to_string(),
-            label_id: None,
-            label_name: String::new(),
             name: name.to_string(),
-            paused: false,
-            peers_current: 0,
-            peers_total: 0,
-            progress: 0.0,
-            queue_position: 0,
             ratio,
-            save_path: String::new(),
-            seeds_current: 0,
-            seeds_total: 0,
             state: State::Downloading,
             total_wanted: size,
-            total_wanted_remaining: 0,
-            upload_payload_rate: 0,
+            ..Default::default()
         }
     }
 
@@ -5564,12 +5522,10 @@ fn open_about(ui: &Rc<Ui>) {
         return;
     }
 
-    let dialog = match AboutDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the about dialog: {err}");
-            return;
-        }
+    let Ok(dialog) = AboutDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the about dialog: {err}"))
+    else {
+        return;
     };
 
     dialog.set_version(crate::buildinfo::version().into());
@@ -5578,31 +5534,17 @@ fn open_about(ui: &Rc<Ui>) {
     dialog.set_developer(DEVELOPER.into());
 
     dialog.on_open_developer(|| {
-        if let Err(err) = open::that(DEVELOPER_URL) {
-            tracing::error!("cannot open {DEVELOPER_URL}: {err}");
-        }
+        utils::open_target(DEVELOPER_URL);
     });
 
     dialog.on_open_website(|| {
         // `open` picks the platform's handler, so this is the one place the
         // three OSes need no branching.
-        if let Err(err) = open::that(WEBSITE) {
-            tracing::error!("cannot open {WEBSITE}: {err}");
-        }
+        utils::open_target(WEBSITE);
     });
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_closed(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-        });
-    }
+    dialog.on_closed(closer(&dialog, ui));
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    *ui.about_dialog.borrow_mut() = Some(dialog);
+    present(ui, &ui.about_dialog, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// Help > Command line: the same text `--help` prints.
@@ -5615,28 +5557,16 @@ fn open_cli_help(ui: &Rc<Ui>) {
         return;
     }
 
-    let dialog = match CliHelpDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the command line help dialog: {err}");
-            return;
-        }
+    let Ok(dialog) = CliHelpDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the command line help dialog: {err}"))
+    else {
+        return;
     };
 
     dialog.set_text(crate::help_text(&ui.tr.borrow()).into());
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_closed(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-        });
-    }
+    dialog.on_closed(closer(&dialog, ui));
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    *ui.cli_help_dialog.borrow_mut() = Some(dialog);
+    present(ui, &ui.cli_help_dialog, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// Show what an update check found.
@@ -5672,13 +5602,64 @@ fn poll_update(ui: &Rc<Ui>) {
 /// per profile and never again; Preferences > Database is where it changes
 /// afterwards. Recorded even when the conversion then fails - being asked the
 /// same question on every start would be the worse outcome of the two.
-fn open_db_prompt(ui: &Rc<Ui>) {
-    let dialog = match DbPromptDialog::new() {
+/// Ask whether a new portable copy should start from the ordinary profile in
+/// `from` rather than an empty one. `here` is where the portable profile goes.
+///
+/// Runs before the main window - before any `Ui` exists - on an event loop of
+/// its own, which returns when the dialog closes. So the translations are
+/// wired straight to `tr`, and the few strings the dialog uses are looked up
+/// now: the closure has to own what it answers with.
+///
+/// Closing the window without choosing is "start fresh": it is the answer
+/// that changes nothing, and the question does not come back either way.
+pub fn ask_profile_copy(tr: &Translator, here: &std::path::Path, from: &std::path::Path) -> bool {
+    let dialog = match PortablePromptDialog::new() {
         Ok(d) => d,
         Err(err) => {
-            tracing::error!("cannot create the database prompt: {err}");
-            return;
+            eprintln!("cannot show the profile question ({err}); starting with a new profile");
+            return false;
         }
+    };
+
+    let strings: HashMap<&'static str, SharedString> =
+        ["portable_copy_title", "portable_copy_yes", "portable_copy_no"]
+            .into_iter()
+            .map(|key| (key, ui_string(tr, key)))
+            .collect();
+    dialog
+        .global::<L>()
+        .on_s(move |_revision, key| strings.get(key.as_str()).cloned().unwrap_or_default());
+    dialog.set_body_text(
+        tr.i18n_args(
+            "portable_copy_body",
+            &[&here.display().to_string(), &from.display().to_string()],
+        )
+        .into(),
+    );
+
+    let answer = Rc::new(std::cell::Cell::new(false));
+    {
+        let (answer, weak) = (answer.clone(), dialog.as_weak());
+        dialog.on_chosen(move |copy| {
+            answer.set(copy);
+            if let Some(d) = weak.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+
+    if let Err(err) = dialog.run() {
+        eprintln!("the profile question could not be shown ({err}); starting with a new profile");
+        return false;
+    }
+    answer.get()
+}
+
+fn open_db_prompt(ui: &Rc<Ui>) {
+    let Ok(dialog) = DbPromptDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the database prompt: {err}"))
+    else {
+        return;
     };
 
     {
@@ -5697,10 +5678,7 @@ fn open_db_prompt(ui: &Rc<Ui>) {
         });
     }
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    *ui.db_prompt.borrow_mut() = Some(dialog);
+    present(ui, &ui.db_prompt, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// The "a new version is available" window.
@@ -5708,12 +5686,10 @@ fn open_update(ui: &Rc<Ui>, info: &crate::updatechecker::UpdateInfo) {
     // Rebuilt rather than re-shown: unlike the other dialogs this one carries
     // the version it was opened for, and a second check can find a different
     // one.
-    let dialog = match UpdateDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the update dialog: {err}");
-            return;
-        }
+    let Ok(dialog) = UpdateDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the update dialog: {err}"))
+    else {
+        return;
     };
 
     dialog.set_new_version(info.version.as_str().into());
@@ -5723,9 +5699,7 @@ fn open_update(ui: &Rc<Ui>, info: &crate::updatechecker::UpdateInfo) {
         let url = info.url.clone();
         let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_download(move || {
-            if let Err(err) = open::that(&url) {
-                tracing::error!("cannot open {url}: {err}");
-            }
+            utils::open_target(&url);
             if let Some(d) = weak.upgrade() {
                 dismiss(&u, &d);
             }
@@ -5743,19 +5717,9 @@ fn open_update(ui: &Rc<Ui>, info: &crate::updatechecker::UpdateInfo) {
             }
         });
     }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_closed(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-        });
-    }
+    dialog.on_closed(closer(&dialog, ui));
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    *ui.update_dialog.borrow_mut() = Some(dialog);
+    present(ui, &ui.update_dialog, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// Piece sizes offered by the Create dialog, and the values behind them.
@@ -5778,12 +5742,10 @@ fn open_create_torrent(ui: &Rc<Ui>) {
         return;
     }
 
-    let dialog = match CreateTorrentDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the create-torrent dialog: {err}");
-            return;
-        }
+    let Ok(dialog) = CreateTorrentDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the create-torrent dialog: {err}"))
+    else {
+        return;
     };
 
     dialog.set_piece_lengths(ModelRc::new(VecModel::from(
@@ -5892,19 +5854,9 @@ fn open_create_torrent(ui: &Rc<Ui>) {
             u.session.create_torrent(params, u.create_slot.clone());
         });
     }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_cancelled(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-        });
-    }
+    dialog.on_cancelled(closer(&dialog, ui));
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    *ui.create_dialog.borrow_mut() = Some(dialog);
+    present(ui, &ui.create_dialog, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// Drain a finished create-torrent run. Called from the refresh tick.
@@ -6063,12 +6015,7 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
         ("ui.chart_down_width", MainWindow::set_chart_down_width as fn(&MainWindow, f32)),
         ("ui.chart_up_width", MainWindow::set_chart_up_width as fn(&MainWindow, f32)),
     ] {
-        if let Some(w) = ui
-            .cfg
-            .get_persistent(key)
-            .and_then(|v| v.parse::<f32>().ok())
-            .filter(|v| v.is_finite() && (48.0..=320.0).contains(v))
-        {
+        if let Some(w) = saved_len(&ui.cfg, key, 48.0..=320.0) {
             apply(window, w);
         }
     }
@@ -6097,16 +6044,10 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     // saved height taller than the screen would otherwise be unrecoverable
     // without editing the database, since the panel it sizes is the thing you
     // would need to reach.
-    let saved_len = |key: &str, min: f32, max: f32| -> Option<f32> {
-        ui.cfg
-            .get_persistent(key)
-            .and_then(|v| v.parse::<f32>().ok())
-            .filter(|v| v.is_finite() && *v >= min && *v <= max)
-    };
-    if let Some(h) = saved_len("ui.details_height", 120.0, 4000.0) {
+    if let Some(h) = saved_len(&ui.cfg, "ui.details_height", 120.0..=4000.0) {
         window.set_details_height(h);
     }
-    if let Some(w) = saved_len("ui.details_split", 200.0, 4000.0) {
+    if let Some(w) = saved_len(&ui.cfg, "ui.details_split", 200.0..=4000.0) {
         window.set_details_split(w);
     }
 
@@ -6222,10 +6163,7 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             let selected = u.targets();
             // The click means "make them all agree", and the direction is the
             // opposite of what the tick currently shows.
-            let all_have = !selected.is_empty()
-                && selected
-                    .iter()
-                    .all(|hash| u.cfg.tags_for(hash).iter().any(|t| t.id == tag.id));
+            let all_have = all_tagged(&u.cfg, &selected, tag.id);
             for hash in &selected {
                 if all_have {
                     u.cfg.remove_tag(hash, tag.id);
@@ -6239,10 +6177,7 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
                     if t.id == tag.id {
                         !all_have
                     } else {
-                        !selected.is_empty()
-                            && selected
-                                .iter()
-                                .all(|hash| u.cfg.tags_for(hash).iter().any(|x| x.id == t.id))
+                        all_tagged(&u.cfg, &selected, t.id)
                     }
                 })
                 .collect();
@@ -6395,19 +6330,9 @@ fn ask_on_close(window: &MainWindow, ui: &Rc<Ui>) {
             }
         });
     }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_cancelled(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-        });
-    }
+    dialog.on_cancelled(closer(&dialog, ui));
 
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    *ui.close_prompt.borrow_mut() = Some(dialog);
+    present(ui, &ui.close_prompt, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// Hide a minimised window into the tray, when both settings ask for it.
@@ -7146,12 +7071,10 @@ fn open_migrate(window: &MainWindow, ui: &Rc<Ui>, source: crate::core::migrate::
         }
     };
 
-    let dialog = match PicoImportDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the migration dialog: {err}");
-            return;
-        }
+    let Ok(dialog) = PicoImportDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the migration dialog: {err}"))
+    else {
+        return;
     };
 
     {
@@ -7190,11 +7113,7 @@ fn open_migrate(window: &MainWindow, ui: &Rc<Ui>, source: crate::core::migrate::
 
     // Globals are per top-level component: an unwired L returns "" for every
     // caption, which is a dialog with blank buttons.
-    wire_dialog_close(&dialog, ui);
-    let _ = dialog.show();
-    clamp_to_screen(&dialog, |d, h| d.set_screen_limit(h));
-    let _ = window; // owner is set by wire_dialog_close
-    *ui.pico_dialog.borrow_mut() = Some(dialog);
+    present(ui, &ui.pico_dialog, dialog, |d, h| d.set_screen_limit(h));
 }
 
 /// Run the migration on a worker thread, reporting into a progress window.
@@ -7214,12 +7133,10 @@ fn run_migration(
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    let progress = match MigrateProgressDialog::new() {
-        Ok(d) => d,
-        Err(err) => {
-            tracing::error!("cannot create the progress window: {err}");
-            return;
-        }
+    let Ok(progress) = MigrateProgressDialog::new()
+        .inspect_err(|err| tracing::error!("cannot create the progress window: {err}"))
+    else {
+        return;
     };
 
     let cancel = Arc::new(AtomicBool::new(false));
@@ -7268,25 +7185,12 @@ fn run_migration(
     ui.migrate_quiet.set(0);
     // For the one toast that IS wanted: the total, once, at the end.
     let owner = window.as_weak();
-    let tr_done = {
-        // The report is formatted on the worker, so the strings are looked up
-        // once here while the translator is still reachable from this thread.
-        let tr = ui.tr.borrow();
-        MigrateStrings {
-            scanning: tr.i18n1("migrate_scanning", source.label()),
-            purging: tr.i18n("migrate_purging"),
-            adding: tr.i18n("migrate_adding"),
-            reverting: tr.i18n("migrate_undoing"),
-            done_template: tr.i18n("pico_import_done"),
-            failed_template: tr.i18n("pico_import_failed"),
-            copied_template: tr.i18n("pico_import_copied"),
-            reverted_template: tr.i18n("migrate_reverted"),
-        }
-    };
+    // The report is written on the worker, which cannot reach the translator
+    // behind the UI's `RefCell` - so it takes its own copy.
+    let tr = ui.tr.borrow().clone();
 
     std::thread::spawn(move || {
         let options = crate::bittorrent::session::ImportOptions { purge, settings };
-        let strings = tr_done;
 
         let on_progress = |p: crate::core::migrate::Progress| {
             let h = handle.clone();
@@ -7294,10 +7198,10 @@ fn run_migration(
             // not something to put in front of anyone - the counts carry the
             // detail instead.
             let label = match p.phase {
-                Phase::Scanning => strings.scanning.clone(),
-                Phase::Purging => strings.purging.clone(),
-                Phase::Adding => strings.adding.clone(),
-                Phase::Reverting => strings.reverting.clone(),
+                Phase::Scanning => tr.i18n1("migrate_scanning", source.label()),
+                Phase::Purging => tr.i18n("migrate_purging"),
+                Phase::Adding => tr.i18n("migrate_adding"),
+                Phase::Reverting => tr.i18n("migrate_undoing"),
                 Phase::Done => String::new(),
             };
             let counts = if p.total > 0 {
@@ -7325,33 +7229,20 @@ fn run_migration(
         let summary = match &result {
             Err(err) => err.to_string(),
             Ok(report) => {
-                let sub = |t: &str, args: &[&str]| {
-                    let mut s = t.to_string();
-                    for (i, a) in args.iter().enumerate() {
-                        s = s.replace(&format!("{{{i}}}"), a);
-                    }
-                    s
-                };
                 if report.cancelled {
-                    sub(&strings.reverted_template, &[&report.reverted.to_string()])
+                    tr.i18n1("migrate_reverted", &report.reverted.to_string())
                 } else {
-                    let mut text = sub(
-                        &strings.done_template,
+                    let mut text = tr.i18n_args(
+                        "pico_import_done",
                         &[&report.imported.to_string(), &report.skipped.to_string()],
                     );
                     if report.failed > 0 {
                         text.push(' ');
-                        text.push_str(&sub(
-                            &strings.failed_template,
-                            &[&report.failed.to_string()],
-                        ));
+                        text.push_str(&tr.i18n1("pico_import_failed", &report.failed.to_string()));
                     }
                     if report.settings > 0 {
                         text.push(' ');
-                        text.push_str(&sub(
-                            &strings.copied_template,
-                            &[&report.settings.to_string()],
-                        ));
+                        text.push_str(&tr.i18n1("pico_import_copied", &report.settings.to_string()));
                     }
                     text
                 }
@@ -7372,20 +7263,4 @@ fn run_migration(
             show_toast(&w, &shown);
         });
     });
-}
-
-/// The few translated strings the worker needs, looked up before it starts.
-///
-/// The translator lives behind a `RefCell` on the UI thread and cannot cross
-/// to a worker, so what the worker will say is decided here while it still
-/// can be.
-struct MigrateStrings {
-    scanning: String,
-    purging: String,
-    adding: String,
-    reverting: String,
-    done_template: String,
-    failed_template: String,
-    copied_template: String,
-    reverted_template: String,
 }

@@ -4,8 +4,9 @@ use chrono::{DateTime, Local};
 
 // Some variants have no librqbit equivalent (queueing, resume-data checks)
 // but are kept to mirror the original enum.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum State {
+    #[default]
     Unknown,
     Error,
     CheckingFiles,
@@ -21,7 +22,7 @@ pub enum State {
 }
 
 /// Snapshot of a torrent's status - mirrors the C++ TorrentStatus struct.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct TorrentStatus {
     pub added_on: DateTime<Local>,
     pub all_time_download: i64,

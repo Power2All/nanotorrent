@@ -36,7 +36,7 @@
 
 use std::collections::HashMap;
 
-use super::torrent_create::{BLOCK, hash_pair, merkle_root, next_pow2, sha256};
+use super::torrent_create::{BLOCK, hash_pair, merkle_root, sha256};
 
 /// One file from a v2 `file tree`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,7 +70,7 @@ pub struct V2Piece {
     pub hash: [u8; 32],
     /// How many leaves this piece's subtree has once padded. Normally
     /// `piece_length / BLOCK`, but a file small enough to fit in one piece
-    /// pads only to `next_pow2(its block count)` - its piece hash IS the
+    /// pads only to `next_power_of_two(its block count)` - its piece hash IS the
     /// file's `pieces root`, and that root was computed over a smaller tree.
     pub pad_blocks: usize,
 }
@@ -166,7 +166,7 @@ fn piece_layer_matches_root(
     blocks_per_piece: usize,
     pieces_root: &[u8; 32],
 ) -> bool {
-    let total_leaves = next_pow2(num_blocks);
+    let total_leaves = num_blocks.next_power_of_two();
     let nodes = (total_leaves / blocks_per_piece).max(1);
     if piece_hashes.len() > nodes {
         return false;
@@ -212,7 +212,7 @@ pub fn plan_piece_layer_requests(file_length: u64, piece_length: u32) -> Vec<Has
         return Vec::new();
     }
 
-    let total_leaves = next_pow2(num_blocks);
+    let total_leaves = num_blocks.next_power_of_two();
     let base_layer = log2_exact(blocks_per_piece);
     let nodes = total_leaves / blocks_per_piece;
     let root_level = log2_exact(total_leaves);
@@ -324,7 +324,7 @@ impl V2Hashes {
                 .filter(|p| p.file_index == index)
                 .map(|p| p.hash)
                 .collect();
-            let nodes = next_pow2(num_blocks) / blocks_per_piece;
+            let nodes = num_blocks.next_power_of_two() / blocks_per_piece;
             let mut padded = hashes;
             padded.resize(nodes, zero_hash(log2_exact(blocks_per_piece)));
             files.insert(
@@ -727,7 +727,7 @@ fn build_layout(
         };
 
         let pad_blocks = if num_blocks <= blocks_per_piece {
-            next_pow2(num_blocks)
+            num_blocks.next_power_of_two()
         } else {
             blocks_per_piece
         };
@@ -899,12 +899,6 @@ impl MagnetInner {
         }
         self.meta = Some(info.into_meta(&layers)?);
         Ok(())
-    }
-}
-
-impl V2Magnet {
-    pub fn new() -> Self {
-        Self::default()
     }
 }
 
@@ -1207,6 +1201,19 @@ impl MagnetHashes {
         self.v1.is_none() && self.v2.is_some()
     }
 
+    /// The identity the engine knows this torrent by: the v1 hash, or for a
+    /// v2-only link its truncated v2 hash. `None` when the link names neither.
+    pub fn wire_id(&self) -> Option<librqbit::Id20> {
+        match (self.v1, self.v2) {
+            (Some(v1), _) => Some(librqbit::Id20::new(v1)),
+            (None, Some(v2)) => {
+                let mut truncated = [0u8; 20];
+                truncated.copy_from_slice(&v2[..20]);
+                Some(librqbit::Id20::new(truncated))
+            }
+            (None, None) => None,
+        }
+    }
 }
 
 /// Pull the info hashes out of a magnet URI.
@@ -1254,30 +1261,19 @@ pub fn magnet_hashes(uri: &str) -> MagnetHashes {
 /// `xt` and the engine can join the swarm; [`V2Magnet`] handles the rest.
 ///
 /// Returns the URI to hand over, unchanged when there is nothing to fix.
-pub fn normalise_magnet(uri: &str) -> Result<String, String> {
-    let hashes = magnet_hashes(uri);
-    let v1 = match (hashes.v1, hashes.v2) {
-        (Some(v1), _) => v1,
-        (None, Some(v2)) => {
-            // v2-only: its wire identity IS the truncated hash.
-            let mut t = [0u8; 20];
-            t.copy_from_slice(&v2[..20]);
-            t
-        }
-        // No hash we recognise. Hand it over unchanged and let the engine say
-        // so - it parses more spellings of a magnet than this does.
-        (None, None) => return Ok(uri.to_string()),
+pub fn normalise_magnet(uri: &str) -> String {
+    // v2-only: its wire identity IS the truncated hash. No hash we recognise:
+    // hand it over unchanged and let the engine say so - it parses more
+    // spellings of a magnet than this does.
+    let Some(id) = magnet_hashes(uri).wire_id() else {
+        return uri.to_string();
     };
 
     // Already in the form the engine reads: leave the string alone, so nothing
     // downstream sees a URI that differs from the one the user pasted.
-    let hex: String = v1.iter().fold(String::new(), |mut s, b| {
-        use std::fmt::Write as _;
-        let _ = write!(s, "{b:02x}");
-        s
-    });
+    let hex = id.as_string();
     if uri.contains(&format!("xt=urn:btih:{hex}")) {
-        return Ok(uri.to_string());
+        return uri.to_string();
     }
 
     // Rebuild around the v1 hash, carrying over everything the engine uses.
@@ -1290,17 +1286,13 @@ pub fn normalise_magnet(uri: &str) -> Result<String, String> {
             }
         }
     }
-    Ok(out)
+    out
 }
 
+/// A v1 info hash as a magnet spells it: 40 hex characters, or 32 of RFC 4648
+/// base32 - which the engine's own parser reads, in upper case only.
 fn decode_btih(s: &str) -> Option<[u8; 20]> {
-    if s.len() == 40 {
-        return decode_hex(s).and_then(|b| <[u8; 20]>::try_from(b.as_slice()).ok());
-    }
-    if s.len() == 32 {
-        return decode_base32(s);
-    }
-    None
+    s.to_ascii_uppercase().parse::<librqbit::Id20>().ok().map(|id| id.0)
 }
 
 fn decode_hex(s: &str) -> Option<Vec<u8>> {
@@ -1311,24 +1303,6 @@ fn decode_hex(s: &str) -> Option<Vec<u8>> {
         .chunks(2)
         .map(|p| u8::from_str_radix(std::str::from_utf8(p).ok()?, 16).ok())
         .collect()
-}
-
-/// RFC 4648 base32, the other spelling of a v1 info hash in magnet links.
-fn decode_base32(s: &str) -> Option<[u8; 20]> {
-    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    let mut acc: u64 = 0;
-    let mut bits = 0u32;
-    let mut out = Vec::with_capacity(20);
-    for c in s.bytes() {
-        let v = A.iter().position(|a| *a == c.to_ascii_uppercase())? as u64;
-        acc = (acc << 5) | v;
-        bits += 5;
-        if bits >= 8 {
-            bits -= 8;
-            out.push((acc >> bits) as u8);
-        }
-    }
-    <[u8; 20]>::try_from(out.as_slice()).ok()
 }
 
 #[cfg(test)]
@@ -1726,7 +1700,7 @@ mod tests {
     /// seeder holds it. Returns `tree[0] = leaves`, `tree[n] = layer n`.
     fn full_tree(payload: &[u8]) -> Vec<Vec<[u8; 32]>> {
         let mut layer: Vec<[u8; 32]> = payload.chunks(BLOCK).map(sha256).collect();
-        layer.resize(next_pow2(layer.len()), [0u8; 32]);
+        layer.resize(layer.len().next_power_of_two(), [0u8; 32]);
         let mut tree = vec![layer.clone()];
         while layer.len() > 1 {
             layer = layer.chunks(2).map(|p| hash_pair(&p[0], &p[1])).collect();
@@ -2039,7 +2013,7 @@ mod tests {
         let info_bytes = full.info_bytes.clone();
         let info_hash = librqbit::Id20::new(full.truncated_info_hash());
 
-        let magnet = V2Magnet::new();
+        let magnet = V2Magnet::default();
 
         assert!(
             magnet.verify_info(&info_bytes, info_hash),
@@ -2120,7 +2094,7 @@ mod tests {
         let payload: Vec<u8> = (0..(33 * BLOCK)).map(|i| (i * 11) as u8).collect();
         let meta = round_trip("magnetforge", &payload, pl, TorrentVersion::V2);
 
-        let magnet = V2Magnet::new();
+        let magnet = V2Magnet::default();
         let requests = magnet.hash_requests(&meta.info_bytes).unwrap();
         assert!(!requests.is_empty());
 
@@ -2363,7 +2337,7 @@ mod tests {
         let hashes = magnet_hashes(URI);
         assert!(hashes.is_v2_only(), "the fixture is not a v2-only magnet");
 
-        let fixed = normalise_magnet(URI).unwrap();
+        let fixed = normalise_magnet(URI);
         let want: String = hashes.v2.unwrap()[..20]
             .iter()
             .map(|b| format!("{b:02x}"))
@@ -2375,7 +2349,7 @@ mod tests {
         eprintln!("joining swarm as {want}");
 
         let dir = tmpdir("live-v2-magnet");
-        let magnet = std::sync::Arc::new(V2Magnet::new());
+        let magnet = std::sync::Arc::new(V2Magnet::default());
 
         // DHT on: the magnet carries no trackers, so it is the only way to
         // find anyone. A listener too, so peers can reach back.
@@ -2566,11 +2540,11 @@ mod tests {
 
         // v1 first: nothing to do, and the string must come back untouched.
         let a = format!("magnet:?xt=urn:btih:{v1hex}&xt.1=urn:btmh:{v2hex}&dn=x&tr=udp%3A%2F%2Ft");
-        assert_eq!(normalise_magnet(&a).unwrap(), a);
+        assert_eq!(normalise_magnet(&a), a);
 
         // v2 first: this is the one the engine refuses today.
         let b = format!("magnet:?xt=urn:btmh:{v2hex}&xt.1=urn:btih:{v1hex}&dn=x&tr=udp%3A%2F%2Ft");
-        let fixed = normalise_magnet(&b).unwrap();
+        let fixed = normalise_magnet(&b);
         assert!(
             fixed.starts_with(&format!("magnet:?xt=urn:btih:{v1hex}")),
             "v1 hash was not promoted to xt: {fixed}"
@@ -2585,14 +2559,14 @@ mod tests {
         // A base32 v1 hash is promoted to hex, which is what the engine reads.
         let b32 = "magnet:?xt=urn:btih:ZK2QOSKNALV3CF4LHDZOTV56FGOINODC";
         assert_eq!(
-            normalise_magnet(b32).unwrap(),
+            normalise_magnet(b32),
             format!("magnet:?xt=urn:btih:{v1hex}")
         );
 
         // v2-only: promoted to its truncated identity, which is what BEP 52
         // says the swarm is keyed by.
         let v2only = format!("magnet:?xt=urn:btmh:{v2hex}&dn=y");
-        let fixed = normalise_magnet(&v2only).unwrap();
+        let fixed = normalise_magnet(&v2only);
         let want: String = magnet_hashes(&v2only).v2.unwrap()[..20]
             .iter()
             .map(|b| format!("{b:02x}"))
@@ -2604,7 +2578,7 @@ mod tests {
         assert!(fixed.contains("dn=y"), "display name was dropped: {fixed}");
 
         // Unrecognised: passed through, so the engine gets to report it.
-        assert_eq!(normalise_magnet("magnet:?dn=x").unwrap(), "magnet:?dn=x");
+        assert_eq!(normalise_magnet("magnet:?dn=x"), "magnet:?dn=x");
     }
 
     #[test]

@@ -441,20 +441,7 @@ async fn fetch_with_retry(
     start: u64,
     len: u64,
 ) -> Result<Vec<u8>> {
-    let mut last = None;
-    for attempt in 0..FETCH_ATTEMPTS {
-        if attempt > 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(250 << attempt)).await;
-        }
-        match source.fetch(file, start, len).await {
-            Ok(v) => return Ok(v),
-            Err(e) => {
-                tracing::debug!(attempt, "web seed fetch failed: {e:#}");
-                last = Some(e);
-            }
-        }
-    }
-    Err(last.unwrap_or_else(|| anyhow::anyhow!("no attempts made")))
+    with_retry("fetch", || Some(source.fetch(file, start, len))).await
 }
 
 async fn fetch_piece_with_retry(
@@ -462,18 +449,28 @@ async fn fetch_piece_with_retry(
     index: u32,
     len: u64,
 ) -> Result<Vec<u8>> {
+    with_retry("piece fetch", || source.fetch_piece(index, len)).await
+}
+
+/// Up to `FETCH_ATTEMPTS` tries with a doubling pause between them. `attempt`
+/// returning `None` ends it at once - a source that stopped offering whole
+/// pieces is not going to start again on the next try.
+async fn with_retry<'a>(
+    what: &str,
+    mut attempt: impl FnMut() -> Option<futures::future::BoxFuture<'a, Result<Vec<u8>>>>,
+) -> Result<Vec<u8>> {
     let mut last = None;
-    for attempt in 0..FETCH_ATTEMPTS {
-        if attempt > 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(250 << attempt)).await;
+    for n in 0..FETCH_ATTEMPTS {
+        if n > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(250 << n)).await;
         }
-        let Some(fut) = source.fetch_piece(index, len) else {
+        let Some(fut) = attempt() else {
             bail!("source stopped offering whole pieces mid-torrent");
         };
         match fut.await {
             Ok(v) => return Ok(v),
             Err(e) => {
-                tracing::debug!(attempt, "web seed piece fetch failed: {e:#}");
+                tracing::debug!(attempt = n, "web seed {what} failed: {e:#}");
                 last = Some(e);
             }
         }

@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use rhai::{Array, Dynamic, Engine, Map};
 
-use crate::bittorrent::session::Session;
+use crate::bittorrent::session::{AddTorrentSource, Session};
 use crate::core::configuration::Configuration;
 use super::Permission;
 use std::collections::BTreeSet;
@@ -403,28 +403,12 @@ pub fn register(
         if perms.contains(&Permission::Add) {
     let s = session.clone();
         engine.register_fn("add_magnet", move |uri: &str| {
-            s.add_torrent(
-                crate::bittorrent::session::AddTorrentSource::MagnetUri(uri.to_string()),
-                crate::bittorrent::session::AddParams {
-                    save_path: None,
-                    start_torrent: true,
-                    only_files: None,
-                    label_id: None,
-                },
-            )
+            add_started(&s, AddTorrentSource::MagnetUri(uri.to_string()), None)
         });
 
         let s = session.clone();
         engine.register_fn("add_magnet", move |uri: &str, save_path: &str| {
-            s.add_torrent(
-                crate::bittorrent::session::AddTorrentSource::MagnetUri(uri.to_string()),
-                crate::bittorrent::session::AddParams {
-                    save_path: Some(save_path.to_string()),
-                    start_torrent: true,
-                    only_files: None,
-                    label_id: None,
-                },
-            )
+            add_started(&s, AddTorrentSource::MagnetUri(uri.to_string()), Some(save_path))
         });
 
         // The other half of http_get: a plugin that fetched a .torrent itself -
@@ -435,15 +419,7 @@ pub fn register(
             let Some(bytes) = decode_base64(b64) else {
                 return false;
             };
-            s.add_torrent(
-                crate::bittorrent::session::AddTorrentSource::TorrentFileBytes(bytes),
-                crate::bittorrent::session::AddParams {
-                    save_path: None,
-                    start_torrent: true,
-                    only_files: None,
-                    label_id: None,
-                },
-            );
+            add_started(&s, AddTorrentSource::TorrentFileBytes(bytes), None);
             true
         });
 
@@ -452,15 +428,7 @@ pub fn register(
             let Some(bytes) = decode_base64(b64) else {
                 return false;
             };
-            s.add_torrent(
-                crate::bittorrent::session::AddTorrentSource::TorrentFileBytes(bytes),
-                crate::bittorrent::session::AddParams {
-                    save_path: Some(save_path.to_string()),
-                    start_torrent: true,
-                    only_files: None,
-                    label_id: None,
-                },
-            );
+            add_started(&s, AddTorrentSource::TorrentFileBytes(bytes), Some(save_path));
             true
         });
     }
@@ -476,49 +444,12 @@ pub fn register(
                 .into_iter()
                 .map(|a| a.into_string().unwrap_or_default())
                 .collect();
-
-            // Logged before it starts, at info, so what a plugin ran is in the
-            // same file as everything else it did. A plugin that runs something
-            // it should not is then findable after the fact, which is the only
-            // control left once the program is someone else's.
-            tracing::info!(
-                target: "plugin",
-                "{plugin} runs {program:?} with {argv:?}"
-            );
-
-            // No shell: the program and its arguments are passed as they are.
-            // Nothing here builds a command line out of a string, so nothing a
-            // torrent or a feed can say becomes part of a command.
-            std::process::Command::new(program)
-                .args(&argv)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-                .map(|_child| {
-                    // Not waited on, deliberately: a media player runs for
-                    // hours and the plugin thread is not going to sit behind
-                    // it. The child is the user's problem from here.
-                    true
-                })
-                .inspect_err(|e| {
-                    tracing::warn!(target: "plugin", "{plugin} could not run {program:?}: {e}");
-                })
-                .is_ok()
+            run_program(&plugin, program, &argv)
         });
 
         let plugin = name.to_owned();
         engine.register_fn("run", move |program: &str| -> bool {
-            tracing::info!(target: "plugin", "{plugin} runs {program:?}");
-            std::process::Command::new(program)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-                .inspect_err(|e| {
-                    tracing::warn!(target: "plugin", "{plugin} could not run {program:?}: {e}");
-                })
-                .is_ok()
+            run_program(&plugin, program, &[])
         });
 
         // Hand something to whatever the desktop opens it with - a URL, a
@@ -1169,6 +1100,50 @@ pub struct AddOptions {
     /// learn an id. Looked up, never created - a plugin should not be able to
     /// fill somebody's label list by getting a rule wrong.
     pub label: Option<String>,
+}
+
+/// Start `program` for a plugin, detached, and say whether it started.
+fn run_program(plugin: &str, program: &str, argv: &[String]) -> bool {
+    // Logged before it starts, at info, so what a plugin ran is in the same
+    // file as everything else it did. A plugin that runs something it should
+    // not is then findable after the fact, which is the only control left
+    // once the program is someone else's.
+    if argv.is_empty() {
+        tracing::info!(target: "plugin", "{plugin} runs {program:?}");
+    } else {
+        tracing::info!(target: "plugin", "{plugin} runs {program:?} with {argv:?}");
+    }
+
+    // No shell: the program and its arguments are passed as they are. Nothing
+    // here builds a command line out of a string, so nothing a torrent or a
+    // feed can say becomes part of a command.
+    //
+    // Not waited on, deliberately: a media player runs for hours and the
+    // plugin thread is not going to sit behind it. The child is the user's
+    // problem from here.
+    std::process::Command::new(program)
+        .args(argv)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .inspect_err(|e| {
+            tracing::warn!(target: "plugin", "{plugin} could not run {program:?}: {e}");
+        })
+        .is_ok()
+}
+
+/// Add with the session's defaults - started, every file wanted - at
+/// `save_path`, or at the default save path when that is `None`.
+fn add_started(session: &Session, source: AddTorrentSource, save_path: Option<&str>) -> bool {
+    session.add_torrent(
+        source,
+        crate::bittorrent::session::AddParams {
+            save_path: save_path.map(str::to_string),
+            start_torrent: true,
+            ..Default::default()
+        },
+    )
 }
 
 fn add_url(

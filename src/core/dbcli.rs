@@ -72,11 +72,13 @@ pub fn handle(args: &[String]) -> Result<bool> {
     // and would write it back over whatever happened here, so the change would
     // vanish without anything having gone visibly wrong.
     let writes = !matches!(flag, "--database-status" | "--export-settings");
-    if writes && crate::ipc::another_instance_running() {
+    // The profile first: "is NanoTorrent running" means running on THIS
+    // profile, and a portable copy has a single-instance port of its own.
+    let env = Environment::create();
+    if writes && crate::ipc::another_instance_running(&env) {
         anyhow::bail!("NanoTorrent is running. Close it first - this rewrites the database it has open.");
     }
 
-    let env = Environment::create();
     let path = env.get_database_file_path();
     let key_file = dbkey::key_path(&env);
     // Asked of the open database rather than of the key file, so the answer is

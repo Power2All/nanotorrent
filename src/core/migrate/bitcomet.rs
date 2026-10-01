@@ -22,9 +22,9 @@
 //! with real element names once a genuine BitComet profile can be examined.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use quick_xml::events::Event;
 
 use crate::core::bencode;
@@ -39,29 +39,7 @@ pub fn detect() -> Option<PathBuf> {
 
 /// Every torrent BitComet has in `profile`.
 pub fn scan(profile: &Path, cancel: &AtomicBool) -> Result<Scan> {
-    let torrents = profile.join("torrents");
-    let dir = std::fs::read_dir(&torrents)
-        .with_context(|| format!("reading {}", torrents.display()))?;
-
-    let mut entries = Vec::new();
-    let mut unreadable = 0usize;
-
-    for item in dir.flatten() {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        let path = item.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("torrent") {
-            continue;
-        }
-        match read_one(&path) {
-            Some(entry) => entries.push(entry),
-            None => unreadable += 1,
-        }
-    }
-
-    entries.sort_by(|a, b| a.info_hash.cmp(&b.info_hash));
-    Ok(Scan { entries, unreadable })
+    super::scan_dir(&profile.join("torrents"), "torrent", cancel, read_one)
 }
 
 fn read_one(torrent: &Path) -> Option<ImportEntry> {

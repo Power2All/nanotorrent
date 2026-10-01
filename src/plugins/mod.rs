@@ -292,21 +292,10 @@ impl Permission {
             .find(|p| p.tag().eq_ignore_ascii_case(tag.trim()))
     }
 
-    /// i18n key for the one-line description shown next to the checkbox.
-    pub fn describe_key(self) -> &'static str {
-        match self {
-            Permission::Read => "perm_read",
-            Permission::Control => "perm_control",
-            Permission::Add => "perm_add",
-            Permission::Labels => "perm_labels",
-            Permission::Storage => "perm_storage",
-            Permission::Remove => "perm_remove",
-            Permission::Notify => "perm_notify",
-            Permission::Network => "perm_network",
-            Permission::Data => "perm_data",
-            Permission::Ui => "perm_ui",
-            Permission::Execute => "perm_execute",
-        }
+    /// i18n key for the one-line description shown next to the checkbox:
+    /// `perm_` and the tag, for every permission.
+    pub fn describe_key(self) -> String {
+        format!("perm_{}", self.tag())
     }
 }
 
@@ -883,65 +872,36 @@ enum Wake {
 /// Addressed by name rather than broadcast: two plugins with a `on_ui_row`
 /// handler must not both see a click on one of them.
 fn deliver_ui(plugins: &mut [Plugin], event: ui::UiEvent) {
-    let (name, func, args) = match event {
-        ui::UiEvent::Row { plugin, id } => (plugin, "on_ui_row", vec![id]),
-        ui::UiEvent::Group { plugin, id } => (plugin, "on_ui_group", vec![id]),
-        ui::UiEvent::Button { plugin, id, input } => (plugin, "on_ui_button", vec![id, input]),
-        ui::UiEvent::Menu { plugin, id } => (plugin, "on_ui_menu", vec![id]),
-        // Four arguments, one of them a number, so it does not fit the
-        // strings-only path below either.
+    use rhai::Dynamic;
+    // Every handler takes its arguments as values in order; the file menu's
+    // index is a number and a form's values are a map, and `Dynamic::from` is
+    // what a tuple of arguments would have done with each of them anyway.
+    let s = Dynamic::from::<String>;
+    let (name, func, args): (String, &str, Vec<Dynamic>) = match event {
+        ui::UiEvent::Row { plugin, id } => (plugin, "on_ui_row", vec![s(id)]),
+        ui::UiEvent::Group { plugin, id } => (plugin, "on_ui_group", vec![s(id)]),
+        ui::UiEvent::Button { plugin, id, input } => (plugin, "on_ui_button", vec![s(id), s(input)]),
+        ui::UiEvent::Menu { plugin, id } => (plugin, "on_ui_menu", vec![s(id)]),
         ui::UiEvent::FileMenu {
             plugin,
             id,
             hash,
             index,
             name,
-        } => {
-            let Some(target) = plugins.iter_mut().find(|p| p.name == plugin) else {
-                return;
-            };
-            if !target.handles("on_file_menu", 4) {
-                return;
-            }
-            let result = target.engine.call_fn::<rhai::Dynamic>(
-                &mut target.scope,
-                &target.ast,
-                "on_file_menu",
-                (id, hash, index, name),
-            );
-            if let Err(err) = result {
-                tracing::error!("plugin {}: on_file_menu failed: {err}", target.name);
-                ui::report_failure(&target.name, "on_file_menu", &err.to_string());
-            }
-            return;
-        }
-        ui::UiEvent::FormCancelled { plugin, id } => (plugin, "on_ui_form_cancel", vec![id]),
+        } => (
+            plugin,
+            "on_file_menu",
+            vec![s(id), s(hash), Dynamic::from(index), s(name)],
+        ),
+        ui::UiEvent::FormCancelled { plugin, id } => (plugin, "on_ui_form_cancel", vec![s(id)]),
         ui::UiEvent::Configure { plugin } => (plugin, "on_ui_configure", Vec::new()),
         ui::UiEvent::Opened { plugin } => (plugin, "on_ui_open", Vec::new()),
-        // The one event whose payload is not a list of strings, so it is
-        // called here rather than falling through to the shared path below.
         ui::UiEvent::Form { plugin, id, values } => {
-            let Some(target) = plugins.iter_mut().find(|p| p.name == plugin) else {
-                return;
-            };
-            if !target.handles("on_ui_form", 2) {
-                return;
-            }
             let map: rhai::Map = values
                 .into_iter()
-                .map(|(k, v)| (k.into(), rhai::Dynamic::from(v)))
+                .map(|(k, v)| (k.into(), Dynamic::from(v)))
                 .collect();
-            let result = target.engine.call_fn::<rhai::Dynamic>(
-                &mut target.scope,
-                &target.ast,
-                "on_ui_form",
-                (id, map),
-            );
-            if let Err(err) = result {
-                tracing::error!("plugin {}: on_ui_form failed: {err}", target.name);
-                ui::report_failure(&target.name, "on_ui_form", &err.to_string());
-            }
-            return;
+            (plugin, "on_ui_form", vec![s(id), Dynamic::from(map)])
         }
     };
 
@@ -954,7 +914,7 @@ fn deliver_ui(plugins: &mut [Plugin], event: ui::UiEvent) {
     let result =
         plugin
             .engine
-            .call_fn::<rhai::Dynamic>(&mut plugin.scope, &plugin.ast, func, args);
+            .call_fn::<Dynamic>(&mut plugin.scope, &plugin.ast, func, args);
     if let Err(err) = result {
         tracing::error!("plugin {}: {func} failed: {err}", plugin.name);
         ui::report_failure(&plugin.name, func, &err.to_string());

@@ -20,8 +20,22 @@ const APP_MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="y
 
 fn main() {
     verify_librqbit_patches();
-    embed_language_files();
-    embed_flag_images();
+    // Every translation ships inside the .exe, keyed by locale.
+    embed_table(
+        "lang",
+        "json",
+        "pub static EMBEDDED_LANGS: &[(&str, &str)]",
+        "include_str",
+        "lang_table.rs",
+    );
+    // 32x24 country flags, keyed by ISO 3166-1 alpha-2.
+    embed_table(
+        "res/flags",
+        "png",
+        "pub static FLAG_PNGS: &[(&str, &[u8])]",
+        "include_bytes",
+        "flag_table.rs",
+    );
     compile_slint_ui();
 
     // Embed the app icon into the .exe as a Win32 resource so Explorer and the
@@ -73,60 +87,34 @@ fn compile_slint_ui() {
     }
 }
 
-/// Generates the `include_str!` table for `lang/*.json` so every translation
-/// ships inside the .exe. Generated rather than hand-written so adding a
-/// language file is all it takes - no list to forget to update.
-fn embed_language_files() {
-    println!("cargo:rerun-if-changed=lang");
+/// Generates a table of every `*.EXT` file in `dir`, keyed by file stem, as
+/// `DECL = &[("stem", INCLUDE!("path")), ...];` in `OUT_DIR/out_file`.
+/// Generated rather than hand-written so adding a file is all it takes - no
+/// list to forget to update.
+fn embed_table(dir: &str, ext: &str, decl: &str, include: &str, out_file: &str) {
+    println!("cargo:rerun-if-changed={dir}");
 
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("lang");
-    let mut files: Vec<_> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(dir);
+    let mut files: Vec<_> = std::fs::read_dir(&root)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", root.display()))
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .filter(|p| p.extension().is_some_and(|x| x == ext))
         .collect();
     files.sort();
 
-    let mut out = String::from("pub static EMBEDDED_LANGS: &[(&str, &str)] = &[\n");
+    let mut out = format!("{decl} = &[\n");
     for path in &files {
-        let locale = path.file_stem().unwrap().to_str().unwrap();
+        let key = path.file_stem().unwrap().to_str().unwrap();
         // Forward slashes: include_str! takes them on Windows and it keeps the
         // generated file free of backslash-escaping.
         let full = path.to_str().unwrap().replace('\\', "/");
-        out.push_str(&format!("    (\"{locale}\", include_str!(\"{full}\")),\n"));
+        out.push_str(&format!("    (\"{key}\", {include}!(\"{full}\")),\n"));
     }
     out.push_str("];\n");
 
-    let dest = std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("lang_table.rs");
-    std::fs::write(&dest, out).expect("failed to write lang table");
-}
-
-/// Generates the `include_bytes!` table for `res/flags/*.png` (32x24 country
-/// flags, keyed by ISO 3166-1 alpha-2). Same generated-table approach as the
-/// language files, for the same reason: nothing to hand-maintain.
-fn embed_flag_images() {
-    println!("cargo:rerun-if-changed=res/flags");
-
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res/flags");
-    let mut files: Vec<_> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "png"))
-        .collect();
-    files.sort();
-
-    let mut out = String::from("pub static FLAG_PNGS: &[(&str, &[u8])] = &[\n");
-    for path in &files {
-        let code = path.file_stem().unwrap().to_str().unwrap();
-        let full = path.to_str().unwrap().replace('\\', "/");
-        out.push_str(&format!("    (\"{code}\", include_bytes!(\"{full}\")),\n"));
-    }
-    out.push_str("];\n");
-
-    let dest = std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("flag_table.rs");
-    std::fs::write(&dest, out).expect("failed to write flag table");
+    let dest = std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join(out_file);
+    std::fs::write(&dest, out).unwrap_or_else(|e| panic!("failed to write {out_file}: {e}"));
 }
 
 /// Guard: the vendored librqbit must carry the NanoTorrent visibility

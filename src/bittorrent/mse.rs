@@ -36,33 +36,11 @@ const VC: [u8; 8] = [0u8; 8]; // verification constant
 const CRYPTO_RC4: [u8; 4] = [0, 0, 0, 2]; // crypto_provide / crypto_select bit for RC4
 const MAX_PAD: usize = 512;
 
-/// Decode the hard-coded hex constant below into bytes.
-///
-/// Only ever called on `P_HEX`, a compile-time literal, so a stray character
-/// cannot come from input - it reads as zero rather than erroring.
-fn hex_to_bytes(s: &str) -> Vec<u8> {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len() / 2);
-    let val = |c: u8| -> u8 {
-        match c {
-            b'0'..=b'9' => c - b'0',
-            b'a'..=b'f' => c - b'a' + 10,
-            b'A'..=b'F' => c - b'A' + 10,
-            _ => 0,
-        }
-    };
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        out.push((val(bytes[i]) << 4) | val(bytes[i + 1]));
-        i += 2;
-    }
-    out
-}
-
 /// The 768-bit prime MSE fixes for its Diffie-Hellman exchange (BEP 8 / the
 /// MSE spec). Not a choice - both ends must use this exact value.
 fn dh_prime() -> BigUint {
-    BigUint::from_bytes_be(&hex_to_bytes(P_HEX))
+    // `P_HEX` is a compile-time literal, so this cannot fail on input.
+    BigUint::parse_bytes(P_HEX.as_bytes(), 16).expect("P_HEX is hex")
 }
 
 /// Left-pad a big-endian number to exactly `DH_LEN` bytes.
@@ -728,10 +706,14 @@ mod tests {
         assert_eq!(sa, sb);
     }
 
+    /// The prime is the spec's to the digit - a slip in reading P_HEX would
+    /// otherwise show up only as handshakes that never complete.
     #[test]
     fn dh_prime_is_768_bits() {
-        assert_eq!(hex_to_bytes(P_HEX).len(), DH_LEN);
-        assert_eq!(dh_prime().bits(), 768);
+        let p = dh_prime();
+        assert_eq!(p.bits(), 768);
+        assert_eq!(p.to_bytes_be().len(), DH_LEN);
+        assert_eq!(p.to_str_radix(16).to_uppercase(), P_HEX);
     }
 
     // Full handshake between our initiator and a minimal MSE responder over an

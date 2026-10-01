@@ -458,17 +458,7 @@ async fn h_session(state: web::Data<AppState>) -> actix_web::Result<impl Respond
     let st = state.clone();
     // web::block, not a direct call: see the threading note at the top.
     let info = web::block(move || {
-        let (down, up) = st.session.session_rates();
-        SessionInfo {
-            version: crate::buildinfo::version(),
-            listen_port: st.session.listen_port(),
-            dht_nodes: st.session.dht_nodes(),
-            download_rate: down,
-            upload_rate: up,
-            torrents: st.session.torrents(&HashMap::new()).len(),
-            clients: connected_clients(),
-            alt_speed: st.cfg.get_bool("speed.alt_enabled"),
-        }
+        session_info(&st, st.session.torrents(&HashMap::new()).len())
     })
     .await?;
 
@@ -525,47 +515,61 @@ const EVENT_TICK: std::time::Duration = std::time::Duration::from_secs(1);
 /// Built on the blocking pool: every session call in here blocks, which is the
 /// same reason the individual handlers use `web::block`.
 fn snapshot(state: &AppState) -> serde_json::Value {
+    let rows = torrent_rows(state);
+    serde_json::json!({
+        "session": session_info(state, rows.len()),
+        "torrents": rows,
+        "errors": drain_errors(state),
+    })
+}
+
+/// What `/api/session` reports, and the `session` part of each snapshot.
+fn session_info(state: &AppState, torrents: usize) -> SessionInfo {
+    let (down, up) = state.session.session_rates();
+    SessionInfo {
+        version: crate::buildinfo::version(),
+        listen_port: state.session.listen_port(),
+        dht_nodes: state.session.dht_nodes(),
+        download_rate: down,
+        upload_rate: up,
+        torrents,
+        clients: connected_clients(),
+        alt_speed: state.cfg.get_bool("speed.alt_enabled"),
+    }
+}
+
+/// Every torrent as the API shows it, with its label's name filled in.
+fn torrent_rows(state: &AppState) -> Vec<TorrentDto> {
     let labels: HashMap<i32, String> = state
         .cfg
         .get_labels()
         .into_iter()
         .map(|l| (l.id, l.name))
         .collect();
-    let rows: Vec<TorrentDto> = state
+    state
         .session
         .torrents(&labels)
         .into_iter()
         .map(TorrentDto::from)
-        .collect();
-    let (down, up) = state.session.session_rates();
+        .collect()
+}
 
-    let mut errors: Vec<String> = Vec::new();
+/// Drain this layer's error queue into sentences.
+///
+/// The translator is built only when there is something to say with it: this
+/// runs on every poll and loading a locale is a file read.
+fn drain_errors(state: &AppState) -> Vec<String> {
+    let mut drained = Vec::new();
     if let Ok(rx) = state.errors.lock() {
-        // The translator is built only when there is something to say with it:
-        // this runs on every poll and loading a locale is a file read.
         let mut tr = None;
         while let Ok(event) = rx.try_recv() {
             if let SessionEvent::Error(err) = event {
                 let tr = tr.get_or_insert_with(|| state.translator());
-                errors.push(err.text(tr));
+                drained.push(err.text(tr));
             }
         }
     }
-
-    serde_json::json!({
-        "session": SessionInfo {
-            version: crate::buildinfo::version(),
-            listen_port: state.session.listen_port(),
-            dht_nodes: state.session.dht_nodes(),
-            download_rate: down,
-            upload_rate: up,
-            torrents: rows.len(),
-            clients: connected_clients(),
-            alt_speed: state.cfg.get_bool("speed.alt_enabled"),
-        },
-        "torrents": rows,
-        "errors": errors,
-    })
+    drained
 }
 
 /// `GET /api/events` - a Server-Sent Events stream of snapshots.
@@ -625,20 +629,7 @@ async fn h_events(state: web::Data<AppState>) -> impl Responder {
 /// window's list shows, with label ids already resolved to names.
 async fn h_torrents(state: web::Data<AppState>) -> actix_web::Result<impl Responder> {
     let st = state.clone();
-    let rows = web::block(move || {
-        let labels: HashMap<i32, String> = st
-            .cfg
-            .get_labels()
-            .into_iter()
-            .map(|l| (l.id, l.name))
-            .collect();
-        st.session
-            .torrents(&labels)
-            .into_iter()
-            .map(TorrentDto::from)
-            .collect::<Vec<_>>()
-    })
-    .await?;
+    let rows = web::block(move || torrent_rows(&st)).await?;
 
     Ok(web::Json(rows))
 }
@@ -653,19 +644,7 @@ async fn h_torrents(state: web::Data<AppState>) -> actix_web::Result<impl Respon
 /// and sees every error regardless of what any web client does.
 async fn h_errors(state: web::Data<AppState>) -> actix_web::Result<impl Responder> {
     let st = state.clone();
-    let errors = web::block(move || {
-        let rx = st.errors.lock().unwrap();
-        let mut drained: Vec<String> = Vec::new();
-        let mut tr = None;
-        while let Ok(event) = rx.try_recv() {
-            if let SessionEvent::Error(err) = event {
-                let tr = tr.get_or_insert_with(|| st.translator());
-                drained.push(err.text(tr));
-            }
-        }
-        drained
-    })
-    .await?;
+    let errors = web::block(move || drain_errors(&st)).await?;
     Ok(web::Json(serde_json::json!({ "errors": errors })))
 }
 
@@ -1770,25 +1749,6 @@ struct SettingDto {
 // still `ui`, still the same list-and-buttons shape.
 
 #[derive(Serialize)]
-struct PluginRowDto {
-    id: String,
-    title: String,
-    subtitle: String,
-    selected: bool,
-}
-
-impl From<&crate::plugins::ui::Row> for PluginRowDto {
-    fn from(r: &crate::plugins::ui::Row) -> Self {
-        PluginRowDto {
-            id: r.id.clone(),
-            title: r.title.clone(),
-            subtitle: r.subtitle.clone(),
-            selected: r.selected,
-        }
-    }
-}
-
-#[derive(Serialize)]
 struct PluginListDto {
     name: String,
     /// The plugin's own window title, empty when it has declared no window.
@@ -1824,37 +1784,13 @@ struct PluginSurfaceDto {
     configurable: bool,
     /// `[id, label]` pairs, drawn left to right.
     buttons: Vec<[String; 2]>,
-    groups: Vec<PluginRowDto>,
-    rows: Vec<PluginRowDto>,
+    groups: Vec<crate::plugins::ui::Row>,
+    rows: Vec<crate::plugins::ui::Row>,
     /// Non-empty while the plugin has a form up, in which case the browser
     /// draws that instead of the lists - the same swap the window makes.
     form_id: String,
     form_title: String,
-    fields: Vec<PluginFieldDto>,
-}
-
-#[derive(Serialize)]
-struct PluginFieldDto {
-    id: String,
-    label: String,
-    /// "text", "check", "choice" or "number".
-    kind: String,
-    value: String,
-    options: Vec<String>,
-    hint: String,
-}
-
-impl From<&crate::plugins::ui::Field> for PluginFieldDto {
-    fn from(f: &crate::plugins::ui::Field) -> Self {
-        PluginFieldDto {
-            id: f.id.clone(),
-            label: f.label.clone(),
-            kind: f.kind.clone(),
-            value: f.value.clone(),
-            options: f.options.clone(),
-            hint: f.hint.clone(),
-        }
-    }
+    fields: Vec<crate::plugins::ui::Field>,
 }
 
 /// What the browser is allowed to send back. Named rather than free-form so a
@@ -2014,11 +1950,11 @@ async fn h_plugin(name: web::Path<String>) -> actix_web::Result<HttpResponse> {
             .iter()
             .map(|(id, label)| [id.clone(), label.clone()])
             .collect(),
-        groups: ui.groups.iter().map(PluginRowDto::from).collect(),
-        rows: ui.rows.iter().map(PluginRowDto::from).collect(),
+        groups: ui.groups.clone(),
+        rows: ui.rows.clone(),
         form_id: ui.form_id.clone(),
         form_title: ui.form_title.clone(),
-        fields: ui.fields.iter().map(PluginFieldDto::from).collect(),
+        fields: ui.fields.clone(),
     }))
 }
 
@@ -2768,32 +2704,11 @@ mod tests {
     fn sample_status() -> TorrentStatus {
         TorrentStatus {
             added_on: chrono::Local::now(),
-            all_time_download: 0,
-            all_time_upload: 0,
             availability: -0.0,
-            completed_on: None,
-            download_payload_rate: 0,
-            error: String::new(),
-            eta: None,
-            info_hash_v1: None,
-            info_hash_v2: None,
             info_hash: String::from("abc"),
-            label_id: None,
-            label_name: String::new(),
             name: String::from("t"),
-            paused: false,
-            peers_current: 0,
-            peers_total: 0,
-            progress: 0.0,
-            queue_position: 0,
-            ratio: 0.0,
-            save_path: String::new(),
-            seeds_current: 0,
-            seeds_total: 0,
             state: State::Downloading,
-            total_wanted: 0,
-            total_wanted_remaining: 0,
-            upload_payload_rate: 0,
+            ..Default::default()
         }
     }
 }

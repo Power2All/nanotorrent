@@ -9,6 +9,7 @@ pub mod file_assoc;
 pub mod geoip;
 pub mod http;
 pub mod migrate;
+pub mod portable;
 pub mod netguard;
 pub mod pico_import;
 pub mod toast;

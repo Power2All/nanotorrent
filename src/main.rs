@@ -113,6 +113,12 @@ pub fn help_text(tr: &Translator) -> String {
             "\n",
             "{}\n",
             "\n",
+            "  nanotorrent --portable            {}\n",
+            "\n",
+            "{}\n",
+            "\n",
+            "{}\n",
+            "\n",
             "{}\n",
             "{}",
             "\n{}",
@@ -121,6 +127,9 @@ pub fn help_text(tr: &Translator) -> String {
         tr.i18n("cli_tagline"),
         tr.i18n("cli_usage_line"),
         tr.i18n("cli_forwarded_note"),
+        tr.i18n("cli_portable_header"),
+        tr.i18n("cli_flag_portable"),
+        tr.i18n("cli_portable_note"),
         cli::usage(tr),
         cli::settings_help(tr),
         webui::cli::usage(tr),
@@ -226,7 +235,7 @@ fn run() -> anyhow::Result<()> {
     // provider has been chosen. See the function for why it cannot self-select.
     webui::tls::ensure_crypto_provider();
 
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
 
     // Before the database is opened and before the single-instance socket:
     // `nanotorrent --version` has to print and exit, not hand itself to a
@@ -247,6 +256,33 @@ fn run() -> anyhow::Result<()> {
             println!("{}", help_text(&help_translator()));
         }
         return Ok(());
+    }
+
+    // `--portable`: switch this copy to portable mode for good, then carry on
+    // starting - in portable mode, since the marker is now there. Taken out of
+    // the arguments first, so it is neither forwarded to a running instance nor
+    // read as the name of a torrent to open.
+    //
+    // Before everything that picks a profile: the IPC port, the database and
+    // the settings flags below all depend on which profile this is.
+    if let Some(at) = args.iter().position(|a| a == "--portable") {
+        args.remove(at);
+        match core::portable::enable() {
+            Ok(core::portable::Switched::Now(dir)) => println!(
+                "NanoTorrent is portable now: its settings, torrents and logs are kept in\n  {}\n\
+                 Delete portable.txt there to go back.",
+                dir.display()
+            ),
+            Ok(core::portable::Switched::Already(dir)) => {
+                println!("NanoTorrent is already portable, keeping its profile in {}", dir.display())
+            }
+            // Shown, not just printed: this is usually run from a shortcut,
+            // where there is no terminal to print to.
+            Err(err) => {
+                fatal_error(&format!("{err:#}"));
+                std::process::exit(2);
+            }
+        }
     }
 
     // BEFORE the IPC check below, which forwards argv to a running instance and
@@ -282,8 +318,12 @@ fn run() -> anyhow::Result<()> {
         Err(err) => usage_error(err),
     }
 
+    // Before the single-instance check: which instance to hand off to depends on
+    // which profile this is - a portable copy has a port of its own.
+    let env = Arc::new(Environment::create());
+
     // Port of the IPC single-instance handling in main.cpp.
-    let server = match ipc::init(&args)? {
+    let server = match ipc::init(&args, &env)? {
         ipc::Instance::Primary(server) => Some(server),
         ipc::Instance::Secondary => {
             // Options were forwarded to the running instance.
@@ -291,7 +331,13 @@ fn run() -> anyhow::Result<()> {
         }
     };
 
-    let env = Arc::new(Environment::create());
+    // A new portable copy, with an ordinary profile on this machine: offer to
+    // bring it across, once. After the single-instance check, so only the copy
+    // that is going to run asks; before the database is opened, because
+    // opening it creates the empty one that would make the question moot.
+    if let Some(from) = core::portable::copy_candidate(&env) {
+        offer_profile_copy(&env, &from);
+    }
 
     // One-time takeover of an existing PicoTorrent data folder (settings,
     // session state) after the rename to NanoTorrent.
@@ -428,6 +474,70 @@ fn run() -> anyhow::Result<()> {
     };
 
     run_ui(ctx)
+}
+
+/// Ask whether a new portable copy should start from the ordinary profile in
+/// `from`, and copy it across if so.
+///
+/// Runs before logging exists (the logs folder is part of the profile being
+/// decided on), so what it has to say goes to stderr - or, for the one failure
+/// that matters, on screen.
+fn offer_profile_copy(env: &Environment, from: &std::path::Path) {
+    let staged = match core::portable::Staged::new(from) {
+        Ok(staged) => staged,
+        // Nothing that cannot be read is worth offering. A fresh start is what
+        // would have happened without the question, so that is what happens.
+        Err(err) => {
+            eprintln!(
+                "the profile in {} could not be read, so this portable copy starts fresh: {err:#}",
+                from.display()
+            );
+            return;
+        }
+    };
+    // Asked in the language that profile uses - it is the user's, and this
+    // copy has no settings of its own yet to ask in.
+    let locale = staged.locale().unwrap_or_else(|| String::from(DEFAULT_LOCALE));
+    let tr = Translator::load(&env.get_lang_path(), &locale);
+    if !ask_profile_copy(&tr, env, staged.source()) {
+        return;
+    }
+    match staged.install(env) {
+        Ok(files) => eprintln!(
+            "copied the profile from {} into {} ({files} files)",
+            from.display(),
+            env.get_application_data_path().display()
+        ),
+        // Stopping beats starting on a partial profile. The database goes in
+        // last, so the next start finds none and offers the copy again.
+        Err(err) => {
+            fatal_error(&format!(
+                "copying your profile from {} did not finish: {err:#}\n\n\
+                 The original is untouched. Start NanoTorrent again to try once more.",
+                from.display()
+            ));
+            std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(feature = "ui-slint")]
+fn ask_profile_copy(tr: &Translator, env: &Environment, from: &std::path::Path) -> bool {
+    ui_slint::ask_profile_copy(tr, &env.get_application_data_path(), from)
+}
+
+/// Headless: nobody to ask, and copying unasked would be the one thing worse
+/// than not copying. Says how to do it by hand instead.
+#[cfg(not(feature = "ui-slint"))]
+fn ask_profile_copy(_tr: &Translator, env: &Environment, from: &std::path::Path) -> bool {
+    println!(
+        "This portable copy starts with a new profile. To use the one in\n  {}\n\
+         instead, stop NanoTorrent, delete NanoTorrent.sqlite in\n  {}\n\
+         and start it again with a desktop build, which offers to copy it.",
+        from.display(),
+        env.get_application_data_path().display()
+    );
+    false
 }
 
 /// Write a panic and its backtrace to the logs folder before the default hook

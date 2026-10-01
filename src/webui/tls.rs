@@ -13,11 +13,11 @@
 //! 443, which a torrent client on a home LAN generally does not have. It lands
 //! later, behind an explicit opt-in.
 
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use rustls::ServerConfig;
+use rustls::pki_types::pem::{self, PemObject};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
 /// Certificate lifetime is rcgen's default. Self-signed certs are trusted by
@@ -157,15 +157,17 @@ pub fn ensure_crypto_provider() {
 fn build(cert_pem: &[u8], key_pem: &[u8]) -> Result<ServerConfig> {
     ensure_crypto_provider();
 
-    let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut BufReader::new(cert_pem))
+    let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(cert_pem)
         .collect::<Result<_, _>>()
         .context("certificate file contains no valid PEM certificate")?;
     anyhow::ensure!(!certs.is_empty(), "certificate file contains no certificate");
 
-    let key: PrivateKeyDer<'static> =
-        rustls_pemfile::private_key(&mut BufReader::new(key_pem))
-            .context("private key file is not valid PEM")?
-            .context("private key file contains no private key")?;
+    // No key at all and an unreadable one are told apart, as they always were.
+    let key: PrivateKeyDer<'static> = match PrivateKeyDer::from_pem_slice(key_pem) {
+        Ok(key) => key,
+        Err(pem::Error::NoItemsFound) => anyhow::bail!("private key file contains no private key"),
+        Err(err) => return Err(anyhow::Error::new(err).context("private key file is not valid PEM")),
+    };
 
     ServerConfig::builder()
         .with_no_client_auth()
@@ -179,9 +181,7 @@ fn build(cert_pem: &[u8], key_pem: &[u8]) -> Result<ServerConfig> {
 pub fn fingerprint(cert_path: &Path) -> Option<String> {
     use sha2::{Digest, Sha256};
     let pem = std::fs::read(cert_path).ok()?;
-    let cert = rustls_pemfile::certs(&mut BufReader::new(&pem[..]))
-        .next()?
-        .ok()?;
+    let cert = CertificateDer::pem_slice_iter(&pem).next()?.ok()?;
     let digest = Sha256::digest(&cert);
     Some(
         digest
@@ -232,12 +232,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         self_signed(&dir).expect("generate");
 
-        let pem = std::fs::read_to_string(dir.join(CERT_FILE)).unwrap();
-        let der = pem
-            .lines()
-            .filter(|l| !l.starts_with("-----"))
-            .collect::<String>();
-        let der = base64_decode(&der).expect("the certificate is base64 PEM");
+        let pem = std::fs::read(dir.join(CERT_FILE)).unwrap();
+        let der = CertificateDer::pem_slice_iter(&pem)
+            .next()
+            .expect("a certificate")
+            .expect("the certificate is base64 PEM");
 
         // Read the SANs out of the DER rather than adding an X.509 parser: an
         // IP SAN is a 4-byte (or 16-byte) octet string, and 127.0.0.1 is the
@@ -252,24 +251,6 @@ mod tests {
             "no DNS SAN for localhost"
         );
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// Minimal base64 for the test above, so this does not reach for a crate.
-    fn base64_decode(s: &str) -> Option<Vec<u8>> {
-        const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let mut out = Vec::new();
-        let mut acc = 0u32;
-        let mut bits = 0u32;
-        for c in s.bytes().filter(|c| !c.is_ascii_whitespace() && *c != b'=') {
-            let v = A.iter().position(|&a| a == c)? as u32;
-            acc = (acc << 6) | v;
-            bits += 6;
-            if bits >= 8 {
-                bits -= 8;
-                out.push((acc >> bits) as u8);
-            }
-        }
-        Some(out)
     }
 
     #[test]

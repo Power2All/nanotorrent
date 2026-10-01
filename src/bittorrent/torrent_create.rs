@@ -140,18 +140,6 @@ pub(crate) fn merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
     layer[0]
 }
 
-/// Round up to a power of two.
-///
-/// A v2 merkle tree needs a full binary tree, so the leaf count is padded up
-/// to the next power of two before the root is computed.
-pub(crate) fn next_pow2(n: usize) -> usize {
-    let mut p = 1;
-    while p < n {
-        p *= 2;
-    }
-    p
-}
-
 // File walking
 
 struct SrcFile {
@@ -270,7 +258,7 @@ fn hash_file_v2(path: &Path, piece_length: u32) -> Result<FileV2> {
     }
 
     // Pad the leaves to a power of two with zero-hashes, then take the root.
-    let padded = next_pow2(num_blocks);
+    let padded = num_blocks.next_power_of_two();
     leaves.resize(padded, [0u8; 32]);
     let pieces_root = merkle_root(&leaves);
 
@@ -703,14 +691,6 @@ mod tests {
         // Four leaves: balanced tree.
         let expect = hash_pair(&hash_pair(&h(1), &h(2)), &hash_pair(&h(3), &h(4)));
         assert_eq!(merkle_root(&[h(1), h(2), h(3), h(4)]), expect);
-    }
-
-    #[test]
-    fn next_pow2_works() {
-        assert_eq!(next_pow2(1), 1);
-        assert_eq!(next_pow2(3), 4);
-        assert_eq!(next_pow2(4), 4);
-        assert_eq!(next_pow2(5), 8);
     }
 
     fn write_temp(name: &str, bytes: &[u8]) -> PathBuf {

@@ -260,43 +260,16 @@ struct MagnetFetch {
 /// [`crate::bittorrent::v2::normalise_magnet`] makes. `None` for a link naming
 /// no hash this can read.
 fn magnet_wire_hash(uri: &str) -> Option<String> {
-    let hashes = crate::bittorrent::v2::magnet_hashes(uri);
-    let id: [u8; 20] = match (hashes.v1, hashes.v2) {
-        (Some(v1), _) => v1,
-        (None, Some(v2)) => v2[..20].try_into().ok()?,
-        (None, None) => return None,
-    };
-    Some(id.iter().map(|b| format!("{b:02x}")).collect())
+    Some(crate::bittorrent::v2::magnet_hashes(uri).wire_id()?.as_string())
 }
 
 /// The `dn=` parameter of a magnet, percent- and plus-decoded.
 fn magnet_display_name(uri: &str) -> Option<String> {
-    let value = uri
-        .strip_prefix("magnet:?")?
-        .split('&')
-        .find_map(|p| p.strip_prefix("dn="))?
-        .replace('+', " ");
-    let bytes = value.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let hex = (bytes[i] == b'%')
-            .then(|| bytes.get(i + 1..i + 3))
-            .flatten()
-            .and_then(|h| std::str::from_utf8(h).ok())
-            .and_then(|h| u8::from_str_radix(h, 16).ok());
-        match hex {
-            Some(b) => {
-                out.push(b);
-                i += 3;
-            }
-            None => {
-                out.push(bytes[i]);
-                i += 1;
-            }
-        }
-    }
-    Some(String::from_utf8_lossy(&out).into_owned()).filter(|s| !s.trim().is_empty())
+    let query = uri.strip_prefix("magnet:?")?;
+    url::form_urlencoded::parse(query.as_bytes())
+        .find(|(key, _)| key == "dn")
+        .map(|(_, name)| name.into_owned())
+        .filter(|name| !name.trim().is_empty())
 }
 
 /// The magnets [`MagnetFetch::save`] recorded, and whether each was fetching.
@@ -369,7 +342,7 @@ fn magnet_add_options(
         // so the layers it collected are exactly what pieces are checked
         // against.
         tracing::info!("resolving a v2-only magnet");
-        let magnet = Arc::new(crate::bittorrent::v2::V2Magnet::new());
+        let magnet = Arc::new(crate::bittorrent::v2::V2Magnet::default());
         opts.metadata_interceptor = Some(magnet.clone());
         opts.piece_verifier = Some(magnet);
     }
@@ -395,13 +368,7 @@ impl MagnetFetch {
             (entry.uri.clone(), entry.params.clone())
         };
 
-        let fixed = match crate::bittorrent::v2::normalise_magnet(&uri) {
-            Ok(fixed) => fixed,
-            Err(err) => {
-                self.give_up(hash, err);
-                return;
-            }
-        };
+        let fixed = crate::bittorrent::v2::normalise_magnet(&uri);
 
         let this = self.clone();
         let key = hash.to_string();
@@ -791,14 +758,10 @@ fn report_error(events: &EventBus, err: SessionError) {
 ///
 /// Cloned into background tasks, which have no `&self` to emit through - the
 /// same reason the error queue this replaces was an `Arc<Mutex<..>>`.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct EventBus(Arc<Mutex<Vec<std::sync::mpsc::Sender<SessionEvent>>>>);
 
 impl EventBus {
-    fn new() -> EventBus {
-        EventBus(Arc::new(Mutex::new(Vec::new())))
-    }
-
     /// Subscribe for the lifetime of the returned receiver.
     ///
     /// These are unbounded std channels, so a subscriber that stops draining
@@ -1428,7 +1391,7 @@ impl Session {
 
         let inner = Arc::new(std::sync::RwLock::new(inner));
         let meta = Arc::new(Mutex::new(HashMap::new()));
-        let events = EventBus::new();
+        let events = EventBus::default();
         let magnets = MagnetFetch {
             rt: rt.handle().clone(),
             inner: inner.clone(),
@@ -2099,9 +2062,9 @@ impl Session {
     /// "accepted for adding", not "added".
     pub fn add_torrent(&self, source: AddTorrentSource, params: AddParams) -> bool {
         if let AddTorrentSource::MagnetUri(uri) = &source
-            && let Some(accepted) = self.add_magnet(uri, &params)
+            && self.add_magnet(uri, &params)
         {
-            return accepted;
+            return true;
         }
 
         // Cloned before the spawn below: the task outlives this borrow of
@@ -2174,13 +2137,7 @@ impl Session {
             // parses more spellings of a magnet than this does.
             AddTorrentSource::MagnetUri(uri) => {
                 opts = magnet_add_options(&self.db, uri, &params);
-                match crate::bittorrent::v2::normalise_magnet(uri) {
-                    Ok(fixed) => AddTorrent::from_url(fixed),
-                    Err(err) => {
-                        report_error(&self.events, SessionError::raw(err));
-                        return false;
-                    }
-                }
+                AddTorrent::from_url(crate::bittorrent::v2::normalise_magnet(uri))
             }
         };
 
@@ -2238,14 +2195,12 @@ impl Session {
     /// a link: the torrent is there, says "Downloading metadata", and can be
     /// stopped or removed like any other while nobody has answered yet.
     ///
-    /// `None` when the link names no hash this can read; the caller then hands
+    /// False when the link names no hash this can read; the caller then hands
     /// it to the engine as it is.
-    fn add_magnet(&self, uri: &str, params: &AddParams) -> Option<bool> {
-        let hash = magnet_wire_hash(uri)?;
-        if let Err(err) = crate::bittorrent::v2::normalise_magnet(uri) {
-            report_error(&self.events, SessionError::raw(err));
-            return Some(false);
-        }
+    fn add_magnet(&self, uri: &str, params: &AddParams) -> bool {
+        let Some(hash) = magnet_wire_hash(uri) else {
+            return false;
+        };
         let name = magnet_display_name(uri).unwrap_or_else(|| hash.clone());
 
         let known = self.find(&hash).is_some()
@@ -2253,7 +2208,7 @@ impl Session {
         if known {
             tracing::info!("already in the session, not added again: {name}");
             self.events.emit(SessionEvent::TorrentDuplicate { hash, name });
-            return Some(true);
+            return true;
         }
 
         // Written now, not when the metadata arrives: the row takes its place
@@ -2280,7 +2235,7 @@ impl Session {
             // which is what a stopped torrent means everywhere else.
             self.magnets.save();
         }
-        Some(true)
+        true
     }
 
     /// Bring back the magnets that were still waiting for metadata when the
@@ -2349,17 +2304,10 @@ impl Session {
         &self,
         uri: String,
         slot: Arc<Mutex<Vec<MagnetOutcome>>>,
-    ) -> Option<tokio::task::AbortHandle> {
+    ) -> tokio::task::AbortHandle {
         // Same normalisation as the add path, so the dialog and the add agree
         // on which magnets are usable rather than failing at different points.
-        let fixed = match crate::bittorrent::v2::normalise_magnet(&uri) {
-            Ok(fixed) => fixed,
-            Err(err) => {
-                tracing::warn!("{err}");
-                slot.lock().unwrap().push(MagnetOutcome::Failed { uri });
-                return None;
-            }
-        };
+        let fixed = crate::bittorrent::v2::normalise_magnet(&uri);
         let inner = self.rq();
         let task = self.rt.spawn(async move {
             let mut opts = AddTorrentOptions {
@@ -2369,7 +2317,7 @@ impl Session {
             // The preview needs the same treatment as the add, or a v2-only
             // magnet would resolve in the Add dialog and then fail on commit.
             if crate::bittorrent::v2::magnet_hashes(&fixed).is_v2_only() {
-                let magnet = std::sync::Arc::new(crate::bittorrent::v2::V2Magnet::new());
+                let magnet = std::sync::Arc::new(crate::bittorrent::v2::V2Magnet::default());
                 opts.metadata_interceptor = Some(magnet);
             }
             let outcome = match inner.add_torrent(AddTorrent::from_url(fixed), Some(opts)).await {
@@ -2385,25 +2333,7 @@ impl Session {
             };
             slot.lock().unwrap().push(outcome);
         });
-        Some(task.abort_handle())
-    }
-
-    /// One-shot import of every torrent from a PicoTorrent database. For each
-    /// torrent not already present, reconstructs a `.torrent` (or magnet) plus
-    /// its save path and adds it; librqbit rechecks the on-disk files to
-    /// recover progress. Returns `(imported, skipped_already_present)`.
-    pub fn import_from_picotorrent(
-        &self,
-        pico_db: &std::path::Path,
-        options: ImportOptions,
-    ) -> Result<ImportReport> {
-        self.migrate_from(
-            crate::core::migrate::Source::PicoTorrent,
-            pico_db,
-            options,
-            &std::sync::atomic::AtomicBool::new(false),
-            |_| {},
-        )
+        task.abort_handle()
     }
 
     /// Migrate from another client, reporting progress and stopping on demand.
@@ -3506,17 +3436,12 @@ fn on_torrent_added(
                 let meta = meta_map.get(hash);
                 let running = entry.task.is_some();
                 let label_id = meta.and_then(|m| m.label_id);
+                // Everything not set here is zero: nothing is known about a
+                // torrent before its metadata arrives.
                 result.push(TorrentStatus {
                     added_on: meta.map_or_else(Local::now, |m| m.added_on),
-                    all_time_download: 0,
-                    all_time_upload: 0,
                     availability: -1.0,
-                    completed_on: None,
-                    download_payload_rate: 0,
                     error: entry.error.clone(),
-                    eta: None,
-                    info_hash_v1: None,
-                    info_hash_v2: None,
                     info_hash: hash.clone(),
                     label_id,
                     label_name: label_id
@@ -3524,18 +3449,12 @@ fn on_torrent_added(
                         .unwrap_or_default(),
                     name: entry.name.clone(),
                     paused: !running,
-                    peers_current: 0,
-                    peers_total: 0,
-                    progress: 0.0,
                     queue_position: meta.map_or(i64::MAX, |m| m.queue_position),
-                    ratio: 0.0,
                     save_path: entry
                         .params
                         .save_path
                         .clone()
                         .unwrap_or_else(|| default_save_path.clone()),
-                    seeds_current: 0,
-                    seeds_total: 0,
                     // Stopped reads as stopped, the way a paused torrent does,
                     // so the queue scheduler can start it again; one that gave
                     // up says why.
@@ -3546,9 +3465,7 @@ fn on_torrent_added(
                     } else {
                         State::DownloadingPaused
                     },
-                    total_wanted: 0,
-                    total_wanted_remaining: 0,
-                    upload_payload_rate: 0,
+                    ..Default::default()
                 });
             }
         }
@@ -5652,7 +5569,7 @@ mod tests {
     fn events_reach_every_subscriber_and_dropped_ones_unregister() {
         use super::{EventBus, SessionError, SessionEvent};
 
-        let bus = EventBus::new();
+        let bus = EventBus::default();
         let first = bus.subscribe();
         let second = bus.subscribe();
 

@@ -56,10 +56,6 @@ export component RemoveDialog inherits Window {
     /// caller already knows which was meant.
     in property <string> secondary-text;
 
-    /// Whether to offer "do not ask again". Off where there is nothing
-    /// sensible to remember.
-    in property <bool> offer-remember: true;
-
     /// `(secondary, remember)` - which action, and whether to stop asking.
     callback chosen(bool, bool);
     callback cancelled();
@@ -113,7 +109,7 @@ export component RemoveDialog inherits Window {
             // Unticked every time it is shown. A box that remembers its own
             // last answer would turn a deliberate "just this once" into a
             // standing instruction the next time somebody was not reading.
-            if root.offer-remember: CheckBox {
+            CheckBox {
                 text: L.s(L.revision, "dont_ask_again");
                 checked: false;
                 toggled => { root.remember = self.checked; }

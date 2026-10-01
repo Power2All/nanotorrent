@@ -73,6 +73,48 @@ The AppImage needs no installation - `chmod +x` it and run. It bundles its
 libraries but not glibc, so it needs 2.35 or newer too. For a desktop entry and
 icon, run it once with `--appimage-integrate`, or use the `.deb`/`.rpm`.
 
+### Portable mode
+
+By default the profile (settings, torrents, session state, logs) lives in the
+user's profile folder: `%LOCALAPPDATA%\NanoTorrent` on Windows,
+`~/.local/share/nanotorrent` on Linux, `~/Library/Application Support/NanoTorrent`
+on macOS. A portable copy keeps it in its own folder instead, so the whole thing
+can live on a USB stick or be moved as one folder.
+
+```
+nanotorrent --portable
+```
+
+This writes a `portable.txt` beside the program and starts. Every later start
+then stays portable, however it starts: a shortcut, a magnet link clicked in a
+browser, a `.torrent` opened from the file manager, or the autostart entry. A
+flag that only lasted one run would lose all of those. Delete `portable.txt` to
+go back; the profile in that folder is left as it is. Creating the file by hand
+does the same thing, and `NANOTORRENT_PORTABLE=1` makes a single run portable.
+
+"Beside the program" means:
+
+- **Windows:** the folder `nanotorrent-gui.exe` is in.
+- **AppImage:** the folder the `.AppImage` file is in, not the temporary mount
+  it runs from.
+- **macOS:** the folder the `.app` is in, not inside the bundle.
+
+The folder has to be writable, so a copy under Program Files cannot be made
+portable, and the Microsoft Store version cannot either. `--portable` says so
+rather than quietly using the normal profile.
+
+The first time a portable copy starts on a machine that already has a normal
+profile, it asks whether to copy that profile across or start fresh. It asks
+once. The original is never changed. An encrypted profile is copied
+*unencrypted*: its key is tied to the Windows account, so an encrypted copy
+would open on this machine only. For the same reason a portable copy on Windows
+does not suggest encrypting its database.
+
+A portable copy has its own single-instance channel, so it can run alongside the
+installed one. A torrent or magnet opened through a copy goes to that copy's
+window, not the other one's. Two copies running at once each need their own
+listening port (Preferences ▸ Connection), since both default to 6881.
+
 ### Rendering
 
 NanoTorrent draws on the CPU, on every platform, on purpose. It sets
