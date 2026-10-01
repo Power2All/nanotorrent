@@ -5613,10 +5613,15 @@ fn poll_update(ui: &Rc<Ui>) {
 /// Closing the window without choosing is "start fresh": it is the answer
 /// that changes nothing, and the question does not come back either way.
 pub fn ask_profile_copy(tr: &Translator, here: &std::path::Path, from: &std::path::Path) -> bool {
+    // First, before the component exists: creating it is what picks Slint's
+    // backend, and this runs before `run` would have picked it. Without this
+    // the question - and every window after it, which inherits the choice -
+    // came up on the GPU renderer the rest of the app deliberately avoids.
+    select_default_renderer();
     let dialog = match PortablePromptDialog::new() {
         Ok(d) => d,
         Err(err) => {
-            eprintln!("cannot show the profile question ({err}); starting with a new profile");
+            tracing::error!("cannot show the profile question ({err}); starting with a new profile");
             return false;
         }
     };
@@ -5649,7 +5654,7 @@ pub fn ask_profile_copy(tr: &Translator, here: &std::path::Path, from: &std::pat
     }
 
     if let Err(err) = dialog.run() {
-        eprintln!("the profile question could not be shown ({err}); starting with a new profile");
+        tracing::error!("the profile question could not be shown ({err}); starting with a new profile");
         return false;
     }
     answer.get()

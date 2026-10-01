@@ -331,14 +331,6 @@ fn run() -> anyhow::Result<()> {
         }
     };
 
-    // A new portable copy, with an ordinary profile on this machine: offer to
-    // bring it across, once. After the single-instance check, so only the copy
-    // that is going to run asks; before the database is opened, because
-    // opening it creates the empty one that would make the question moot.
-    if let Some(from) = core::portable::copy_candidate(&env) {
-        offer_profile_copy(&env, &from);
-    }
-
     // One-time takeover of an existing PicoTorrent data folder (settings,
     // session state) after the rename to NanoTorrent.
     env.migrate_legacy_data();
@@ -395,6 +387,19 @@ fn run() -> anyhow::Result<()> {
     // update prompt points - see updatechecker::download_url.
     if let Some(pfn) = core::environment::package_family_name() {
         tracing::info!("packaged install (Microsoft Store): {pfn}");
+    }
+
+    // A new portable copy, with an ordinary profile on this machine: offer to
+    // bring it across, once. After the single-instance check, so only the copy
+    // that is going to run asks; before the database is opened, because
+    // opening it creates the empty one that would make the question moot.
+    //
+    // And after logging and the panic hook, not before: this shows a window,
+    // and on a Windows release build - which has no console - anything that
+    // goes wrong before those exist leaves no trace at all. The logs folder
+    // it creates is not what makes a profile; the copy skips it.
+    if let Some(from) = core::portable::copy_candidate(&env) {
+        offer_profile_copy(&env, &from);
     }
 
     // Claim the identity notifications are attributed to: an AppUserModelID on
@@ -479,16 +484,15 @@ fn run() -> anyhow::Result<()> {
 /// Ask whether a new portable copy should start from the ordinary profile in
 /// `from`, and copy it across if so.
 ///
-/// Runs before logging exists (the logs folder is part of the profile being
-/// decided on), so what it has to say goes to stderr - or, for the one failure
-/// that matters, on screen.
+/// What it has to say goes to the log - or, for the one failure that matters,
+/// on screen as well.
 fn offer_profile_copy(env: &Environment, from: &std::path::Path) {
     let staged = match core::portable::Staged::new(from) {
         Ok(staged) => staged,
         // Nothing that cannot be read is worth offering. A fresh start is what
         // would have happened without the question, so that is what happens.
         Err(err) => {
-            eprintln!(
+            tracing::warn!(
                 "the profile in {} could not be read, so this portable copy starts fresh: {err:#}",
                 from.display()
             );
@@ -503,7 +507,7 @@ fn offer_profile_copy(env: &Environment, from: &std::path::Path) {
         return;
     }
     match staged.install(env) {
-        Ok(files) => eprintln!(
+        Ok(files) => tracing::info!(
             "copied the profile from {} into {} ({files} files)",
             from.display(),
             env.get_application_data_path().display()
@@ -511,6 +515,7 @@ fn offer_profile_copy(env: &Environment, from: &std::path::Path) {
         // Stopping beats starting on a partial profile. The database goes in
         // last, so the next start finds none and offers the copy again.
         Err(err) => {
+            tracing::error!("copying the profile from {} failed: {err:#}", from.display());
             fatal_error(&format!(
                 "copying your profile from {} did not finish: {err:#}\n\n\
                  The original is untouched. Start NanoTorrent again to try once more.",

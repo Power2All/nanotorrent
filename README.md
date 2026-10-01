@@ -733,7 +733,8 @@ one. Collected so nobody has to file them twice.
 
 ## History
 
-**v0.4.3** lets a magnet in before its metadata has arrived.
+**v0.4.3** lets a magnet in before its metadata has arrived, and gives
+portable mode a switch.
 
 - The Add dialog opens at once for a magnet, as it does in qBittorrent, and
   fetches the metadata while it is up: the file list fills in if it arrives,
@@ -746,6 +747,29 @@ one. Collected so nobody has to file them twice.
   other torrent, and one still waiting at exit carries on waiting after the
   next start. librqbit only creates a torrent once the info dictionary is in
   hand, so until then the row is the session's own, not the engine's.
+- `nanotorrent --portable` keeps the profile beside the program from then on,
+  by writing a `portable.txt` there - so it stays portable however it is
+  started, not only from the shortcut that passed the flag. Before, portable
+  mode existed but only for those who knew to create that file by hand. See
+  [Portable mode](#portable-mode).
+- The first start of a new portable copy offers to copy the existing profile
+  across, once. An encrypted profile is copied unencrypted, because its key
+  only opens it on the Windows account that made it.
+- A portable copy runs alongside the installed one instead of handing every
+  launch to it: the single-instance channel is now per profile. An AppImage
+  keeps its portable profile beside the `.AppImage` file, and a macOS copy
+  beside the `.app`, rather than inside a folder that is read-only or
+  temporary. A folder that cannot be written to, and the Microsoft Store
+  version, say so instead of quietly using the normal profile.
+- The Windows installer's information page reads properly. It is generated
+  from this file, and raw `<img>` tags, a screenshot gallery of image tags,
+  literal asterisks and misaligned bullets no longer come through.
+- Microsoft Store submissions run from Linux too: `pwsh
+  installer/store-submit.ps1` has GitHub Actions build the package
+  (`store-msix.yml`) and does the rest locally. See
+  [docs/MICROSOFT-STORE.md](docs/MICROSOFT-STORE.md).
+- Under the hood: `rustls-pemfile`, unmaintained, is gone - rustls parses the
+  PEM itself - and a round of dead code and duplicated helpers was removed.
 
 **v0.4.2** is the Microsoft Store build behaving like the installer one, and a
 hybrid torrent reporting both of its swarms.
