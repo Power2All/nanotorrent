@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: മലയാളം (ഇന്ത്യ) - Partner Center: Malayalam (India) (ml-IN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent, Viktor Elofsson-ന്റെ PicoTorrent-ന്റെ Rust രൂ�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-പതിപ്പ് 0.4.3
+പതിപ്പ് 0.4.4
 
-- മാഗ്നെറ്റ് ലിങ്കുകൾ ഇനി അവയുടെ വിശദാംശങ്ങൾക്കായി കാത്തിരിക്കുന്നില്ല: ചേർക്കൽ ഡയലോഗ് ഉടൻ തുറക്കുന്നു, വിശദാംശങ്ങൾ എത്തുന്നതിനു മുമ്പ് ചേർത്ത മാഗ്നെറ്റ് അവ എത്തുന്നതുവരെ പട്ടികയിൽ “മെറ്റാഡാറ്റ ഡൗൺലോഡ് ചെയ്യുന്നു” എന്ന് കാണിക്കും, qBittorrent-ലെ പോലെ.
+- ആന്തരിക മാറ്റങ്ങൾ: NanoTorrent അടിസ്ഥാനമാക്കുന്ന ലൈബ്രറികൾ അവയുടെ ഏറ്റവും പുതിയ പരിഹാരങ്ങളോടെ അപ്ഡേറ്റ് ചെയ്തു.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

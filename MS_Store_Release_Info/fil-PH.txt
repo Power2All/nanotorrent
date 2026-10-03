@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Filipino (Pilipinas) - Partner Center: Filipino (Philippines) (fil-PH)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ Ang NanoTorrent ay bersyong Rust ng PicoTorrent ni Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Bersyon 0.4.3
+Bersyon 0.4.4
 
-- Hindi na naghihintay ang mga magnet link sa kanilang mga detalye: agad na bumubukas ang Add dialog, at ang magnet na idinagdag bago dumating ang mga detalye ay ipinapakita bilang “Nagda-download ng metadata” sa listahan hanggang dumating ang mga ito, gaya sa qBittorrent.
+- Sa loob: na-update ang mga library na pinagbatayan ng NanoTorrent, kasama ang pinakabago nilang mga ayos.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Slovenščina (Slovenija) - Partner Center: Slovenian (Slovenia) (sl-SI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent je prenos PicoTorrenta avtorja Viktorja Elofssona v Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Različica 0.4.3
+Različica 0.4.4
 
-- Magnetne povezave ne čakajo več na svoje podrobnosti: okno za dodajanje se odpre takoj, magnet, dodan pred prihodom podrobnosti, pa je na seznamu prikazan kot »Prenašanje metapodatkov«, dokler ne prispejo, kot v qBittorrentu.
+- Pod pokrovom: knjižnice, na katerih temelji NanoTorrent, so posodobljene z najnovejšimi popravki.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

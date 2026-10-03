@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Română (România) - Partner Center: Romanian (Romania) (ro-RO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent este o portare în Rust a PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiunea 0.4.3
+Versiunea 0.4.4
 
-- Linkurile magnet nu își mai așteaptă detaliile: fereastra Adăugare se deschide imediat, iar un magnet adăugat înainte să sosească detaliile apare în listă ca „Descărcând metadata” până când sosesc, ca în qBittorrent.
+- Sub capotă: bibliotecile pe care se bazează NanoTorrent au fost actualizate cu cele mai recente remedieri.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

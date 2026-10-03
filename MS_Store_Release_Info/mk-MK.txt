@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Македонски (Македонија) - Partner Center: Macedonian (North Macedonia) (mk-MK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent е Rust-порт на PicoTorrent од Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Верзија 0.4.3
+Верзија 0.4.4
 
-- Магнет-врските веќе не чекаат на деталите: прозорецот за додавање се отвора веднаш, а магнет додаден пред да пристигнат деталите се прикажува во списокот како „Се преземаат метаподатоци“ додека не пристигнат, како во qBittorrent.
+- Под хаубата: библиотеките врз кои е изграден NanoTorrent се ажурирани со нивните најнови поправки.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

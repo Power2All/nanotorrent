@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: العربية (السعودية) - Partner Center: Arabic (Saudi Arabia) (ar-SA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ Store listings > ar-SA. The character limits shown are Microsoft's.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-الإصدار 0.4.3
+الإصدار 0.4.4
 
-- لم تعد روابط المغناطيس تنتظر تفاصيلها: تُفتح نافذة الإضافة فورًا، والرابط الذي يُضاف قبل وصول التفاصيل يظهر في القائمة بحالة ”تحميل بيانات الميتا“ حتى تصل، كما في qBittorrent.
+- تحسينات داخلية: حُدِّثت المكتبات التي بُني عليها NanoTorrent بأحدث إصلاحاتها.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

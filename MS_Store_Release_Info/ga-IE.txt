@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Gaeilge (Éire) - Partner Center: Irish (Ireland) (ga-IE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ Is leagan Rust de PicoTorrent le Viktor Elofsson é NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Leagan 0.4.3
+Leagan 0.4.4
 
-- Ní fhanann naisc mhaighnéadacha lena sonraí a thuilleadh: osclaítear an fhuinneog Cuir Leis láithreach, agus taispeántar maighnéad a chuirtear leis sula dtagann na sonraí mar “Meiteashonraí á n-íoslódáil” sa liosta go dtí go dtagann siad, mar a dhéantar in qBittorrent.
+- Faoin gcochall: nuashonraíodh na leabharlanna ar a bhfuil NanoTorrent tógtha, lena gceartúcháin is déanaí.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

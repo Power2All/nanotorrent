@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Català (Espanya) - Partner Center: Catalan (Spain) (ca-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ El NanoTorrent és una adaptació en Rust del PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versió 0.4.3
+Versió 0.4.4
 
-- Els enllaços magnet ja no esperen els seus detalls: el diàleg d’afegir s’obre de seguida, i un magnet afegit abans que arribin els detalls es mostra a la llista com a «Descarregant metadades» fins que arriben, com a qBittorrent.
+- Canvis interns: s’han actualitzat les biblioteques sobre les quals es construeix NanoTorrent, amb les seves últimes correccions.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

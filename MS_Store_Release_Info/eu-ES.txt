@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Euskara (Espainia) - Partner Center: Basque (Spain) (eu-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent Viktor Elofsson-en PicoTorrent-en Rust portua da.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-0.4.3 bertsioa
+0.4.4 bertsioa
 
-- Magnet estekek ez dituzte jada xehetasunak itxaroten: Gehitu elkarrizketa berehala irekitzen da, eta xehetasunak iritsi aurretik gehitutako magnet bat «Metadatuak deskargatzen» gisa agertzen da zerrendan iritsi arte, qBittorrent-en bezala.
+- Barnean: NanoTorrent eraikitzeko erabiltzen diren liburutegiak eguneratu dira, azken zuzenketekin.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

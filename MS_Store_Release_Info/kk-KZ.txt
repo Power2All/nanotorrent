@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Қазақ тілі (Қазақстан) - Partner Center: Kazakh (Kazakhstan) (kk-KZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent — Viktor Elofsson жазған PicoTorrent бағдарламас�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Нұсқа 0.4.3
+Нұсқа 0.4.4
 
-- Магнит сілтемелері енді мәліметтерін күтпейді: қосу терезесі бірден ашылады, ал мәліметтер келмей тұрып қосылған магнит олар келгенше тізімде «Метадеректер жүктелуде» болып көрсетіледі, qBittorrent-тегідей.
+- Ішкі өзгерістер: NanoTorrent негізделген кітапханалар соңғы түзетулерімен жаңартылды.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

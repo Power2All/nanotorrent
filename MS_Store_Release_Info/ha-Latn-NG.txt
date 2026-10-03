@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Hausa (Najeriya) - Partner Center: Hausa (Nigeria) (ha-Latn-NG)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent shi ne sigar Rust na PicoTorrent na Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sigar 0.4.3
+Sigar 0.4.4
 
-- Hanyoyin magnet ba sa jiran bayanansu kuma: tagar Ƙara tana buɗewa nan take, kuma magnet da aka ƙara kafin bayanan su iso yana bayyana a matsayin “Ana saukar da metadata” a jerin har sai sun iso, kamar a qBittorrent.
+- A ciki: an sabunta laburaren da aka gina NanoTorrent a kansu, tare da sabbin gyare-gyarensu.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

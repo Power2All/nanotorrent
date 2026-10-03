@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Dansk (Danmark) - Partner Center: Danish (Denmark) (da-DK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent er en Rust-portering af PicoTorrent af Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.3
+Version 0.4.4
 
-- Magnetlinks venter ikke længere på deres detaljer: Tilføj-dialogen åbner med det samme, og et magnetlink tilføjet før detaljerne er ankommet, vises som “Downloader metadata” på listen, indtil de kommer, som i qBittorrent.
+- Under motorhjelmen: bibliotekerne, som NanoTorrent er bygget på, er opdateret med deres seneste rettelser.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

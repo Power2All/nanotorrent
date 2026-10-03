@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: 简体中文 (中国) - app locale zh-CN - Partner Center: Chinese (Simplified) (zh-Hans)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-版本 0.4.3
+版本 0.4.4
 
-- 磁力链接不再需要等待详细信息：“添加”对话框会立即打开，在详细信息到达前添加的磁力链接会在列表中显示为“下载元数据”，直到信息到达，与 qBittorrent 相同。
+- 内部改进：已将 NanoTorrent 所依赖的库更新到包含最新修复的版本。
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

@@ -733,6 +733,17 @@ one. Collected so nobody has to file them twice.
 
 ## History
 
+**v0.4.4** gets the AppImage starting on a minimal system.
+
+- winit loads `libxkbcommon-x11` with `dlopen()` only when a window opens, so
+  linuxdeploy - which follows the binary's ELF dependencies - never bundled
+  it. Where the system did not have it either, the AppImage quit at once with
+  "Library libxkbcommon-x11.so could not be loaded", which is how the AppImage
+  catalog's test saw it. It is bundled now along with `libxcb-xkb`, which it
+  needs, and the release build proves it: it removes the system copy, starts
+  the AppImage on Xvfb and waits for its window.
+- A round of dependency updates, all within their current versions.
+
 **v0.4.3** lets a magnet in before its metadata has arrived, and gives
 portable mode a switch.
 

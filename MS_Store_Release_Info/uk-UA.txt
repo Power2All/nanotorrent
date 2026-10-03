@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Українська (Україна) - Partner Center: Ukrainian (Ukraine) (uk-UA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent — це перенесення PicoTorrent Віктора Елоф�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Версія 0.4.3
+Версія 0.4.4
 
-- Магнет-посилання більше не чекають на свої відомості: вікно додавання відкривається одразу, а магнет, доданий до надходження відомостей, показується у списку як «Завантаження метаданих», доки вони не надійдуть, як у qBittorrent.
+- Внутрішні зміни: бібліотеки, на яких побудовано NanoTorrent, оновлено з їхніми останніми виправленнями.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

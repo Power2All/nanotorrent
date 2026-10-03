@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Српски (Србија) - app locale sr-SP - Partner Center: Serbian (Cyrillic, Serbia) (sr-Cyrl)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent је пренос PicoTorrent-а Виктора Елофсона н�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Верзија 0.4.3
+Верзија 0.4.4
 
-- Магнет везе више не чекају своје детаље: прозор за додавање отвара се одмах, а магнет додат пре него што детаљи стигну приказује се на листи као „Preuzimanje metapodataka” док не стигну, као у qBittorrent-у.
+- Испод хаубе: библиотеке на којима је NanoTorrent изграђен ажуриране су са најновијим исправкама.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

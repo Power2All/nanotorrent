@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Беларуская (Беларусь) - Partner Center: Belarusian (Belarus) (be-BY)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent — гэта порт PicoTorrent аўтарства Viktor Elofsson
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Версія 0.4.3
+Версія 0.4.4
 
-- Магнітныя спасылкі больш не чакаюць звестак: акно дадавання адкрываецца адразу, а магніт, дададзены да атрымання звестак, паказваецца ў спісе як «Сцягванне метаданых», пакуль яны не прыйдуць, як у qBittorrent.
+- Унутраныя змены: бібліятэкі, на якіх пабудаваны NanoTorrent, абноўлены з іх апошнімі выпраўленнямі.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

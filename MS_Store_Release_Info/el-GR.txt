@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Ελληνικά (Ελλάδα) - Partner Center: Greek (Greece) (el-GR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ Store listings > el-GR. The character limits shown are Microsoft's.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Έκδοση 0.4.3
+Έκδοση 0.4.4
 
-- Οι σύνδεσμοι magnet δεν περιμένουν πλέον τις λεπτομέρειές τους: το παράθυρο προσθήκης ανοίγει αμέσως, και ένα magnet που προστίθεται πριν φτάσουν οι λεπτομέρειες εμφανίζεται στη λίστα ως «Μεταφόρτωση μεταδεδομένων» μέχρι να φτάσουν, όπως στο qBittorrent.
+- Εσωτερικά: οι βιβλιοθήκες στις οποίες βασίζεται το NanoTorrent ενημερώθηκαν με τις πιο πρόσφατες διορθώσεις τους.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

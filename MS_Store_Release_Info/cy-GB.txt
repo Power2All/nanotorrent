@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Cymraeg (Y Deyrnas Unedig) - Partner Center: Welsh (United Kingdom) (cy-GB)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ Trosiad Rust o PicoTorrent gan Viktor Elofsson yw NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Fersiwn 0.4.3
+Fersiwn 0.4.4
 
-- Nid yw dolenni magnet yn aros am eu manylion mwyach: mae’r ffenestr Ychwanegu yn agor ar unwaith, ac mae magnet a ychwanegir cyn i’r manylion gyrraedd yn ymddangos fel “Yn lawrlwytho metadata” yn y rhestr nes iddynt gyrraedd, fel yn qBittorrent.
+- O dan y bonet: mae’r llyfrgelloedd y mae NanoTorrent wedi’i adeiladu arnynt wedi’u diweddaru gyda’u trwsiadau diweddaraf.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

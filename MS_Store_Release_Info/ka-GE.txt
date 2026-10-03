@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: ქართული (საქართველო) - Partner Center: Georgian (Georgia) (ka-GE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent არის ვიქტორ ელოფსონის PicoTorr
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-ვერსია 0.4.3
+ვერსია 0.4.4
 
-- მაგნიტური ბმულები აღარ ელოდება დეტალებს: დამატების ფანჯარა მაშინვე იხსნება, ხოლო დეტალების მოსვლამდე დამატებული მაგნიტი სიაში ჩანს როგორც „მეტა-მონაცემების ჩამოტვირთვა“, სანამ ისინი არ მოვა - როგორც qBittorrent-ში.
+- შიდა ცვლილებები: ბიბლიოთეკები, რომლებზეც NanoTorrent არის აგებული, განახლდა მათი უახლესი შესწორებებით.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

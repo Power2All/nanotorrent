@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Kiswahili (Kenya) - Partner Center: Swahili (Kenya) (sw-KE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent ni toleo la Rust la PicoTorrent ya Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Toleo 0.4.3
+Toleo 0.4.4
 
-- Viungo vya magnet havisubiri tena maelezo yake: dirisha la Ongeza hufunguka mara moja, na magnet iliyoongezwa kabla maelezo hayajafika huonyeshwa kama “Inapakua metadata” kwenye orodha hadi yafike, kama ilivyo kwenye qBittorrent.
+- Ndani: maktaba ambazo NanoTorrent imejengwa juu yake zimesasishwa pamoja na marekebisho yao ya hivi karibuni.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

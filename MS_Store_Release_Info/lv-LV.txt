@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Latviešu (Latvija) - Partner Center: Latvian (Latvia) (lv-LV)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent ir Viktora Elofsona PicoTorrent pārnesums uz Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.3
+Versija 0.4.4
 
-- Magnētsaites vairs negaida savu informāciju: pievienošanas logs atveras uzreiz, un magnēts, kas pievienots pirms informācijas saņemšanas, sarakstā tiek rādīts kā “Lejupielādē metadatus”, līdz tā pienāk, tāpat kā qBittorrent.
+- Zem pārsega: bibliotēkas, uz kurām balstās NanoTorrent, ir atjauninātas ar jaunākajiem labojumiem.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

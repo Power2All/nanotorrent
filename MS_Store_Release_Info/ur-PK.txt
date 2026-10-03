@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: اردو (پاکستان) - Partner Center: Urdu (Pakistan) (ur-PK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent، Viktor Elofsson کے PicoTorrent کا Rust نسخہ ہے۔
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-نسخہ 0.4.3
+نسخہ 0.4.4
 
-- میگنیٹ لنکس اب اپنی تفصیلات کا انتظار نہیں کرتے: شامل کریں ڈائیلاگ فوراً کھلتا ہے، اور تفصیلات آنے سے پہلے شامل کیا گیا میگنیٹ ان کے آنے تک فہرست میں “میٹا ڈیٹا ڈاؤن لوڈ ہو رہا ہے” کے طور پر دکھائی دیتا ہے، بالکل qBittorrent کی طرح۔
+- اندرونی تبدیلیاں: جن لائبریریوں پر NanoTorrent بنا ہے، انہیں ان کی تازہ ترین درستیوں کے ساتھ اپ ڈیٹ کیا گیا ہے۔
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

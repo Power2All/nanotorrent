@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: ລາວ (ລາວ) - Partner Center: Lao (Laos) (lo-LA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent ເປັນສະບັບ Rust ຂອງ PicoTorrent ໂດຍ Vik
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-ສະບັບ 0.4.3
+ສະບັບ 0.4.4
 
-- ລິ້ງແມ່ເຫຼັກບໍ່ຕ້ອງລໍຖ້າລາຍລະອຽດອີກຕໍ່ໄປ: ໜ້າຕ່າງເພີ່ມຈະເປີດທັນທີ ແລະ ແມ່ເຫຼັກທີ່ເພີ່ມກ່ອນລາຍລະອຽດມາຮອດຈະສະແດງເປັນ “ກຳລັງດາວໂຫຼດເມຕາດາຕາ” ໃນລາຍການຈົນກວ່າມັນຈະມາຮອດ ຄືກັບ qBittorrent.
+- ການປ່ຽນແປງພາຍໃນ: ໄລບຣາຣີທີ່ NanoTorrent ສ້າງຂຶ້ນເທິງນັ້ນ ໄດ້ຖືກອັບເດດພ້ອມການແກ້ໄຂລ່າສຸດ.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

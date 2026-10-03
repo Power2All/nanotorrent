@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Italiano (Italia) - Partner Center: Italian (Italy) (it-IT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent è un port in Rust di PicoTorrent, di Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versione 0.4.3
+Versione 0.4.4
 
-- I link magnet non aspettano più i loro dettagli: la finestra Aggiungi si apre subito, e un magnet aggiunto prima dell’arrivo dei dettagli compare nell’elenco come «Download metadati» finché non arrivano, come in qBittorrent.
+- Sotto il cofano: le librerie su cui si basa NanoTorrent sono state aggiornate con le loro ultime correzioni.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

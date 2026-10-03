@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: 日本語 (日本) - Partner Center: Japanese (Japan) (ja-JP)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent は Viktor Elofsson 氏による PicoTorrent の Rust 移植版で�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-バージョン 0.4.3
+バージョン 0.4.4
 
-- マグネットリンクは詳細の取得を待たなくなりました。追加ダイアログはすぐに開き、詳細が届く前に追加したマグネットは、届くまで一覧に「メタデータをダウンロード」と表示されます（qBittorrent と同様）。
+- 内部の改善: NanoTorrent が使用しているライブラリを、最新の修正を含むバージョンに更新しました。
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

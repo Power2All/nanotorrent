@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-0.4.3-s verzió
+0.4.4-s verzió
 
-- A magnet linkek már nem várnak a részleteikre: a Hozzáadás ablak azonnal megnyílik, és a részletek megérkezése előtt hozzáadott magnet „Metaadatok letöltése” állapotban látszik a listában, amíg meg nem érkeznek, ahogy a qBittorrentben.
+- A motorháztető alatt: frissültek a könyvtárak, amelyekre a NanoTorrent épül, a legújabb javításaikkal együtt.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

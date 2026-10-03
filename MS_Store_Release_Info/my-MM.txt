@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: မြန်မာ (မြန်မာ) - Partner Center: Burmese (Myanmar) (my-MM)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent သည် Viktor Elofsson ၏ PicoTorrent ၏ Rust ဗားရှ�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-ဗားရှင်း 0.4.3
+ဗားရှင်း 0.4.4
 
-- မက်ဂနက်လင့်ခ်များသည် ၎င်းတို့၏ အသေးစိတ်ကို မစောင့်တော့ပါ။ ထည့်ရန် ဝင်းဒိုး ချက်ချင်းပွင့်ပြီး အသေးစိတ် မရောက်မီ ထည့်ထားသော မက်ဂနက်ကို ရောက်လာသည်အထိ စာရင်းတွင် “မက်တာဒေတာ ဒေါင်းလုဒ်လုပ်နေသည်” ဟု ပြပါသည် - qBittorrent ကဲ့သို့ပင်။
+- အတွင်းပိုင်းပြောင်းလဲမှု- NanoTorrent အခြေခံထားသော library များကို ၎င်းတို့၏ နောက်ဆုံးပြင်ဆင်ချက်များဖြင့် အပ်ဒိတ်လုပ်ထားသည်။
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

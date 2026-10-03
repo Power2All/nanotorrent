@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Монгол (Монгол Улс) - Partner Center: Mongolian (Mongolia) (mn-MN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent бол Viktor Elofsson-ийн PicoTorrent-ийн Rust хувилба
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Хувилбар 0.4.3
+Хувилбар 0.4.4
 
-- Соронзон холбоосууд дэлгэрэнгүй мэдээллээ хүлээхээ больсон: Нэмэх цонх шууд нээгдэж, мэдээлэл ирэхээс өмнө нэмсэн соронзон холбоос мэдээлэл ирэх хүртэл жагсаалтад «Мета өгөгдөл татаж байна» гэж харагдана, qBittorrent-тэй адил.
+- Дотоод өөрчлөлт: NanoTorrent-ийн суурь болсон сангуудыг хамгийн сүүлийн засваруудтай нь шинэчиллээ.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

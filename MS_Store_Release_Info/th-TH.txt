@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: ไทย (ไทย) - Partner Center: Thai (Thailand) (th-TH)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent เป็นรุ่น Rust ของ PicoTorrent โดย Viktor
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-เวอร์ชัน 0.4.3
+เวอร์ชัน 0.4.4
 
-- ลิงก์แม็กเน็ตไม่ต้องรอรายละเอียดอีกต่อไป หน้าต่างเพิ่มจะเปิดขึ้นทันที และแม็กเน็ตที่เพิ่มก่อนรายละเอียดมาถึงจะแสดงเป็น “กำลังดาวน์โหลดข้อมูลเมทา” ในรายการจนกว่ารายละเอียดจะมาถึง เหมือนใน qBittorrent
+- การเปลี่ยนแปลงภายใน: อัปเดตไลบรารีที่ NanoTorrent ใช้เป็นพื้นฐาน พร้อมการแก้ไขล่าสุด
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

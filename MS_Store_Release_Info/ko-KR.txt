@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: 한국어 (대한민국) - Partner Center: Korean (Korea) (ko-KR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent은 Viktor Elofsson의 PicoTorrent을 Rust로 이식한 것입니다.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-버전 0.4.3
+버전 0.4.4
 
-- 마그넷 링크가 더 이상 세부 정보를 기다리지 않습니다. 추가 대화 상자가 바로 열리며, 세부 정보가 도착하기 전에 추가한 마그넷은 도착할 때까지 목록에 “메타데이터 다운로드”(으)로 표시됩니다. qBittorrent와 같은 방식입니다.
+- 내부 개선: NanoTorrent의 기반이 되는 라이브러리를 최신 수정 사항이 반영된 버전으로 업데이트했습니다.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

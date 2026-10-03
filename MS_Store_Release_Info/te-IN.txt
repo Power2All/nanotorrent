@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: తెలుగు (భారతదేశం) - Partner Center: Telugu (India) (te-IN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent అనేది Viktor Elofsson యొక్క PicoTorrent కు R
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-విడుదల 0.4.3
+విడుదల 0.4.4
 
-- మాగ్నెట్ లింక్‌లు ఇకపై వాటి వివరాల కోసం వేచి ఉండవు: జోడించు డైలాగ్ వెంటనే తెరుచుకుంటుంది, వివరాలు రాకముందే జోడించిన మాగ్నెట్ అవి వచ్చే వరకు జాబితాలో “మెటాడేటా డౌన్‌లోడ్ అవుతోంది”గా కనిపిస్తుంది, qBittorrent లాగానే.
+- అంతర్గత మార్పులు: NanoTorrent ఆధారపడిన లైబ్రరీలను వాటి తాజా పరిష్కారాలతో నవీకరించాము.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

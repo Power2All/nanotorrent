@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: বাংলা (বাংলাদেশ) - Partner Center: Bengali (Bangladesh) (bn-BD)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent হলো Viktor Elofsson-এর PicoTorrent-এর Rust সংস�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-সংস্করণ 0.4.3
+সংস্করণ 0.4.4
 
-- ম্যাগনেট লিঙ্ক আর বিস্তারিতের জন্য অপেক্ষা করে না: যোগ করার ডায়ালগ সঙ্গে সঙ্গে খোলে, আর বিস্তারিত আসার আগে যোগ করা ম্যাগনেট তা না আসা পর্যন্ত তালিকায় “মেটাডেটা ডাউনলোড হচ্ছে” হিসেবে দেখায়, qBittorrent-এর মতো।
+- ভেতরের পরিবর্তন: NanoTorrent যে লাইব্রেরিগুলোর ওপর তৈরি, সেগুলো সর্বশেষ সংশোধনসহ হালনাগাদ করা হয়েছে।
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

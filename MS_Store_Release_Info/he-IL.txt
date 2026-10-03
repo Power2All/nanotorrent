@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: עברית (ישראל) - Partner Center: Hebrew (Israel) (he-IL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ Store listings > he-IL. The character limits shown are Microsoft's.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-גרסה 0.4.3
+גרסה 0.4.4
 
-- קישורי מגנט כבר לא ממתינים לפרטים שלהם: חלון ההוספה נפתח מיד, ומגנט שנוסף לפני שהפרטים הגיעו מוצג ברשימה כ„מוריד metadata” עד שהם מגיעים, כמו ב־qBittorrent.
+- מאחורי הקלעים: הספריות ש־NanoTorrent בנוי עליהן עודכנו עם התיקונים האחרונים שלהן.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

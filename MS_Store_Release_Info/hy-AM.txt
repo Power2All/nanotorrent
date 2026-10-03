@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Հայերեն (Հայաստան) - Partner Center: Armenian (Armenia) (hy-AM)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent-ը Վիկտոր Էլոֆսոնի PicoTorrent-ի Rust տարբերա�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Տարբերակ 0.4.3
+Տարբերակ 0.4.4
 
-- Մագնիսային հղումներն այլևս չեն սպասում իրենց մանրամասներին. Ավելացնելու պատուհանը բացվում է անմիջապես, իսկ մանրամասներից առաջ ավելացված մագնիսը ցանկում ցուցադրվում է որպես «Մետատվյալների ներբեռնումը», մինչև դրանք գան, ինչպես qBittorrent-ում։
+- Ներքին փոփոխություններ՝ NanoTorrent-ի հիմքում ընկած գրադարանները թարմացվել են իրենց վերջին ուղղումներով։
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

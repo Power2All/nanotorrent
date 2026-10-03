@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: ខ្មែរ (កម្ពុជា) - Partner Center: Khmer (Cambodia) (km-KH)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent គឺជាកំណែ Rust នៃ PicoTorrent ដោយ Viktor El
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-កំណែ 0.4.3
+កំណែ 0.4.4
 
-- តំណម៉ាញេទិកលែងរង់ចាំព័ត៌មានលម្អិតទៀតហើយ៖ ប្រអប់បន្ថែមបើកភ្លាមៗ ហើយម៉ាញេទិកដែលបានបន្ថែមមុនពេលព័ត៌មានលម្អិតមកដល់ នឹងបង្ហាញជា “កំពុងទាញយកទិន្នន័យមេតា” ក្នុងបញ្ជីរហូតដល់វាមកដល់ ដូចក្នុង qBittorrent។
+- ការកែប្រែខាងក្នុង៖ បណ្ណាល័យដែល NanoTorrent ត្រូវបានបង្កើតឡើងលើ ត្រូវបានធ្វើបច្ចុប្បន្នភាពជាមួយការកែតម្រូវចុងក្រោយរបស់វា។
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

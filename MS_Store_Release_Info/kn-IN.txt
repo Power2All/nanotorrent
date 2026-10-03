@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: ಕನ್ನಡ (ಭಾರತ) - Partner Center: Kannada (India) (kn-IN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent ಎಂಬುದು Viktor Elofsson ರ PicoTorrent ನ Rust ರೂ�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-ಆವೃತ್ತಿ 0.4.3
+ಆವೃತ್ತಿ 0.4.4
 
-- ಮ್ಯಾಗ್ನೆಟ್ ಲಿಂಕ್‌ಗಳು ಇನ್ನು ತಮ್ಮ ವಿವರಗಳಿಗಾಗಿ ಕಾಯುವುದಿಲ್ಲ: ಸೇರಿಸು ಸಂವಾದ ತಕ್ಷಣ ತೆರೆಯುತ್ತದೆ, ಮತ್ತು ವಿವರಗಳು ಬರುವ ಮೊದಲು ಸೇರಿಸಿದ ಮ್ಯಾಗ್ನೆಟ್ ಅವು ಬರುವವರೆಗೆ ಪಟ್ಟಿಯಲ್ಲಿ “ಮೆಟಾಡೇಟಾ ಇಳಿಯುತ್ತಿದೆ” ಎಂದು ತೋರಿಸುತ್ತದೆ, qBittorrent ನಂತೆ.
+- ಒಳಗಿನ ಬದಲಾವಣೆಗಳು: NanoTorrent ಆಧರಿಸಿರುವ ಲೈಬ್ರರಿಗಳನ್ನು ಅವುಗಳ ಇತ್ತೀಚಿನ ಸರಿಪಡಿಕೆಗಳೊಂದಿಗೆ ನವೀಕರಿಸಲಾಗಿದೆ.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

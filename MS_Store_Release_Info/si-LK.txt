@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: සිංහල (ශ්‍රී ලංකාව) - Partner Center: Sinhala (Sri Lanka) (si-LK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent යනු Viktor Elofsson විසින් නිර්මාණ�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-අනුවාදය 0.4.3
+අනුවාදය 0.4.4
 
-- චුම්බක සබැඳි තවදුරටත් ඒවායේ විස්තර එනතුරු නොසිටී: එක් කිරීමේ කවුළුව වහාම විවෘත වන අතර, විස්තර පැමිණීමට පෙර එක් කළ චුම්බකය ඒවා එනතුරු ලැයිස්තුවේ “පාරදත්ත බාගනිමින්” ලෙස පෙන්වයි, qBittorrent හි මෙන්.
+- අභ්‍යන්තර වෙනස්කම්: NanoTorrent ගොඩනගා ඇති පුස්තකාල ඒවායේ නවතම නිවැරදි කිරීම් සමඟ යාවත්කාලීන කර ඇත.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

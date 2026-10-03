@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: हिन्दी (भारत) - Partner Center: Hindi (India) (hi-IN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent, Viktor Elofsson के PicoTorrent का Rust में रूप�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-संस्करण 0.4.3
+संस्करण 0.4.4
 
-- मैग्नेट लिंक अब अपने विवरण की प्रतीक्षा नहीं करते: जोड़ें संवाद तुरंत खुलता है, और विवरण आने से पहले जोड़ा गया मैग्नेट उनके आने तक सूची में “मेटाडेटा डाउनलोड हो रहा है” के रूप में दिखता है, qBittorrent की तरह।
+- अंदरूनी बदलाव: जिन लाइब्रेरी पर NanoTorrent बना है, उन्हें उनके नवीनतम सुधारों के साथ अपडेट किया गया है।
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: ਪੰਜਾਬੀ (ਭਾਰਤ) - Partner Center: Punjabi (India) (pa-IN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent, Viktor Elofsson ਦੇ PicoTorrent ਦਾ Rust ਰੂਪ ਹੈ।
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-ਰੂਪ 0.4.3
+ਰੂਪ 0.4.4
 
-- ਮੈਗਨੈੱਟ ਲਿੰਕ ਹੁਣ ਆਪਣੇ ਵੇਰਵਿਆਂ ਦੀ ਉਡੀਕ ਨਹੀਂ ਕਰਦੇ: ਜੋੜੋ ਡਾਇਲਾਗ ਤੁਰੰਤ ਖੁੱਲ੍ਹਦਾ ਹੈ, ਅਤੇ ਵੇਰਵੇ ਆਉਣ ਤੋਂ ਪਹਿਲਾਂ ਜੋੜਿਆ ਮੈਗਨੈੱਟ ਉਨ੍ਹਾਂ ਦੇ ਆਉਣ ਤੱਕ ਸੂਚੀ ਵਿੱਚ “ਮੈਟਾਡਾਟਾ ਡਾਊਨਲੋਡ ਹੋ ਰਿਹਾ ਹੈ” ਵਜੋਂ ਦਿਖਦਾ ਹੈ, qBittorrent ਵਾਂਗ।
+- ਅੰਦਰੂਨੀ ਬਦਲਾਅ: NanoTorrent ਜਿਨ੍ਹਾਂ ਲਾਇਬ੍ਰੇਰੀਆਂ ʼਤੇ ਬਣਿਆ ਹੈ, ਉਹਨਾਂ ਨੂੰ ਉਹਨਾਂ ਦੇ ਤਾਜ਼ਾ ਸੁਧਾਰਾਂ ਨਾਲ ਅੱਪਡੇਟ ਕੀਤਾ ਗਿਆ ਹੈ।
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Oʻzbekcha (Oʻzbekiston) - Partner Center: Uzbek (Uzbekistan) (uz-Latn-UZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent — Viktor Elofsson yozgan PicoTorrent dasturining Rust versiyasi.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiya 0.4.3
+Versiya 0.4.4
 
-- Magnit havolalar endi o‘z tafsilotlarini kutmaydi: Qo‘shish oynasi darhol ochiladi, tafsilotlar kelmasdan qo‘shilgan magnit esa ular kelguncha ro‘yxatda “Metamaʼlumotlar yuklab olinmoqda” sifatida ko‘rinadi - xuddi qBittorrent’dagidek.
+- Ichki o‘zgarishlar: NanoTorrent asoslangan kutubxonalar so‘nggi tuzatishlari bilan yangilandi.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

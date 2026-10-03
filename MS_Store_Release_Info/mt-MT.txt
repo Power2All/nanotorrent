@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Malti (Malta) - Partner Center: Maltese (Malta) (mt-MT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,9 @@ NanoTorrent huwa port bir-Rust ta' PicoTorrent ta' Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verżjoni 0.4.3
+Verżjoni 0.4.4
 
-- Il-links magnet m’għadhomx jistennew id-dettalji tagħhom: it-tieqa Żid tinfetaħ mill-ewwel, u magnet miżjud qabel ma jaslu d-dettalji jidher bħala “Qed titniżżel il-metadata” fil-lista sakemm jaslu, bħal f’qBittorrent.
+- Taħt il-kappa: il-libreriji li fuqhom hu mibni NanoTorrent ġew aġġornati bl-aħħar korrezzjonijiet tagħhom.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
