@@ -368,6 +368,16 @@ pub struct AddTorrentOptions {
     /// the caller is what makes it work for a magnet, whose name nobody knows
     /// until the metadata arrives.
     pub output_folder_subfolder: bool,
+
+    /// NanoTorrent: with `paused`, check the data now anyway rather than when
+    /// the torrent is next started.
+    ///
+    /// A torrent added paused does not open its files (patch 0016), which is
+    /// right for a session restore and wrong for a re-add someone asked for -
+    /// a forced recheck, a new location, a finished move - whose whole point
+    /// is to find out what is on disk. Without this a paused torrent that was
+    /// rechecked showed 0% and stayed there until it was started.
+    pub verify_paused: bool,
 }
 
 pub struct ListOnlyResponse {
@@ -1687,8 +1697,11 @@ impl Session {
             // including ones whose data had been deleted or moved to another
             // drive, which then failed their check against the empty files that
             // had just been made for them and lost their progress.
+            //
+            // Unless the caller asked for the check now (`verify_paused`).
+            let defer_storage = opts.paused && !opts.verify_paused;
             let storage = self.spawner.block_in_place(|| {
-                if opts.paused {
+                if defer_storage {
                     minfo.storage_factory.create(&minfo, &metadata)
                 } else {
                     minfo.storage_factory.create_and_init(&minfo, &metadata)
@@ -1700,7 +1713,7 @@ impl Session {
                 only_files.clone(),
                 storage,
                 false,
-                opts.paused,
+                defer_storage,
             ));
             let handle = Arc::new(ManagedTorrent {
                 locked: RwLock::new(ManagedTorrentLocked {

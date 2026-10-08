@@ -51,7 +51,7 @@ use crate::bittorrent::torrentstatus::{State, TorrentStatus};
 use crate::core::configuration::Configuration;
 use crate::core::environment::Environment;
 
-pub use auth::Credentials;
+pub use auth::{Credentials, Limits};
 
 /// How the listener is secured.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,22 +69,9 @@ pub struct WebConfig {
     pub username: String,
     pub password_hash: String,
     pub tls: TlsMode,
-    pub advanced: Advanced,
+    pub advanced: Limits,
 }
 
-/// The actix knobs behind the Preferences "Advanced" toggle.
-///
-/// These used to be literals in `build`. They are configurable because the
-/// right value depends on where the server sits - a slow link needs a longer
-/// request timeout than the slowloris guard wants to allow, and a machine
-/// serving one browser needs nothing like the connection ceiling a shared one
-/// does. The defaults are the old literals, so leaving them alone changes
-/// nothing.
-///
-/// Every field is clamped by `Advanced::load`, never taken raw: a zero worker
-/// count or a zero connection limit is a server that binds and then answers
-/// nothing, which looks like a crash and is far harder to diagnose than a
-/// value that quietly refused to apply.
 /// Request body ceiling, in megabytes.
 ///
 /// Actix's default is 2 KB, which rejects any real `.torrent` upload - one with
@@ -92,59 +79,33 @@ pub struct WebConfig {
 /// unbounded body is free memory for anyone holding the password.
 const MAX_BODY_MB: usize = 8;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Advanced {
-    /// Failed logins from one address that trip the lockout. Zero disables it.
-    pub auth_max_failures: u32,
-    /// Seconds over which those failures are counted.
-    pub auth_window: u64,
-    /// Seconds an address is refused once it has tripped.
-    pub auth_block: u64,
-}
-
-impl Default for Advanced {
-    fn default() -> Self {
-        Advanced {
-            // Five tries a minute, then an hour out. Deliberately strict: this
-            // guards one password on a machine its owner can always reach by
-            // other means, so the cost of being wrong is small and the cost of
-            // being too permissive is someone else's.
-            auth_max_failures: 5,
-            auth_window: 60,
-            auth_block: 3600,
-        }
-    }
-}
-
-impl Advanced {
-    /// Read the tuning settings, clamping each into a range that still yields a
-    /// working server.
+impl Limits {
+    /// Read the lockout settings, clamping each into a range that still yields
+    /// a working lockout.
     ///
     /// Out-of-range is clamped rather than rejected, and missing falls back to
     /// the default: this runs on the startup path, and no value typed into a
     /// preferences field should be able to stop the interface coming up.
-    pub fn load(cfg: &Configuration) -> Advanced {
-        let d = Advanced::default();
-        let secs = |key: &str, lo: u64, hi: u64, fallback: u64| -> u64 {
-            cfg.get_int(key)
-                .map_or(fallback, |v| (v.max(0) as u64).clamp(lo, hi))
-        };
-        let count = |key: &str, lo: usize, hi: usize, fallback: usize| -> usize {
-            cfg.get_int(key)
-                .map_or(fallback, |v| (v.max(0) as usize).clamp(lo, hi))
+    pub fn load(cfg: &Configuration) -> Limits {
+        let d = Limits::default();
+        let secs = |key: &str, lo: u64, hi: u64, fallback: Duration| -> Duration {
+            cfg.get_int(key).map_or(fallback, |v| {
+                Duration::from_secs((v.max(0) as u64).clamp(lo, hi))
+            })
         };
 
-        Advanced {
+        Limits {
             // Zero is meaningful: it switches the lockout off. Anything above
             // it is clamped to something a person could plausibly mean.
-            auth_max_failures: count("webui.auth_max_failures", 0, 1000, d.auth_max_failures as usize)
-                as u32,
+            max_failures: cfg
+                .get_int("webui.auth_max_failures")
+                .map_or(d.max_failures, |v| v.clamp(0, 1000) as u32),
             // At least a second of window - a zero window would count every
             // failure in its own window and never trip.
-            auth_window: secs("webui.auth_window", 1, 86400, d.auth_window),
+            window: secs("webui.auth_window", 1, 86400, d.window),
             // A week's ceiling. No "forever": a lockout the owner cannot wait
             // out is a way to lock yourself out of your own client.
-            auth_block: secs("webui.auth_block", 1, 604_800, d.auth_block),
+            block: secs("webui.auth_block", 1, 604_800, d.block),
         }
     }
 }
@@ -184,7 +145,7 @@ impl WebConfig {
                 .unwrap_or_else(|| String::from("nanotorrent")),
             password_hash: cfg.get_string("webui.password_hash").unwrap_or_default(),
             tls,
-            advanced: Advanced::load(cfg),
+            advanced: Limits::load(cfg),
         }
     }
 
@@ -213,6 +174,10 @@ struct AppState {
     /// Capability tokens for the streaming endpoint - the one way in that is
     /// not the web interface's password. See [`streamtoken`].
     stream_tokens: Arc<streamtoken::StreamTokens>,
+    /// Whether this server speaks TLS. Kept here rather than read from the
+    /// request, because the HTTPS listener is built without actix's own TLS
+    /// wiring (see [`build`]) and so the request's `AppConfig` cannot say.
+    https: bool,
 }
 
 impl AppState {
@@ -277,15 +242,11 @@ fn state_name(state: State) -> &'static str {
         State::Unknown => "unknown",
         State::Error => "error",
         State::CheckingFiles => "checking_files",
-        State::CheckingResumeData => "checking_resume_data",
         State::Downloading => "downloading",
-        State::DownloadingChecking => "downloading_checking",
         State::DownloadingMetadata => "downloading_metadata",
         State::DownloadingPaused => "downloading_paused",
-        State::DownloadingQueued => "downloading_queued",
         State::Uploading => "uploading",
         State::UploadingPaused => "uploading_paused",
-        State::UploadingQueued => "uploading_queued",
     }
 }
 
@@ -540,15 +501,9 @@ fn session_info(state: &AppState, torrents: usize) -> SessionInfo {
 
 /// Every torrent as the API shows it, with its label's name filled in.
 fn torrent_rows(state: &AppState) -> Vec<TorrentDto> {
-    let labels: HashMap<i32, String> = state
-        .cfg
-        .get_labels()
-        .into_iter()
-        .map(|l| (l.id, l.name))
-        .collect();
     state
         .session
-        .torrents(&labels)
+        .torrents(&state.session.label_names())
         .into_iter()
         .map(TorrentDto::from)
         .collect()
@@ -670,18 +625,27 @@ struct AddRequest {
     only_files: Option<Vec<usize>>,
 }
 
-/// One torrent, or a batch of them.
+/// One torrent, or a batch of them - the body of `/add` and `/inspect`.
 ///
 /// Untagged so the original single-object body still works and a JSON array is
 /// simply the new form. A separate endpoint or a version bump would be a lot of
 /// ceremony for "the same thing, n times".
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum AddBody {
-    // Boxed: AddRequest carries a base64 torrent, so the Many variant would
+enum OneOrMany<T> {
+    // Boxed: a request carries a base64 torrent, so the Many variant would
     // otherwise be far smaller than One and clippy rightly objects.
-    One(Box<AddRequest>),
-    Many(Vec<AddRequest>),
+    One(Box<T>),
+    Many(Vec<T>),
+}
+
+impl<T> OneOrMany<T> {
+    fn into_vec(self) -> Vec<T> {
+        match self {
+            OneOrMany::One(one) => vec![*one],
+            OneOrMany::Many(many) => many,
+        }
+    }
 }
 
 /// Validate one request and turn it into something the session can add.
@@ -742,14 +706,6 @@ struct Inspected {
     files: Vec<InspectedFile>,
 }
 
-/// One or many, matching [`AddBody`] so a batch is one request.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum InspectBody {
-    One(Box<InspectRequest>),
-    Many(Vec<InspectRequest>),
-}
-
 /// `POST /api/torrents/inspect` - read `.torrent` files without adding them.
 ///
 /// This is what lets the web remote show the same name, size and file tree the
@@ -761,11 +717,8 @@ enum InspectBody {
 /// Adds nothing and touches no session state; it is a pure read of the bytes
 /// posted to it. Magnets are not accepted: there is nothing to inspect until
 /// their metadata resolves, which is why they skip this step entirely.
-async fn h_inspect(body: web::Json<InspectBody>) -> actix_web::Result<impl Responder> {
-    let reqs = match body.into_inner() {
-        InspectBody::One(r) => vec![*r],
-        InspectBody::Many(r) => r,
-    };
+async fn h_inspect(body: web::Json<OneOrMany<InspectRequest>>) -> actix_web::Result<impl Responder> {
+    let reqs = body.into_inner().into_vec();
     if reqs.is_empty() {
         return Err(ErrorBadRequest("no torrents given"));
     }
@@ -816,12 +769,9 @@ async fn h_inspect(body: web::Json<InspectBody>) -> actix_web::Result<impl Respo
 /// reported as failed. Nothing is partially applied.
 async fn h_add(
     state: web::Data<AppState>,
-    body: web::Json<AddBody>,
+    body: web::Json<OneOrMany<AddRequest>>,
 ) -> actix_web::Result<impl Responder> {
-    let mut reqs = match body.into_inner() {
-        AddBody::One(req) => vec![*req],
-        AddBody::Many(reqs) => reqs,
-    };
+    let mut reqs = body.into_inner().into_vec();
     if reqs.is_empty() {
         return Err(ErrorBadRequest("no torrents given"));
     }
@@ -858,6 +808,25 @@ async fn h_add(
         "status": "accepted",
         "count": count,
     })))
+}
+
+/// Run `op` for a torrent that exists and send what it returns as JSON, or
+/// 404 for a hash that is not in the session. The read-side twin of
+/// [`with_torrent`], on the blocking pool for the same reason.
+async fn torrent_json<T, F>(
+    state: &web::Data<AppState>,
+    hash: String,
+    op: F,
+) -> actix_web::Result<HttpResponse>
+where
+    T: Serialize + Send + 'static,
+    F: FnOnce(&AppState, &str) -> T + Send + 'static,
+{
+    let st = state.clone();
+    let out = web::block(move || st.session.exists(&hash).then(|| op(&st, &hash)))
+        .await?
+        .ok_or_else(|| ErrorNotFound("no torrent with that info hash"))?;
+    Ok(HttpResponse::Ok().json(out))
 }
 
 /// Run `op` against a torrent, 404ing if that hash is not in the session.
@@ -1091,9 +1060,10 @@ async fn h_playlist(
 
     // The client's own view of how it reached us. Host is client-supplied, but
     // this URL is going straight back to that same client, so a spoofed one
-    // only misdirects the spoofer.
-    let info = req.connection_info();
-    let base = format!("{}://{}", info.scheme(), info.host());
+    // only misdirects the spoofer. The scheme is this server's own, not the
+    // request's: see `AppState::https`.
+    let scheme = if state.https { "https" } else { "http" };
+    let base = format!("{scheme}://{}", req.connection_info().host());
     let url = format!("{base}/api/torrents/{hash}/files/{index}/stream?token={token}");
 
     // Sanitised for the BODY as much as for the header. An .m3u is
@@ -1244,29 +1214,19 @@ async fn h_peers(
     state: web::Data<AppState>,
     hash: web::Path<String>,
 ) -> actix_web::Result<HttpResponse> {
-    let st = state.clone();
-    let hash = hash.into_inner();
-    let rows = web::block(move || {
-        if !st.session.exists(&hash) {
-            return None;
-        }
-        Some(
-            st.session
-                .peers(&hash)
-                .into_iter()
-                .map(|p| PeerRow {
-                    addr: p.addr,
-                    state: p.state,
-                    fetched_bytes: p.fetched_bytes,
-                    pieces: p.pieces,
-                })
-                .collect::<Vec<_>>(),
-        )
+    torrent_json(&state, hash.into_inner(), |st, hash| {
+        st.session
+            .peers(hash)
+            .into_iter()
+            .map(|p| PeerRow {
+                addr: p.addr,
+                state: p.state,
+                fetched_bytes: p.fetched_bytes,
+                pieces: p.pieces,
+            })
+            .collect::<Vec<_>>()
     })
-    .await?
-    .ok_or_else(|| ErrorNotFound("no torrent with that info hash"))?;
-
-    Ok(HttpResponse::Ok().json(rows))
+    .await
 }
 
 /// `GET /api/torrents/{hash}/magnet` - a magnet link for a torrent already here.
@@ -1281,9 +1241,7 @@ async fn h_magnet(
     let hash = hash.into_inner();
     let uri = web::block(move || {
         st.session
-            .torrents(&std::collections::HashMap::new())
-            .into_iter()
-            .find(|t| t.info_hash == hash)
+            .torrent(&hash)
             .map(|t| st.session.magnet_uri(&hash, &t.name))
     })
     .await?
@@ -1297,36 +1255,27 @@ async fn h_files(
     state: web::Data<AppState>,
     hash: web::Path<String>,
 ) -> actix_web::Result<HttpResponse> {
-    let st = state.clone();
-    let hash = hash.into_inner();
-    let rows = web::block(move || {
-        if !st.session.exists(&hash) {
-            return None;
-        }
-        let stored = st.session.file_priorities(&hash);
-        Some(
-            st.session
-                .files(&hash)
-                .into_iter()
-                .enumerate()
-                .map(|(index, f)| FileRow {
-                    index,
-                    name: f.name,
-                    length: f.length,
-                    progress: f.progress,
-                    // Absent means nobody has touched it, which is Normal -
-                    // only rows that differ are stored.
-                    priority: stored
-                        .get(&index)
-                        .copied()
-                        .unwrap_or(crate::bittorrent::session::PRIORITY_NORMAL),
-                })
-                .collect::<Vec<_>>(),
-        )
+    torrent_json(&state, hash.into_inner(), |st, hash| {
+        let stored = st.session.file_priorities(hash);
+        st.session
+            .files(hash)
+            .into_iter()
+            .enumerate()
+            .map(|(index, f)| FileRow {
+                index,
+                name: f.name,
+                length: f.length,
+                progress: f.progress,
+                // Absent means nobody has touched it, which is Normal - only
+                // rows that differ are stored.
+                priority: stored
+                    .get(&index)
+                    .copied()
+                    .unwrap_or(crate::bittorrent::session::PRIORITY_NORMAL),
+            })
+            .collect::<Vec<_>>()
     })
-    .await?
-    .ok_or_else(|| ErrorNotFound("no torrent with that info hash"))?;
-    Ok(HttpResponse::Ok().json(rows))
+    .await
 }
 
 #[derive(Deserialize)]
@@ -1371,35 +1320,26 @@ async fn h_trackers(
     hash: web::Path<String>,
 ) -> actix_web::Result<HttpResponse> {
     use crate::bittorrent::session::TrackerRowKind;
-    let st = state.clone();
-    let hash = hash.into_inner();
-    let rows = web::block(move || {
-        if !st.session.exists(&hash) {
-            return None;
-        }
+    torrent_json(&state, hash.into_inner(), |st, hash| {
         let tr = st.translator();
-        Some(
-            st.session
-                .tracker_rows(&hash, &tr)
-                .into_iter()
-                .map(|r| TrackerRowJson {
-                    kind: match r.kind {
-                        TrackerRowKind::Source => "source",
-                        TrackerRowKind::Tier => "tier",
-                        TrackerRowKind::Tracker => "tracker",
-                    },
-                    label: r.label,
-                    status: r.status,
-                    seeders: r.seeders,
-                    leechers: r.leechers,
-                    fails: r.fails,
-                })
-                .collect::<Vec<_>>(),
-        )
+        st.session
+            .tracker_rows(hash, &tr)
+            .into_iter()
+            .map(|r| TrackerRowJson {
+                kind: match r.kind {
+                    TrackerRowKind::Source => "source",
+                    TrackerRowKind::Tier => "tier",
+                    TrackerRowKind::Tracker => "tracker",
+                },
+                label: r.label,
+                status: r.status,
+                seeders: r.seeders,
+                leechers: r.leechers,
+                fails: r.fails,
+            })
+            .collect::<Vec<_>>()
     })
-    .await?
-    .ok_or_else(|| ErrorNotFound("no torrent with that info hash"))?;
-    Ok(HttpResponse::Ok().json(rows))
+    .await
 }
 
 #[derive(Deserialize)]
@@ -1499,23 +1439,16 @@ async fn h_tags(
     state: web::Data<AppState>,
     hash: web::Path<String>,
 ) -> actix_web::Result<HttpResponse> {
-    let st = state.clone();
-    let hash = hash.into_inner();
-    let out = web::block(move || {
-        if !st.session.exists(&hash) {
-            return None;
-        }
-        let (ratio_limit, seed_time_limit) = st.session.share_overrides(&hash);
-        Some(TagsResponse {
+    torrent_json(&state, hash.into_inner(), |st, hash| {
+        let (ratio_limit, seed_time_limit) = st.session.share_overrides(hash);
+        TagsResponse {
             all: st.cfg.get_tags().into_iter().map(|t| t.name).collect(),
-            on: st.cfg.tags_for(&hash).into_iter().map(|t| t.name).collect(),
+            on: st.cfg.tags_for(hash).into_iter().map(|t| t.name).collect(),
             ratio_limit,
             seed_time_limit,
-        })
+        }
     })
-    .await?
-    .ok_or_else(|| ErrorNotFound("no torrent with that info hash"))?;
-    Ok(HttpResponse::Ok().json(out))
+    .await
 }
 
 #[derive(Deserialize)]
@@ -1531,38 +1464,29 @@ async fn h_set_tags(
     hash: web::Path<String>,
     body: web::Json<TagsRequest>,
 ) -> actix_web::Result<HttpResponse> {
-    let wanted = body.into_inner().tags;
-    let st = state.clone();
-    let hash = hash.into_inner();
-    let found = web::block(move || {
-        if !st.session.exists(&hash) {
-            return false;
-        }
-        let wanted: Vec<String> = wanted
-            .into_iter()
-            .map(|t| t.trim().to_owned())
-            .filter(|t| !t.is_empty())
-            .collect();
+    let wanted: Vec<String> = body
+        .into_inner()
+        .tags
+        .into_iter()
+        .map(|t| t.trim().to_owned())
+        .filter(|t| !t.is_empty())
+        .collect();
+    let cfg = state.cfg.clone();
+    with_torrent(&state, hash.into_inner(), move |_, hash| {
         // Remove first, then add: a tag in both lists is left alone rather
         // than being taken off and put back.
-        for tag in st.cfg.tags_for(&hash) {
+        for tag in cfg.tags_for(hash) {
             if !wanted.contains(&tag.name) {
-                st.cfg.remove_tag(&hash, tag.id);
+                cfg.remove_tag(hash, tag.id);
             }
         }
         for name in &wanted {
-            if let Some(id) = st.cfg.ensure_tag(name) {
-                st.cfg.add_tag(&hash, id);
+            if let Some(id) = cfg.ensure_tag(name) {
+                cfg.add_tag(hash, id);
             }
         }
-        true
     })
-    .await?;
-    if found {
-        Ok(HttpResponse::NoContent().finish())
-    } else {
-        Err(ErrorNotFound("no torrent with that info hash"))
-    }
+    .await
 }
 
 #[derive(Deserialize)]
@@ -1685,14 +1609,7 @@ async fn h_move(
     hash: web::Path<String>,
     body: web::Json<MoveRequest>,
 ) -> actix_web::Result<HttpResponse> {
-    let path = body.into_inner().path;
-    if !std::path::Path::new(&path).is_absolute() {
-        return Err(ErrorBadRequest("path must be absolute"));
-    }
-    with_torrent(&state, hash.into_inner(), move |s, h| {
-        s.move_storage(h, &path)
-    })
-    .await
+    relocate(state, hash, body, Session::move_storage).await
 }
 
 /// `POST /api/torrents/{hash}/location` - point a torrent at data that has
@@ -1705,14 +1622,21 @@ async fn h_set_location(
     hash: web::Path<String>,
     body: web::Json<MoveRequest>,
 ) -> actix_web::Result<HttpResponse> {
+    relocate(state, hash, body, Session::set_location).await
+}
+
+/// The body both of those share: check the path, then hand it to `op`.
+async fn relocate(
+    state: web::Data<AppState>,
+    hash: web::Path<String>,
+    body: web::Json<MoveRequest>,
+    op: fn(&Session, &str, &str),
+) -> actix_web::Result<HttpResponse> {
     let path = body.into_inner().path;
     if !std::path::Path::new(&path).is_absolute() {
         return Err(ErrorBadRequest("path must be absolute"));
     }
-    with_torrent(&state, hash.into_inner(), move |s, h| {
-        s.set_location(h, &path)
-    })
-    .await
+    with_torrent(&state, hash.into_inner(), move |s, h| op(s, h, &path)).await
 }
 
 // --- settings ---------------------------------------------------------------
@@ -2235,7 +2159,7 @@ pub fn spawn(
     let addr = wc.socket_addr();
     let scheme = if tls_config.is_some() { "https" } else { "http" };
     // Cloned out of `wc` because the thread below outlives this scope.
-    let advanced = wc.advanced.clone();
+    let advanced = wc.advanced;
 
     std::thread::Builder::new()
         .name(String::from("nt-webui"))
@@ -2284,7 +2208,7 @@ fn build(
     env: Arc<Environment>,
     creds: Credentials,
     tls_config: Option<rustls::ServerConfig>,
-    advanced: Advanced,
+    advanced: Limits,
 ) -> Result<actix_web::dev::Server> {
     // Subscribed once for the lifetime of the server, not per request: a
     // per-request subscription would only ever see events raised while that
@@ -2303,20 +2227,19 @@ fn build(
         env,
         errors,
         stream_tokens: stream_tokens.clone(),
+        https: tls_config.is_some(),
     });
     let creds = web::Data::new(creds);
     // Built out here, not in the factory closure: the closure runs once per
     // worker, so constructing it there would give each worker its own counter
     // and multiply the real attempt limit by the worker count.
-    let attempts = web::Data::new(auth::Attempts::new(auth::Limits {
-        max_failures: advanced.auth_max_failures,
-        window: std::time::Duration::from_secs(advanced.auth_window),
-        block: std::time::Duration::from_secs(advanced.auth_block),
-    }));
+    let attempts = web::Data::new(auth::Attempts::new(advanced));
 
     let body_limit = MAX_BODY_MB * 1024 * 1024;
 
-    let server = HttpServer::new(move || {
+    // A factory rather than an App: each worker builds its own from it, and the
+    // HTTPS listener below needs one too.
+    let app = move || {
         App::new()
             .app_data(state.clone())
             .app_data(creds.clone())
@@ -2391,43 +2314,105 @@ fn build(
                     .route("/fs/list", web::get().to(h_fs_list))
                     .route("/fs/mkdir", web::post().to(h_fs_mkdir)),
             )
-    })
-    // Actix's defaults are tuned for a public server; these are for a personal
-    // client, and every one of them is a cheap bound on a misbehaving or
-    // hostile peer.
-    //
-    // Constants, not settings. They were settings for one release and nobody
-    // has a reason to move them: a worker count and a handshake rate are not
-    // decisions a person using a torrent client makes, and offering them cost
-    // a field in Preferences, a row in the web drawer, a CLI flag and a
-    // description in 76 languages each.
-    //
-    // client_request_timeout is actix's own default and is the slowloris
-    // guard - restated so it is visible rather than inherited silently.
-    .client_request_timeout(Duration::from_secs(5))
-    // Defaults to ZERO, i.e. disabled: a client that stops reading mid-response
-    // would otherwise hold its worker slot indefinitely.
-    .client_disconnect_timeout(Duration::from_secs(5))
-    .keep_alive(Duration::from_secs(30))
-    // 25600 per worker by default. A handful of browser tabs need double
-    // digits; this is the cheapest bound on connection flooding.
-    .max_connections(256)
-    // Caps TLS handshakes in flight. Handshakes are the expensive half, so
-    // this is what stops a flood costing far more CPU than bandwidth.
-    .max_connection_rate(64)
-    // One per core by default. This serves one person, not a load test.
-    .workers(2)
-    .shutdown_timeout(5);
-
-    let server = match tls_config {
-        Some(config) => server
-            .bind_rustls_0_23(addr, config)
-            .with_context(|| format!("cannot bind the web interface to {addr} (TLS)"))?,
-        None => server
-            .bind(addr)
-            .with_context(|| format!("cannot bind the web interface to {addr}"))?,
     };
 
+    let server = match tls_config {
+        None => HttpServer::new(app)
+            .client_request_timeout(CLIENT_REQUEST_TIMEOUT)
+            .client_disconnect_timeout(CLIENT_DISCONNECT_TIMEOUT)
+            .keep_alive(KEEP_ALIVE)
+            .max_connections(MAX_CONNECTIONS)
+            .workers(WORKERS)
+            .shutdown_timeout(SHUTDOWN_TIMEOUT_SECS)
+            .bind(addr)
+            .with_context(|| format!("cannot bind the web interface to {addr}"))?
+            .run(),
+        Some(config) => https_server(addr, config, app)?,
+    };
+    Ok(server)
+}
+
+// Actix's defaults are tuned for a public server; these are for a personal
+// client, and every one of them is a cheap bound on a misbehaving or hostile
+// peer.
+//
+// Constants, not settings. They were settings for one release and nobody has a
+// reason to move them: a worker count and a handshake rate are not decisions a
+// person using a torrent client makes, and offering them cost a field in
+// Preferences, a row in the web drawer, a CLI flag and a description in 76
+// languages each.
+
+/// The slowloris guard. Actix's own default, restated so it is visible rather
+/// than inherited silently.
+const CLIENT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// Actix defaults this to ZERO, i.e. disabled: a client that stops reading
+/// mid-response would otherwise hold its worker slot indefinitely.
+const CLIENT_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const KEEP_ALIVE: Duration = Duration::from_secs(30);
+/// 25600 per worker by default. A handful of browser tabs need double digits;
+/// this is the cheapest bound on connection flooding.
+const MAX_CONNECTIONS: usize = 256;
+/// TLS handshakes in flight. Handshakes are the expensive half, so this is what
+/// stops a flood costing far more CPU than bandwidth.
+const MAX_CONNECTION_RATE: usize = 64;
+/// One per core by default. This serves one person, not a load test.
+const WORKERS: usize = 2;
+const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+
+/// The HTTPS listener: the same app, the same bounds, and HTTP/1.1 only.
+///
+/// Built from actix's parts rather than with `HttpServer::bind_rustls_0_23`,
+/// and the reason is HTTP/2. actix-web's TLS support switches on its `http2`
+/// feature, which puts `h2` first in the ALPN list - so every browser spoke
+/// HTTP/2, through h2 0.3, which carries a pre-authentication denial of
+/// service (RUSTSEC-2026-0258) fixed only in h2 0.4. actix-http still requires
+/// 0.3. Without the feature, h2 is not in the build at all: the protocol is
+/// never offered, and the vulnerable code does not exist to be reached.
+///
+/// HTTP/1.1 costs nothing here. The interface is one person's remote; it
+/// makes a handful of requests and holds one event stream, which is what
+/// HTTP/1.1 keep-alive is for. Browsers pick it without being asked.
+///
+/// One thing the shortcut did that this does not: tell the request whether it
+/// arrived over TLS. `AppConfig` cannot be built outside actix-web, so the
+/// default (plain HTTP) is what handlers see - which is why the scheme they
+/// need comes from `AppState::https` instead.
+fn https_server<F, A>(
+    addr: &str,
+    config: rustls::ServerConfig,
+    app: F,
+) -> Result<actix_web::dev::Server>
+where
+    F: Fn() -> App<A> + Send + Clone + 'static,
+    A: actix_web::dev::ServiceFactory<
+            actix_web::dev::ServiceRequest,
+            Config = (),
+            Response = actix_web::dev::ServiceResponse,
+            Error = actix_web::Error,
+            InitError = (),
+        > + 'static,
+{
+    use actix_service::{IntoServiceFactory, ServiceFactoryExt, map_config};
+
+    // Global, exactly as `HttpServer::max_connection_rate` sets it.
+    actix_tls::accept::max_concurrent_tls_connect(MAX_CONNECTION_RATE);
+
+    let server = actix_server::Server::build()
+        .workers(WORKERS)
+        .max_concurrent_connections(MAX_CONNECTIONS)
+        .shutdown_timeout(SHUTDOWN_TIMEOUT_SECS)
+        .bind("nanotorrent-web", addr, move || {
+            let service = app()
+                .into_factory()
+                .map_err(|err: actix_web::Error| err.error_response());
+            actix_http::HttpService::build()
+                .keep_alive(KEEP_ALIVE)
+                .client_request_timeout(CLIENT_REQUEST_TIMEOUT)
+                .client_disconnect_timeout(CLIENT_DISCONNECT_TIMEOUT)
+                .finish(map_config(service, |_| actix_web::dev::AppConfig::default()))
+                .rustls_0_23(config.clone())
+        })
+        .with_context(|| format!("cannot bind the web interface to {addr} (TLS)"))?;
     Ok(server.run())
 }
 
@@ -2438,7 +2423,7 @@ mod tests {
     /// may produce a listener that binds and then answers nothing.
     ///
     /// Migration defaults are checked in the same test on purpose - a default
-    /// that disagrees with `Advanced::default` would mean the Preferences
+    /// that disagrees with `Limits::default` would mean the Preferences
     /// fields show one thing on a fresh install and the server does another.
     #[test]
     fn advanced_clamps_and_defaults_match_the_migration() {
@@ -2450,21 +2435,21 @@ mod tests {
         db.migrate().unwrap();
         let cfg = Configuration::new(db.clone());
 
-        assert_eq!(super::Advanced::load(&cfg), super::Advanced::default());
+        assert_eq!(super::Limits::load(&cfg), super::Limits::default());
 
         // Zero is legitimate for the failure count and only for that: it is how
         // the lockout is switched off. Negative reaches the same floor rather
         // than wrapping to a huge usize.
         cfg.set("webui.auth_max_failures", &0i64);
         cfg.set("webui.auth_window", &-5i64);
-        let adv = super::Advanced::load(&cfg);
-        assert_eq!(adv.auth_max_failures, 0, "zero switches the lockout off");
-        assert_eq!(adv.auth_window, 1, "but a zero window would never trip");
+        let adv = super::Limits::load(&cfg);
+        assert_eq!(adv.max_failures, 0, "zero switches the lockout off");
+        assert_eq!(adv.window, Duration::from_secs(1), "but a zero window would never trip");
 
         // Absurdly large is capped rather than accepted. A block nobody can
         // wait out is a way to lock yourself out of your own client.
         cfg.set("webui.auth_block", &10_000_000i64);
-        assert_eq!(super::Advanced::load(&cfg).auth_block, 604_800);
+        assert_eq!(super::Limits::load(&cfg).block, Duration::from_secs(604_800));
     }
 
     /// The web remote shows a file list only if inspection returns the same
@@ -2472,7 +2457,7 @@ mod tests {
     /// by that order, so a mismatch would untick the wrong file.
     #[test]
     fn inspect_reports_what_the_desktop_dialog_sees() {
-        use super::{InspectBody, InspectRequest};
+        use super::{InspectRequest, OneOrMany};
         use base64::Engine as _;
 
         // Minimal single-file v1 metainfo, same shape ui::torrentfile tests use.
@@ -2485,13 +2470,13 @@ mod tests {
         let encoded = base64::engine::general_purpose::STANDARD.encode(&t);
         let body = format!(r#"{{"torrent_file":"{encoded}"}}"#);
 
-        // Single object and array must both parse, as with AddBody.
+        // Single object and array must both parse, as with /add.
         assert!(matches!(
-            serde_json::from_str::<InspectBody>(&body).unwrap(),
-            InspectBody::One(_)
+            serde_json::from_str::<OneOrMany<InspectRequest>>(&body).unwrap(),
+            OneOrMany::One(_)
         ));
-        let many: InspectBody = serde_json::from_str(&format!("[{body},{body}]")).unwrap();
-        let InspectBody::Many(reqs) = many else {
+        let many: OneOrMany<InspectRequest> = serde_json::from_str(&format!("[{body},{body}]")).unwrap();
+        let OneOrMany::Many(reqs) = many else {
             panic!("array should parse as Many");
         };
         assert_eq!(reqs.len(), 2);
@@ -2523,21 +2508,21 @@ mod tests {
         assert!(crate::ui::torrentfile::parse(&bytes).is_err());
     }
 
-    /// The untagged AddBody must keep accepting the old single-object body
+    /// The untagged body must keep accepting the old single-object body
     /// while also taking an array - that back-compat is the whole reason it is
     /// untagged, and it is the kind of thing a serde attribute change breaks
     /// silently.
     #[test]
     fn add_body_takes_one_or_many() {
-        use super::{AddBody, add_source};
+        use super::{AddRequest, OneOrMany, add_source};
 
-        let one: AddBody = serde_json::from_str(r#"{"magnet":"magnet:?xt=1"}"#).unwrap();
-        assert!(matches!(one, AddBody::One(_)));
+        let one: OneOrMany<AddRequest> = serde_json::from_str(r#"{"magnet":"magnet:?xt=1"}"#).unwrap();
+        assert!(matches!(one, OneOrMany::One(_)));
 
-        let many: AddBody =
+        let many: OneOrMany<AddRequest> =
             serde_json::from_str(r#"[{"magnet":"magnet:?xt=1"},{"magnet":"magnet:?xt=2"}]"#)
                 .unwrap();
-        let AddBody::Many(reqs) = many else {
+        let OneOrMany::Many(reqs) = many else {
             panic!("array should parse as Many");
         };
         assert_eq!(reqs.len(), 2);
@@ -2546,15 +2531,15 @@ mod tests {
         assert!(reqs[0].start);
 
         // Validation is per entry, and rejects the same shapes it always has.
-        let mut bad = match serde_json::from_str::<AddBody>(r#"{"magnet":"http://x/y"}"#).unwrap() {
-            AddBody::One(r) => *r,
-            AddBody::Many(_) => unreachable!(),
+        let mut bad = match serde_json::from_str::<OneOrMany<AddRequest>>(r#"{"magnet":"http://x/y"}"#).unwrap() {
+            OneOrMany::One(r) => *r,
+            OneOrMany::Many(_) => unreachable!(),
         };
         assert!(add_source(&mut bad).is_err(), "http:// must not be fetched");
 
-        let mut neither = match serde_json::from_str::<AddBody>("{}").unwrap() {
-            AddBody::One(r) => *r,
-            AddBody::Many(_) => unreachable!(),
+        let mut neither = match serde_json::from_str::<OneOrMany<AddRequest>>("{}").unwrap() {
+            OneOrMany::One(r) => *r,
+            OneOrMany::Many(_) => unreachable!(),
         };
         assert!(add_source(&mut neither).is_err(), "needs one source");
     }
@@ -2570,7 +2555,7 @@ mod tests {
             username: String::from("u"),
             password_hash: String::new(),
             tls: TlsMode::Off,
-            advanced: Advanced::default(),
+            advanced: Limits::default(),
         };
         assert!(!wc.is_exposed());
         wc.bind_address = String::from("::1");
@@ -2689,10 +2674,9 @@ mod tests {
     #[test]
     fn state_names_are_stable_and_distinct() {
         let all = [
-            State::Unknown, State::Error, State::CheckingFiles, State::CheckingResumeData,
-            State::Downloading, State::DownloadingChecking, State::DownloadingMetadata,
-            State::DownloadingPaused, State::DownloadingQueued, State::Uploading,
-            State::UploadingPaused, State::UploadingQueued,
+            State::Unknown, State::Error, State::CheckingFiles, State::Downloading,
+            State::DownloadingMetadata, State::DownloadingPaused, State::Uploading,
+            State::UploadingPaused,
         ];
         let mut names: Vec<&str> = all.iter().copied().map(state_name).collect();
         names.sort_unstable();

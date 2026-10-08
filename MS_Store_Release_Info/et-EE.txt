@@ -30,6 +30,9 @@ NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 Versioon 0.4.4
 
+- Turvalisus: HTTPS-i kaudu töötav veebiliides ei ole enam HTTP/2 kihis haavatav teenusetõkestusrünnakule; see kasutab nüüd ainult HTTP/1.1-te. Teie poolt pole vaja midagi muuta.
+- Jagamispiirid: suhtarvu piir peatab nüüd torrenti loendis näidatud suhtarvu juures. Varem arvestati ainult üleslaadimist alates NanoTorrenti viimasest käivitamisest, nii et torrent võis jätkata jagamist üle oma piiri.
+- Parandused: käsuga „Loo torrent“ tehtud v1-torrentid on alati korrektsed ja tulevad igas arvutis ühesugused ning „Sunni ülekontrolli“ kontrollib pausil olevat torrentit nüüd kohe, selle asemel et näidata 0%, kuni see käivitatakse.
 - Kapoti all: teegid, millele NanoTorrent on ehitatud, on uuendatud koos nende viimaste parandustega.
 
 

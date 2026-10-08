@@ -24,12 +24,12 @@
 //! paths that may be read on a machine whose separator is `/`.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
 
 use crate::core::bencode;
-use crate::core::pico_import::{ImportEntry, ImportSource, Scan};
+use crate::core::pico_import::{ImportEntry, Scan};
 
 /// uTorrent's profile directory, if it is there.
 ///
@@ -51,28 +51,13 @@ pub fn scan(profile: &Path, cancel: &AtomicBool) -> Result<Scan> {
     let resume = std::fs::read(&resume_path)
         .with_context(|| format!("reading {}", resume_path.display()))?;
 
-    let mut entries = Vec::new();
-    let mut unreadable = 0usize;
-
-    for (key, value) in bencode::entries(&resume) {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        let name = String::from_utf8_lossy(key);
-        // `.fileguard` and `rec` are not torrents. Matching on `.torrent`
-        // rather than excluding those two by name means a key nobody has
-        // documented yet is ignored rather than parsed as a torrent.
-        if !name.contains(".torrent") {
-            continue;
-        }
-        match read_one(profile, &name, value) {
-            Some(entry) => entries.push(entry),
-            None => unreadable += 1,
-        }
-    }
-
-    entries.sort_by(|a, b| a.info_hash.cmp(&b.info_hash));
-    Ok(Scan { entries, unreadable })
+    // `.fileguard` and `rec` are not torrents. Matching on `.torrent` rather
+    // than excluding those two by name means a key nobody has documented yet
+    // is ignored rather than parsed as a torrent.
+    let torrents = bencode::entries(&resume)
+        .map(|(key, value)| (String::from_utf8_lossy(key), value))
+        .filter(|(name, _)| name.contains(".torrent"));
+    Ok(super::collect(torrents, cancel, |(name, value)| read_one(profile, &name, value)))
 }
 
 fn read_one(profile: &Path, key: &str, value: &[u8]) -> Option<ImportEntry> {
@@ -85,9 +70,6 @@ fn read_one(profile: &Path, key: &str, value: &[u8]) -> Option<ImportEntry> {
         profile.join(key)
     };
     let bytes = std::fs::read(&torrent_path).ok()?;
-    let info = bencode::dict_get(&bytes, b"info")?;
-    let (v1, v2) = crate::bittorrent::metainfo::info_hashes(info);
-
     let save_path = bencode::dict_get(value, b"path")
         .and_then(bencode::text)
         .as_deref()
@@ -107,13 +89,7 @@ fn read_one(profile: &Path, key: &str, value: &[u8]) -> Option<ImportEntry> {
         })
         .filter(|s| !s.is_empty());
 
-    Some(ImportEntry {
-        info_hash: v1.or(v2)?,
-        source: ImportSource::TorrentBytes(bytes),
-        save_path,
-        label_id: None,
-        label_name,
-    })
+    ImportEntry::from_torrent(bytes, save_path, label_name)
 }
 
 /// Everything before the last `/` or `\`, with the separator dropped.

@@ -60,16 +60,8 @@ pub enum Instance {
     Secondary,
 }
 
-pub struct Server {
-    rx: Receiver<Vec<String>>,
-}
-
-impl Server {
-    /// Non-blocking poll for arguments sent from secondary instances.
-    pub fn try_recv(&self) -> Option<Vec<String>> {
-        self.rx.try_recv().ok()
-    }
-}
+/// The argument lists sent by later instances. Polled with `try_recv`.
+pub type Server = Receiver<Vec<String>>;
 
 /// Is a NanoTorrent already running?
 ///
@@ -107,7 +99,7 @@ pub fn init(args: &[String], env: &Environment) -> anyhow::Result<Instance> {
                 .spawn(move || accept_loop(listener, tx))
                 .expect("failed to spawn IPC thread");
 
-            Ok(Instance::Primary(Server { rx }))
+            Ok(Instance::Primary(rx))
         }
         // Nothing holds the port - the port itself is unusable. A sandbox
         // with no usable loopback looks exactly like this, and so does a
@@ -125,7 +117,7 @@ pub fn init(args: &[String], env: &Environment) -> anyhow::Result<Instance> {
             // A receiver whose sender is already gone: it never yields, which
             // is exactly right when nothing can send to it.
             let (_tx, rx) = channel();
-            Ok(Instance::Primary(Server { rx }))
+            Ok(Instance::Primary(rx))
         }
         Err(bind_err) => {
             // The port IS held. Normally that is another NanoTorrent and the
@@ -236,9 +228,9 @@ mod tests {
     #[test]
     fn a_primary_with_no_listener_polls_empty_forever() {
         let (_tx, rx) = channel();
-        let server = Server { rx };
+        let server: Server = rx;
         for _ in 0..3 {
-            assert!(server.try_recv().is_none());
+            assert!(server.try_recv().is_err());
         }
     }
 }

@@ -264,18 +264,15 @@ fn parse_cmp(tokens: &[Token], pos: &mut usize) -> Result<Expr, String> {
 
 /// The name `status = "..."` matches against.
 ///
-/// Deliberately coarser than [`State`]: the twelve internal states collapse to
-/// the six a person would think to type. Queued and checking sub-states read
-/// as the thing they are queued or checking for.
+/// Deliberately coarser than [`State`]: the eight internal states collapse to
+/// the six a person would think to type. Fetching metadata reads as
+/// downloading, which is what it is for.
 fn status_name(state: State) -> &'static str {
     match state {
-        State::Downloading
-        | State::DownloadingChecking
-        | State::DownloadingMetadata
-        | State::DownloadingQueued => "downloading",
-        State::Uploading | State::UploadingQueued => "uploading",
+        State::Downloading | State::DownloadingMetadata => "downloading",
+        State::Uploading => "uploading",
         State::DownloadingPaused | State::UploadingPaused => "paused",
-        State::CheckingFiles | State::CheckingResumeData => "checking",
+        State::CheckingFiles => "checking",
         State::Error => "error",
         State::Unknown => "unknown",
     }
@@ -291,22 +288,18 @@ fn eval(expr: &Expr, s: &TorrentStatus) -> bool {
         Expr::And(a, b) => eval(a, s) && eval(b, s),
         Expr::Or(a, b) => eval(a, s) || eval(b, s),
         Expr::Cmp { field, op, value } => {
-            let num = |v: &Value| match v {
-                Value::Num(n) => Some(*n),
-                Value::Str(_) => None,
+            let actual = match field.as_str() {
+                "name" => return cmp_str(&s.name, *op, value),
+                "status" => return cmp_str(status_name(s.state), *op, value),
+                "label" => return cmp_str(&s.label_name, *op, value),
+                "dl" => s.download_payload_rate as f64,
+                "ul" => s.upload_payload_rate as f64,
+                "size" => s.total_wanted as f64,
+                "progress" => s.progress as f64 * 100.0,
+                "ratio" => s.ratio as f64,
+                _ => return false,
             };
-
-            match field.as_str() {
-                "name" => cmp_str(&s.name, *op, value),
-                "status" => cmp_str(status_name(s.state), *op, value),
-                "label" => cmp_str(&s.label_name, *op, value),
-                "dl" => num(value).map(|n| cmp_num(s.download_payload_rate as f64, *op, n)).unwrap_or(false),
-                "ul" => num(value).map(|n| cmp_num(s.upload_payload_rate as f64, *op, n)).unwrap_or(false),
-                "size" => num(value).map(|n| cmp_num(s.total_wanted as f64, *op, n)).unwrap_or(false),
-                "progress" => num(value).map(|n| cmp_num(s.progress as f64 * 100.0, *op, n)).unwrap_or(false),
-                "ratio" => num(value).map(|n| cmp_num(s.ratio as f64, *op, n)).unwrap_or(false),
-                _ => false,
-            }
+            matches!(value, Value::Num(n) if cmp_num(actual, *op, *n))
         }
     }
 }

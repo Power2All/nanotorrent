@@ -64,27 +64,22 @@ impl Scope {
 ///
 /// None while the web interface is off, which is the whole answer to "can this
 /// plugin stream": no server, no stream.
-static LIVE: std::sync::OnceLock<Mutex<Option<std::sync::Arc<StreamTokens>>>> =
-    std::sync::OnceLock::new();
-
-fn live() -> &'static Mutex<Option<std::sync::Arc<StreamTokens>>> {
-    LIVE.get_or_init(|| Mutex::new(None))
-}
+static LIVE: Mutex<Option<std::sync::Arc<StreamTokens>>> = Mutex::new(None);
 
 /// Called by the server as it starts.
 pub fn publish(tokens: std::sync::Arc<StreamTokens>) {
-    *live().lock().unwrap_or_else(|e| e.into_inner()) = Some(tokens);
+    *LIVE.lock().unwrap_or_else(|e| e.into_inner()) = Some(tokens);
 }
 
 /// Called by the server as it stops, so a plugin cannot mint tokens for a
 /// server that is no longer listening.
 pub fn unpublish() {
-    *live().lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *LIVE.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// Mint a token against the running server, if there is one.
 pub fn issue_live(hash: &str, index: usize) -> Option<String> {
-    live()
+    LIVE
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()?

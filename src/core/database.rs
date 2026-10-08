@@ -74,6 +74,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     migration!("20260908030000_tracker_tiers"),
     migration!("20260916000000_persist_upload_total"),
     migration!("20260917000000_confirmation_prompts"),
+    migration!("20261008000000_drop_webui_tuning_settings"),
 ];
 
 /// The settings database, open.
@@ -186,12 +187,6 @@ impl Database {
              Without the key file the database cannot be recovered.",
         )?;
         Self::open_sealed(&path, key)
-    }
-
-    /// Open a plain database at an explicit path. Used by the tests and by the
-    /// one-shot PicoTorrent import, which reads someone else's file.
-    pub fn open_path(path: &Path) -> Result<Database> {
-        Self::open_plain(path)
     }
 
     fn open_plain(path: &Path) -> Result<Database> {
@@ -544,7 +539,7 @@ mod tests {
     #[test]
     fn removing_a_torrent_takes_its_rows_with_it() {
         let path = scratch("cascade");
-        let db = Arc::new(Database::open_path(&path).unwrap());
+        let db = Arc::new(Database::open_plain(&path).unwrap());
         db.migrate().unwrap();
 
         db.with(|conn| {
@@ -586,14 +581,14 @@ mod tests {
     fn an_encrypted_database_needs_its_key_and_keeps_its_contents() {
         let path = scratch("encrypt");
         {
-            let db = Arc::new(Database::open_path(&path).unwrap());
+            let db = Arc::new(Database::open_plain(&path).unwrap());
             db.migrate().unwrap();
             Configuration::new(db.clone()).set("locale_name", &"nl-NL");
             db.convert(&path, Some(KEY)).expect("encrypting");
         }
 
         assert!(
-            Database::open_path(&path).is_err(),
+            Database::open_plain(&path).is_err(),
             "an encrypted database opened as a plain one"
         );
         assert!(
@@ -619,7 +614,7 @@ mod tests {
     fn a_write_to_an_encrypted_database_survives_reopening_it() {
         let path = scratch("persist");
         {
-            let db = Arc::new(Database::open_path(&path).unwrap());
+            let db = Arc::new(Database::open_plain(&path).unwrap());
             db.migrate().unwrap();
             db.convert(&path, Some(KEY)).expect("encrypting");
             Configuration::new(db).set("locale_name", &"es-ES");
@@ -644,7 +639,7 @@ mod tests {
     #[test]
     fn converting_leaves_the_open_handle_usable() {
         let path = scratch("convert");
-        let db = Arc::new(Database::open_path(&path).unwrap());
+        let db = Arc::new(Database::open_plain(&path).unwrap());
         db.migrate().unwrap();
         let cfg = Configuration::new(db.clone());
         cfg.set("locale_name", &"nl-NL");
@@ -672,7 +667,7 @@ mod tests {
     #[test]
     fn settings_export_and_import_across_encryption() {
         let path = scratch("exportenc");
-        let db = Arc::new(Database::open_path(&path).unwrap());
+        let db = Arc::new(Database::open_plain(&path).unwrap());
         db.migrate().unwrap();
         Configuration::new(db.clone()).set("locale_name", &"nl-NL");
         db.convert(&path, Some(KEY)).expect("encrypting");
@@ -706,7 +701,7 @@ mod tests {
     fn decrypting_gives_back_a_plain_database() {
         let path = scratch("decrypt");
         {
-            let db = Arc::new(Database::open_path(&path).unwrap());
+            let db = Arc::new(Database::open_plain(&path).unwrap());
             db.migrate().unwrap();
             db.convert(&path, Some(KEY)).expect("encrypting");
             db.convert(&path, None).expect("decrypting");
@@ -717,7 +712,7 @@ mod tests {
             head.starts_with(b"SQLite format 3\0"),
             "the file is not a plain SQLite database"
         );
-        Database::open_path(&path).expect("opening the decrypted database");
+        Database::open_plain(&path).expect("opening the decrypted database");
 
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
@@ -730,7 +725,7 @@ mod tests {
     fn the_schema_version_survives_the_conversion() {
         let path = scratch("version");
         let before: i64 = {
-            let db = Database::open_path(&path).unwrap();
+            let db = Database::open_plain(&path).unwrap();
             db.with(|c| c.execute_batch("PRAGMA user_version = 42;"))
                 .unwrap();
             db.convert(&path, Some(KEY)).expect("encrypting");
@@ -771,6 +766,66 @@ mod tests {
 
         // Lists are independent - the details tabs will key by their own name.
         assert!(cfg.get_column_widths("peers").is_empty());
+    }
+
+    /// Every setting this build added is read by something.
+    ///
+    /// A setting nothing reads is worse than none: it is exported, imported,
+    /// counted as supported, and changing it does nothing. The web server's
+    /// tuning knobs sat in every database like that for a whole release after
+    /// they became constants. The settings inherited from PicoTorrent are left
+    /// out on purpose - most configure libtorrent and mean nothing here, but
+    /// the original client still reads them from a database this build shares.
+    #[test]
+    fn every_setting_of_our_own_is_read_somewhere() {
+        fn keys(db: &Database) -> std::collections::BTreeSet<String> {
+            db.with(|c| {
+                let mut stmt = c.prepare("select key from setting")?;
+                let rows = stmt.query_map([], |r| r.get(0))?;
+                rows.collect()
+            })
+            .unwrap()
+        }
+
+        // PicoTorrent's migrations all predate 2026; NanoTorrent's all follow.
+        let inherited = Database::open_in_memory().unwrap();
+        inherited
+            .with(|c| {
+                c.execute_batch(
+                    "create table migration_history (id integer primary key, name text not null unique);",
+                )?;
+                for (_, sql) in MIGRATIONS.iter().filter(|(name, _)| *name < "2026") {
+                    c.execute_batch(sql)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        let full = Database::open_in_memory().unwrap();
+        full.migrate().unwrap();
+        let ours: Vec<String> = keys(&full).difference(&keys(&inherited)).cloned().collect();
+        assert!(!ours.is_empty(), "the split found no settings of our own");
+
+        fn sources(dir: &std::path::Path, out: &mut String) {
+            for entry in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    sources(&path, out);
+                } else if path
+                    .extension()
+                    .is_some_and(|e| e == "rs" || e == "slint" || e == "html")
+                {
+                    out.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+                }
+            }
+        }
+        let mut code = String::new();
+        sources(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut code);
+
+        let unread: Vec<&String> = ours
+            .iter()
+            .filter(|key| !code.contains(&format!("\"{key}\"")))
+            .collect();
+        assert!(unread.is_empty(), "settings nothing reads: {unread:?}");
     }
 
     #[test]
@@ -842,7 +897,7 @@ mod tests {
     #[ignore = "requires NANOTORRENT_TEST_DB pointing at a database copy"]
     fn migrate_external_database() {
         let path = std::env::var("NANOTORRENT_TEST_DB").unwrap();
-        let db = Database::open_path(std::path::Path::new(&path)).unwrap();
+        let db = Database::open_plain(std::path::Path::new(&path)).unwrap();
         db.migrate().unwrap();
     }
 

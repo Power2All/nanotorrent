@@ -9,7 +9,7 @@
 // take effect the moment a digit lands.
 
 import { Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView, Palette } from "std-widgets.slint";
-import { L } from "globals.slint";
+import { L, TipBox } from "globals.slint";
 import { DetailTab, TabStrip, GeneralIcon, DownloadsIcon, ConnectionIcon,
          ProxyTabIcon, WebTabIcon, PluginsIcon, LabelsIcon,
          DatabaseIcon, SpeedIcon, QueueIcon } from "tabs.slint";
@@ -69,20 +69,7 @@ component ConfigButton inherits Rectangle {
 
     // An icon-only button says nothing about itself until you hover it.
     Tooltip {
-        Rectangle {
-            background: Palette.alternate-background;
-            border-color: Palette.border;
-            border-width: 1px;
-            border-radius: 4px;
-            HorizontalLayout {
-                padding: 6px;
-                Text {
-                    text: root.tip;
-                    font-size: 12px;
-                    color: Palette.foreground;
-                }
-            }
-        }
+        TipBox { text: root.tip; }
     }
 }
 
@@ -468,7 +455,7 @@ export component PreferencesDialog inherits Window {
     in-out property <string> web-auth-max-failures;
     in-out property <string> web-auth-window;
     in-out property <string> web-auth-block;
-    /// Put the eight tuning fields back to the values `Advanced::default()`
+    /// Put the three lockout fields back to the values `Limits::default()`
     /// holds. Only the fields - the write still happens on OK, so this is as
     /// undoable as any other edit in the dialog.
     callback web-advanced-reset();

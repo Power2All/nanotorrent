@@ -14,7 +14,6 @@
 //! It holds a [`Weak`] reference, so shutting the session down ends the thread
 //! rather than keeping it alive to poll a corpse.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
@@ -252,14 +251,10 @@ fn unique(candidate: PathBuf) -> PathBuf {
     if !candidate.exists() {
         return candidate;
     }
-    let mut taken = HashSet::new();
-    for n in 2.. {
-        let numbered = PathBuf::from(format!("{}.{n}", candidate.display()));
-        if !numbered.exists() && taken.insert(numbered.clone()) {
-            return numbered;
-        }
-    }
-    candidate
+    (2..)
+        .map(|n| PathBuf::from(format!("{}.{n}", candidate.display())))
+        .find(|numbered| !numbered.exists())
+        .unwrap_or(candidate)
 }
 
 #[cfg(test)]

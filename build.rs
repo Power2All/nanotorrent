@@ -178,6 +178,12 @@ fn verify_librqbit_patches() {
             "patches/0001-engine-visibility.patch (per-peer have-pieces)",
         ),
         (
+            "vendor/librqbit/src/session.rs",
+            "pub verify_paused: bool",
+            "patches/0026-verify-while-paused.patch (without it a recheck of a \
+             paused torrent shows 0% until it is started)",
+        ),
+        (
             "vendor/librqbit/src/torrent_state/live/mod.rs",
             "pub fn inflight_piece_indices",
             "patches/0025-inflight-piece-indices.patch (the public accessor)",

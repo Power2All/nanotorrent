@@ -11,8 +11,8 @@
 //
 // The layout this was matched against is captured in docs/ui-baseline/.
 
-import { Clip, L } from "globals.slint";
-import { DetailTab, TabStrip } from "tabs.slint";
+import { Clip, L, TipBox } from "globals.slint";
+import { DetailTab, TabStrip, PathIcon, WebTabIcon, ConnectionIcon } from "tabs.slint";
 export { Clip, L }
 
 import { PreferencesDialog } from "preferences.slint";
@@ -757,20 +757,16 @@ component DataText inherits Rectangle {
     // need @markdown - and markdown eats the underscores and asterisks that
     // turn up in torrent names all the time.
     if label.preferred-width > root.width: Tooltip {
-        Rectangle {
-            background: Palette.alternate-background;
-            border-color: Palette.border;
-            border-width: 1px;
-            border-radius: 4px;
-            HorizontalLayout {
-                padding: 6px;
-                Text {
-                    text: root.text;
-                    font-size: 12px;
-                    color: Palette.foreground;
-                }
-            }
-        }
+        TipBox { text: root.text; }
+    }
+}
+
+// The thin rule between groups of toolbar buttons.
+component ToolbarSep inherits Rectangle {
+    width: 9px;
+    Rectangle {
+        x: 4px; y: 7px; width: 1px; height: 16px;
+        background: Palette.border;
     }
 }
 
@@ -834,20 +830,7 @@ component IconButton inherits Rectangle {
     // hand-rolled tooltip the details lists use, for the same reason: styled
     // text would need @markdown, and markdown eats the punctuation in these.
     Tooltip {
-        Rectangle {
-            background: Palette.alternate-background;
-            border-color: Palette.border;
-            border-width: 1px;
-            border-radius: 4px;
-            HorizontalLayout {
-                padding: 6px;
-                Text {
-                    text: root.tip;
-                    font-size: 12px;
-                    color: Palette.foreground;
-                }
-            }
-        }
+        TipBox { text: root.tip; }
     }
 }
 
@@ -1236,20 +1219,7 @@ component SpeedChart inherits Rectangle {
 
     // No axis on a chart this size, so the numbers live here.
     Tooltip {
-        Rectangle {
-            background: Palette.alternate-background;
-            border-color: Palette.border;
-            border-width: 1px;
-            border-radius: 4px;
-            HorizontalLayout {
-                padding: 6px;
-                Text {
-                    text: root.tip;
-                    font-size: 12px;
-                    color: Palette.foreground;
-                }
-            }
-        }
+        TipBox { text: root.tip; }
     }
 }
 
@@ -1258,67 +1228,32 @@ component SpeedChart inherits Rectangle {
 // only, for the reason IconButton gives: no dependence on SVG arc support.
 
 // Three stacked bars, for "torrents".
-component TorrentsIcon inherits Rectangle {
-    in property <color> ink;
-    width: 13px;
-    height: 13px;
-    Path {
-        x: 0; y: 0; width: parent.width; height: parent.height;
-        viewbox-width: 20; viewbox-height: 20;
-        fill: root.ink;
-        commands: "M 2 3 L 18 3 L 18 6 L 2 6 Z M 2 8.5 L 18 8.5 L 18 11.5 L 2 11.5 Z M 2 14 L 18 14 L 18 17 L 2 17 Z";
-    }
+component TorrentsIcon inherits PathIcon {
+    size: 13px;
+    d: "M 2 3 L 18 3 L 18 6 L 2 6 Z M 2 8.5 L 18 8.5 L 18 11.5 L 2 11.5 Z M 2 14 L 18 14 L 18 17 L 2 17 Z";
 }
 
 // A hub with four satellites, for "DHT nodes".
-component NodesIcon inherits Rectangle {
-    in property <color> ink;
-    width: 13px;
-    height: 13px;
-    Path {
-        x: 0; y: 0; width: parent.width; height: parent.height;
-        viewbox-width: 20; viewbox-height: 20;
-        fill: root.ink;
-        commands: "M 7.5 7.5 L 12.5 7.5 L 12.5 12.5 L 7.5 12.5 Z M 0 0 L 4.5 0 L 4.5 4.5 L 0 4.5 Z M 15.5 0 L 20 0 L 20 4.5 L 15.5 4.5 Z M 0 15.5 L 4.5 15.5 L 4.5 20 L 0 20 Z M 15.5 15.5 L 20 15.5 L 20 20 L 15.5 20 Z";
-    }
+component NodesIcon inherits PathIcon {
+    size: 13px;
+    d: "M 7.5 7.5 L 12.5 7.5 L 12.5 12.5 L 7.5 12.5 Z M 0 0 L 4.5 0 L 4.5 4.5 L 0 4.5 Z M 15.5 0 L 20 0 L 20 4.5 L 15.5 4.5 Z M 0 15.5 L 4.5 15.5 L 4.5 20 L 0 20 Z M 15.5 15.5 L 20 15.5 L 20 20 L 15.5 20 Z";
 }
 
 // Solid arrows, for the two transfer rates.
-component DownIcon inherits Rectangle {
-    in property <color> ink;
-    width: 13px;
-    height: 13px;
-    Path {
-        x: 0; y: 0; width: parent.width; height: parent.height;
-        viewbox-width: 20; viewbox-height: 20;
-        fill: root.ink;
-        commands: "M 7.5 2 L 12.5 2 L 12.5 10 L 17 10 L 10 18 L 3 10 L 7.5 10 Z";
-    }
+component DownIcon inherits PathIcon {
+    size: 13px;
+    d: "M 7.5 2 L 12.5 2 L 12.5 10 L 17 10 L 10 18 L 3 10 L 7.5 10 Z";
 }
 
-component UpIcon inherits Rectangle {
-    in property <color> ink;
-    width: 13px;
-    height: 13px;
-    Path {
-        x: 0; y: 0; width: parent.width; height: parent.height;
-        viewbox-width: 20; viewbox-height: 20;
-        fill: root.ink;
-        commands: "M 7.5 18 L 12.5 18 L 12.5 10 L 17 10 L 10 2 L 3 10 L 7.5 10 Z";
-    }
+component UpIcon inherits PathIcon {
+    size: 13px;
+    d: "M 7.5 18 L 12.5 18 L 12.5 10 L 17 10 L 10 2 L 3 10 L 7.5 10 Z";
 }
 
 // A plug, for "can peers reach this port".
-component PortIcon inherits Rectangle {
-    in property <color> ink;
-    width: 13px;
-    height: 13px;
-    Path {
-        x: 0; y: 0; width: parent.width; height: parent.height;
-        viewbox-width: 20; viewbox-height: 20;
-        fill: root.ink;
-        commands: "M 5.5 1 L 8 1 L 8 5 L 5.5 5 Z M 12 1 L 14.5 1 L 14.5 5 L 12 5 Z M 3 6 L 17 6 L 17 11 L 13 11 L 13 19 L 7 19 L 7 11 L 3 11 Z";
-    }
+component PortIcon inherits PathIcon {
+    size: 13px;
+    d: "M 5.5 1 L 8 1 L 8 5 L 5.5 5 Z M 12 1 L 14.5 1 L 14.5 5 L 12 5 Z M 3 6 L 17 6 L 17 11 L 13 11 L 13 19 L 7 19 L 7 11 L 3 11 Z";
 }
 
 // One reading in the status bar: a glyph, a value, and the word behind them.
@@ -1348,56 +1283,24 @@ component StatusItem inherits Rectangle {
     }
 
     Tooltip {
-        Rectangle {
-            background: Palette.alternate-background;
-            border-color: Palette.border;
-            border-width: 1px;
-            border-radius: 4px;
-            HorizontalLayout {
-                padding: 6px;
-                Text { text: root.tip; font-size: 12px; color: Palette.foreground; }
-            }
-        }
+        TipBox { text: root.tip; }
     }
 }
 
 // A globe with a band across it, for "traffic goes through a proxy".
-component ProxyIcon inherits Rectangle {
-    in property <color> ink;
-    width: 13px;
-    height: 13px;
-    Path {
-        x: 0; y: 0; width: parent.width; height: parent.height;
-        viewbox-width: 20; viewbox-height: 20;
-        fill: root.ink;
-        commands: "M 2 2 L 18 2 L 18 6 L 2 6 Z M 2 8 L 18 8 L 18 12 L 2 12 Z M 2 14 L 18 14 L 18 18 L 2 18 Z M 8 0 L 12 0 L 12 20 L 8 20 Z";
-    }
+component ProxyIcon inherits PathIcon {
+    size: 13px;
+    d: "M 2 2 L 18 2 L 18 6 L 2 6 Z M 2 8 L 18 8 L 18 12 L 2 12 Z M 2 14 L 18 14 L 18 18 L 2 18 Z M 8 0 L 12 0 L 12 20 L 8 20 Z";
 }
 
 // A screen with a base, for "someone is watching through the web interface".
-component WebIcon inherits Rectangle {
-    in property <color> ink;
-    width: 13px;
-    height: 13px;
-    Path {
-        x: 0; y: 0; width: parent.width; height: parent.height;
-        viewbox-width: 20; viewbox-height: 20;
-        fill: root.ink;
-        commands: "M 1 3 L 19 3 L 19 14 L 1 14 Z M 3 5 L 3 12 L 17 12 L 17 5 Z M 7 16 L 13 16 L 13 18 L 7 18 Z";
-    }
+component WebIcon inherits WebTabIcon {
+    size: 13px;
 }
 
 // A link in a chain, for "bound to one interface".
-component BoundIcon inherits Rectangle {
-    in property <color> ink;
-    width: 13px;
-    height: 13px;
-    Path {
-        x: 0; y: 0; width: parent.width; height: parent.height;
-        viewbox-width: 20; viewbox-height: 20;
-        fill: root.ink;
-        commands: "M 1 6 L 9 6 L 9 9 L 4 9 L 4 11 L 9 11 L 9 14 L 1 14 Z M 11 6 L 19 6 L 19 14 L 11 14 L 11 11 L 16 11 L 16 9 L 11 9 Z";
-    }
+component BoundIcon inherits ConnectionIcon {
+    size: 13px;
 }
 
 export component MainWindow inherits Window {
@@ -1926,10 +1829,6 @@ export component MainWindow inherits Window {
     in-out property <bool> theme-open;
     /// File > Migrate from, expanded in place like View > Theme.
     in-out property <bool> migrate-open;
-    /// "Import from PicoTorrent...", or empty when no PicoTorrent database is
-    /// on this machine - in which case the row is not drawn at all. Built in
-    /// Rust: the string takes the application name as an argument.
-    in property <string> import-label;
     /// The clients that can be migrated from, in `Source::ALL` order, and
     /// whether a profile for each was found. Built in Rust: these are product
     /// names, never translated.
@@ -2170,13 +2069,7 @@ export component MainWindow inherits Window {
 
                 // Separator, as in the reference clients: adding is one group,
                 // acting on a selection is another.
-                Rectangle {
-                    width: 9px;
-                    Rectangle {
-                        x: 4px; y: 7px; width: 1px; height: 16px;
-                        background: Palette.border;
-                    }
-                }
+                ToolbarSep {}
 
                 IconButton {
                     tint: #e5484d;
@@ -2200,13 +2093,7 @@ export component MainWindow inherits Window {
                     StopIcon { ink: parent.ink; }
                 }
 
-                Rectangle {
-                    width: 9px;
-                    Rectangle {
-                        x: 4px; y: 7px; width: 1px; height: 16px;
-                        background: Palette.border;
-                    }
-                }
+                ToolbarSep {}
 
                 // The queue moves, in queue order left to right. Neutral rather
                 // than coloured: they are the same action four ways, and four
@@ -2240,13 +2127,7 @@ export component MainWindow inherits Window {
                     QueueArrowIcon { ink: parent.ink; down: true; end: true; }
                 }
 
-                Rectangle {
-                    width: 9px;
-                    Rectangle {
-                        x: 4px; y: 7px; width: 1px; height: 16px;
-                        background: Palette.border;
-                    }
-                }
+                ToolbarSep {}
 
                 IconButton {
                     tint: #3fa34d;
@@ -2263,13 +2144,7 @@ export component MainWindow inherits Window {
                     GearIcon { ink: parent.ink; }
                 }
 
-                Rectangle {
-                    width: 9px;
-                    Rectangle {
-                        x: 4px; y: 7px; width: 1px; height: 16px;
-                        background: Palette.border;
-                    }
-                }
+                ToolbarSep {}
 
                 // Vertically centred: the toolbar row is 30px of button and
                 // the charts are 26px, so without this they sit against the top.

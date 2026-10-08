@@ -30,6 +30,9 @@ NanoTorrent, Viktor Elofsson-un PicoTorrent proqramının Rust versiyasıdır.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 Versiya 0.4.4
 
+- Təhlükəsizlik: HTTPS üzərindən veb interfeys artıq HTTP/2 qatında xidmətdən imtina hücumuna açıq deyil; indi yalnız HTTP/1.1 istifadə edir. Sizin tərəfdən heç nəyi dəyişmək lazım deyil.
+- Paylaşma limitləri: nisbət limiti indi torrenti siyahıda göstərilən nisbətdə dayandırır. Əvvəllər yalnız NanoTorrent sonuncu dəfə işə salınandan bəri göndərilənlər sayılırdı, buna görə torrent limitini keçərək paylaşmağa davam edə bilirdi.
+- Düzəlişlər: «Torrent yarat» ilə hazırlanan v1 torrentləri həmişə etibarlıdır və hər kompüterdə eyni alınır, fasilə verilmiş torrentdə «Yenidən yoxlamanı məcbur et» isə indi onu başladılana qədər 0% göstərmək əvəzinə dərhal yoxlayır.
 - Daxili dəyişikliklər: NanoTorrent-in üzərində qurulduğu kitabxanalar son düzəlişləri ilə yeniləndi.
 
 

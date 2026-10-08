@@ -30,6 +30,9 @@ NanoTorrent to port PicoTorrenta autorstwa Viktora Elofssona na język Rust.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 Wersja 0.4.4
 
+- Bezpieczeństwo: interfejs WWW przez HTTPS nie jest już podatny na atak typu odmowa usługi w warstwie HTTP/2; korzysta teraz wyłącznie z HTTP/1.1. Nie musisz niczego zmieniać.
+- Limity udostępniania: limit współczynnika zatrzymuje teraz torrent przy współczynniku widocznym na liście. Wcześniej liczone były tylko dane wysłane od ostatniego uruchomienia NanoTorrenta, więc torrent mógł dalej udostępniać mimo przekroczenia limitu.
+- Poprawki: torrenty v1 tworzone przez „Stwórz torrent” są zawsze prawidłowe i na każdym komputerze wychodzą identyczne, a „Wymuś ponowne sprawdzenie” na wstrzymanym torrencie sprawdza go teraz od razu, zamiast pokazywać 0% aż do uruchomienia.
 - Pod maską: biblioteki, na których opiera się NanoTorrent, zostały zaktualizowane o najnowsze poprawki.
 
 

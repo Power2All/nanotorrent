@@ -150,26 +150,21 @@ pub fn parse_url_list(torrent_bytes: &[u8]) -> Vec<String> {
 /// Both keys sit at the top level beside `info` and both are "either a string
 /// or a list of strings", so one parser does for both.
 fn parse_url_key(torrent_bytes: &[u8], key: &[u8]) -> Vec<String> {
-    use crate::bittorrent::metainfo::bencode_lookup;
-    let Some(raw) = bencode_lookup(torrent_bytes, key) else {
+    use crate::core::bencode;
+    let Some(raw) = bencode::dict_get(torrent_bytes, key) else {
         return Vec::new();
     };
+    let lossy = |s: &[u8]| String::from_utf8_lossy(s).into_owned();
     let mut out = Vec::new();
     match raw.first() {
         // A single URL.
-        Some(b'0'..=b'9') => {
-            if let Some(s) = bencode_str_value(raw) {
-                out.push(s);
-            }
-        }
+        Some(b'0'..=b'9') => out.extend(bencode::string(raw).map(lossy)),
         // A list of them.
         Some(b'l') => {
             let mut i = 1;
             while raw.get(i).is_some_and(|c| *c != b'e') {
-                let Some(end) = str_end(raw, i) else { break };
-                if let Some(s) = bencode_str_value(&raw[i..end]) {
-                    out.push(s);
-                }
+                let Some((s, end)) = bencode::string_at(raw, i) else { break };
+                out.push(lossy(s));
                 i = end;
             }
         }
@@ -177,19 +172,6 @@ fn parse_url_key(torrent_bytes: &[u8], key: &[u8]) -> Vec<String> {
     }
     out.retain(|u| u.starts_with("http://") || u.starts_with("https://"));
     out
-}
-
-fn str_end(b: &[u8], i: usize) -> Option<usize> {
-    let colon = b[i..].iter().position(|c| *c == b':')? + i;
-    let len: usize = std::str::from_utf8(&b[i..colon]).ok()?.parse().ok()?;
-    colon.checked_add(1 + len).filter(|e| *e <= b.len())
-}
-
-fn bencode_str_value(b: &[u8]) -> Option<String> {
-    let colon = b.iter().position(|c| *c == b':')?;
-    let len: usize = std::str::from_utf8(&b[..colon]).ok()?.parse().ok()?;
-    let s = b.get(colon + 1..colon + 1 + len)?;
-    Some(String::from_utf8_lossy(s).into_owned())
 }
 
 /// Where the bytes come from. A trait so the protocol loop can be tested
@@ -431,30 +413,12 @@ struct PieceCache {
     data: Vec<u8>,
 }
 
-/// Fetch one span, retrying a few times first.
-///
-/// A single failed request used to be fatal to the whole web seed, which with
-/// one seed configured means the torrent never finishes.
-async fn fetch_with_retry(
-    source: &Arc<dyn ByteSource>,
-    file: &SeedFile,
-    start: u64,
-    len: u64,
-) -> Result<Vec<u8>> {
-    with_retry("fetch", || Some(source.fetch(file, start, len))).await
-}
-
-async fn fetch_piece_with_retry(
-    source: &Arc<dyn ByteSource>,
-    index: u32,
-    len: u64,
-) -> Result<Vec<u8>> {
-    with_retry("piece fetch", || source.fetch_piece(index, len)).await
-}
-
 /// Up to `FETCH_ATTEMPTS` tries with a doubling pause between them. `attempt`
 /// returning `None` ends it at once - a source that stopped offering whole
 /// pieces is not going to start again on the next try.
+///
+/// A single failed request used to be fatal to the whole web seed, which with
+/// one seed configured means the torrent never finishes.
 async fn with_retry<'a>(
     what: &str,
     mut attempt: impl FnMut() -> Option<futures::future::BoxFuture<'a, Result<Vec<u8>>>>,
@@ -498,7 +462,7 @@ async fn piece_bytes<'a>(
     // A piece-oriented source answers in one request; retried the same number
     // of times as a span fetch, for the same reason.
     if source.fetch_piece(index, len).is_some() {
-        let data = fetch_piece_with_retry(source, index, len).await?;
+        let data = with_retry("piece fetch", || source.fetch_piece(index, len)).await?;
         if data.len() as u64 != len {
             bail!("web seed returned {} bytes for a {len}-byte piece {index}", data.len());
         }
@@ -515,7 +479,8 @@ async fn piece_bytes<'a>(
             data.resize(data.len() + span.len as usize, 0);
             continue;
         }
-        let bytes = fetch_with_retry(source, file, span.start, span.len).await?;
+        let bytes =
+            with_retry("fetch", || Some(source.fetch(file, span.start, span.len))).await?;
         data.extend_from_slice(&bytes);
     }
     if data.len() as u64 != len {
@@ -990,8 +955,7 @@ mod tests {
             piece_length: Some(PIECE_LEN),
             version: TorrentVersion::V1,
         })
-        .unwrap()
-        .bytes;
+        .unwrap();
 
         // Append `url-list` to the outer dict. "url-list" sorts after every
         // other key we emit, so the end is where bencode wants it.

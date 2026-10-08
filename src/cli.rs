@@ -211,7 +211,7 @@ pub const SETTINGS: &[Setting] = &[
     Setting { name: "web-auth-window", key: "webui.auth_window", section: "web_interface", kind: Kind::Int { lo: 1, hi: 86400, unit: "seconds" } },
     Setting { name: "web-auth-block", key: "webui.auth_block", section: "web_interface", kind: Kind::Int { lo: 1, hi: 604800, unit: "seconds" } },
 
-    // Advanced. Ranges match Advanced::load, which clamps on the way out too.
+    // Advanced. Ranges match webui::Limits::load, which clamps on the way out too.
 ];
 
 /// The `--set` / `--get` half of `--help`, in the configured language.

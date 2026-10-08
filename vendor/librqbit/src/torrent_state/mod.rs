@@ -450,6 +450,18 @@ impl ManagedTorrent {
                                         return Ok(());
                                     }
 
+                                    // A check that ends paused leaves the files
+                                    // open read-write from `init`, and nothing on
+                                    // the way to Paused lets go of them the way
+                                    // `pause` does (patch 0021). Only reachable
+                                    // with real storage: a deferred one opened
+                                    // nothing.
+                                    if start_paused
+                                        && !paused.storage_deferred
+                                        && let Err(e) = paused.files.release_write_access(None)
+                                    {
+                                        warn!(error = ?e, "error releasing write access after the check");
+                                    }
                                     g.state = ManagedTorrentState::Paused(paused);
                                     t.state_change_notify.notify_waiters();
                                     _start(&t, peer_rx, start_paused, session, Some(g), token)

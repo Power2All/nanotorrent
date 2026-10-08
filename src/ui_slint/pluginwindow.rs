@@ -300,9 +300,9 @@ fn make(name: &str) -> Option<PluginWindow> {
         let weak = window.as_weak();
         window.on_form_saved(move || {
             let Some(window) = weak.upgrade() else { return };
-            let fields = window.get_fields();
-            let values: Vec<(String, String)> = (0..fields.row_count())
-                .filter_map(|i| fields.row_data(i))
+            let values: Vec<(String, String)> = window
+                .get_fields()
+                .iter()
                 .map(|f| (f.id.to_string(), f.value.to_string()))
                 .collect();
             let id = window.get_form_id().to_string();
@@ -396,20 +396,12 @@ fn apply(window: &PluginWindow, state: &ui::PluginUi) {
     // Only when the form actually changed. Re-pushing the model on every
     // refresh would throw away whatever had been typed into it - the plugin
     // redraws its lists on a timer, and the form is edited in place.
-    let want: Vec<(String, String)> = state
-        .fields
-        .iter()
-        .map(|f| (f.id.clone(), f.value.clone()))
-        .collect();
-    let showing: Vec<(String, String)> = {
-        let fields = window.get_fields();
-        (0..fields.row_count())
-            .filter_map(|i| fields.row_data(i))
-            .map(|f| (f.id.to_string(), f.value.to_string()))
-            .collect()
-    };
     let same_form = window.get_form_id() == state.form_id.as_str();
-    let same_fields = showing.iter().map(|(id, _)| id).eq(want.iter().map(|(id, _)| id));
+    let same_fields = window
+        .get_fields()
+        .iter()
+        .map(|f| f.id)
+        .eq(state.fields.iter().map(|f| SharedString::from(&f.id)));
     if !same_form || !same_fields {
         window.set_form_id(SharedString::from(&state.form_id));
         window.set_form_title(SharedString::from(&state.form_title));

@@ -30,6 +30,9 @@ Ang NanoTorrent ay bersyong Rust ng PicoTorrent ni Viktor Elofsson.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 Bersyon 0.4.4
 
+- Seguridad: hindi na bukas ang web interface sa HTTPS sa denial-of-service na atake sa HTTP/2 layer nito; HTTP/1.1 na lang ang gamit nito. Wala kang kailangang baguhin.
+- Limitasyon sa pagbabahagi: ang limitasyon sa ratio ay humihinto na ngayon sa torrent sa ratio na ipinapakita sa listahan. Dati, ang binibilang lang ay ang mga in-upload mula nang huling simulan ang NanoTorrent, kaya maaaring magpatuloy sa pag-seed ang isang torrent lampas sa limitasyon nito.
+- Mga ayos: ang mga v1 torrent na ginawa gamit ang “Gumawa ng torrent” ay laging valid at pare-pareho ang labas sa bawat computer, at agad nang sinusuri ng “Pilitin ang muling pagsuri” ang naka-pause na torrent sa halip na magpakita ng 0% hanggang simulan ito.
 - Sa loob: na-update ang mga library na pinagbatayan ng NanoTorrent, kasama ang pinakabago nilang mga ayos.
 
 

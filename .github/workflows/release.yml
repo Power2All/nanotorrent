@@ -43,7 +43,7 @@ jobs:
     outputs:
       version: ${{ steps.get.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - id: get
         # [package] is the first table in Cargo.toml and dependencies spell
         # their versions inline, so the first line-anchored `version =` is ours.
@@ -58,7 +58,7 @@ jobs:
     needs: version
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -106,7 +106,7 @@ jobs:
           }
           "{0:N1} MB" -f ((Get-Item $exe).Length / 1MB)
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe
           path: installer/NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe
@@ -126,7 +126,7 @@ jobs:
       CLANGCC: clang-18
       CLANGCXX: clang++-18
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # libxkbcommon-x11-0 is not a build dependency: it is here so the AppImage
       # step below has it to bundle. See the note there.
@@ -282,7 +282,7 @@ jobs:
           fi
           pkill -f squashfs-root/usr/bin/nanotorrent || true
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: nanotorrent-${{ needs.version.outputs.version }}-linux
           path: |
@@ -296,7 +296,7 @@ jobs:
     needs: version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -383,7 +383,7 @@ jobs:
             "nanotorrent-${{ needs.version.outputs.version }}.dmg"
           hdiutil verify "nanotorrent-${{ needs.version.outputs.version }}.dmg"
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: nanotorrent-${{ needs.version.outputs.version }}.dmg
           path: nanotorrent-${{ needs.version.outputs.version }}.dmg
@@ -402,7 +402,7 @@ jobs:
     steps:
       # No name filter: takes all four artifacts. merge-multiple flattens them
       # into one directory instead of one subdirectory each.
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true

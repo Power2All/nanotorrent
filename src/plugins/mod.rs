@@ -68,31 +68,20 @@ impl Plugin {
     }
 }
 
-/// Start the plugin host if plugins are enabled and any are present.
-///
-/// Never fatal: a broken plugin folder must not stop a torrent client from
-/// starting. Everything that goes wrong here is logged and skipped.
-pub fn spawn(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environment>) {
-    if !cfg.get_bool(ENABLED_KEY) {
-        return;
-    }
-    start(session, cfg, env);
-}
-
 /// The running host's control channel, so a settings change can reach it.
 ///
 /// A global rather than something threaded through the UI: Preferences already
 /// knows the session, the configuration and the environment, and making it
 /// carry a plugin-host handle as well would put the host into the signature of
 /// everything that opens a dialog.
-fn control() -> &'static std::sync::Mutex<Option<std::sync::mpsc::Sender<Wake>>> {
-    static CONTROL: std::sync::OnceLock<
-        std::sync::Mutex<Option<std::sync::mpsc::Sender<Wake>>>,
-    > = std::sync::OnceLock::new();
-    CONTROL.get_or_init(Default::default)
-}
+static CONTROL: std::sync::Mutex<Option<std::sync::mpsc::Sender<Wake>>> =
+    std::sync::Mutex::new(None);
 
-/// Apply a change to the plugin settings without restarting NanoTorrent.
+/// Start, stop or reload the plugin host to match the settings: at startup,
+/// and on any change to them without restarting NanoTorrent.
+///
+/// Never fatal: a broken plugin folder must not stop a torrent client from
+/// starting. Everything that goes wrong here is logged and skipped.
 ///
 /// Reloading is deliberately "as if it had just started": the old set is
 /// stopped, its surfaces are dropped, and the new set is compiled and started
@@ -102,7 +91,7 @@ fn control() -> &'static std::sync::Mutex<Option<std::sync::mpsc::Sender<Wake>>>
 pub fn reload(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environment>) {
     // The lock is released before `start`, which wants it too.
     let running = {
-        let Ok(slot) = control().lock() else { return };
+        let Ok(slot) = CONTROL.lock() else { return };
         slot.clone()
     };
 
@@ -125,7 +114,7 @@ pub fn reload(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environme
 /// or ticking a plugin later has somewhere to be delivered - otherwise the
 /// first plugin someone approves would need a restart after all.
 fn start(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environment>) {
-    let Ok(mut slot) = control().lock() else { return };
+    let Ok(mut slot) = CONTROL.lock() else { return };
     if slot.is_some() {
         return;
     }
@@ -158,7 +147,7 @@ fn start(session: Arc<Session>, cfg: Arc<Configuration>, env: Arc<Environment>) 
             // The session dropped its sender. Said explicitly because the UI
             // and the control channel hold clones of `wake_tx`, so the channel
             // never closes on its own and the loop would wait forever.
-            let _ = relay_tx.send(Wake::Shutdown);
+            let _ = relay_tx.send(Wake::Stop);
         });
     if let Err(err) = relay {
         tracing::error!("could not start the plugin event relay: {err}");
@@ -369,25 +358,30 @@ fn grants(cfg: &Configuration) -> std::collections::BTreeMap<String, BTreeSet<Pe
 /// needed again. Editing it to ask for *less* also re-prompts, which is the
 /// harmless direction.
 pub fn grant(cfg: &Configuration, name: &str, perms: &BTreeSet<Permission>) {
-    let mut all: std::collections::BTreeMap<String, Vec<String>> = grants(cfg)
-        .into_iter()
-        .map(|(k, v)| (k, v.iter().map(|p| p.tag().to_owned()).collect()))
-        .collect();
-    all.insert(
-        name.to_owned(),
-        perms.iter().map(|p| p.tag().to_owned()).collect(),
-    );
-    cfg.set(GRANTS_KEY, &serde_json::to_string(&all).unwrap_or_default());
+    edit_grants(cfg, |all| {
+        all.insert(name.to_owned(), perms.clone());
+    });
 }
 
 /// Withdraw consent, so the plugin is held until it is approved again.
 pub fn revoke(cfg: &Configuration, name: &str) {
-    let mut all: std::collections::BTreeMap<String, Vec<String>> = grants(cfg)
-        .into_iter()
-        .map(|(k, v)| (k, v.iter().map(|p| p.tag().to_owned()).collect()))
+    edit_grants(cfg, |all| {
+        all.remove(name);
+    });
+}
+
+/// Read the stored grants, change them, and write them back as tag lists.
+fn edit_grants(
+    cfg: &Configuration,
+    edit: impl FnOnce(&mut std::collections::BTreeMap<String, BTreeSet<Permission>>),
+) {
+    let mut all = grants(cfg);
+    edit(&mut all);
+    let tags: std::collections::BTreeMap<&str, Vec<&str>> = all
+        .iter()
+        .map(|(name, perms)| (name.as_str(), perms.iter().map(|p| p.tag()).collect()))
         .collect();
-    all.remove(name);
-    cfg.set(GRANTS_KEY, &serde_json::to_string(&all).unwrap_or_default());
+    cfg.set(GRANTS_KEY, &serde_json::to_string(&tags).unwrap_or_default());
 }
 
 /// Forget approvals for plugins that are no longer on disk.
@@ -430,7 +424,7 @@ pub fn seed_examples(dir: &Path, cfg: &Configuration) {
         offered.insert(String::from("example"));
     }
 
-    let pending: Vec<(&str, &str, Option<&str>)> = EXAMPLES
+    let pending: Vec<(&str, &str, &str)> = EXAMPLES
         .iter()
         .filter(|(name, _, _)| !offered.contains(*name))
         .copied()
@@ -463,14 +457,12 @@ pub fn seed_examples(dir: &Path, cfg: &Configuration) {
             }
         }
 
-        // The strings, if this example has any. Written only when the script
-        // was: a catalogue beside no script is litter, and `t()` falls back to
-        // its keys anyway if this fails.
-        if let Some(text) = catalogue {
-            let json = strings::catalogue_path(&path);
-            if let Err(err) = std::fs::write(&json, text) {
-                tracing::warn!("could not write {}: {err}", json.display());
-            }
+        // The strings. Written only when the script was: a catalogue beside
+        // no script is litter, and `t()` falls back to its keys anyway if this
+        // fails.
+        let json = strings::catalogue_path(&path);
+        if let Err(err) = std::fs::write(&json, catalogue) {
+            tracing::warn!("could not write {}: {err}", json.display());
         }
     }
 
@@ -492,24 +484,24 @@ pub fn seed_examples(dir: &Path, cfg: &Configuration) {
 /// should get by having installed NanoTorrent.
 /// Name, script, and the translations that go beside it.
 ///
-/// All three carry one. None of them has an English string left inline, which
+/// Every one carries one. None of them has an English string left inline, which
 /// is the example worth setting: a plugin that shows a person any text at all
 /// should be translatable, and the way to do that is a file next to the script.
-const EXAMPLES: &[(&str, &str, Option<&str>)] = &[
+const EXAMPLES: &[(&str, &str, &str)] = &[
     (
         "example",
         include_str!("../../docs/plugins/example.rhai"),
-        Some(include_str!("../../docs/plugins/example_translations.json")),
+        include_str!("../../docs/plugins/example_translations.json"),
     ),
     (
         "rss",
         include_str!("../../docs/plugins/rss.rhai"),
-        Some(include_str!("../../docs/plugins/rss_translations.json")),
+        include_str!("../../docs/plugins/rss_translations.json"),
     ),
     (
         "player",
         include_str!("../../docs/plugins/player.rhai"),
-        Some(include_str!("../../docs/plugins/player_translations.json")),
+        include_str!("../../docs/plugins/player_translations.json"),
     ),
 ];
 
@@ -701,7 +693,7 @@ fn run(
                 // been alive for a millisecond.
                 next_tick = std::time::Instant::now() + TICK;
             }
-            Ok(Wake::Stop | Wake::Shutdown) => break,
+            Ok(Wake::Stop) => break,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
         }
@@ -719,7 +711,7 @@ fn run(
 
     // Let a later "switch plugins back on" start a fresh host, rather than
     // sending to a thread that has gone.
-    if let Ok(mut slot) = control().lock() {
+    if let Ok(mut slot) = CONTROL.lock() {
         *slot = None;
     }
     tracing::info!("plugin host stopped");
@@ -859,12 +851,10 @@ enum Wake {
     Ui(ui::Origin, ui::UiEvent),
     /// The plugin settings changed: load whatever they now say.
     Reload,
-    /// Plugins were switched off. Distinct from `Shutdown` only in what it
-    /// says in the log - both end the host.
+    /// End the host: plugins were switched off, or the session is gone. The
+    /// latter is sent by the relay rather than inferred from a closed channel
+    /// - see the comment where it is sent.
     Stop,
-    /// The session is gone. Sent by the relay rather than inferred from a
-    /// closed channel - see the comment where it is sent.
-    Shutdown,
 }
 
 /// Hand a window click to the plugin that drew the window, and only that one.

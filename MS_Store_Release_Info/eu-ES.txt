@@ -30,6 +30,9 @@ NanoTorrent Viktor Elofsson-en PicoTorrent-en Rust portua da.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 0.4.4 bertsioa
 
+- Segurtasuna: HTTPS bidezko web-interfazea jada ez dago zerbitzu-ukatze eraso baten mende bere HTTP/2 geruzan; orain HTTP/1.1 soilik erabiltzen du. Ez duzu ezer aldatu behar.
+- Partekatze-mugak: ratio-muga batek zerrendan agertzen den ratioan gelditzen du orain torrenta. Lehen, NanoTorrent azkenekoz abiarazi zenetik igotakoa soilik zenbatzen zen, eta torrent batek mugaz haratago partekatzen jarrai zezakeen.
+- Zuzenketak: «Sortu torrenta» bidez egindako v1 torrentak beti dira baliozkoak eta berdinak ordenagailu guztietan, eta «Behartu berriz egiaztatzea» aukerak pausatutako torrenta berehala egiaztatzen du orain, abiarazi arte 0% erakutsi beharrean.
 - Barnean: NanoTorrent eraikitzeko erabiltzen diren liburutegiak eguneratu dira, azken zuzenketekin.
 
 

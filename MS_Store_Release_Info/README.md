@@ -7,10 +7,6 @@ Store listing. Paste each block into the matching field under
 There are 76 files, one for every locale in `lang/` — the same set the MSIX
 manifest declares as supported languages.
 
-Plus `restricted-capability-justification.txt`, which is not a listing: it is
-the `runFullTrust` justification Partner Center asks for on every submission,
-the same text each time, and it carries no version.
-
 ## You almost certainly do not need all 76
 
 Partner Center only asks for a listing in languages **you add to the

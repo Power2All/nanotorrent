@@ -30,6 +30,9 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 Versio 0.4.4
 
+- Tietoturva: HTTPS:n kautta toimiva verkkokäyttöliittymä ei ole enää altis palvelunestohyökkäykselle HTTP/2-kerroksessaan; se käyttää nyt vain HTTP/1.1:tä. Sinun ei tarvitse muuttaa mitään.
+- Jakorajat: suhderaja pysäyttää nyt torrentin luettelossa näkyvään suhteeseen. Aiemmin laskettiin vain lähetykset NanoTorrentin edellisestä käynnistyksestä, joten torrent saattoi jatkaa jakamista rajansa yli.
+- Korjaukset: toiminnolla ”Luo torrent” tehdyt v1-torrentit ovat aina kelvollisia ja samanlaisia joka tietokoneella, ja ”Pakota uudelleentarkistus” tarkistaa keskeytetyn torrentin nyt heti sen sijaan, että näyttäisi 0% käynnistykseen asti.
 - Konepellin alla: kirjastot, joiden varaan NanoTorrent on rakennettu, on päivitetty uusimpine korjauksineen.
 
 

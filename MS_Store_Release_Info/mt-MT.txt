@@ -30,6 +30,9 @@ NanoTorrent huwa port bir-Rust ta' PicoTorrent ta' Viktor Elofsson.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 Verżjoni 0.4.4
 
+- Sigurtà: l-interfaċċja tal-web fuq HTTPS m’għadhiex esposta għal attakk ta’ ċaħda ta’ servizz fis-saff HTTP/2 tagħha; issa tuża biss HTTP/1.1. M’għandek tibdel xejn.
+- Limiti tal-qsim: limitu tal-proporzjon issa jwaqqaf torrent fil-proporzjon muri fil-lista. Qabel kien jingħadd biss it-tlugħ minn meta NanoTorrent inbeda l-aħħar darba, għalhekk torrent seta' jkompli jaqsam lil hinn mil-limitu tiegħu.
+- Tiswijiet: torrents v1 magħmula b’“Oħloq torrent” huma dejjem validi u joħorġu l-istess fuq kull kompjuter, u “Sforza verifika mill-ġdid” fuq torrent ippawżjat issa jiċċekkjah minnufih minflok ma juri 0% sakemm jinbeda.
 - Taħt il-kappa: il-libreriji li fuqhom hu mibni NanoTorrent ġew aġġornati bl-aħħar korrezzjonijiet tagħhom.
 
 

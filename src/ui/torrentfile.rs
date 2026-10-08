@@ -243,8 +243,7 @@ mod tests {
             piece_length: Some(16384),
             version: TorrentVersion::Hybrid,
         })
-        .unwrap()
-        .bytes;
+        .unwrap();
 
         let parsed = parse(&bytes).unwrap();
         let pads: Vec<&ParsedFile> = parsed.files.iter().filter(|f| f.padding).collect();

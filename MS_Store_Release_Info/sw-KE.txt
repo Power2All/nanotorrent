@@ -30,6 +30,9 @@ NanoTorrent ni toleo la Rust la PicoTorrent ya Viktor Elofsson.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 Toleo 0.4.4
 
+- Usalama: kiolesura cha wavuti kupitia HTTPS hakiko tena wazi kwa shambulio la kunyima huduma katika safu yake ya HTTP/2; sasa kinatumia HTTP/1.1 pekee. Huhitaji kubadilisha chochote.
+- Vikomo vya kushiriki: kikomo cha uwiano sasa kinasimamisha torrent kwenye uwiano unaoonyeshwa kwenye orodha. Hapo awali kilihesabiwa tu upakiaji tangu NanoTorrent ilipoanzishwa mara ya mwisho, kwa hivyo torrent ingeweza kuendelea kushiriki zaidi ya kikomo chake.
+- Marekebisho: torrent za v1 zilizoundwa kwa “Tengeneza torrent” ni halali kila wakati na hutoka sawa kwenye kila kompyuta, na “Lazimisha kukagua upya” kwenye torrent iliyositishwa sasa huikagua mara moja badala ya kuonyesha 0% hadi ianzishwe.
 - Ndani: maktaba ambazo NanoTorrent imejengwa juu yake zimesasishwa pamoja na marekebisho yao ya hivi karibuni.
 
 

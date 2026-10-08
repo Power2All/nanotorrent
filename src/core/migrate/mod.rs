@@ -60,17 +60,6 @@ impl Source {
         }
     }
 
-    /// A stable key for settings and logs, where the µ would be a nuisance.
-    pub fn key(self) -> &'static str {
-        match self {
-            Source::PicoTorrent => "picotorrent",
-            Source::QBittorrent => "qbittorrent",
-            Source::UTorrent => "utorrent",
-            Source::BitComet => "bitcomet",
-            Source::Transmission => "transmission",
-        }
-    }
-
     /// Where this client keeps its profile, if it is installed.
     ///
     /// `None` means "not found here", which is what greys the entry out. It is
@@ -233,29 +222,40 @@ pub(crate) fn scan_dir(
     mut read_one: impl FnMut(&Path) -> Option<crate::core::pico_import::ImportEntry>,
 ) -> Result<Scan> {
     use anyhow::Context;
-    use std::sync::atomic::Ordering;
 
     let listing = std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))?;
+    let paths = listing
+        .flatten()
+        .map(|item| item.path())
+        .filter(|path| path.extension().and_then(|e| e.to_str()) == Some(ext));
+    Ok(collect(paths, cancel, |path| read_one(&path)))
+}
+
+/// Read each candidate into an entry, counting the ones that will not read.
+///
+/// Cancel is checked before every read. The result is sorted by info hash:
+/// `read_dir` and resume-file order are arbitrary, and a migration run twice
+/// should add torrents in the same order both times.
+pub(crate) fn collect<T>(
+    candidates: impl IntoIterator<Item = T>,
+    cancel: &AtomicBool,
+    mut read_one: impl FnMut(T) -> Option<crate::core::pico_import::ImportEntry>,
+) -> Scan {
+    use std::sync::atomic::Ordering;
+
     let mut entries = Vec::new();
     let mut unreadable = 0usize;
-    for item in listing.flatten() {
+    for candidate in candidates {
         if cancel.load(Ordering::Relaxed) {
             break;
         }
-        let path = item.path();
-        if path.extension().and_then(|e| e.to_str()) != Some(ext) {
-            continue;
-        }
-        match read_one(&path) {
+        match read_one(candidate) {
             Some(entry) => entries.push(entry),
             None => unreadable += 1,
         }
     }
-
-    // `read_dir` order is the filesystem's, which is arbitrary. Sort so a
-    // migration run twice adds them in the same order both times.
     entries.sort_by(|a, b| a.info_hash.cmp(&b.info_hash));
-    Ok(Scan { entries, unreadable })
+    Scan { entries, unreadable }
 }
 
 #[cfg(test)]
@@ -272,28 +272,14 @@ mod tests {
         }
     }
 
-    /// Labels and keys are both used as identity - a duplicate would put two
-    /// clients on one menu line, or one client's settings under another's name.
+    /// Labels are used as identity - a duplicate would put two clients on one
+    /// menu line.
     #[test]
-    fn labels_and_keys_are_distinct() {
+    fn labels_are_distinct() {
         for (i, a) in Source::ALL.iter().enumerate() {
             for b in &Source::ALL[i + 1..] {
                 assert_ne!(a.label(), b.label());
-                assert_ne!(a.key(), b.key());
             }
-        }
-    }
-
-    /// Keys go in the database and in log lines; they must stay boring.
-    #[test]
-    fn keys_are_plain_ascii() {
-        for s in Source::ALL {
-            assert!(
-                s.key().bytes().all(|b| b.is_ascii_lowercase()),
-                "{:?} -> {}",
-                s,
-                s.key()
-            );
         }
     }
 

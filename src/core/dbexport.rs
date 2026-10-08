@@ -302,7 +302,7 @@ mod tests {
         let from = db();
         let cfg = Configuration::new(from.clone());
         // Real keys from the migrations. Writing a key that does not exist is
-        // silently nothing - see `Configuration::set_value` - so a test using
+        // silently nothing - see `Configuration::write_value` - so a test using
         // invented names would pass while carrying no settings at all.
         cfg.set("locale_name", &"nl-NL");
         cfg.set("theme_id", &"dark");

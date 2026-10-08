@@ -30,6 +30,9 @@ NanoTorrent shi ne sigar Rust na PicoTorrent na Viktor Elofsson.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 Sigar 0.4.4
 
+- Tsaro: hanyar sadarwar yanar gizo ta HTTPS ba ta da rauni ga harin hana sabis a matakinta na HTTP/2 kuma; yanzu tana amfani da HTTP/1.1 kawai. Ba kwa buƙatar canza komai.
+- Iyakokin rabawa: iyakar rabo yanzu tana dakatar da torrent a rabon da aka nuna a jerin. A da ana ƙirga lodawa ne kawai tun lokacin da aka fara NanoTorrent na ƙarshe, don haka torrent na iya ci gaba da rabawa fiye da iyakarsa.
+- Gyare-gyare: torrent na v1 da aka yi da “Ƙirƙiri torrent” koyaushe suna da inganci kuma iri ɗaya ne a kowace kwamfuta, kuma “Tilasta sake dubawa” a kan torrent da aka dakatar na ɗan lokaci yanzu yana duba shi nan take maimakon nuna 0% har sai an fara shi.
 - A ciki: an sabunta laburaren da aka gina NanoTorrent a kansu, tare da sabbin gyare-gyarensu.
 
 

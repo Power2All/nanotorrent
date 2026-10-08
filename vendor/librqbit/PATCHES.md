@@ -1165,3 +1165,35 @@ line separated that attribute from the function it belonged to and silently
 re-attached it to the new one - which compiled, and produced a `dead_code`
 warning pointing at `inflight_count` that looked like an upstream problem. The
 new method goes ABOVE the doc comment, not between it and the function.
+
+## 0026 - a re-add can check its data while staying paused
+
+0016 made a torrent added paused leave its files alone: `create` without
+`init`, no check, the stored bitfield taken at face value. That is right for a
+session restore, which is what it was for.
+
+It is wrong for a re-add, and NanoTorrent re-adds a lot: a forced recheck, Set
+location, a finished move and a tracker edit all forget the torrent and add it
+back from its own bytes, because librqbit has no API for any of them. Forgetting
+deletes the stored bitfield. So a PAUSED torrent came back with nothing taken
+at face value and no check run - 0% - and stayed there until someone started
+it. A forced recheck on a paused, complete torrent turned it into an apparently
+empty one, which is the opposite of what was asked.
+
+`0026-verify-while-paused.patch` adds `AddTorrentOptions::verify_paused`.
+With `paused` it skips the deferral: real `create_and_init`, the initial check,
+then Paused with the result. Session restore never sets it, so 0016 still
+holds where it matters. NanoTorrent sets it on every re-add except Set
+location when the data was not found there - checking opens the files, which
+creates them, and a mistaken folder should not fill up with empty ones.
+
+The second half is in `torrent_state/mod.rs`. A check that ends paused leaves
+the files open read-write from `init`, and the Initializing -> Paused transition
+is not one of 0021's three release points - `pause` releases, but a torrent
+that was never live is never paused. Without the release, a rechecked paused
+torrent kept its files unopenable by other programs on Windows, which is the
+bug 0021 exists to fix. It releases only when the storage is real; a deferred
+one opened nothing.
+
+Covered by `recheck_reads_the_disk` and `set_location_finds_data_moved_by_hand`
+in `src/bittorrent/session_live_tests.rs`, which drive a real session.

@@ -30,6 +30,9 @@ NanoTorrent ir Viktora Elofsona PicoTorrent pārnesums uz Rust.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 Versija 0.4.4
 
+- Drošība: tīmekļa saskarne caur HTTPS vairs nav pakļauta pakalpojuma atteikuma uzbrukumam tās HTTP/2 slānī; tagad tā izmanto tikai HTTP/1.1. Jums nekas nav jāmaina.
+- Kopīgošanas ierobežojumi: attiecības ierobežojums tagad aptur torrentu pie sarakstā redzamās attiecības. Iepriekš tika skaitīta tikai augšupielāde kopš NanoTorrent pēdējās palaišanas, tāpēc torrents varēja turpināt kopīgošanu pāri savam ierobežojumam.
+- Labojumi: ar „Izveidot torrentu“ izveidotie v1 torrenti vienmēr ir derīgi un katrā datorā ir identiski, un „Piespiest atkārtotu pārbaudi“ tagad uzreiz pārbauda pauzētu torrentu, nevis rāda 0%, līdz tas tiek palaists.
 - Zem pārsega: bibliotēkas, uz kurām balstās NanoTorrent, ir atjauninātas ar jaunākajiem labojumiem.
 
 

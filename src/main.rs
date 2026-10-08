@@ -331,10 +331,6 @@ fn run() -> anyhow::Result<()> {
         }
     };
 
-    // One-time takeover of an existing PicoTorrent data folder (settings,
-    // session state) after the rename to NanoTorrent.
-    env.migrate_legacy_data();
-
     // Basic crash reporting - the Rust take on the original's Crashpad
     // integration (minus the upload): panics are written with a backtrace
     // to the logs folder before the default handler runs.
@@ -455,7 +451,7 @@ fn run() -> anyhow::Result<()> {
 
     // Plugins last: they subscribe to session events and may call straight
     // back into it, so everything they can reach has to exist first. Off
-    // unless plugins.enabled, and never fatal - see plugins::spawn.
+    // unless plugins.enabled, and never fatal - see plugins::reload.
     //
     // The example is written before the host starts, but it is switched off,
     // so this start will not load it either way.
@@ -463,7 +459,7 @@ fn run() -> anyhow::Result<()> {
     // A grant is keyed by name, so a deleted plugin's approval must not be
     // waiting for the next file that happens to use the same one.
     plugins::prune_grants(&env, &cfg);
-    plugins::spawn(session.clone(), cfg.clone(), env.clone());
+    plugins::reload(session.clone(), cfg.clone(), env.clone());
 
     let ctx = AppContext {
         env,

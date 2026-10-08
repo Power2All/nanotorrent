@@ -206,8 +206,9 @@ struct Ui {
     /// has not started arriving. Any drain that sees something resets this.
     migrate_quiet: std::cell::Cell<u8>,
     /// Torrents and magnets waiting for the Add dialog. argv can name several,
-    /// and only one dialog is shown at a time.
-    pending: RefCell<Vec<PendingAdd>>,
+    /// and only one dialog is shown at a time. A link's metadata is fetched
+    /// while the dialog is open, not before.
+    pending: RefCell<Vec<AddTorrentSource>>,
     /// What the open Add dialog is showing, so metadata arriving for one of
     /// its magnets can be put in front of it. `None` when no dialog is open.
     add_batch: RefCell<Option<Rc<AddBatch>>>,
@@ -420,32 +421,16 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
 
     wire_selection(&window, &ui, &model);
     wire_actions(&window, &ui);
-    {
-        let saved = ui.cfg.get_column_widths(TORRENT_LIST);
-        let (widths, titles, total) = columns(&ui.tr.borrow(), &saved);
-        apply_detail_columns(&window, &ui);
-        let cols = window.global::<Cols>();
-        cols.set_w(ModelRc::new(VecModel::from(widths)));
-        cols.set_titles(ModelRc::new(VecModel::from(titles)));
-        cols.set_total(total);
-    }
+    apply_columns(&window, &ui);
 
     *ui.main.borrow_mut() = Some(window.as_weak());
     // Every visible string in the markup is `L.s("key")`. Wired before the
     // window is shown so the first paint is already translated.
     wire_translations(&window, &ui);
-    // Only offered when there is a PicoTorrent database to import from, which
-    // is why this is a label rather than a fixed row: empty hides it. Read
-    // once at startup - somebody who installs PicoTorrent while NanoTorrent is
-    // running is not a case worth a filesystem watcher.
-    window.set_import_label(match ui.env.get_picotorrent_db_path() {
-        Some(_) => ui.tr.borrow().i18n1("import_from_app", "PicoTorrent").into(),
-        None => SharedString::new(),
-    });
 
-    // The Migrate-from submenu. Detected once at startup, like the line above:
-    // somebody who installs qBittorrent while NanoTorrent is running is not a
-    // case worth a filesystem watcher.
+    // The Migrate-from submenu. Detected once at startup: somebody who
+    // installs qBittorrent while NanoTorrent is running is not a case worth a
+    // filesystem watcher.
     {
         use crate::core::migrate::Source;
         let names: Vec<SharedString> = Source::ALL.iter().map(|s| s.label().into()).collect();
@@ -538,7 +523,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
             move || {
                 // A second instance forwards its argv here rather than
                 // opening a second window - see ipc::init.
-                if let Some(forwarded) = ui.ipc.as_ref().and_then(|s| s.try_recv()) {
+                if let Some(forwarded) = ui.ipc.as_ref().and_then(|s| s.try_recv().ok()) {
                     // Raise first, and even with nothing forwarded. Launching
                     // the app a second time IS a request to see it, and doing
                     // nothing is indistinguishable from failing to start -
@@ -706,15 +691,8 @@ const TOAST_DURATION: std::time::Duration = std::time::Duration::from_secs(5);
 /// The counter is what makes rapid copies behave: without it the timer from an
 /// earlier toast would clear a later one early, so each toast only clears the
 /// message if it is still the newest.
-fn show_toast(window: &MainWindow, text: &str) {
-    toast(window, text, false)
-}
-
-/// The same, in red, for something that did not work.
-fn show_error_toast(window: &MainWindow, text: &str) {
-    toast(window, text, true)
-}
-
+///
+/// `is_error` shows it in red, for something that did not work.
 fn toast(window: &MainWindow, text: &str, is_error: bool) {
     thread_local! {
         static GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -749,20 +727,14 @@ fn ui_string(tr: &Translator, key: &str) -> SharedString {
     // no accelerators, so the marker is dropped - otherwise the bar reads
     // "&File &View &Help". CRLF goes too; the JSON is authored for Win32
     // controls and Slint draws the stray CR as a box.
-    let text = tr.i18n(key);
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '&' {
-            if chars.peek() == Some(&'&') {
-                chars.next();
-                out.push('&');
-            }
-            continue;
-        }
-        out.push(c);
-    }
-    out.replace("\r\n", "\n").into()
+    // The NUL stands in for `&&` while the lone ones are removed; no
+    // translation contains one.
+    tr.i18n(key)
+        .replace("&&", "\0")
+        .replace('&', "")
+        .replace('\0', "&")
+        .replace("\r\n", "\n")
+        .into()
 }
 
 /// Roughly how wide `text` renders in the list header, in logical pixels.
@@ -868,22 +840,50 @@ fn detail_columns(
     saved: &std::collections::HashMap<i64, f32>,
 ) -> (Vec<f32>, Vec<SharedString>, f32) {
     // 12px of cell padding. No sort arrow here - the detail lists do not sort.
-    const PADDING: f32 = 12.0;
+    let captions = DETAIL_COLUMNS[tab]
+        .iter()
+        .map(|(key, base)| (ui_string(tr, key), *base));
+    sized_columns(captions, 12.0, saved)
+}
+
+/// Widths, captions and total for a list, from each column's caption and
+/// designed width.
+///
+/// A saved width wins over the designed one, but never over what the caption
+/// needs - a narrower translation must not clip its own header, which is the
+/// rule the designed width exists to enforce.
+fn sized_columns(
+    captions: impl Iterator<Item = (SharedString, f32)>,
+    padding: f32,
+    saved: &std::collections::HashMap<i64, f32>,
+) -> (Vec<f32>, Vec<SharedString>, f32) {
+    // Matches the floor the header's drag handle enforces, so a width that
+    // came back from the database cannot be narrower than one you can drag to.
     const MIN_COLUMN: f32 = 40.0;
 
-    let mut widths = Vec::new();
-    let mut titles = Vec::new();
-    for (i, (key, base)) in DETAIL_COLUMNS[tab].iter().enumerate() {
-        let caption = ui_string(tr, key);
-        let fits = base.max(caption_width(&caption) + PADDING);
-        widths.push(match saved.get(&(i as i64)) {
-            Some(w) => w.max(MIN_COLUMN),
-            None => fits,
-        });
-        titles.push(caption);
-    }
+    let (widths, titles): (Vec<f32>, Vec<SharedString>) = captions
+        .enumerate()
+        .map(|(i, (caption, base))| {
+            let width = match saved.get(&(i as i64)) {
+                Some(w) => w.max(MIN_COLUMN),
+                None => base.max(caption_width(&caption) + padding),
+            };
+            (width, caption)
+        })
+        .unzip();
     let total = widths.iter().sum();
     (widths, titles, total)
+}
+
+/// Push the torrent list's columns into `Cols`, and the details tabs' with them.
+fn apply_columns(window: &MainWindow, ui: &Rc<Ui>) {
+    let saved = ui.cfg.get_column_widths(TORRENT_LIST);
+    let (widths, titles, total) = columns(&ui.tr.borrow(), &saved);
+    apply_detail_columns(window, ui);
+    let cols = window.global::<Cols>();
+    cols.set_w(ModelRc::new(VecModel::from(widths)));
+    cols.set_titles(ModelRc::new(VecModel::from(titles)));
+    cols.set_total(total);
 }
 
 /// The strings each list is currently showing, one Vec per row.
@@ -1112,33 +1112,13 @@ fn columns(tr: &Translator, saved: &std::collections::HashMap<i64, f32>)
     const FIXED: [&str; 16] = [
         "", "#", "", "", "", "", "", "DL", "UL", "", "", "", "", "", "", "",
     ];
+    let captions = COLUMNS.iter().zip(FIXED).map(|((key, base), fixed)| {
+        let caption = if key.is_empty() { SharedString::from(fixed) } else { ui_string(tr, key) };
+        (caption, *base)
+    });
     // 12px of cell padding, plus room for the "  ^" sort arrow the caption
     // grows by when the column is the active sort.
-    const PADDING: f32 = 12.0 + 18.0;
-    // Matches the floor the header's drag handle enforces, so a width that
-    // came back from the database cannot be narrower than one you can drag to.
-    const MIN_COLUMN: f32 = 40.0;
-
-    let mut widths = Vec::with_capacity(COLUMNS.len());
-    let mut titles = Vec::with_capacity(COLUMNS.len());
-    for (i, (key, base)) in COLUMNS.iter().enumerate() {
-        let caption = if key.is_empty() {
-            SharedString::from(FIXED[i])
-        } else {
-            ui_string(tr, key)
-        };
-        // A saved width wins over the designed one, but never over what the
-        // caption needs - a narrower translation must not clip its own header,
-        // which is the rule the designed width exists to enforce.
-        let fits = base.max(caption_width(&caption) + PADDING);
-        widths.push(match saved.get(&(i as i64)) {
-            Some(w) => w.max(MIN_COLUMN),
-            None => fits,
-        });
-        titles.push(caption);
-    }
-    let total = widths.iter().sum();
-    (widths, titles, total)
+    sized_columns(captions, 12.0 + 18.0, saved)
 }
 
 /// Wire the translation lookup on a top-level component.
@@ -1173,7 +1153,7 @@ fn copy_to_clipboard(window: &MainWindow, ui: &Rc<Ui>, text: String) {
         // Confirming here rather than at each call site: the clipboard gives
         // no visible feedback of its own, so a copy that says nothing looks
         // like a menu item that did nothing.
-        Ok(()) => show_toast(window, &ui.tr.borrow().i18n("copied_to_clipboard")),
+        Ok(()) => toast(window, &ui.tr.borrow().i18n("copied_to_clipboard"), false),
         Err(err) => tracing::error!("cannot write to the clipboard: {err}"),
     }
 }
@@ -1399,7 +1379,7 @@ fn handle_params(ui: &Rc<Ui>, args: &[String]) {
             magnets.push(arg.clone());
         } else if arg.to_lowercase().ends_with(".torrent") {
             match std::fs::read(arg) {
-                Ok(bytes) => ui.pending.borrow_mut().push(PendingAdd::Torrent(bytes)),
+                Ok(bytes) => ui.pending.borrow_mut().push(AddTorrentSource::TorrentFileBytes(bytes)),
                 // Not fatal: one unreadable path should not stop the others.
                 Err(err) => tracing::error!("cannot read {arg}: {err}"),
             }
@@ -1433,7 +1413,7 @@ fn add_magnets(ui: &Rc<Ui>, links: Vec<String>) {
 
     ui.pending
         .borrow_mut()
-        .extend(links.into_iter().map(PendingAdd::Magnet));
+        .extend(links.into_iter().map(AddTorrentSource::MagnetUri));
 }
 
 /// Deliver magnet metadata to the Add dialog row it was fetched for. Called
@@ -1852,7 +1832,7 @@ fn drain_notifications(window: &MainWindow, ui: &Rc<Ui>) {
             // message that fades. Already logged where it was raised.
             SessionEvent::Error(err) => {
                 had_error = true;
-                show_error_toast(window, &err.text(&ui.tr.borrow()));
+                toast(window, &err.text(&ui.tr.borrow()), true);
             }
             // Confirmation that the add actually happened. Failures already
             // arrive as Error above, so between the two every add says
@@ -1904,7 +1884,7 @@ fn drain_notifications(window: &MainWindow, ui: &Rc<Ui>) {
     }
 
     if !parts.is_empty() {
-        show_toast(window, &parts.join(" - "));
+        toast(window, &parts.join(" - "), false);
     }
 }
 
@@ -2132,7 +2112,6 @@ fn prune<'a>(rows: Vec<TreeRow<'a>>, collapsed: &HashSet<String>) -> Vec<TreeRow
     out
 }
 
-/// Trackers.
 /// Do these rows differ from the ones the list is already showing?
 ///
 /// The detail lists each built a brand-new model every tick, which Slint reads
@@ -2565,9 +2544,9 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
                 let Some(hash) = u.detail_hash.borrow().clone() else { return };
                 let Some(window) = weak.upgrade() else { return };
                 if u.session.edit_tracker(&hash, &from, &to) {
-                    show_toast(&window, &u.tr.borrow().i18n("edit_tracker"));
+                    toast(&window, &u.tr.borrow().i18n("edit_tracker"), false);
                 } else {
-                    show_error_toast(&window, &u.tr.borrow().i18n("tracker_url_invalid"));
+                    toast(&window, &u.tr.borrow().i18n("tracker_url_invalid"), true);
                 }
             });
         });
@@ -2607,11 +2586,11 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
                 // The torrent is being re-added, so the list it is about to
                 // redraw from is briefly the old one. The one-second tick
                 // picks the new tracker up.
-                show_toast(&window, &u.tr.borrow().i18n("add_tracker"));
+                toast(&window, &u.tr.borrow().i18n("add_tracker"), false);
             } else {
                 // Refused by the scheme check, which is the only way this
                 // fails without touching the disk.
-                show_error_toast(&window, &u.tr.borrow().i18n("tracker_url_invalid"));
+                toast(&window, &u.tr.borrow().i18n("tracker_url_invalid"), true);
             }
         });
     }
@@ -3051,26 +3030,6 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
             "queue-down" => move_in_queue(&u, &targets, QueueMove::Down),
             "queue-bottom" => move_in_queue(&u, &targets, QueueMove::Bottom),
             "reannounce" => targets.iter().for_each(|h| u.session.reannounce(h)),
-            // One-shot import of every torrent from an existing PicoTorrent
-            // install. The row is only drawn when the database is there, so
-            // this cannot normally miss - but it is read again rather than
-            // remembered, because the row was drawn at startup and the file
-            // may have gone since.
-            "import-pico" => {
-                let Some(window) = w.upgrade() else { return };
-                {
-                    let tr = u.tr.borrow();
-                    if u.env.get_picotorrent_db_path().is_none() {
-                        show_error_toast(&window, &tr.i18n("nothing_to_add"));
-                        return;
-                    }
-                }
-                // Asked first, and asked once: importing can add hundreds of
-                // torrents and - if purging was ticked - take away everything
-                // already here. The dialog carries both choices so there is one
-                // decision point rather than three prompts in a row.
-                open_migrate(&window, &u, crate::core::migrate::Source::PicoTorrent);
-            }
             // The manual switch only. The schedule can also have the limits on,
             // and this must not silently turn that off - the scheduler will put
             // them straight back and the button would look broken.
@@ -3078,8 +3037,6 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
                 let on = !u.cfg.get_bool("speed.alt_enabled");
                 u.cfg.set("speed.alt_enabled", &on);
             }
-            "remove" => targets.iter().for_each(|h| u.session.remove(h, false)),
-            "remove-files" => targets.iter().for_each(|h| u.session.remove(h, true)),
             "copy-hash" => {
                 if let Some(window) = w.upgrade() {
                     copy_to_clipboard(&window, &u, targets.join("\n"));
@@ -3098,13 +3055,9 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
                 }
             }
             "move" => {
-                let Some(dir) = rfd::FileDialog::new()
-                    .set_title(u.tr.borrow().i18n("move"))
-                    .pick_folder()
-                else {
+                let Some(dir) = pick_folder(&u, "move") else {
                     return;
                 };
-                let dir = dir.to_string_lossy().into_owned();
                 for hash in &targets {
                     u.session.move_storage(hash, &dir);
                 }
@@ -3347,18 +3300,11 @@ fn pick_and_queue_torrents(ui: &Rc<Ui>) {
     );
     for path in paths {
         match std::fs::read(&path) {
-            Ok(bytes) => ui.pending.borrow_mut().push(PendingAdd::Torrent(bytes)),
+            Ok(bytes) => ui.pending.borrow_mut().push(AddTorrentSource::TorrentFileBytes(bytes)),
             Err(err) => tracing::error!("cannot read {}: {err}", path.display()),
         }
     }
     show_next_pending(ui);
-}
-
-/// Something waiting for the Add dialog.
-enum PendingAdd {
-    Torrent(Vec<u8>),
-    /// A link. Its metadata is fetched while the dialog is open, not before.
-    Magnet(String),
 }
 
 /// What an Add dialog row holds.
@@ -3598,7 +3544,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
         return; // already showing a batch; these wait in `pending`
     }
 
-    let queued: Vec<PendingAdd> = std::mem::take(&mut ui.pending.borrow_mut());
+    let queued: Vec<AddTorrentSource> = std::mem::take(&mut ui.pending.borrow_mut());
     if queued.is_empty() {
         return;
     }
@@ -3609,8 +3555,8 @@ fn show_next_pending(ui: &Rc<Ui>) {
     let mut failures: Vec<String> = Vec::new();
     for item in queued {
         let source = match item {
-            PendingAdd::Magnet(uri) => AddSource::Magnet(uri),
-            PendingAdd::Torrent(bytes) => match crate::ui::torrentfile::parse(&bytes) {
+            AddTorrentSource::MagnetUri(uri) => AddSource::Magnet(uri),
+            AddTorrentSource::TorrentFileBytes(bytes) => match crate::ui::torrentfile::parse(&bytes) {
                 Ok(p) => AddSource::Torrent(bytes, p),
                 // One bad file does not strand the rest of the batch.
                 Err(err) => {
@@ -3639,7 +3585,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
         && let Some(window) = ui.main.borrow().as_ref().and_then(|w| w.upgrade())
     {
         let headline = ui.tr.borrow().i18n("add_torrent_failed");
-        show_error_toast(&window, &format!("{headline}\n{}", failures.join("\n")));
+        toast(&window, &format!("{headline}\n{}", failures.join("\n")), true);
     }
 
     if entries.is_empty() {
@@ -3774,14 +3720,10 @@ fn show_next_pending(ui: &Rc<Ui>) {
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_browse(move || {
-            let Some(dir) = rfd::FileDialog::new()
-                .set_title(u.tr.borrow().i18n("save_torrent_to"))
-                .pick_folder()
-            else {
-                return;
-            };
-            if let Some(d) = weak.upgrade() {
-                d.set_save_path(dir.to_string_lossy().as_ref().into());
+            if let Some(dir) = pick_folder(&u, "save_torrent_to")
+                && let Some(d) = weak.upgrade()
+            {
+                d.set_save_path(dir.into());
             }
         });
     }
@@ -3922,13 +3864,7 @@ fn apply_language(window: &MainWindow, ui: &Rc<Ui>) {
     // they do not come along with the revision bump.
     // Re-read on a language change too: the captions change, so a column
     // may need to grow - but a width the user chose is still theirs.
-    let saved = ui.cfg.get_column_widths(TORRENT_LIST);
-    let (widths, titles, total) = columns(&ui.tr.borrow(), &saved);
-    apply_detail_columns(window, ui);
-    let cols = window.global::<Cols>();
-    cols.set_w(ModelRc::new(VecModel::from(widths)));
-    cols.set_titles(ModelRc::new(VecModel::from(titles)));
-    cols.set_total(total);
+    apply_columns(window, ui);
 
     bump_translations(window);
 
@@ -4008,14 +3944,14 @@ fn web_warning(d: &PreferencesDialog, tr: &Translator, password_set: bool) -> St
 
 /// The Web interface tab: the same settings `--webui-set` exposes, plus the
 /// password, which the CLI can only take through a prompt.
-/// Show an `Advanced` in the three Advanced fields.
+/// Show lockout `Limits` in the three Advanced fields.
 ///
 /// Shared by the initial load and the Reset button so the two cannot disagree
 /// about which field holds which knob.
-fn put_advanced(dialog: &PreferencesDialog, adv: &crate::webui::Advanced) {
-    dialog.set_web_auth_max_failures(adv.auth_max_failures.to_string().into());
-    dialog.set_web_auth_window(adv.auth_window.to_string().into());
-    dialog.set_web_auth_block(adv.auth_block.to_string().into());
+fn put_advanced(dialog: &PreferencesDialog, adv: &crate::webui::Limits) {
+    dialog.set_web_auth_max_failures(adv.max_failures.to_string().into());
+    dialog.set_web_auth_window(adv.window.as_secs().to_string().into());
+    dialog.set_web_auth_block(adv.block.as_secs().to_string().into());
 }
 
 fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
@@ -4055,10 +3991,10 @@ fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
     dialog.set_web_cert_path(cfg.get_string("webui.tls_cert_path").unwrap_or_default().into());
     dialog.set_web_key_path(cfg.get_string("webui.tls_key_path").unwrap_or_default().into());
 
-    // Shown through Advanced::load rather than read raw, so the fields display
+    // Shown through Limits::load rather than read raw, so the fields display
     // the value the server will actually use - a clamped or missing setting
     // would otherwise show one number here and behave as another.
-    put_advanced(dialog, &crate::webui::Advanced::load(cfg));
+    put_advanced(dialog, &crate::webui::Limits::load(cfg));
 
     // Reset puts the defaults in the fields only; OK still does the writing,
     // so it is undoable with Cancel like every other edit here.
@@ -4066,7 +4002,7 @@ fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
         let weak = dialog.as_weak();
         dialog.on_web_advanced_reset(move || {
             if let Some(d) = weak.upgrade() {
-                put_advanced(&d, &crate::webui::Advanced::default());
+                put_advanced(&d, &crate::webui::Limits::default());
             }
         });
     }
@@ -4206,7 +4142,7 @@ fn save_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
 
     // Advanced tab. Only well-formed numbers are stored; a blank or garbled
     // field leaves the existing setting alone rather than resetting it. The
-    // ranges are Advanced::load's business - it clamps on the way out too, so
+    // ranges are Limits::load's business - it clamps on the way out too, so
     // a value edited into the database by hand is bounded the same way.
     set_num(cfg, "webui.auth_max_failures", &d.get_web_auth_max_failures());
     set_num(cfg, "webui.auth_window", &d.get_web_auth_window());
@@ -4681,12 +4617,10 @@ fn open_preferences(ui: &Rc<Ui>) {
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_browse_save_path(move || {
-            if let Some(dir) = rfd::FileDialog::new()
-                .set_title(u.tr.borrow().i18n("save_path"))
-                .pick_folder()
+            if let Some(dir) = pick_folder(&u, "save_path")
                 && let Some(d) = weak.upgrade()
             {
-                d.set_save_path(dir.to_string_lossy().as_ref().into());
+                d.set_save_path(dir.into());
             }
         });
     }
@@ -5406,12 +5340,7 @@ fn sort_rows(rows: &mut [TorrentStatus], column: usize, ascending: bool) {
             4 => s(&format!("{:?}", a.state), &format!("{:?}", b.state)),
             5 => f(a.progress, b.progress),
             // No ETA sorts last ascending, which is where "unknown" belongs.
-            6 => match (a.eta, b.eta) {
-                (Some(x), Some(y)) => x.cmp(&y),
-                (Some(_), None) => Ordering::Less,
-                (None, Some(_)) => Ordering::Greater,
-                (None, None) => Ordering::Equal,
-            },
+            6 => a.eta.is_none().cmp(&b.eta.is_none()).then(a.eta.cmp(&b.eta)),
             7 => a.download_payload_rate.cmp(&b.download_payload_rate),
             8 => a.upload_payload_rate.cmp(&b.upload_payload_rate),
             9 => f(a.availability, b.availability),
@@ -5590,9 +5519,9 @@ fn poll_update(ui: &Rc<Ui>) {
     match report.error {
         Some(err) => {
             tracing::warn!("update check failed: {err}");
-            show_error_toast(&window, &ui.tr.borrow().i18n("update_check_failed"));
+            toast(&window, &ui.tr.borrow().i18n("update_check_failed"), true);
         }
-        None => show_toast(&window, &ui.tr.borrow().i18n("no_update_available")),
+        None => toast(&window, &ui.tr.borrow().i18n("no_update_available"), false),
     }
 }
 
@@ -5675,7 +5604,7 @@ fn open_db_prompt(ui: &Rc<Ui>) {
                 && let Some(err) = set_db_encryption(&u, true)
                 && let Some(window) = u.main.borrow().as_ref().and_then(|w| w.upgrade())
             {
-                show_error_toast(&window, &err);
+                toast(&window, &err, true);
             }
             if let Some(d) = weak.upgrade() {
                 dismiss(&u, &d);
@@ -7069,7 +6998,7 @@ fn open_migrate(window: &MainWindow, ui: &Rc<Ui>, source: crate::core::migrate::
                 Some(root) => root,
                 None => {
                     let tr = ui.tr.borrow();
-                    show_error_toast(window, &tr.i18n1("migrate_not_found", source.label()));
+                    toast(window, &tr.i18n1("migrate_not_found", source.label()), true);
                     return;
                 }
             }
@@ -7265,7 +7194,7 @@ fn run_migration(
         // The progress window says it too, but that window is one someone
         // closes and forgets; the toast is what is still there afterwards.
         let _ = owner.upgrade_in_event_loop(move |w| {
-            show_toast(&w, &shown);
+            toast(&w, &shown, false);
         });
     });
 }

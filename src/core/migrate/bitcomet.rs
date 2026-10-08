@@ -27,8 +27,7 @@ use std::sync::atomic::AtomicBool;
 use anyhow::Result;
 use quick_xml::events::Event;
 
-use crate::core::bencode;
-use crate::core::pico_import::{ImportEntry, ImportSource, Scan};
+use crate::core::pico_import::{ImportEntry, Scan};
 
 /// BitComet's profile directory, if it is there.
 pub fn detect() -> Option<PathBuf> {
@@ -44,9 +43,6 @@ pub fn scan(profile: &Path, cancel: &AtomicBool) -> Result<Scan> {
 
 fn read_one(torrent: &Path) -> Option<ImportEntry> {
     let bytes = std::fs::read(torrent).ok()?;
-    let info = bencode::dict_get(&bytes, b"info")?;
-    let (v1, v2) = crate::bittorrent::metainfo::info_hashes(info);
-
     // Same stem, `.xml` instead. Built as a string rather than with
     // `with_extension`, which would eat everything after the first dot of a
     // torrent named `Some.Release.2026.torrent`.
@@ -56,13 +52,7 @@ fn read_one(torrent: &Path) -> Option<ImportEntry> {
         .ok()
         .and_then(|xml| save_path_in(&xml));
 
-    Some(ImportEntry {
-        info_hash: v1.or(v2)?,
-        source: ImportSource::TorrentBytes(bytes),
-        save_path,
-        label_id: None,
-        label_name: None,
-    })
+    ImportEntry::from_torrent(bytes, save_path, None)
 }
 
 /// Hunt an absolute path out of XML whose element names are unknown.

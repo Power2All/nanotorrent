@@ -30,6 +30,9 @@ Trosiad Rust o PicoTorrent gan Viktor Elofsson yw NanoTorrent.
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
 Fersiwn 0.4.4
 
+- Diogelwch: nid yw’r rhyngwyneb gwe dros HTTPS bellach yn agored i ymosodiad gwrthod gwasanaeth yn ei haen HTTP/2; mae’n defnyddio HTTP/1.1 yn unig nawr. Does dim angen newid dim ar eich ochr chi.
+- Terfynau rhannu: mae terfyn cymhareb bellach yn atal torrent ar y gymhareb a ddangosir yn y rhestr. Yn flaenorol, dim ond uwchlwythiadau ers i NanoTorrent gael ei gychwyn ddiwethaf a gyfrifwyd, felly gallai torrent barhau i hadu y tu hwnt i'w derfyn.
+- Atgyweiriadau: mae torrentiau v1 a wneir gyda “Creu torrent” bob amser yn ddilys ac yn dod allan yr un fath ar bob cyfrifiadur, ac mae “Gorfodi ailwirio” bellach yn gwirio torrent sydd wedi’i oedi yn syth yn lle dangos 0% nes iddo gael ei gychwyn.
 - O dan y bonet: mae’r llyfrgelloedd y mae NanoTorrent wedi’i adeiladu arnynt wedi’u diweddaru gyda’u trwsiadau diweddaraf.
 
 
