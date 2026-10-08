@@ -1,6 +1,8 @@
-// Globals shared by every window: the translation lookup and the clipboard.
-// Kept out of app.slint because app.slint imports the dialogs, so anything
-// they both need cannot live there.
+// Globals shared by every window: the translation lookup, the clipboard, and
+// the hover-tip body. Kept out of app.slint because app.slint imports the
+// dialogs, so anything they both need cannot live there.
+
+import { Palette } from "std-widgets.slint";
 
 // Copying a detail value to the clipboard. A global rather than a callback
 // threaded through every list row: the cells below are several layers deep and
@@ -22,4 +24,22 @@ export global L {
     /// app is restarted.
     in property <int> revision;
     pure callback s(int, string) -> string;
+}
+
+// What a hover tip shows: one line of text in a bordered box. The content of
+// a `Tooltip`, shared so every tip in the app looks the same.
+export component TipBox inherits Rectangle {
+    in property <string> text;
+    background: Palette.alternate-background;
+    border-color: Palette.border;
+    border-width: 1px;
+    border-radius: 4px;
+    HorizontalLayout {
+        padding: 6px;
+        Text {
+            text: root.text;
+            font-size: 12px;
+            color: Palette.foreground;
+        }
+    }
 }

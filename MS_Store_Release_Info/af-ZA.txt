@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Afrikaans (Suid-Afrika) - Partner Center: Afrikaans (South Africa) (af-ZA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent is 'n Rust-oordrag van PicoTorrent deur Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Weergawe 0.4.3
+Weergawe 0.4.4
 
-- Magneetskakels wag nie meer vir hul besonderhede nie: die Voeg by-dialoog maak dadelik oop, en ’n magneet wat bygevoeg word voordat die besonderhede aankom, word as “Metadata word afgelaai” in die lys gewys totdat hulle aankom, soos in qBittorrent.
+- Sekuriteit: die webkoppelvlak oor HTTPS is nie meer blootgestel aan ’n diensweieringsaanval in sy HTTP/2-laag nie; dit gebruik nou slegs HTTP/1.1. Jy hoef niks te verander nie.
+- Deelgrense: 'n verhoudingsgrens stop nou 'n torrent by die verhouding wat in die lys gewys word. Voorheen is net oplaaie getel sedert NanoTorrent laas begin is, sodat 'n torrent verby sy grens kon aanhou saai.
+- Regstellings: v1-torrents wat met “Skep torrent” gemaak word, is altyd geldig en kom op elke rekenaar dieselfde uit, en “Dwing hertoetsing” op 'n gepouseerde torrent toets dit nou dadelik in plaas daarvan om 0% te wys totdat dit begin word.
+- Onder die enjinkap: die biblioteke waarop NanoTorrent gebou is, is bygewerk, met hul jongste regstellings.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

@@ -16,28 +16,36 @@
 
 /// Index just past the bencoded value starting at `i`.
 pub fn skip(data: &[u8], i: usize) -> Option<usize> {
-    match data.get(i)? {
-        b'i' => {
-            let e = data[i + 1..].iter().position(|&b| b == b'e')?;
-            Some(i + 1 + e + 1)
-        }
+    skip_at(data, i, 0)
+}
+
+/// `depth` is a guard, not bookkeeping: this recurses through nested lists and
+/// dicts, and a `.torrent` - a v2 `file tree` especially - is attacker-supplied.
+/// 32 is far deeper than any real file nests, and far shallower than the stack.
+fn skip_at(data: &[u8], i: usize, depth: u32) -> Option<usize> {
+    const MAX_DEPTH: u32 = 32;
+    if depth > MAX_DEPTH {
+        return None;
+    }
+    match *data.get(i)? {
+        b'i' => Some(i + data.get(i..)?.iter().position(|&b| b == b'e')? + 1),
         b'l' | b'd' => {
             let mut j = i + 1;
             while *data.get(j)? != b'e' {
-                j = skip(data, j)?;
+                j = skip_at(data, j, depth + 1)?;
             }
             Some(j + 1)
         }
-        b'0'..=b'9' => {
-            let colon = data[i..].iter().position(|&b| b == b':')? + i;
-            let len: usize = std::str::from_utf8(data.get(i..colon)?).ok()?.parse().ok()?;
-            Some(colon + 1 + len)
-        }
+        b'0'..=b'9' => string_at(data, i).map(|(_, end)| end),
         _ => None,
     }
 }
 
 /// Raw bytes of `key`'s value in the top-level bencoded dict (`data` starts 'd').
+///
+/// Only the outermost dict, walked value by value. A substring search would be
+/// wrong: `pieces` and `meta version` are both legal file names inside a v2
+/// `file tree`, so finding those bytes somewhere in a torrent proves nothing.
 pub fn dict_get<'a>(data: &'a [u8], key: &[u8]) -> Option<&'a [u8]> {
     entries(data).find(|(k, _)| *k == key).map(|(_, v)| v)
 }
@@ -69,18 +77,31 @@ pub fn entries(data: &[u8]) -> impl Iterator<Item = (&[u8], &[u8])> {
 
 /// Decode a bencoded string token (`<len>:<bytes>`) into its raw bytes.
 pub fn string(data: &[u8]) -> Option<&[u8]> {
-    let colon = data.iter().position(|&b| b == b':')?;
-    let len: usize = std::str::from_utf8(&data[..colon]).ok()?.parse().ok()?;
-    data.get(colon + 1..colon + 1 + len)
+    string_at(data, 0).map(|(s, _)| s)
 }
 
-/// A bencoded string as UTF-8, lossily.
+/// The bencoded string at `i`: its contents, and the index just past it.
+///
+/// Checked both ways, because the length prefix is whatever the file says: an
+/// end past the buffer is `None`, and so is one that overflows on the way.
+pub fn string_at(data: &[u8], i: usize) -> Option<(&[u8], usize)> {
+    let colon = i + data.get(i..)?.iter().position(|&b| b == b':')?;
+    let len: usize = std::str::from_utf8(data.get(i..colon)?).ok()?.parse().ok()?;
+    let start = colon + 1;
+    let end = start.checked_add(len)?;
+    data.get(start..end).map(|s| (s, end))
+}
+
+/// A bencoded string as UTF-8, lossily. `None` for an empty one as well as a
+/// missing one: to the importers an empty path or label is no path or label.
 ///
 /// Lossy on purpose: these are paths written by another program on another
 /// machine, and a save path with one undecodable byte is still worth having -
 /// the alternative is dropping the torrent entirely over a mojibake filename.
 pub fn text(data: &[u8]) -> Option<String> {
-    string(data).map(|b| String::from_utf8_lossy(b).into_owned())
+    string(data)
+        .filter(|b| !b.is_empty())
+        .map(|b| String::from_utf8_lossy(b).into_owned())
 }
 
 #[cfg(test)]
@@ -177,5 +198,20 @@ mod tests {
             let _ = entries(bad).count();
             let _ = skip(bad, 0);
         }
+    }
+
+    /// The two attacks a `.torrent` can make on a walker: nesting deep enough
+    /// to exhaust the stack, and a length prefix that overflows on its way to
+    /// an index. Both are refused, not followed.
+    #[test]
+    fn hostile_depth_and_lengths_are_refused() {
+        let nested = |depth: usize| [b"l".repeat(depth), b"e".repeat(depth)].concat();
+        assert!(skip(&nested(30), 0).is_some(), "real files nest this deep");
+        assert_eq!(skip(&nested(10_000), 0), None, "a nesting bomb");
+
+        let overflow = format!("{}:x", usize::MAX);
+        assert_eq!(string(overflow.as_bytes()), None);
+        assert_eq!(skip(overflow.as_bytes(), 0), None);
+        assert_eq!(string_at(b"3:abc", 0), Some((&b"abc"[..], 5)));
     }
 }

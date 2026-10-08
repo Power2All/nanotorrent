@@ -19,6 +19,15 @@ use crate::core::database::Database;
 use crate::core::environment::Environment;
 use crate::ui::translator::Translator;
 
+/// `on` / `off`, and their usual spellings. `None` for anything else.
+fn on_off(arg: Option<&String>) -> Option<bool> {
+    match arg.map(String::as_str) {
+        Some("on" | "true" | "1") => Some(true),
+        Some("off" | "false" | "0") => Some(false),
+        _ => None,
+    }
+}
+
 /// The web-interface half of `--help`, in the configured language.
 pub fn usage(tr: &Translator) -> String {
     format!(
@@ -91,12 +100,7 @@ pub fn handle(args: &[String]) -> Result<bool> {
 
     match flag {
         "--webui" => {
-            let state = args.get(1).map(String::as_str);
-            let on = match state {
-                Some("on") | Some("true") | Some("1") => true,
-                Some("off") | Some("false") | Some("0") => false,
-                _ => anyhow::bail!("{}", usage(&tr)),
-            };
+            let Some(on) = on_off(args.get(1)) else { anyhow::bail!("{}", usage(&tr)) };
             cfg.set("webui.enabled", &on);
 
             if on && cfg.get_string("webui.password_hash").unwrap_or_default().is_empty() {
@@ -111,11 +115,7 @@ pub fn handle(args: &[String]) -> Result<bool> {
         }
 
         "--plugins" => {
-            let on = match args.get(1).map(String::as_str) {
-                Some("on") | Some("true") | Some("1") => true,
-                Some("off") | Some("false") | Some("0") => false,
-                _ => anyhow::bail!("{}", usage(&tr)),
-            };
+            let Some(on) = on_off(args.get(1)) else { anyhow::bail!("{}", usage(&tr)) };
             cfg.set(crate::plugins::ENABLED_KEY, &on);
 
             if on {
@@ -126,11 +126,10 @@ pub fn handle(args: &[String]) -> Result<bool> {
                     "{}",
                     tr.i18n1("cli_plugins_turned_on", &dir.display().to_string())
                 );
-                println!("{}", tr.i18n("cli_applies_note"));
             } else {
                 println!("{}", tr.i18n("cli_plugins_turned_off"));
-                println!("{}", tr.i18n("cli_applies_note"));
             }
+            println!("{}", tr.i18n("cli_applies_note"));
         }
 
         "--set-web-password" => {

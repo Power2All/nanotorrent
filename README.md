@@ -25,9 +25,9 @@ Site: <https://www.nanotorrent.org>
 | Remote access         | —                               | Optional authenticated HTTPS web interface           |
 | Logging               | boost::log to file              | `tracing` to file                                    |
 
-On first run NanoTorrent does a one-time copy of an existing
-`%LOCALAPPDATA%\PicoTorrent` data folder (settings + session state) into
-`%LOCALAPPDATA%\NanoTorrent`, leaving the original untouched.
+An existing PicoTorrent install is never touched on its own. **File ▸
+Migrate from ▸ PicoTorrent** brings its torrents, labels and (optionally)
+settings across, leaving the original untouched.
 
 ## Screenshots
 
@@ -732,6 +732,75 @@ one. Collected so nobody has to file them twice.
   yet.
 
 ## History
+
+**v0.4.4** closes a pre-login denial of service in the HTTPS web interface,
+makes a ratio limit stop torrents at the ratio it shows, gets the AppImage
+starting on a minimal system, and moves v1 torrent creation off librqbit.
+
+- v1 torrents are built by `torrent_create::build`, like v2 and hybrid.
+  librqbit's creator listed a folder in `walkdir` order (filesystem order, so
+  the same folder could hash differently on two machines), unwrapped
+  `OsStr::to_str` (a non-UTF-8 name panicked the hashing task and left the
+  dialog busy forever), and appended `sha1("")` when the total was an exact
+  multiple of the piece length - one hash too many. Where its output was
+  right, ours is byte-identical, and a test holds it to that;
+  another verifies every piece independently through the engine's parser,
+  and the info hashes of a fixed folder are pinned for all three versions. Auto piece size is now
+  `auto_piece_length` for v1 too, not a flat 2 MiB.
+- Engine patch 0026, `verify_paused`. Patch 0016 defers a paused add's storage
+  and check, which is right for a restore; but every re-add (recheck, Set
+  location, move, tracker edit) forgets the torrent first, which deletes its
+  bitfield, so a paused one came back at 0% and unchecked. Re-adds now check
+  while staying paused, and the Initializing -> Paused transition releases
+  write handles the way 0021's `pause` does.
+- The lifecycle scan took its baseline on its first tick, a second after
+  startup, so a torrent added in that second - the one a double-clicked
+  .torrent launches the program with - never raised `TorrentAdded`. The
+  baseline is now the restored set, taken when the scan is spawned.
+- `Session::torrent` passed an empty label table, so a plugin's `torrent()`
+  and `torrents()` always saw `label: ""`. `Session::label_names` fills it,
+  and the web API uses the same call.
+- The silent first-run copy of `%LOCALAPPDATA%\PicoTorrent` is gone. It
+  predated v0.1.0, and on a machine with the original C++ PicoTorrent it
+  copied that program's database wholesale; File ▸ Migrate from ▸ PicoTorrent
+  does the job on request, settings included.
+- Migration `20261008000000` drops the eight `webui.*` tuning rows that have
+  been constants since v0.4.0, and `every_setting_of_our_own_is_read_somewhere`
+  fails the build's tests if a NanoTorrent setting is ever left unread again.
+- `session_live_tests.rs` drives a real `Session` in a scratch profile with no
+  network: create and seed every version, pause/resume/remove, labels, restart
+  (state kept, nothing re-announced), recheck, move storage, set location.
+
+- The share-limit guard measured the ratio by the engine's own upload counter,
+  which covers only the current session - every launch, and every settings
+  change (which rebuilds the engine), starts it again at zero. v0.4.1 moved the
+  ratio *column* to the persisted all-time total and left the guard behind, so
+  a torrent showing 3.90 against a limit of 2.00 kept seeding until a single
+  session had uploaded twice its size. The guard now folds the live counter
+  into that same total (`share_reading` in `bittorrent/session.rs`), which is
+  safe to do alongside the list's own fold because of the watermark. Anything
+  already past its limit gets its action within ten seconds of the first
+  launch - which for "remove with data" means removed, files and all.
+
+- The web interface serves HTTPS as HTTP/1.1 only. actix-web's TLS support
+  switches on HTTP/2 through h2 0.3, which queues empty DATA frames without
+  limit (RUSTSEC-2026-0258) - reachable before authentication by anyone who
+  can reach the port. The fix is h2 0.4, which actix-http does not take, and
+  0.3 never got a backport. So actix's `http2` feature is off, TLS comes from
+  actix-http directly, and the HTTPS listener is assembled from actix-server
+  and actix-http by hand with the same limits as before: h2 0.3 is no longer
+  in the build at all, and the advisory is gone from `.cargo/audit.toml`
+  rather than ignored there. Browsers choose HTTP/1.1 by themselves.
+- winit loads `libxkbcommon-x11` with `dlopen()` only when a window opens, so
+  linuxdeploy - which follows the binary's ELF dependencies - never bundled
+  it. Where the system did not have it either, the AppImage quit at once with
+  "Library libxkbcommon-x11.so could not be loaded", which is how the AppImage
+  catalog's test saw it. It is bundled now along with `libxcb-xkb`, which it
+  needs, and the release build proves it: it removes the system copy, starts
+  the AppImage on Xvfb and waits for its window.
+- Two rounds of dependency updates, all within their current versions, and
+  the GitHub Actions on their current majors (checkout v7, upload-artifact v7,
+  download-artifact v8, Store publisher v1.4).
 
 **v0.4.3** lets a magnet in before its metadata has arrived, and gives
 portable mode a switch.

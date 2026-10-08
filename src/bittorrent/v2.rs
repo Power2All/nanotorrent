@@ -107,9 +107,7 @@ impl V2Meta {
     /// transport keeps working unchanged. This is what makes a v2 swarm
     /// reachable without any new peer messages.
     pub fn truncated_info_hash(&self) -> [u8; 20] {
-        let mut out = [0u8; 20];
-        out.copy_from_slice(&self.info_hash_v2[..20]);
-        out
+        *self.info_hash_v2.first_chunk().unwrap()
     }
 }
 
@@ -478,25 +476,16 @@ fn decode(b: &[u8], i: usize) -> Option<(Val<'_>, usize)> {
             let mut items = Vec::new();
             let mut j = i + 1;
             while *b.get(j)? != b'e' {
-                let (k, after) = decode_str(b, j)?;
+                let (k, after) = crate::core::bencode::string_at(b, j)?;
                 let (v, next) = decode(b, after)?;
                 items.push((k, v));
                 j = next;
             }
             Some((Val::Dict(items), j + 1))
         }
-        b'0'..=b'9' => decode_str(b, i).map(|(s, end)| (Val::Bytes(s), end)),
+        b'0'..=b'9' => crate::core::bencode::string_at(b, i).map(|(s, end)| (Val::Bytes(s), end)),
         _ => None,
     }
-}
-
-/// Decode a bencode byte string at `i`.
-fn decode_str(b: &[u8], i: usize) -> Option<(&[u8], usize)> {
-    let colon = b[i..].iter().position(|c| *c == b':')? + i;
-    let len: usize = std::str::from_utf8(&b[i..colon]).ok()?.parse().ok()?;
-    let start = colon + 1;
-    let end = start.checked_add(len)?;
-    b.get(start..end).map(|s| (s, end))
 }
 
 // ----------------------------------------------------------------- parse ---
@@ -507,7 +496,7 @@ fn decode_str(b: &[u8], i: usize) -> Option<(&[u8], usize)> {
 /// this module to do. Errors are strings because every caller is showing them
 /// to a person who just picked a file.
 pub fn parse(torrent_bytes: &[u8]) -> Result<Option<V2Meta>, String> {
-    let info_bytes = match super::metainfo::bencode_lookup(torrent_bytes, b"info") {
+    let info_bytes = match crate::core::bencode::dict_get(torrent_bytes, b"info") {
         Some(b) => b,
         None => return Err("torrent has no info dictionary".into()),
     };
@@ -516,7 +505,7 @@ pub fn parse(torrent_bytes: &[u8]) -> Result<Option<V2Meta>, String> {
     // each file's `pieces root`. A magnet has none of it, which is why the
     // info dict is parsed separately below.
     let mut layers: HashMap<[u8; 32], Vec<[u8; 32]>> = HashMap::new();
-    if let Some(raw) = super::metainfo::bencode_lookup(torrent_bytes, b"piece layers")
+    if let Some(raw) = crate::core::bencode::dict_get(torrent_bytes, b"piece layers")
         && let Some((v, _)) = decode(raw, 0)
         && let Some(entries) = v.as_dict()
     {
@@ -1070,13 +1059,7 @@ fn synthetic_v1_info_ben(meta: &V2Meta) -> super::torrent_create::Ben {
         .unwrap_or(usize::MAX);
 
     for (i, f) in meta.files.iter().enumerate() {
-        files.push(Ben::Dict(vec![
-            (b"length".to_vec(), Ben::Int(f.length as i64)),
-            (
-                b"path".to_vec(),
-                Ben::List(f.components.iter().map(|c| Ben::s(c)).collect()),
-            ),
-        ]));
+        files.push(Ben::file_entry(f.length, &f.components));
         // Pad up to the next piece boundary, except after the final file with
         // data - the torrent legitimately ends mid-piece there, and padding it
         // would invent bytes that no peer has.
@@ -1085,14 +1068,7 @@ fn synthetic_v1_info_ben(meta: &V2Meta) -> super::torrent_create::Ben {
         }
         let pad = (piece_length - f.length % piece_length) % piece_length;
         if pad > 0 {
-            files.push(Ben::Dict(vec![
-                (b"attr".to_vec(), Ben::s("p")),
-                (b"length".to_vec(), Ben::Int(pad as i64)),
-                (
-                    b"path".to_vec(),
-                    Ben::List(vec![Ben::s(".pad"), Ben::s(&pad.to_string())]),
-                ),
-            ]));
+            files.push(Ben::pad_entry(pad));
         }
     }
 
@@ -1206,11 +1182,7 @@ impl MagnetHashes {
     pub fn wire_id(&self) -> Option<librqbit::Id20> {
         match (self.v1, self.v2) {
             (Some(v1), _) => Some(librqbit::Id20::new(v1)),
-            (None, Some(v2)) => {
-                let mut truncated = [0u8; 20];
-                truncated.copy_from_slice(&v2[..20]);
-                Some(librqbit::Id20::new(truncated))
-            }
+            (None, Some(v2)) => Some(librqbit::Id20::new(*v2.first_chunk().unwrap())),
             (None, None) => None,
         }
     }
@@ -1332,7 +1304,7 @@ mod tests {
             version,
         })
         .unwrap();
-        let meta = parse(&built.bytes)
+        let meta = parse(&built)
             .expect("v2 torrent failed to parse")
             .expect("writer produced no meta version");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1430,7 +1402,7 @@ mod tests {
             version: TorrentVersion::V2,
         })
         .unwrap();
-        let meta = parse(&built.bytes).unwrap().unwrap();
+        let meta = parse(&built).unwrap().unwrap();
         let _ = std::fs::remove_dir_all(&dir);
 
         assert_eq!(meta.files.len(), 2);
@@ -1484,7 +1456,7 @@ mod tests {
         })
         .unwrap();
         assert!(
-            parse(&built.bytes).unwrap().is_none(),
+            parse(&built).unwrap().is_none(),
             "a v1 torrent was parsed as v2"
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -1525,14 +1497,13 @@ mod tests {
         // Flip a byte inside the piece layers blob. Its position is found by
         // searching for the real layer, so this stays correct if the writer's
         // key order changes.
-        let good = parse(&built.bytes).unwrap().unwrap();
+        let good = parse(&built).unwrap().unwrap();
         let layer_hash = good.layout.pieces[0].hash;
         let pos = built
-            .bytes
             .windows(32)
             .position(|w| w == layer_hash)
             .expect("piece layer hash not found in the torrent");
-        let mut tampered = built.bytes.clone();
+        let mut tampered = built.clone();
         tampered[pos + 5] ^= 0x01;
 
         let err = parse(&tampered).expect_err("a forged piece layer was accepted");
@@ -1576,7 +1547,7 @@ mod tests {
             version: TorrentVersion::V2,
         })
         .unwrap();
-        let meta = parse(&built.bytes).unwrap().unwrap();
+        let meta = parse(&built).unwrap().unwrap();
 
         // 2 + 2 + 0 + 1
         assert_eq!(meta.layout.pieces.len(), 5, "unexpected v2 piece count");
@@ -1584,7 +1555,7 @@ mod tests {
         // Now the synthetic view: its total length, cut into pieces, must give
         // the same count.
         let synth = synthetic_v1(&meta);
-        let info = crate::bittorrent::metainfo::bencode_lookup(&synth, b"info").unwrap();
+        let info = crate::core::bencode::dict_get(&synth, b"info").unwrap();
         let (v, _) = decode(info, 0).unwrap();
         let entries = match v.get(b"files").unwrap() {
             Val::List(l) => l.clone(),
@@ -1694,8 +1665,6 @@ mod tests {
         assert_eq!(magnet_hashes("not a magnet"), MagnetHashes::default());
     }
 
-    /// Hybrid magnets must work whichever way round the two urns are written -
-    /// BEP 52 allows both, and the engine only ever looks at `xt`.
     /// Build the full merkle tree for a payload, layer by layer, exactly as a
     /// seeder holds it. Returns `tree[0] = leaves`, `tree[n] = layer n`.
     fn full_tree(payload: &[u8]) -> Vec<Vec<[u8; 32]>> {
@@ -2009,7 +1978,7 @@ mod tests {
         .unwrap();
 
         // All a magnet gives us: the info dict (over BEP 9) and the hash.
-        let full = parse(&built.bytes).unwrap().unwrap();
+        let full = parse(&built).unwrap().unwrap();
         let info_bytes = full.info_bytes.clone();
         let info_hash = librqbit::Id20::new(full.truncated_info_hash());
 
@@ -2148,7 +2117,7 @@ mod tests {
         })
         .unwrap();
 
-        let prepared = match prepare(&built.bytes).unwrap() {
+        let prepared = match prepare(&built).unwrap() {
             V2Prep::V2Only(p) => p,
             _ => panic!("not recognised as v2-only"),
         };
@@ -2242,7 +2211,7 @@ mod tests {
             version: TorrentVersion::V2,
         })
         .unwrap();
-        let prepared = match prepare(&built.bytes).unwrap() {
+        let prepared = match prepare(&built).unwrap() {
             V2Prep::V2Only(p) => p,
             _ => panic!("not recognised as v2-only"),
         };
@@ -2533,6 +2502,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Hybrid magnets must work whichever way round the two urns are written -
+    /// BEP 52 allows both, and the engine only ever looks at `xt`.
     #[test]
     fn hybrid_magnets_are_normalised_whichever_way_round() {
         let v1hex = "cab507494d02ebb1178b38f2e9d7be299c86b862";

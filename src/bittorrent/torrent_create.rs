@@ -1,8 +1,10 @@
-//! BitTorrent v2 (BEP 52) and hybrid torrent creation.
+//! Torrent creation: v1, v2 (BEP 52) and hybrid.
 //!
-//! librqbit only creates v1 torrents (`TorrentMetaV1*`, SHA-1), so v2 and
-//! hybrid are built here from scratch:
+//! librqbit only creates v1 torrents, and not reliably enough to keep (see
+//! `session::build_torrent`), so all three are built here from scratch:
 //!
+//! - **v1**: SHA-1 over `piece length` pieces of the files laid end to end,
+//!   with `length` for a single file and a `files` list for a folder.
 //! - **v2**: SHA-256 merkle trees over 16 KiB blocks (`pieces root` per file),
 //!   a nested `file tree`, `piece layers`, and `meta version = 2`.
 //! - **hybrid**: the same info dict *also* carries the v1 fields (`pieces`,
@@ -61,6 +63,23 @@ impl Ben {
         Ben::Bytes(text.as_bytes().to_vec())
     }
 
+    /// One entry of a v1 `files` list.
+    pub(crate) fn file_entry(length: u64, components: &[String]) -> Ben {
+        Ben::Dict(vec![
+            (b"length".to_vec(), Ben::Int(length as i64)),
+            (b"path".to_vec(), Ben::List(components.iter().map(|c| Ben::s(c)).collect())),
+        ])
+    }
+
+    /// A BEP 47 padding file of `pad` bytes, for a v1 `files` list.
+    pub(crate) fn pad_entry(pad: u64) -> Ben {
+        Ben::Dict(vec![
+            (b"attr".to_vec(), Ben::s("p")),
+            (b"length".to_vec(), Ben::Int(pad as i64)),
+            (b"path".to_vec(), Ben::List(vec![Ben::s(".pad"), Ben::s(&pad.to_string())])),
+        ])
+    }
+
     /// Append the bencoded form to `out`.
     ///
     /// Dictionary keys are sorted here rather than at construction. Bencode
@@ -111,16 +130,12 @@ impl Ben {
 
 /// SHA-1 of one buffer - v1 piece hashes and the v1 info hash.
 fn sha1(data: &[u8]) -> [u8; 20] {
-    let mut h = Sha1::new();
-    h.update(data);
-    h.finalize().into()
+    Sha1::digest(data).into()
 }
 
 /// SHA-256 of one buffer - v2 block hashes and the v2 info hash (BEP 52).
 pub(crate) fn sha256(data: &[u8]) -> [u8; 32] {
-    let mut h = Sha256::new();
-    h.update(data);
-    h.finalize().into()
+    Sha256::digest(data).into()
 }
 
 /// One interior node of a v2 merkle tree: SHA-256 over two child hashes.
@@ -149,6 +164,17 @@ struct SrcFile {
     length: u64,
 }
 
+/// A file or folder name as the UTF-8 a torrent stores.
+///
+/// Refused rather than converted lossily: a name with a replacement character
+/// in it no longer matches the file on disk, so the torrent would hash fine
+/// and then fail to seed from the very folder it was made from.
+fn utf8_name(name: &std::ffi::OsStr) -> Result<String> {
+    name.to_str()
+        .map(str::to_owned)
+        .with_context(|| format!("file name is not valid Unicode: {}", name.to_string_lossy()))
+}
+
 /// Collect the files to include, sorted by path. For a single file the one
 /// component is its name; for a directory, paths are relative to it.
 ///
@@ -157,10 +183,7 @@ struct SrcFile {
 /// yields one file, but its torrent name is the directory, so it must still be
 /// laid out as a multi-file torrent.
 fn collect_files(source: &Path) -> Result<(String, Vec<SrcFile>, bool)> {
-    let name = source
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .context("source has no file name")?;
+    let name = utf8_name(source.file_name().context("source has no file name")?)?;
 
     if source.is_file() {
         let length = source.metadata()?.len();
@@ -176,7 +199,7 @@ fn collect_files(source: &Path) -> Result<(String, Vec<SrcFile>, bool)> {
     }
 
     let mut files = Vec::new();
-    walk(source, &mut Vec::new(), &mut files)?;
+    walk(source, &mut Vec::new(), &mut Vec::new(), &mut files)?;
     // Deterministic order (bencode also requires sorted keys; this keeps the
     // v1 `files` list and v2 tree consistent).
     files.sort_by(|a, b| a.components.cmp(&b.components));
@@ -193,15 +216,31 @@ fn collect_files(source: &Path) -> Result<(String, Vec<SrcFile>, bool)> {
 /// file. Anything that is neither after following (a broken link, a socket, a
 /// fifo) is skipped silently; a file that cannot be stat'ed fails the build,
 /// because a torrent missing a file it was asked to include is worse than none.
-fn walk(dir: &Path, prefix: &mut Vec<String>, out: &mut Vec<SrcFile>) -> Result<()> {
+///
+/// A link back to a folder already being walked is skipped: following it would
+/// list the same files again one level deeper, and again, until the path grew
+/// too long for the OS - a torrent of thousands of copies, or no torrent at
+/// all. `ancestors` holds the canonical path of each folder on the way down.
+fn walk(
+    dir: &Path,
+    prefix: &mut Vec<String>,
+    ancestors: &mut Vec<PathBuf>,
+    out: &mut Vec<SrcFile>,
+) -> Result<()> {
+    let here = dir.canonicalize()?;
+    if ancestors.contains(&here) {
+        tracing::warn!("not following {}: it loops back to a parent folder", dir.display());
+        return Ok(());
+    }
+    ancestors.push(here);
     let mut entries: Vec<_> = std::fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
     entries.sort_by_key(|e| e.file_name());
     for entry in entries {
         let path = entry.path();
-        let name = entry.file_name().to_string_lossy().into_owned();
+        let name = utf8_name(&entry.file_name())?;
         if path.is_dir() {
             prefix.push(name);
-            walk(&path, prefix, out)?;
+            walk(&path, prefix, ancestors, out)?;
             prefix.pop();
         } else if path.is_file() {
             let mut components = prefix.clone();
@@ -214,6 +253,7 @@ fn walk(dir: &Path, prefix: &mut Vec<String>, out: &mut Vec<SrcFile>) -> Result<
             });
         }
     }
+    ancestors.pop();
     Ok(())
 }
 
@@ -237,13 +277,15 @@ fn hash_file_v2(path: &Path, piece_length: u32) -> Result<FileV2> {
 
     // SHA-256 each 16 KiB block; the final block is hashed as-is (not padded).
     let mut leaves: Vec<[u8; 32]> = Vec::new();
-    let mut buf = vec![0u8; BLOCK];
+    // A short read only happens at EOF.
+    let mut buf = Vec::with_capacity(BLOCK);
     loop {
-        let n = read_up_to(&mut f, &mut buf)?;
+        buf.clear();
+        let n = (&mut f).take(BLOCK as u64).read_to_end(&mut buf)?;
         if n == 0 {
             break;
         }
-        leaves.push(sha256(&buf[..n]));
+        leaves.push(sha256(&buf));
         if n < BLOCK {
             break;
         }
@@ -287,19 +329,6 @@ fn hash_file_v2(path: &Path, piece_length: u32) -> Result<FileV2> {
         pieces_root: Some(pieces_root),
         piece_layer,
     })
-}
-
-/// Read as much as possible into `buf` (a short read only happens at EOF).
-fn read_up_to(f: &mut File, buf: &mut [u8]) -> Result<usize> {
-    let mut filled = 0;
-    while filled < buf.len() {
-        let n = f.read(&mut buf[filled..])?;
-        if n == 0 {
-            break;
-        }
-        filled += n;
-    }
-    Ok(filled)
 }
 
 // v1 piece hashing (for hybrid), with BEP 47 padding-file alignment
@@ -414,10 +443,6 @@ pub struct CreateInput<'a> {
     pub created_by: String,
 }
 
-pub struct Built {
-    pub bytes: Vec<u8>,
-}
-
 /// A power-of-two piece length aimed at a reasonable piece count.
 pub fn auto_piece_length(total: u64) -> u32 {
     let mut pl: u64 = 256 * 1024;
@@ -427,20 +452,23 @@ pub fn auto_piece_length(total: u64) -> u32 {
     pl as u32
 }
 
-/// Validate/normalize a piece length for v2/hybrid: power of two, >= 16 KiB.
+/// Validate a piece length: a power of two, at least 16 KiB.
+///
+/// v2 needs both - a piece is a subtree of 16 KiB merkle blocks. v1 alone
+/// would take any size, but every client picks a power of two and the dialog
+/// only offers those, so one rule serves all three versions.
 pub fn validate_piece_length(pl: u32) -> Result<u32> {
     if pl < BLOCK as u32 {
-        bail!("piece size must be at least 16 KiB for v2/hybrid torrents");
+        bail!("piece size must be at least 16 KiB");
     }
     if !pl.is_power_of_two() {
-        bail!("piece size must be a power of two for v2/hybrid torrents");
+        bail!("piece size must be a power of two");
     }
     Ok(pl)
 }
 
-/// Build a v2 or hybrid torrent. (v1 stays on librqbit; call this only for
-/// `V2`/`Hybrid`.)
-pub fn build(input: &CreateInput) -> Result<Built> {
+/// Build a finished `.torrent` of any version from a file or folder.
+pub fn build(input: &CreateInput) -> Result<Vec<u8>> {
     let (name, files, source_is_file) = collect_files(input.source)?;
     if files.is_empty() {
         bail!("no files to add");
@@ -510,24 +538,13 @@ pub fn build(input: &CreateInput) -> Result<Built> {
             let mut v1_files: Vec<Ben> = Vec::new();
             for (idx, f) in files.iter().enumerate() {
                 stream_file(&f.abs, |chunk| hasher.push(chunk))?;
-                let path = Ben::List(f.components.iter().map(|c| Ben::s(c)).collect());
-                v1_files.push(Ben::Dict(vec![
-                    (b"length".to_vec(), Ben::Int(f.length as i64)),
-                    (b"path".to_vec(), path),
-                ]));
+                v1_files.push(Ben::file_entry(f.length, &f.components));
                 // Align every file but the last to a piece boundary with a
                 // BEP 47 padding file. Hybrid only - see above.
                 if hybrid && idx + 1 < files.len() {
                     let pad = hasher.pad_to_piece();
                     if pad > 0 {
-                        v1_files.push(Ben::Dict(vec![
-                            (b"attr".to_vec(), Ben::s("p")),
-                            (b"length".to_vec(), Ben::Int(pad as i64)),
-                            (
-                                b"path".to_vec(),
-                                Ben::List(vec![Ben::s(".pad"), Ben::s(&pad.to_string())]),
-                            ),
-                        ]));
+                        v1_files.push(Ben::pad_entry(pad as u64));
                     }
                 }
             }
@@ -569,9 +586,7 @@ pub fn build(input: &CreateInput) -> Result<Built> {
         root.push((b"piece layers".to_vec(), Ben::Dict(piece_layers)));
     }
 
-    Ok(Built {
-        bytes: Ben::Dict(root).to_bytes(),
-    })
+    Ok(Ben::Dict(root).to_bytes())
 }
 
 #[cfg(test)]
@@ -605,12 +620,11 @@ mod tests {
                 version,
             })
             .unwrap()
-            .bytes
         };
         // Look inside the info dict, not the whole file: `length` also appears
         // in every v2 file-tree leaf, so a whole-buffer search proves nothing.
         let info_has = |bytes: &[u8], key: &[u8]| {
-            let info = crate::bittorrent::metainfo::bencode_lookup(bytes, b"info").unwrap();
+            let info = crate::core::bencode::dict_get(bytes, b"info").unwrap();
             let mut probe = Vec::new();
             probe.extend_from_slice(key.len().to_string().as_bytes());
             probe.push(b':');
@@ -645,7 +659,8 @@ mod tests {
     }
 
     /// Helper for manual testing: build a torrent of any shape from a folder.
-    ///   NT_SRC=<dir> NT_OUT=<file.torrent> NT_VERSION=hybrid     ///     cargo test --bin nanotorrent-gui make_shaped_torrent -- --ignored
+    ///   NT_SRC=<dir> NT_OUT=<file.torrent> NT_VERSION=hybrid \
+    ///     cargo test --bin nanotorrent-gui make_shaped_torrent -- --ignored
     #[test]
     #[ignore = "writes a torrent from NT_SRC to NT_OUT"]
     fn make_shaped_torrent() {
@@ -666,8 +681,8 @@ mod tests {
             version,
         })
         .unwrap();
-        std::fs::write(&out, &built.bytes).unwrap();
-        println!("wrote {} ({} bytes)", out.display(), built.bytes.len());
+        std::fs::write(&out, &built).unwrap();
+        println!("wrote {} ({} bytes)", out.display(), built.len());
     }
 
     #[test]
@@ -758,7 +773,7 @@ mod tests {
             created_by: "test".into(),
         })
         .unwrap();
-        let s = built.bytes;
+        let s = built;
         // Structural checks (bencode substrings).
         assert!(contains(&s, b"12:meta versioni2e"), "meta version");
         assert!(contains(&s, b"9:file tree"), "file tree");
@@ -785,7 +800,7 @@ mod tests {
             created_by: "test".into(),
         })
         .unwrap();
-        let s = built.bytes;
+        let s = built;
         assert!(contains(&s, b"12:meta versioni2e"), "v2 meta version");
         assert!(contains(&s, b"9:file tree"), "v2 file tree");
         assert!(contains(&s, b"6:pieces"), "v1 pieces");
@@ -800,6 +815,318 @@ mod tests {
         assert!(validate_piece_length(256 * 1024).is_ok());
         assert!(validate_piece_length(1000).is_err()); // too small
         assert!(validate_piece_length(3 * BLOCK as u32).is_err()); // not power of two
+    }
+
+    /// A fresh, empty scratch folder for one test.
+    fn scratch_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("nt-tc-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Write `len` bytes of a pattern that differs per `seed`, creating parent
+    /// folders. Patterned rather than constant so that two files, or a file
+    /// and its own shifted copy, never hash alike by accident.
+    fn put(root: &Path, rel: &str, len: usize, seed: u8) {
+        let path = root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let data: Vec<u8> = (0..len)
+            .map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed))
+            .collect();
+        std::fs::write(path, data).unwrap();
+    }
+
+    fn v1(source: &Path, piece_length: u32) -> Vec<u8> {
+        build(&CreateInput {
+            source,
+            version: TorrentVersion::V1,
+            piece_length: Some(piece_length),
+            trackers: &[],
+            comment: "",
+            private: false,
+            created_by: "test".into(),
+        })
+        .unwrap()
+    }
+
+    /// Check a v1 torrent against the data it was made from, the way a
+    /// downloading peer would: parse it with the ENGINE's parser (not ours),
+    /// lay the listed files end to end in the listed order, and SHA-1 every
+    /// piece. Independent of how `build` hashes, so it catches a builder that
+    /// is self-consistent but wrong. A hybrid's BEP 47 padding files are not on
+    /// disk; they read as zeros, which is what they are defined to be.
+    fn verify_v1(torrent: &[u8], source: &Path) {
+        let meta = librqbit::torrent_from_bytes(torrent).expect("engine refused the torrent");
+        let info = &meta.info.data;
+        let piece_length = info.piece_length as usize;
+
+        let mut data = Vec::new();
+        match &info.files {
+            None => data.extend(std::fs::read(source).unwrap()),
+            Some(files) => {
+                for f in files {
+                    if f.attr.as_ref().is_some_and(|a| a.as_ref().contains(&b'p')) {
+                        data.resize(data.len() + f.length as usize, 0);
+                        continue;
+                    }
+                    let mut path = source.to_path_buf();
+                    for c in &f.path {
+                        path.push(std::str::from_utf8(c.as_ref()).unwrap());
+                    }
+                    let bytes = std::fs::read(&path).unwrap();
+                    assert_eq!(bytes.len() as u64, f.length, "{} length", path.display());
+                    data.extend(bytes);
+                }
+            }
+        }
+
+        let pieces = info.pieces.as_ref();
+        assert_eq!(pieces.len() % 20, 0, "pieces is not a whole number of hashes");
+        assert_eq!(
+            pieces.len() / 20,
+            data.len().div_ceil(piece_length),
+            "wrong number of piece hashes for {} bytes at {piece_length}",
+            data.len()
+        );
+        for (i, (chunk, want)) in data.chunks(piece_length).zip(pieces.chunks(20)).enumerate() {
+            assert_eq!(&sha1(chunk)[..], want, "piece {i} does not match the data");
+        }
+    }
+
+    /// Every v1 shape hashes correctly, including the two edges librqbit's own
+    /// creator got wrong: a total that is an exact multiple of the piece size
+    /// (it appended a hash of nothing, one more piece than there is data for),
+    /// and empty files, which carry no data but must still be listed.
+    #[test]
+    fn v1_pieces_match_the_files_they_describe() {
+        let root = scratch_dir("v1verify");
+        put(&root, "unaligned.bin", 40_000, 1);
+        put(&root, "aligned.bin", 32_768, 2);
+        put(&root, "empty.bin", 0, 0);
+        put(&root, "multi/b.bin", 20_000, 4);
+        put(&root, "multi/a.bin", 50_000, 5);
+        put(&root, "multi/sub/c.bin", 1, 6);
+        put(&root, "multi/sub/a.bin", 16_384, 7);
+        put(&root, "fit/a.bin", 16_384, 8);
+        put(&root, "fit/b.bin", 16_384, 9);
+        put(&root, "empties/a.bin", 0, 0);
+        put(&root, "empties/m.bin", 20_000, 3);
+        put(&root, "empties/n.bin", 0, 0);
+        put(&root, "empties/z.bin", 0, 0);
+
+        for case in ["unaligned.bin", "aligned.bin", "empty.bin", "multi", "fit", "empties"] {
+            for piece_length in [16_384, 65_536] {
+                let source = root.join(case);
+                verify_v1(&v1(&source, piece_length), &source);
+                // The v1 half of a hybrid has to verify the same way, padding
+                // files and all, or v1-only peers cannot use it.
+                let hybrid = build(&CreateInput {
+                    source: &source,
+                    version: TorrentVersion::Hybrid,
+                    piece_length: Some(piece_length),
+                    trackers: &[],
+                    comment: "",
+                    private: false,
+                    created_by: "test".into(),
+                })
+                .unwrap();
+                verify_v1(&hybrid, &source);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Where librqbit's creator was right, ours is byte-identical to it: same
+    /// info dict, so the same info hash for the same data. This is what made it
+    /// safe to stop using librqbit's creator for v1 - a torrent made by 0.4.3
+    /// and one made now, from the same file, are the same torrent.
+    ///
+    /// Only shapes whose order librqbit fixes are compared: it lists a folder
+    /// in the order the filesystem hands back, which is why it was replaced.
+    #[test]
+    fn v1_info_dict_matches_librqbit_where_it_was_right() {
+        let root = scratch_dir("v1rqbit");
+        put(&root, "single.bin", 40_000, 1);
+        put(&root, "chain/x/y/z.bin", 70_000, 3);
+        put(&root, "private.bin", 3_000, 4);
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        for case in ["single.bin", "chain", "private.bin"] {
+            for piece_length in [16_384u32, 2 * 1024 * 1024] {
+                let source = root.join(case);
+                // Inside the async block: BlockingSpawner reads the runtime handle.
+                let theirs = rt
+                    .block_on(async {
+                        librqbit::create_torrent(
+                            &source,
+                            librqbit::CreateTorrentOptions {
+                                name: None,
+                                trackers: Vec::new(),
+                                piece_length: Some(piece_length),
+                            },
+                            &librqbit::spawn_utils::BlockingSpawner::new(1),
+                        )
+                        .await
+                    })
+                    .unwrap();
+                let ours = v1(&source, piece_length);
+                let ours_info = crate::core::bencode::dict_get(&ours, b"info").unwrap();
+                assert_eq!(
+                    ours_info,
+                    theirs.as_info().info.raw_bytes.as_ref(),
+                    "{case} at {piece_length}: info dict differs from librqbit's"
+                );
+            }
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A folder is listed sorted by path, whatever order the files were
+    /// written in - so the same folder makes the same torrent on every machine.
+    #[test]
+    fn v1_folder_order_is_sorted_and_repeatable() {
+        let root = scratch_dir("v1order");
+        // Created in reverse, which is the order tmpfs and some others list.
+        for (i, name) in ["d/z.bin", "d/m/q.bin", "d/m/b.bin", "d/a.bin"].iter().enumerate() {
+            put(&root, name, 1000 + i, i as u8);
+        }
+        let source = root.join("d");
+        let first = v1(&source, 16_384);
+        let meta = librqbit::torrent_from_bytes(&first).unwrap();
+        let listed: Vec<String> = meta
+            .info
+            .data
+            .files
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|f| {
+                f.path
+                    .iter()
+                    .map(|c| std::str::from_utf8(c.as_ref()).unwrap())
+                    .collect::<Vec<_>>()
+                    .join("/")
+            })
+            .collect();
+        assert_eq!(listed, ["a.bin", "m/b.bin", "m/q.bin", "z.bin"]);
+
+        let info = |t: &[u8]| crate::core::bencode::dict_get(t, b"info").unwrap().to_vec();
+        assert_eq!(info(&first), info(&v1(&source, 16_384)), "same folder, different info dict");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The info hash of a fixed folder, per version, written down.
+    ///
+    /// A change to any of these is a change to which torrent a given folder
+    /// becomes - it would no longer match one made by an earlier release, and
+    /// seeding a re-made torrent would join a different swarm. That can be the
+    /// right call, but it should be a decision, so it fails here first.
+    const PINNED_V1: &str = "d7688e8e82e8b3291820c4f4fc3e55a279618e8c";
+    const PINNED_V2: &str = "fc1629cf081391b1324d7d85be62df0d0e5d6066b8f5e02d74a04fc7e4c8e559";
+    const PINNED_HYBRID_V1: &str = "e509f9286715b9239fdfaa165046403d8282d59f";
+    const PINNED_HYBRID_V2: &str = "13557875cdcd5fa887466990b4dc11e7eb16c71d38d16f7777bd95c539dfd95b";
+
+    #[test]
+    fn info_hashes_are_pinned_per_version() {
+        let root = scratch_dir("pinned");
+        put(&root, "pinned/a.bin", 40_000, 1);
+        put(&root, "pinned/sub/b.bin", 16_384, 2);
+        put(&root, "pinned/sub/empty.bin", 0, 0);
+        put(&root, "pinned/z.bin", 5, 3);
+        let source = root.join("pinned");
+
+        let hashes = |version| {
+            let built = build(&CreateInput {
+                source: &source,
+                version,
+                piece_length: Some(16_384),
+                trackers: &["http://tracker.example/announce".into()],
+                comment: "pinned",
+                private: true,
+                created_by: "test".into(),
+            })
+            .unwrap();
+            let info = crate::core::bencode::dict_get(&built, b"info").unwrap();
+            crate::bittorrent::metainfo::info_hashes(info)
+        };
+
+        let (v1_hash, v2_hash) = hashes(TorrentVersion::V1);
+        assert_eq!(v1_hash.as_deref(), Some(PINNED_V1));
+        assert_eq!(v2_hash, None, "a v1 torrent has no v2 hash");
+
+        let (v1_hash, v2_hash) = hashes(TorrentVersion::V2);
+        assert_eq!(v1_hash, None, "a v2 torrent has no v1 hash");
+        assert_eq!(v2_hash.as_deref(), Some(PINNED_V2));
+
+        let (v1_hash, v2_hash) = hashes(TorrentVersion::Hybrid);
+        assert_eq!(v1_hash.as_deref(), Some(PINNED_HYBRID_V1));
+        assert_eq!(v2_hash.as_deref(), Some(PINNED_HYBRID_V2));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A folder that links back to itself is walked once, not until the path
+    /// is too long for the OS.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_back_to_a_parent_is_not_followed() {
+        let root = scratch_dir("symloop");
+        put(&root, "d/a.bin", 1000, 1);
+        put(&root, "outside.bin", 500, 2);
+        std::os::unix::fs::symlink(root.join("d"), root.join("d/loop")).unwrap();
+        // A link to a FILE is still followed: it is included as that file.
+        std::os::unix::fs::symlink(root.join("outside.bin"), root.join("d/linked.bin")).unwrap();
+
+        let (_, files, _) = collect_files(&root.join("d")).unwrap();
+        let names: Vec<_> = files.iter().map(|f| f.components.join("/")).collect();
+        assert_eq!(names, ["a.bin", "linked.bin"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A name that is not UTF-8 is an error, not a torrent listing a file name
+    /// that exists nowhere. librqbit's creator panicked here instead, which
+    /// left the dialog spinning forever.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_file_name_that_is_not_unicode_is_refused() {
+        use std::os::unix::ffi::OsStrExt;
+        let root = scratch_dir("notutf8");
+        std::fs::create_dir_all(root.join("d")).unwrap();
+        let bad = root.join("d").join(std::ffi::OsStr::from_bytes(b"caf\xe9.bin"));
+        std::fs::write(bad, b"x").unwrap();
+
+        let err = build(&CreateInput {
+            source: &root.join("d"),
+            version: TorrentVersion::V1,
+            piece_length: Some(16_384),
+            trackers: &[],
+            comment: "",
+            private: false,
+            created_by: "test".into(),
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("not valid Unicode"), "{err:#}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Auto piece size: 256 KiB until that would mean more than ~2000 pieces,
+    /// then doubling, and never past 16 MiB.
+    #[test]
+    fn auto_piece_length_scales_with_size() {
+        const K: u64 = 1024;
+        const M: u64 = 1024 * K;
+        assert_eq!(auto_piece_length(0), 256 * K as u32);
+        assert_eq!(auto_piece_length(100 * M), 256 * K as u32);
+        assert_eq!(auto_piece_length(2000 * 256 * K), 256 * K as u32);
+        assert_eq!(auto_piece_length(2000 * 256 * K + 256 * K), 512 * K as u32);
+        assert_eq!(auto_piece_length(4 * 1024 * M), 4 * M as u32);
+        assert_eq!(auto_piece_length(u64::MAX), 16 * M as u32);
+        for total in [0, 1, M, 10 * 1024 * M, u64::MAX] {
+            assert!(validate_piece_length(auto_piece_length(total)).is_ok());
+        }
     }
 
     fn contains(haystack: &[u8], needle: &[u8]) -> bool {

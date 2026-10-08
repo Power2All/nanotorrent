@@ -197,9 +197,6 @@ $UnsupportedListingLanguages = @(
 
 $listingFiles = @{}
 foreach ($file in Get-ChildItem -Path $ListingDir -Filter *.txt | Sort-Object Name) {
-    # Not a listing: it explains a store policy answer, not a language.
-    if ($file.BaseName -eq 'restricted-capability-justification') { continue }
-
     if ($UnsupportedListingLanguages -contains $file.BaseName) {
         Write-Host "  skipping $($file.BaseName): the Store takes no listings in it"
         continue

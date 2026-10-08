@@ -11,15 +11,13 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-pub enum ImportSource {
-    /// A minimal `.torrent` reconstructed from the resume blob's `info` dict.
-    TorrentBytes(Vec<u8>),
-    Magnet(String),
-}
+use crate::bittorrent::session::AddTorrentSource;
 
 pub struct ImportEntry {
     pub info_hash: String,
-    pub source: ImportSource,
+    /// For PicoTorrent, torrent bytes are a minimal `.torrent` rebuilt from
+    /// the resume blob's `info` dict.
+    pub source: AddTorrentSource,
     pub save_path: Option<String>,
     /// PicoTorrent's own numeric label, which shares this build's schema.
     pub label_id: Option<i32>,
@@ -29,7 +27,31 @@ pub struct ImportEntry {
     pub label_name: Option<String>,
 }
 
-/// Read every torrent PicoTorrent has stored in `db_path`.
+impl ImportEntry {
+    /// An entry for a `.torrent` file's bytes, under the hash of its own info
+    /// dict - v1, or v2 for a v2-only torrent. `None` when there is no info
+    /// dict to hash.
+    ///
+    /// The hash is never taken from a file name or a resume record: a renamed
+    /// file would then import under a hash that is not its own and collide
+    /// with something else.
+    pub fn from_torrent(
+        bytes: Vec<u8>,
+        save_path: Option<String>,
+        label_name: Option<String>,
+    ) -> Option<Self> {
+        let info = crate::core::bencode::dict_get(&bytes, b"info")?;
+        let (v1, v2) = crate::bittorrent::metainfo::info_hashes(info);
+        Some(ImportEntry {
+            info_hash: v1.or(v2)?,
+            source: AddTorrentSource::TorrentFileBytes(bytes),
+            save_path,
+            label_id: None,
+            label_name,
+        })
+    }
+}
+
 /// What one pass over a PicoTorrent database found.
 pub struct Scan {
     pub entries: Vec<ImportEntry>,
@@ -49,7 +71,7 @@ pub struct Scan {
 /// every setting into a JSON `value` column, and NanoTorrent inherited that
 /// schema verbatim. So a value read here needs no conversion; whether it means
 /// anything is decided by whether this build has a setting of that name, which
-/// `Configuration::import_value` answers by writing.
+/// `Configuration::write_value` answers by writing.
 pub fn read_settings(db_path: &Path) -> Result<Vec<(String, String)>> {
     let conn = rusqlite::Connection::open_with_flags(
         db_path,
@@ -66,6 +88,7 @@ pub fn read_settings(db_path: &Path) -> Result<Vec<(String, String)>> {
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
+/// Read every torrent PicoTorrent has stored in `db_path`.
 pub fn read_torrents(db_path: &Path, cancel: &std::sync::atomic::AtomicBool) -> Result<Scan> {
     let conn = rusqlite::Connection::open_with_flags(
         db_path,
@@ -117,11 +140,11 @@ pub fn read_torrents(db_path: &Path, cancel: &std::sync::atomic::AtomicBool) -> 
                     bytes.extend_from_slice(b"d4:info");
                     bytes.extend_from_slice(info);
                     bytes.push(b'e');
-                    Some(ImportSource::TorrentBytes(bytes))
+                    Some(AddTorrentSource::TorrentFileBytes(bytes))
                 }
-                None => magnet.clone().map(ImportSource::Magnet),
+                None => magnet.clone().map(AddTorrentSource::MagnetUri),
             },
-            None => magnet.clone().map(ImportSource::Magnet),
+            None => magnet.clone().map(AddTorrentSource::MagnetUri),
         };
 
         match source {

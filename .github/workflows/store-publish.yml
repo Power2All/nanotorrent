@@ -52,7 +52,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Fails with a readable message rather than a confusing one from msstore
       # halfway through, which is what an unset secret otherwise produces.
@@ -102,14 +102,14 @@ jobs:
       # the exact artifact that was sent.
       - name: Keep the package as a build artifact
         if: always() && steps.pkg.outputs.path != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: msix
           path: installer/*.msix
           retention-days: 30
 
       - name: Configure the Microsoft Store CLI
-        uses: microsoft/microsoft-store-apppublisher@v1.1
+        uses: microsoft/microsoft-store-apppublisher@v1.4
 
       - name: Sign in
         shell: pwsh
@@ -198,7 +198,7 @@ jobs:
       # later, by which time the only question is what went up.
       - name: Keep the submission JSON
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: submission
           path: submission*.json

@@ -37,6 +37,17 @@ impl Environment {
         }
     }
 
+    /// A profile at `data_path` and nowhere else, for a test that needs a real
+    /// session without touching the profile of whoever runs the tests.
+    #[cfg(test)]
+    pub fn at(data_path: PathBuf) -> Environment {
+        Environment {
+            startup_time: SystemTime::now(),
+            data_path,
+            portable: true,
+        }
+    }
+
     /// Whether this copy keeps its profile beside the program.
     pub fn is_portable(&self) -> bool {
         self.portable
@@ -156,31 +167,6 @@ impl Environment {
         path.exists().then_some(path)
     }
 
-    /// One-time migration after the PicoTorrent -> NanoTorrent rename: if
-    /// the NanoTorrent data folder does not exist yet but a PicoTorrent one
-    /// does, copy its settings database and session state over (the old
-    /// folder is left untouched).
-    pub fn migrate_legacy_data(&self) {
-        let Some(local) = std::env::var_os("LOCALAPPDATA") else {
-            return;
-        };
-
-        let new_dir = self.get_application_data_path();
-        let old_dir = PathBuf::from(local).join("PicoTorrent");
-
-        if new_dir.exists() || !old_dir.exists() || new_dir == old_dir {
-            return;
-        }
-
-        let _ = std::fs::create_dir_all(&new_dir);
-        let _ = std::fs::copy(
-            old_dir.join("PicoTorrent.sqlite"),
-            new_dir.join("NanoTorrent.sqlite"),
-        );
-        let _ = std::fs::copy(old_dir.join("dht.json"), new_dir.join("dht.json"));
-        copy_dir(&old_dir.join("session"), &new_dir.join("session"));
-    }
-
     /// Folder where the librqbit session persists fastresume state. This
     /// replaces the torrent_resume_data table of the original.
     pub fn get_session_state_path(&self) -> PathBuf {
@@ -293,28 +279,6 @@ pub fn package_family_name() -> Option<String> {
 /// inverting one of them.
 pub fn needs_own_windows_identity() -> bool {
     package_family_name().is_none()
-}
-
-/// Recursively copy a directory, skipping anything that cannot be read.
-///
-/// Used only by the one-time PicoTorrent data takeover. Best-effort by design:
-/// a locked file in someone else's profile must not abort the migration and
-/// leave it half-done.
-fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
-    let Ok(entries) = std::fs::read_dir(from) else {
-        return;
-    };
-    let _ = std::fs::create_dir_all(to);
-    for entry in entries.flatten() {
-        let target = to.join(entry.file_name());
-        match entry.file_type() {
-            Ok(t) if t.is_dir() => copy_dir(&entry.path(), &target),
-            Ok(t) if t.is_file() => {
-                let _ = std::fs::copy(entry.path(), target);
-            }
-            _ => {}
-        }
-    }
 }
 
 #[cfg(test)]

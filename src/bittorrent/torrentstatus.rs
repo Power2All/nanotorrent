@@ -2,23 +2,19 @@
 
 use chrono::{DateTime, Local};
 
-// Some variants have no librqbit equivalent (queueing, resume-data checks)
-// but are kept to mirror the original enum.
+// The original enum also had queued and resume-data-checking states. librqbit
+// has no equivalent of either, so nothing could ever produce them.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum State {
     #[default]
     Unknown,
     Error,
     CheckingFiles,
-    CheckingResumeData,
     Downloading,
-    DownloadingChecking,
     DownloadingMetadata,
     DownloadingPaused,
-    DownloadingQueued,
     Uploading,
     UploadingPaused,
-    UploadingQueued,
 }
 
 /// Snapshot of a torrent's status - mirrors the C++ TorrentStatus struct.

@@ -964,15 +964,11 @@ function stateText(t) {
     downloading: T.state_downloading,
     downloading_paused: T.state_downloading_paused,
     downloading_metadata: T.state_downloading_metadata,
-    downloading_checking: T.state_downloading_checking,
-    downloading_queued: T.state_downloading_queued,
     uploading: T.state_uploading,
     uploading_paused: T.state_uploading_paused,
-    uploading_queued: T.state_uploading_queued,
-    // The engine's one state with no key of its own - the desktop folds it
-    // into the same caption as downloading_checking.
+    // The engine's one state with no key of its own - the desktop shows it
+    // with the same caption.
     checking_files: T.state_downloading_checking,
-    checking_resume_data: T.state_checking_resume_data,
     unknown: T.state_unknown,
   };
   return STATES[t.state] || t.state;
@@ -1472,17 +1468,14 @@ function prefControl(s) {
     // matches no option and would leave the box blank - looking broken rather
     // than unset. Show it, disabled, so it cannot be chosen deliberately.
     if (!s.options.includes(s.value)) {
-      const ph = document.createElement("option");
-      ph.value = s.value; ph.textContent = s.value; ph.disabled = true;
+      const ph = new Option(s.value, s.value);
+      ph.disabled = true;
       input.append(ph);
     }
     for (let i = 0; i < s.options.length; i++) {
-      const opt = document.createElement("option");
-      opt.value = s.options[i];
       // Labels differ from values where the value is a code: the language
       // picker lists "Nederlands", not "nl-NL".
-      opt.textContent = (s.labels && s.labels[i]) || s.options[i];
-      input.append(opt);
+      input.append(new Option((s.labels && s.labels[i]) || s.options[i], s.options[i]));
     }
     input.value = s.value;
     // A chosen option can outrun the box as easily as a caption can - a
@@ -2280,13 +2273,7 @@ function drawPlugForm(s) {
       label.textContent = f.label;
       if (f.kind === "choice") {
         control = document.createElement("select");
-        for (const o of f.options) {
-          const opt = document.createElement("option");
-          opt.value = o;
-          opt.textContent = o;
-          opt.selected = o === f.value;
-          control.append(opt);
-        }
+        for (const o of f.options) control.append(new Option(o, o, false, o === f.value));
       } else {
         control = document.createElement("input");
         control.type = f.kind === "number" ? "number" : "text";
@@ -2411,12 +2398,7 @@ async function plugScan() {
   const pick = $("plug-pick");
   pick.hidden = openable.length < 2;
   pick.textContent = "";
-  for (const p of openable) {
-    const o = document.createElement("option");
-    o.value = p.name;
-    o.textContent = p.title || p.name;
-    pick.append(o);
-  }
+  for (const p of openable) pick.append(new Option(p.title || p.name, p.name));
   pick.onchange = () => plugOpen(pick.value);
 }
 $("btn-plugins").onclick = () => { $("plugs").showModal(); drawPlugList(); };
@@ -2541,11 +2523,7 @@ const RATIO_PRESETS = [1, 2, 3, 5];
 const SEED_PRESETS = [30, 60, 360, 1440];
 
 function option(value, text, selected) {
-  const o = document.createElement("option");
-  o.value = value;
-  o.textContent = text;
-  o.selected = selected;
-  return o;
+  return new Option(text, value, false, Boolean(selected));
 }
 
 /// Minutes as the ETA column spells them, so nothing new needs translating.
@@ -3426,20 +3404,8 @@ function buildPageSizes() {
   // rather than silently in effect.
   if (pageSize > 0 && !sizes.includes(pageSize)) sizes.push(pageSize);
   sizes.sort((a, b) => a - b);
-  for (const n of sizes) {
-    const o = document.createElement("option");
-    o.value = String(n);
-    o.textContent = String(n);
-    sel.append(o);
-  }
-  const all = document.createElement("option");
-  all.value = "0";
-  all.textContent = T.all;
-  sel.append(all);
-  const custom = document.createElement("option");
-  custom.value = "custom";
-  custom.textContent = T.custom;
-  sel.append(custom);
+  for (const n of sizes) sel.append(new Option(String(n), String(n)));
+  sel.append(new Option(T.all, "0"), new Option(T.custom, "custom"));
   sel.value = String(pageSize);
 }
 

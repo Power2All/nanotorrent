@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Eesti (Eesti) - Partner Center: Estonian (Estonia) (et-EE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioon 0.4.3
+Versioon 0.4.4
 
-- Magnetlingid ei oota enam oma üksikasju: lisamisdialoog avaneb kohe ja enne üksikasjade saabumist lisatud magnet kuvatakse loendis kui „Allalaaditakse metadata't“, kuni need saabuvad, nagu qBittorrentis.
+- Turvalisus: HTTPS-i kaudu töötav veebiliides ei ole enam HTTP/2 kihis haavatav teenusetõkestusrünnakule; see kasutab nüüd ainult HTTP/1.1-te. Teie poolt pole vaja midagi muuta.
+- Jagamispiirid: suhtarvu piir peatab nüüd torrenti loendis näidatud suhtarvu juures. Varem arvestati ainult üleslaadimist alates NanoTorrenti viimasest käivitamisest, nii et torrent võis jätkata jagamist üle oma piiri.
+- Parandused: käsuga „Loo torrent“ tehtud v1-torrentid on alati korrektsed ja tulevad igas arvutis ühesugused ning „Sunni ülekontrolli“ kontrollib pausil olevat torrentit nüüd kohe, selle asemel et näidata 0%, kuni see käivitatakse.
+- Kapoti all: teegid, millele NanoTorrent on ehitatud, on uuendatud koos nende viimaste parandustega.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

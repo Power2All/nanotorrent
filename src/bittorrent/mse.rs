@@ -177,7 +177,7 @@ where
     // pattern (keystream ^ zeros) we scan for.
     let mut enc_vc = VC;
     dec.apply(&mut enc_vc); // advances `dec` past the VC
-    sync_on(read, &enc_vc)
+    sync_on_pat(read, &enc_vc, MAX_PAD)
         .await
         .context("MSE VC synchronisation")?;
 
@@ -205,36 +205,11 @@ where
     Ok((enc, dec))
 }
 
-/// Read one byte at a time until the last 8 bytes seen equal `pat` (the
-/// encrypted VC). Bounded by the maximum PadB length so a peer that never
-/// sends a matching VC cannot make us read forever.
-async fn sync_on<R: AsyncRead + Unpin>(read: &mut R, pat: &[u8; 8]) -> Result<()> {
-    let mut window = [0u8; 8];
-    let mut filled = 0usize;
-    let mut total = 0usize;
-    loop {
-        let mut b = [0u8; 1];
-        read.read_exact(&mut b).await?;
-        total += 1;
-        if filled < 8 {
-            window[filled] = b[0];
-            filled += 1;
-        } else {
-            window.copy_within(1..8, 0);
-            window[7] = b[0];
-        }
-        if filled == 8 && &window == pat {
-            return Ok(());
-        }
-        if total > MAX_PAD + 8 {
-            bail!("did not find encrypted VC within PadB bounds");
-        }
-    }
-}
-
 /// Scan byte-by-byte until the last `pat.len()` bytes match `pat`, skipping up
-/// to `max` bytes of preceding padding. Used by the responder to skip PadA and
-/// land on the `req1` hash.
+/// to `max` bytes of preceding padding. Bounded so a peer that never sends the
+/// pattern cannot make us read forever. Used by the initiator to find the
+/// encrypted VC after PadB, and by the responder to skip PadA and land on the
+/// `req1` hash.
 async fn sync_on_pat<R: AsyncRead + Unpin>(read: &mut R, pat: &[u8], max: usize) -> Result<()> {
     let mut window: Vec<u8> = Vec::with_capacity(pat.len());
     let mut total = 0usize;
@@ -368,31 +343,11 @@ where
     Ok((enc, dec, ia))
 }
 
-/// A read half that first replays a buffered prefix, then delegates to the
-/// inner reader. Used to hand back bytes we read during detection/handshake
-/// (the peeked plaintext header, or the decrypted IA payload).
-struct PrefixRead<R> {
-    prefix: Vec<u8>,
-    pos: usize,
-    inner: R,
-}
-
-impl<R: AsyncRead + Unpin> AsyncRead for PrefixRead<R> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        let this = self.get_mut();
-        if this.pos < this.prefix.len() {
-            let remaining = &this.prefix[this.pos..];
-            let n = remaining.len().min(buf.remaining());
-            buf.put_slice(&remaining[..n]);
-            this.pos += n;
-            return Poll::Ready(Ok(()));
-        }
-        Pin::new(&mut this.inner).poll_read(cx, buf)
-    }
+/// A read half that first replays a buffered prefix, then reads from `inner`.
+/// Used to hand back bytes read during detection/handshake (the peeked
+/// plaintext header, or the decrypted IA payload).
+fn prefixed<R: AsyncRead + Unpin>(prefix: Vec<u8>, inner: R) -> impl AsyncRead + Unpin {
+    std::io::Cursor::new(prefix).chain(inner)
 }
 
 /// A read half that RC4-decrypts everything it reads.
@@ -458,11 +413,7 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for EncryptedWrite<W> {
         let this = self.get_mut();
         // Flush any previously stashed ciphertext before encrypting more, so
         // the RC4 stream stays in wire order.
-        match this.drain(cx) {
-            Poll::Ready(Ok(())) => {}
-            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-            Poll::Pending => return Poll::Pending,
-        }
+        std::task::ready!(this.drain(cx))?;
         let mut tmp = data.to_vec();
         this.rc4.apply(&mut tmp);
         match Pin::new(&mut this.inner).poll_write(cx, &tmp) {
@@ -489,11 +440,8 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for EncryptedWrite<W> {
         cx: &mut Context<'_>,
     ) -> Poll<std::io::Result<()>> {
         let this = self.get_mut();
-        match this.drain(cx) {
-            Poll::Ready(Ok(())) => Pin::new(&mut this.inner).poll_flush(cx),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Pending => Poll::Pending,
-        }
+        std::task::ready!(this.drain(cx))?;
+        Pin::new(&mut this.inner).poll_flush(cx)
     }
 
     fn poll_shutdown(
@@ -501,11 +449,8 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for EncryptedWrite<W> {
         cx: &mut Context<'_>,
     ) -> Poll<std::io::Result<()>> {
         let this = self.get_mut();
-        match this.drain(cx) {
-            Poll::Ready(Ok(())) => Pin::new(&mut this.inner).poll_shutdown(cx),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Pending => Poll::Pending,
-        }
+        std::task::ready!(this.drain(cx))?;
+        Pin::new(&mut this.inner).poll_shutdown(cx)
     }
 }
 
@@ -628,11 +573,7 @@ impl IncomingStreamTransform for IncomingMseTransform {
                     bail!("plaintext incoming peer rejected (encryption required)");
                 }
                 // Plaintext: replay the peeked header, otherwise untouched.
-                let r: BoxAsyncRead = Box::new(PrefixRead {
-                    prefix: head.to_vec(),
-                    pos: 0,
-                    inner: read,
-                });
+                let r: BoxAsyncRead = Box::new(prefixed(head.to_vec(), read));
                 return Ok((r, write));
             }
 
@@ -647,11 +588,8 @@ impl IncomingStreamTransform for IncomingMseTransform {
             let (enc, dec, ia) =
                 server_handshake(&mut read, &mut write, ya, &candidates).await?;
 
-            let r: BoxAsyncRead = Box::new(PrefixRead {
-                prefix: ia,
-                pos: 0,
-                inner: EncryptedRead { inner: read, rc4: dec },
-            });
+            let r: BoxAsyncRead =
+                Box::new(prefixed(ia, EncryptedRead { inner: read, rc4: dec }));
             let w: BoxAsyncWrite = Box::new(EncryptedWrite {
                 inner: write,
                 rc4: enc,
@@ -819,7 +757,7 @@ mod tests {
                 let (enc, dec, ia) =
                     server_handshake(&mut br, &mut bw, ya, &candidates).await.unwrap();
                 assert!(ia.is_empty()); // our initiator sends len(IA)=0
-                let mut r = PrefixRead { prefix: ia, pos: 0, inner: EncryptedRead { inner: br, rc4: dec } };
+                let mut r = prefixed(ia, EncryptedRead { inner: br, rc4: dec });
                 let mut w = EncryptedWrite { inner: bw, rc4: enc, pending: Vec::new(), pstart: 0 };
                 let mut byte = [0u8; 1];
                 r.read_exact(&mut byte).await.unwrap();

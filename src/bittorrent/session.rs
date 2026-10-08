@@ -25,7 +25,7 @@ use librqbit::{
     generate_azereus_style,
 };
 
-use crate::core::configuration::{Configuration, ConnectionProxyType};
+use crate::core::configuration::Configuration;
 use crate::core::database::Database;
 use crate::core::environment::Environment;
 
@@ -68,8 +68,6 @@ pub struct ImportReport {
     pub cancelled: bool,
     /// Settings copied across. Zero when the option was off.
     pub settings: usize,
-    /// Torrents removed first, when purging was asked for.
-    pub purged: usize,
 }
 
 /// Per-torrent metadata persisted in the `torrent` table.
@@ -133,14 +131,32 @@ fn accumulate_uploaded(total: i64, seen: i64, live: i64) -> (i64, i64) {
     (total + delta, live)
 }
 
-/// A priority level as a word, for the log.
-fn priority_name(level: i64) -> &'static str {
-    match level {
-        PRIORITY_SKIP => "skip",
-        PRIORITY_HIGH => "high",
-        PRIORITY_MAX => "maximum",
-        _ => "normal",
-    }
+/// What the share-limit guard measures a torrent by: its ratio, and when it
+/// completed.
+///
+/// The ratio is over the all-time upload total, the same figure the ratio
+/// column shows - not the engine's counter, which covers only the current
+/// session and so restarts at zero on every launch and every settings change.
+/// The live counter is folded in here as well as in `torrents()` because a
+/// headless build may never call that; the watermark makes folding twice safe.
+fn share_reading(
+    meta: Option<&mut TorrentMeta>,
+    live_uploaded: i64,
+    progress_bytes: u64,
+) -> (f64, Option<DateTime<Local>>) {
+    let (uploaded, completed_on) = match meta {
+        Some(m) => {
+            (m.uploaded_total, m.seen_uploaded) =
+                accumulate_uploaded(m.uploaded_total, m.seen_uploaded, live_uploaded);
+            (m.uploaded_total, m.completed_on)
+        }
+        None => (live_uploaded, None),
+    };
+    let ratio = match progress_bytes {
+        0 => 0.0,
+        downloaded => uploaded as f64 / downloaded as f64,
+    };
+    (ratio, completed_on)
 }
 
 /// File indices in the order the engine should ask for them, most wanted first.
@@ -274,18 +290,7 @@ fn magnet_display_name(uri: &str) -> Option<String> {
 
 /// The magnets [`MagnetFetch::save`] recorded, and whether each was fetching.
 fn read_pending_magnets(db: &Arc<Database>) -> Vec<(String, bool)> {
-    use rusqlite::OptionalExtension;
-    let value: Option<String> = db
-        .with(|conn| {
-            conn.query_row(
-                "select value from persistent_object where key = 'session.pending_magnets'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-        })
-        .ok()
-        .flatten();
+    let value = Configuration::new(db.clone()).get_persistent("session.pending_magnets");
     parse_pending_magnets(value.as_deref().unwrap_or_default())
 }
 
@@ -332,9 +337,7 @@ fn magnet_add_options(
         && let Some(v2) = hashes.v2
     {
         // A hybrid magnet names both; announce under both.
-        let mut truncated = [0u8; 20];
-        truncated.copy_from_slice(&v2[..20]);
-        opts.secondary_info_hash = Some(librqbit::Id20::new(truncated));
+        opts.secondary_info_hash = Some(librqbit::Id20::new(*v2.first_chunk().unwrap()));
     } else if hashes.is_v2_only() {
         // v2-only. The info dict arrives over BEP 9, but the piece hashes do
         // not - they come from the peer over the BEP 52 hash exchange. One
@@ -440,13 +443,7 @@ impl MagnetFetch {
             })
             .collect::<Vec<_>>()
             .join(",");
-        let _ = self.db.with(|conn| {
-            conn.execute(
-                "insert or replace into persistent_object (key, value) values \
-                 ('session.pending_magnets', ?1)",
-                [value],
-            )
-        });
+        Configuration::new(self.db.clone()).set_persistent("session.pending_magnets", &value);
     }
 
     /// Leave the row in the list, stopped, with the reason on it - removing it
@@ -684,6 +681,33 @@ fn read_share_overrides(db: &Arc<Database>) -> HashMap<String, (Option<f64>, Opt
     .unwrap_or_default()
 }
 
+/// Options for adding back a torrent that was just forgotten (files kept), so
+/// it comes back where its data is and in the state it was in.
+///
+/// A paused torrent is checked now rather than when it is next started
+/// (`verify_paused`, engine patch 0026). Forgetting a torrent deletes its stored
+/// bitfield, so a paused one re-added without a check would show 0% - for a
+/// recheck, the opposite of what was asked - until someone started it.
+fn readd_options(paused: bool, output_folder: String) -> AddTorrentOptions {
+    AddTorrentOptions {
+        paused,
+        verify_paused: true,
+        output_folder: Some(output_folder),
+        overwrite: true,
+        ..Default::default()
+    }
+}
+
+/// Add back a torrent that was just forgotten, from its own metadata bytes.
+///
+/// The second half of every "forget and re-add" in this file - recheck, move,
+/// set location, tracker edits - which differ in what they do in between.
+async fn readd(rq: &Arc<RqbitSession>, events: &EventBus, bytes: Vec<u8>, opts: AddTorrentOptions) {
+    if let Err(err) = rq.add_torrent(AddTorrent::from_bytes(bytes), Some(opts)).await {
+        report_error(events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
+    }
+}
+
 /// Carry out what a share limit decided.
 ///
 /// Pausing is recorded in the database as well as done to the engine: a torrent
@@ -790,7 +814,6 @@ pub struct Session {
     // app: the whole librqbit session is torn down and rebuilt with the new
     // options, and its JSON persistence restores the torrents.
     inner: Arc<std::sync::RwLock<Arc<RqbitSession>>>,
-    api: Arc<std::sync::RwLock<Api>>,
     db: Arc<Database>,
     meta: Arc<Mutex<HashMap<String, TorrentMeta>>>,
     /// Lifecycle fan-out. Replaces a `Vec<String>` of completions that was
@@ -909,50 +932,20 @@ fn build_session_options(
         .map(|i| i.port as u16)
         .unwrap_or(6881);
 
-    // Rate limits are stored in KB/s like the original.
-    let download_bps = if cfg.get_bool("libtorrent.enable_download_rate_limit") {
-        cfg.get_int("libtorrent.download_rate_limit")
-            .and_then(|kb| NonZeroU32::new((kb * 1024).max(0) as u32))
-    } else {
-        None
-    };
-    let upload_bps = if cfg.get_bool("libtorrent.enable_upload_rate_limit") {
-        cfg.get_int("libtorrent.upload_rate_limit")
-            .and_then(|kb| NonZeroU32::new((kb * 1024).max(0) as u32))
-    } else {
-        None
-    };
+    // Whatever the speed scheduler would set right now, alternative limits
+    // included - so a rebuild with them on does not start at the main limits
+    // and stay there, the scheduler believing its last answer still applies.
+    let (download_bps, upload_bps) = crate::bittorrent::limits::current_rates(cfg, Local::now());
+    let (download_bps, upload_bps) = (
+        download_bps.and_then(NonZeroU32::new),
+        upload_bps.and_then(NonZeroU32::new),
+    );
 
-    // SOCKS proxy support (librqbit supports SOCKS5).
-    let proxy_type =
-        ConnectionProxyType::from_i64(cfg.get_int("libtorrent.proxy_type").unwrap_or(0));
-    let socks_proxy_url = match proxy_type {
-        ConnectionProxyType::Socks5 | ConnectionProxyType::Socks4 => {
-            let host = cfg.get_string("libtorrent.proxy_host").unwrap_or_default();
-            let port = cfg.get_int("libtorrent.proxy_port").unwrap_or(0);
-            if host.is_empty() || port == 0 {
-                None
-            } else {
-                Some(format!("socks5://{host}:{port}"))
-            }
-        }
-        ConnectionProxyType::Socks5Password => {
-            let host = cfg.get_string("libtorrent.proxy_host").unwrap_or_default();
-            let port = cfg.get_int("libtorrent.proxy_port").unwrap_or(0);
-            let user = cfg
-                .get_string("libtorrent.proxy_username")
-                .unwrap_or_default();
-            let pass = cfg
-                .get_string("libtorrent.proxy_password")
-                .unwrap_or_default();
-            if host.is_empty() || port == 0 {
-                None
-            } else {
-                Some(format!("socks5://{user}:{pass}@{host}:{port}"))
-            }
-        }
-        _ => None,
-    };
+    // SOCKS proxy: the same URL the HTTP client uses, so the two cannot
+    // disagree about whether a proxy is in play. librqbit only parses
+    // `socks5://`, and `proxy_hostnames` upgrades its tracker proxy to socks5h.
+    let socks_proxy_url =
+        crate::core::http::proxy_url(cfg).map(|u| u.replacen("socks5h://", "socks5://", 1));
 
     // eMule/PeerGuardian IP filter (port of the ipfilter.* settings) -
     // librqbit loads the blocklist itself, from a file:// or http(s) URL.
@@ -1254,70 +1247,39 @@ pub enum CreateTorrentOutcome {
 ///
 /// Async and off the UI thread: hashing is bounded by disk speed and a large
 /// folder takes minutes.
+///
+/// Every version goes through `torrent_create::build`, v1 included. librqbit
+/// has a v1 creator, and it was used here through 0.4.3, but it lists a folder
+/// in whatever order the filesystem returns (so the same folder could hash
+/// differently on two machines), panics on a file name that is not UTF-8, and
+/// appends one SHA-1 too many when the total size is an exact multiple of the
+/// piece size - a torrent strict clients refuse. Where its output was right,
+/// `build` produces the same info dict byte for byte; the tests in
+/// `torrent_create` hold it to that.
 async fn build_torrent(params: CreateTorrentParams) -> Result<CreateTorrentOutcome> {
-    use crate::bittorrent::torrent_create::{self, TorrentVersion};
+    use crate::bittorrent::torrent_create;
 
-    let bytes = match params.version {
-        // v1: librqbit builds the info dict; we clone it to attach trackers,
-        // comment and the private flag, then re-serialize.
-        TorrentVersion::V1 => {
-            let created = librqbit::create_torrent(
-                &params.source,
-                librqbit::CreateTorrentOptions {
-                    name: None,
-                    // Set below along with the comment and the private flag, so
-                    // that v1 and v2 (which builds its own metainfo) agree on
-                    // exactly one place where trackers are attached.
-                    trackers: Vec::new(),
-                    piece_length: params.piece_length,
-                },
-                &librqbit::spawn_utils::BlockingSpawner::new(1),
-            )
-            .await?;
-
-            let mut meta = created.as_info().clone();
-            if let Some(first) = params.trackers.first() {
-                meta.announce = Some(first.as_bytes().into());
-            }
-            meta.announce_list = params
-                .trackers
-                .iter()
-                .map(|t| vec![t.as_bytes().into()])
-                .collect();
-            if !params.comment.is_empty() {
-                meta.comment = Some(params.comment.as_bytes().into());
-            }
-            meta.created_by = Some(crate::buildinfo::user_agent().into_bytes().into());
-            meta.info.data.private = params.private;
-
-            let mut bytes = Vec::new();
-            bencode::bencode_serialize_to_writer(&meta, &mut bytes)?;
-            bytes
-        }
-        // v2 / hybrid: our own BEP 52 builder (librqbit is v1-only). Hashing is
-        // blocking file I/O, so run it off the async worker.
-        TorrentVersion::V2 | TorrentVersion::Hybrid => {
-            let source = params.source.clone();
-            let trackers = params.trackers.clone();
-            let comment = params.comment.clone();
-            let private = params.private;
-            let piece_length = params.piece_length;
-            let version = params.version;
-            let created_by = crate::buildinfo::user_agent();
-            tokio::task::spawn_blocking(move || {
-                torrent_create::build(&torrent_create::CreateInput {
-                    source: &source,
-                    version,
-                    piece_length,
-                    trackers: &trackers,
-                    comment: &comment,
-                    private,
-                    created_by,
-                })
+    // Hashing is blocking file I/O, so run it off the async worker.
+    let bytes = {
+        let source = params.source.clone();
+        let trackers = params.trackers.clone();
+        let comment = params.comment.clone();
+        let private = params.private;
+        let piece_length = params.piece_length;
+        let version = params.version;
+        let created_by = crate::buildinfo::user_agent();
+        tokio::task::spawn_blocking(move || {
+            torrent_create::build(&torrent_create::CreateInput {
+                source: &source,
+                version,
+                piece_length,
+                trackers: &trackers,
+                comment: &comment,
+                private,
+                created_by,
             })
-            .await??
-            .bytes
-        }
+        })
+        .await??
     };
 
     tokio::fs::write(&params.output, &bytes).await?;
@@ -1382,7 +1344,6 @@ impl Session {
                 ))?
             }
         };
-        let api = Api::new(inner.clone(), None);
 
         // Built here so a bad proxy setting stops the session from starting
         // rather than being discovered later by a web seed going direct.
@@ -1403,7 +1364,6 @@ impl Session {
         let session = Session {
             rt,
             inner,
-            api: Arc::new(std::sync::RwLock::new(api)),
             db,
             meta,
             events,
@@ -1448,19 +1408,8 @@ impl Session {
         // Resume the torrents that were running when the previous session
         // shut down (librqbit persists its shutdown pause).
         let running: Vec<String> = {
-            use rusqlite::OptionalExtension;
-            session
-                .db
-                .with(|conn| {
-                    conn.query_row(
-                        "select value from persistent_object where key = 'session.running'",
-                        [],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .optional()
-                })
-                .ok()
-                .flatten()
+            Configuration::new(session.db.clone())
+                .get_persistent("session.running")
                 .map(|v| {
                     v.split(',')
                         .filter(|s| !s.is_empty())
@@ -1483,14 +1432,13 @@ impl Session {
         self.inner.read().unwrap().clone()
     }
 
-    /// The current API facade.
+    /// The API facade over the current librqbit session. Built on demand: it
+    /// is only a wrapper around the session handle, so keeping one in step
+    /// with `inner` across rebuilds would be bookkeeping for nothing.
     fn rq_api(&self) -> Api {
-        self.api.read().unwrap().clone()
+        Api::new(self.rq(), None)
     }
 
-    /// Tear the librqbit session down and rebuild it with options derived
-    /// from the (changed) configuration - "apply preferences without
-    /// restart". Torrent state comes back through the JSON persistence.
     /// Write every in-memory upload total to the database.
     ///
     /// The tick only writes once a torrent has moved a megabyte, so there is
@@ -1540,6 +1488,9 @@ impl Session {
         });
     }
 
+    /// Tear the librqbit session down and rebuild it with options derived
+    /// from the (changed) configuration - "apply preferences without
+    /// restart". Torrent state comes back through the JSON persistence.
     pub fn apply_settings(&self, env: &Environment, cfg: &Configuration) {
         // Before anything else: the rebuild below resets every engine counter,
         // and the ratio is only right afterwards if what they held is already
@@ -1565,7 +1516,6 @@ impl Session {
             .unwrap_or_else(Environment::get_downloads_path);
 
         let inner_slot = self.inner.clone();
-        let api_slot = self.api.clone();
         let events = self.events.clone();
         let magnets = self.magnets.clone();
         let fetching = magnets.suspend_running();
@@ -1579,9 +1529,7 @@ impl Session {
 
             match RqbitSession::new_with_opts(default_save_path, opts).await {
                 Ok(new_session) => {
-                    let new_api = Api::new(new_session.clone(), None);
                     *inner_slot.write().unwrap() = new_session.clone();
-                    *api_slot.write().unwrap() = new_api;
                     tracing::info!("session rebuilt with new settings");
                     for hash in &fetching {
                         magnets.spawn(hash);
@@ -1598,8 +1546,6 @@ impl Session {
         });
     }
 
-    /// Load per-torrent metadata from the `torrent` table for torrents
-    /// restored by librqbit's session persistence.
     /// Drop rows for torrents the engine no longer has.
     ///
     /// Removing a torrent through the application cascades - `torrent_tracker`,
@@ -1650,6 +1596,8 @@ impl Session {
         self.meta.lock().unwrap().retain(|hash, _| !stale.contains(hash));
     }
 
+    /// Load per-torrent metadata from the `torrent` table for torrents
+    /// restored by librqbit's session persistence.
     fn load_torrent_meta(&self) {
         /// info_hash, queue position, label, added on, completed on - one row
         /// of the `torrent` table, named because the tuple is unreadable.
@@ -1777,18 +1725,7 @@ impl Session {
             // the file can now be removed even on Windows.
             let _ = tokio::fs::remove_file(&bitv).await;
 
-            let opts = AddTorrentOptions {
-                paused,
-                output_folder: Some(output_folder),
-                overwrite: true,
-                ..Default::default()
-            };
-            if let Err(err) = rq
-                .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
-                .await
-            {
-                report_error(&events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
-            }
+            readd(&rq, &events, bytes, readd_options(paused, output_folder)).await;
         });
     }
 
@@ -1840,18 +1777,7 @@ impl Session {
                 old_folder
             };
 
-            let opts = AddTorrentOptions {
-                paused,
-                output_folder: Some(target),
-                overwrite: true,
-                ..Default::default()
-            };
-            if let Err(err) = rq
-                .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
-                .await
-            {
-                report_error(&events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
-            }
+            readd(&rq, &events, bytes, readd_options(paused, target)).await;
         });
     }
 
@@ -1930,20 +1856,16 @@ impl Session {
                 return;
             }
 
+            // The files are expected to be there already - that is the whole
+            // point - so the re-add's `overwrite` is a verify, not a clobber.
+            // Unless they were not found: checking a paused torrent opens its
+            // files, which creates them, and a folder picked by mistake should
+            // not fill up with empty ones. It is checked when it is started.
             let opts = AddTorrentOptions {
-                paused,
-                output_folder: Some(new_folder),
-                // The files are expected to be there already - that is the
-                // whole point - so this is a verify, not a clobber.
-                overwrite: true,
-                ..Default::default()
+                verify_paused: !first_missing,
+                ..readd_options(paused, new_folder)
             };
-            if let Err(err) = rq
-                .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
-                .await
-            {
-                report_error(&events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
-            }
+            readd(&rq, &events, bytes, opts).await;
         });
     }
 
@@ -2363,7 +2285,25 @@ impl Session {
         mut on_progress: impl FnMut(crate::core::migrate::Progress),
     ) -> Result<ImportReport> {
         use crate::core::migrate::{Phase, Progress};
-        use crate::core::pico_import::ImportSource;
+
+        // Never the files: purged torrents were this list's, reverted ones
+        // were the other client's download that this run only pointed at.
+        //
+        // In chunks, with progress before each, so the window keeps moving.
+        // Without it the window went on saying "Reading ..." for the whole
+        // purge, which on a big list looks exactly like a hang; one batch
+        // would be just as silent for a whole rollback.
+        let remove_chunked = |list: &[String], phase: Phase, on_progress: &mut dyn FnMut(Progress)| {
+            for (i, chunk) in list.chunks(64).enumerate() {
+                on_progress(Progress {
+                    phase,
+                    done: (i * 64).min(list.len()),
+                    total: list.len(),
+                    current: String::new(),
+                });
+                self.remove_many(chunk, false);
+            }
+        };
         use std::sync::atomic::Ordering;
 
         on_progress(Progress {
@@ -2378,27 +2318,11 @@ impl Session {
         // Before anything is added, so the "already here" check below sees an
         // empty session and nothing is skipped for colliding with a torrent
         // that is on its way out anyway.
-        let mut purged = 0;
         if options.purge {
             let all: Vec<String> = self.meta.lock().unwrap().keys().cloned().collect();
-            purged = all.len();
-            // Reported in chunks. Without this the window went on saying
-            // "Reading ..." for the whole purge, because nothing between the
-            // scan and the first added torrent ever spoke - which on a big
-            // list looks exactly like a hang.
-            //
-            // Never the files. Purging is about this list, and someone who
-            // wanted the data gone would have removed the torrents themselves -
-            // this is not the place to guess otherwise.
-            for (i, chunk) in all.chunks(64).enumerate() {
-                on_progress(Progress {
-                    phase: Phase::Purging,
-                    done: (i * 64).min(all.len()),
-                    total: all.len(),
-                    current: String::new(),
-                });
-                self.remove_many(chunk, false);
-            }
+            // Someone who wanted the data gone would have removed the torrents
+            // themselves - this is not the place to guess otherwise.
+            remove_chunked(&all, Phase::Purging, &mut on_progress);
         }
 
         let existing: std::collections::HashSet<String> =
@@ -2406,7 +2330,6 @@ impl Session {
 
         let mut report = ImportReport {
             failed: scan.unreadable,
-            purged,
             ..Default::default()
         };
 
@@ -2446,12 +2369,8 @@ impl Session {
                 Some(name) => Self::ensure_label(&cfg, name, &mut created_labels),
                 None => entry.label_id,
             };
-            let source_kind = match entry.source {
-                ImportSource::TorrentBytes(bytes) => AddTorrentSource::TorrentFileBytes(bytes),
-                ImportSource::Magnet(uri) => AddTorrentSource::MagnetUri(uri),
-            };
             match self.add_torrent(
-                source_kind,
+                entry.source,
                 AddParams {
                     save_path: entry.save_path,
                     start_torrent: true,
@@ -2479,7 +2398,7 @@ impl Session {
                         // A key this build does not have writes nothing, which
                         // is how "what is supported" stays a fact about the
                         // schema rather than a list to keep up to date.
-                        if cfg.import_value(&key, &value) {
+                        if cfg.write_value(&key, Some(&value)) {
                             report.settings += 1;
                             if let Some(before) = before {
                                 changed_settings.push((key, before));
@@ -2496,24 +2415,11 @@ impl Session {
         }
 
         if report.cancelled {
-            // In chunks rather than one at a time, so the progress window
-            // keeps moving, and in chunks rather than one batch so it is not
-            // silent for the whole rollback.
-            for (i, chunk) in added.chunks(64).enumerate() {
-                on_progress(Progress {
-                    phase: Phase::Reverting,
-                    done: (i * 64).min(added.len()),
-                    total: added.len(),
-                    current: String::new(),
-                });
-                // `false`: the files stay. They were the other client's
-                // download and this run only pointed at them.
-                self.remove_many(chunk, false);
-            }
+            remove_chunked(&added, Phase::Reverting, &mut on_progress);
             report.reverted = added.len();
             report.imported = 0;
             for (key, value) in &changed_settings {
-                cfg.restore_value(key, value.as_deref());
+                cfg.write_value(key, value.as_deref());
             }
             report.settings = 0;
             // Labels this run invented now have nothing pointing at them.
@@ -2807,9 +2713,6 @@ fn on_torrent_added(
                 return;
             }
             let opts = AddTorrentOptions {
-                paused,
-                output_folder: Some(folder),
-                overwrite: true,
                 trackers: Some(trackers),
                 // The stored list is the whole announce list, not additions to
                 // the file's - which is what lets a tracker be removed at all.
@@ -2817,14 +2720,9 @@ fn on_torrent_added(
                 // ...and the grouping with it, so the announce order the user
                 // arranged is the one the engine uses.
                 tracker_tiers: Some(tiers),
-                ..Default::default()
+                ..readd_options(paused, folder)
             };
-            if let Err(err) = rq
-                .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
-                .await
-            {
-                report_error(&events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
-            }
+            readd(&rq, &events, bytes, opts).await;
         });
     }
 
@@ -2863,11 +2761,7 @@ fn on_torrent_added(
     /// Also clears the app's own row for it - otherwise the next start would
     /// restore a torrent the engine no longer has.
     pub fn remove(&self, hash: &str, delete_files: bool) {
-        self.remove_one(hash, delete_files);
-        // Close the gap the removal left, otherwise the next added torrent
-        // (positioned at meta.len()) collides with an existing position and two
-        // rows show the same "#".
-        self.normalize_queue_positions();
+        self.remove_many(&[hash.to_string()], delete_files);
     }
 
     /// Remove several torrents in one pass.
@@ -2883,6 +2777,9 @@ fn on_torrent_added(
         for hash in hashes {
             self.remove_one(hash, delete_files);
         }
+        // Close the gap the removals left, otherwise the next added torrent
+        // (positioned at meta.len()) collides with an existing position and two
+        // rows show the same "#".
         self.normalize_queue_positions();
     }
 
@@ -3053,10 +2950,8 @@ fn on_torrent_added(
                 ),
             }
         });
-        tracing::debug!(
-            "{hash} file {file_index} set to {}",
-            priority_name(priority)
-        );
+        // 0 skip, 1 normal, 2 high, 3 maximum - see the PRIORITY_ consts.
+        tracing::debug!("{hash} file {file_index} set to priority {priority}");
         self.apply_file_priorities(hash);
     }
 
@@ -3120,8 +3015,6 @@ fn on_torrent_added(
         });
     }
 
-    /// Assign a label, or clear it with `None`. Stored by this app; librqbit
-    /// has no concept of labels.
     /// A label's id from its name, case-insensitively. `None` when no label
     /// by that name exists - callers decide whether that is worth saying.
     pub fn label_id(&self, name: &str) -> Option<i32> {
@@ -3132,6 +3025,18 @@ fn on_torrent_added(
             .map(|l| l.id)
     }
 
+    /// Every label's name by id - what [`Self::torrents`] needs to fill in
+    /// `label_name`.
+    pub fn label_names(&self) -> HashMap<i32, String> {
+        Configuration::new(self.db.clone())
+            .get_labels()
+            .into_iter()
+            .map(|l| (l.id, l.name))
+            .collect()
+    }
+
+    /// Assign a label, or clear it with `None`. Stored by this app; librqbit
+    /// has no concept of labels.
     pub fn set_label(&self, hash: &str, label_id: Option<i32>) {
         if let Some(meta) = self.meta.lock().unwrap().get_mut(hash) {
             meta.label_id = label_id;
@@ -3143,27 +3048,6 @@ fn on_torrent_added(
                 rusqlite::params![label_id, hash],
             )
         });
-    }
-
-    /// Change which files of a torrent are wanted, from the Files tab.
-    ///
-    /// Indices are into the torrent's own file list. Deselecting everything is
-    /// refused by the engine, which is why the tab keeps at least one ticked.
-    pub fn update_only_files(&self, hash: &str, only_files: Vec<usize>) {
-        // An empty selection would make the torrent 0 bytes "wanted" (and it
-        // persists that way) - always keep at least one file included.
-        if only_files.is_empty() {
-            self.push_error(SessionError::new("error_need_one_file", Vec::<String>::new()));
-            return;
-        }
-        if let Some(handle) = self.find(hash)
-            && let Err(err) = self.rt.block_on(
-                self.rq()
-                    .update_only_files(&handle, &only_files.into_iter().collect()),
-            )
-        {
-            self.push_error(SessionError::new("error_file_selection_failed", [format!("{err:#}")]));
-        }
     }
 
     /// Whether a torrent with this info hash is in the session.
@@ -3197,6 +3081,13 @@ fn on_torrent_added(
         self.rq()
             .get_dht()
             .map(|dht| dht.stats().routing_table_size as i64)
+    }
+
+    /// One torrent's status snapshot, or `None` for a hash not in the session.
+    pub fn torrent(&self, hash: &str) -> Option<TorrentStatus> {
+        self.torrents(&self.label_names())
+            .into_iter()
+            .find(|t| t.info_hash == hash)
     }
 
     /// Build status snapshots for every torrent in the session.
@@ -3588,48 +3479,44 @@ fn on_torrent_added(
 
                 // Collected before acting: removing a torrent while iterating
                 // the session's own list is asking for trouble.
-                // A cell because `with_torrents` hands out a `Fn`, so the
-                // closure cannot own a mutable borrow of the list it fills.
-                let done: std::cell::RefCell<Vec<(String, crate::bittorrent::limits::ShareAction)>> =
-                    std::cell::RefCell::new(Vec::new());
-                rq.with_torrents(|torrents| {
-                    for (_, handle) in torrents {
-                        let stats = handle.stats();
-                        if !stats.finished
-                            || matches!(stats.state, TorrentStatsState::Paused)
-                        {
-                            continue;
-                        }
-                        let hash = handle.info_hash().as_string();
+                let done: Vec<(String, crate::bittorrent::limits::ShareAction)> =
+                    rq.with_torrents(|torrents| {
+                        torrents
+                            .filter_map(|(_, handle)| {
+                                let stats = handle.stats();
+                                if !stats.finished
+                                    || matches!(stats.state, TorrentStatsState::Paused)
+                                {
+                                    return None;
+                                }
+                                let hash = handle.info_hash().as_string();
 
-                        let ratio = match stats.progress_bytes {
-                            0 => 0.0,
-                            downloaded => stats.uploaded_bytes as f64 / downloaded as f64,
-                        };
-                        // Seeding time is measured from completion, which is
-                        // what the column records. A torrent that has never
-                        // completed in this profile has none, and is left alone
-                        // rather than treated as having seeded forever.
-                        let seeded = meta
-                            .lock()
-                            .unwrap()
-                            .get(&hash)
-                            .and_then(|m| m.completed_on)
-                            .map(|at| (now - at).num_minutes());
+                                let (ratio, completed_on) = share_reading(
+                                    meta.lock().unwrap().get_mut(&hash),
+                                    stats.uploaded_bytes as i64,
+                                    stats.progress_bytes,
+                                );
+                                // Seeding time is measured from completion,
+                                // which is what the column records. A torrent
+                                // that has never completed in this profile has
+                                // none, and is left alone rather than treated
+                                // as having seeded forever.
+                                let seeded = completed_on.map(|at| (now - at).num_minutes());
 
-                        let limits = match overrides.get(&hash) {
-                            Some((ratio_limit, time_limit)) => {
-                                global.with_overrides(*ratio_limit, *time_limit)
-                            }
-                            None => global,
-                        };
-                        if limits.reached(ratio, seeded.unwrap_or(0)) {
-                            done.borrow_mut().push((hash, limits.action));
-                        }
-                    }
-                });
+                                let limits = match overrides.get(&hash) {
+                                    Some((ratio_limit, time_limit)) => {
+                                        global.with_overrides(*ratio_limit, *time_limit)
+                                    }
+                                    None => global,
+                                };
+                                limits
+                                    .reached(ratio, seeded.unwrap_or(0))
+                                    .then_some((hash, limits.action))
+                            })
+                            .collect()
+                    });
 
-                for (hash, action) in done.into_inner() {
+                for (hash, action) in done {
                     apply_share_action(&rq, &db, &meta, &events, &hash, action).await;
                 }
             }
@@ -3727,11 +3614,30 @@ fn on_torrent_added(
         let events = self.events.clone();
         let meta = self.meta.clone();
 
+        // What the engine restored, taken now rather than on the first tick.
+        // The restore has already happened - it is synchronous inside
+        // `new_with_opts`, which `forget_missing_torrents` relies on too - so
+        // anything that appears after this point was added in this run.
+        //
+        // The first tick used to be the baseline instead, and that swallowed
+        // every torrent added within a second of startup: the one a
+        // double-clicked .torrent opens the program with never raised an
+        // "added", so no toast, and no plugin's on_added.
+        let startup: HashMap<String, String> = self.rq().with_torrents(|torrents| {
+            torrents
+                .map(|(_, handle)| {
+                    let hash = handle.info_hash().as_string();
+                    let name = handle.name().unwrap_or_else(|| hash.clone());
+                    (hash, name)
+                })
+                .collect()
+        });
+
         self.rt.spawn(async move {
             // Owned by the task, not by `meta`: this is "what the previous tick
             // saw", which is nobody else's business and must not be confused
             // with the persisted per-torrent metadata.
-            let mut live: HashMap<String, String> = HashMap::new();
+            let mut live: HashMap<String, String> = startup.clone();
             let mut finished: std::collections::HashSet<String> = std::collections::HashSet::new();
 
             // Torrents that had already completed before this run started.
@@ -3777,29 +3683,30 @@ fn on_torrent_added(
 
                 let mut seen: HashMap<String, String> = HashMap::new();
                 for (hash, name, is_finished) in snapshot {
-                    // The first tick establishes the baseline. Without this
-                    // every torrent restored from the previous run would look
-                    // newly added, and anything already complete would raise a
-                    // completion on every launch.
-                    if primed {
-                        if !live.contains_key(&hash) {
-                            events.emit(SessionEvent::TorrentAdded {
+                    if !live.contains_key(&hash) {
+                        events.emit(SessionEvent::TorrentAdded {
+                            hash: hash.clone(),
+                            name: name.clone(),
+                        });
+                    }
+                    // For a torrent restored from the previous run, the first
+                    // tick only establishes what was already finished -
+                    // otherwise anything complete would raise a completion on
+                    // every launch. One added in this run has no such history.
+                    if (primed || !startup.contains_key(&hash))
+                        && is_finished
+                        && !finished.contains(&hash)
+                    {
+                        if preexisting.remove(&hash) {
+                            tracing::debug!(
+                                "{name} finished verifying; it was already complete"
+                            );
+                        } else {
+                            tracing::info!("torrent finished: {name}");
+                            events.emit(SessionEvent::TorrentCompleted {
                                 hash: hash.clone(),
                                 name: name.clone(),
                             });
-                        }
-                        if is_finished && !finished.contains(&hash) {
-                            if preexisting.remove(&hash) {
-                                tracing::debug!(
-                                    "{name} finished verifying; it was already complete"
-                                );
-                            } else {
-                                tracing::info!("torrent finished: {name}");
-                                events.emit(SessionEvent::TorrentCompleted {
-                                    hash: hash.clone(),
-                                    name: name.clone(),
-                                });
-                            }
                         }
                     }
 
@@ -3812,15 +3719,13 @@ fn on_torrent_added(
                     seen.insert(hash, name);
                 }
 
-                if primed {
-                    for (hash, name) in &live {
-                        if !seen.contains_key(hash) {
-                            events.emit(SessionEvent::TorrentRemoved {
-                                hash: hash.clone(),
-                                name: name.clone(),
-                            });
-                            finished.remove(hash);
-                        }
+                for (hash, name) in &live {
+                    if !seen.contains_key(hash) {
+                        events.emit(SessionEvent::TorrentRemoved {
+                            hash: hash.clone(),
+                            name: name.clone(),
+                        });
+                        finished.remove(hash);
                     }
                 }
 
@@ -3934,7 +3839,6 @@ fn on_torrent_added(
         self.effective_tiers(hash, &Configuration::new(self.db.clone()))
     }
 
-    /// File list for the Files tab.
     /// Where one of a torrent's files is on disk.
     ///
     /// `relative_filename` is relative to the torrent's own output folder, and
@@ -3964,6 +3868,7 @@ fn on_torrent_added(
         Some(std::path::Path::new(&folder).join(relative))
     }
 
+    /// File list for the Files tab.
     pub fn files(&self, hash: &str) -> Vec<FileEntry> {
         let Some(handle) = self.find(hash) else {
             return Vec::new();
@@ -4086,26 +3991,25 @@ fn on_torrent_added(
             }
         };
         rows.push(TrackerRow::source("DHT", dht_status).with_counts(counts(librqbit::PeerSource::Dht)));
-        let lsd_on = crate::core::configuration::Configuration::new(self.db.clone())
-            .get_bool("libtorrent.enable_lsd");
-        let lsd_status = if paused {
-            tr.i18n("tracker_paused")
-        } else if lsd_on {
-            tr.i18n("tracker_enabled")
-        } else {
-            tr.i18n("tracker_disabled")
+        // LSD and PeX have no live figure to show, only their switch.
+        let cfg = Configuration::new(self.db.clone());
+        let switch_status = |key: &str| {
+            tr.i18n(if paused {
+                "tracker_paused"
+            } else if cfg.get_bool(key) {
+                "tracker_enabled"
+            } else {
+                "tracker_disabled"
+            })
         };
-        rows.push(TrackerRow::source("LSD", lsd_status).with_counts(counts(librqbit::PeerSource::Lsd)));
-        let pex_on = crate::core::configuration::Configuration::new(self.db.clone())
-            .get_bool("libtorrent.enable_pex");
-        let pex_status = if paused {
-            tr.i18n("tracker_paused")
-        } else if pex_on {
-            tr.i18n("tracker_enabled")
-        } else {
-            tr.i18n("tracker_disabled")
-        };
-        rows.push(TrackerRow::source("PeX", pex_status).with_counts(counts(librqbit::PeerSource::Pex)));
+        rows.push(
+            TrackerRow::source("LSD", switch_status("libtorrent.enable_lsd"))
+                .with_counts(counts(librqbit::PeerSource::Lsd)),
+        );
+        rows.push(
+            TrackerRow::source("PeX", switch_status("libtorrent.enable_pex"))
+                .with_counts(counts(librqbit::PeerSource::Pex)),
+        );
 
         let stats: std::collections::HashMap<String, librqbit::TrackerStat> =
             rq.tracker_stats_snapshot(info_hash).into_iter().collect();
@@ -4289,13 +4193,7 @@ fn on_torrent_added(
         // a restored session would come back fully paused. Remember which
         // torrents were actually running so the next startup can resume them.
         let running = running_hashes(&self.rq());
-        let _ = self.db.with(|conn| {
-            conn.execute(
-                "insert or replace into persistent_object (key, value) values \
-                 ('session.running', ?1)",
-                [running.join(",")],
-            )
-        });
+        Configuration::new(self.db.clone()).set_persistent("session.running", &running.join(","));
 
         self.rt.block_on(self.rq().stop());
     }
@@ -4382,7 +4280,6 @@ mod layout_tests {
             version: TorrentVersion::V1,
         })
         .unwrap()
-        .bytes
     }
 
     /// Where would this torrent be written, if added to `into` the way a fresh
@@ -4485,7 +4382,69 @@ mod layout_tests {
 #[cfg(test)]
 mod tests {
 
-    use super::{QueueMove, accumulate_uploaded, queue_target};
+    use super::{QueueMove, TorrentMeta, accumulate_uploaded, queue_target, share_reading};
+    use crate::bittorrent::limits::{ShareAction, ShareLimits};
+
+    /// A finished torrent as `load_torrent_meta` leaves it: the stored total
+    /// loaded, and the watermark at zero because this session has seen nothing.
+    fn stored(uploaded_total: i64) -> TorrentMeta {
+        TorrentMeta {
+            added_on: chrono::Local::now(),
+            completed_on: Some(chrono::Local::now()),
+            label_id: None,
+            queue_position: 0,
+            prev_finished: None,
+            uploaded_total,
+            seen_uploaded: 0,
+            flushed_uploaded: uploaded_total,
+            info_hashes: None,
+        }
+    }
+
+    const RATIO_2: ShareLimits = ShareLimits {
+        ratio: Some(2.0),
+        seed_minutes: None,
+        action: ShareAction::Pause,
+    };
+
+    /// The reported bug: a torrent at 3.9 all-time, freshly launched, so the
+    /// engine's own counter is zero. The guard read that counter and saw 0.0,
+    /// so a 2.0 limit never fired while the ratio column showed 3.9.
+    #[test]
+    fn the_guard_measures_the_all_time_ratio_not_this_session() {
+        const SIZE: u64 = 1_000;
+        let mut meta = stored(3_900);
+
+        let (ratio, completed_on) = share_reading(Some(&mut meta), 0, SIZE);
+        assert_eq!(ratio, 3.9, "the guard measured only this session");
+        assert!(completed_on.is_some());
+        assert!(RATIO_2.reached(ratio, 0), "a 2.0 limit let a 3.9 torrent seed on");
+
+        // Below the limit all-time stays below it, however the session went.
+        let mut meta = stored(1_500);
+        let (ratio, _) = share_reading(Some(&mut meta), 400, SIZE);
+        assert_eq!(ratio, 1.9);
+        assert!(!RATIO_2.reached(ratio, 0));
+    }
+
+    /// The guard and `torrents()` both fold the live counter into the same
+    /// meta. Reading the same counter twice must not count it twice, or the
+    /// guard would stop torrents early.
+    #[test]
+    fn the_guard_reading_twice_does_not_double_count() {
+        let mut meta = stored(1_000);
+        let (first, _) = share_reading(Some(&mut meta), 500, 1_000);
+        let (again, _) = share_reading(Some(&mut meta), 500, 1_000);
+        assert_eq!((first, again), (1.5, 1.5));
+        assert_eq!(meta.uploaded_total, 1_500);
+    }
+
+    /// Nothing downloaded means no ratio rather than a division by zero.
+    #[test]
+    fn the_guard_reads_no_progress_as_ratio_zero() {
+        let mut meta = stored(5_000);
+        assert_eq!(share_reading(Some(&mut meta), 0, 0).0, 0.0);
+    }
 
     /// Ordinary progress: the engine's counter climbs, and the difference is
     /// what gets added.
@@ -5502,32 +5461,20 @@ mod tests {
         let payload = dir.join("nanotorrent-test-payload.bin");
         std::fs::write(&payload, vec![0xABu8; 512 * 1024]).unwrap();
 
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-
-        // Inside the async block, not outside it: BlockingSpawner::new reads
-        // the current runtime handle and panics if there isn't one.
-        let torrent = rt
-            .block_on(async {
-                librqbit::create_torrent(
-                    &payload,
-                    librqbit::CreateTorrentOptions {
-                        name: Some("nanotorrent-test"),
-                        ..Default::default()
-                    },
-                    &librqbit::spawn_utils::BlockingSpawner::new(1),
-                )
-                .await
-            })
-            .unwrap();
-
-        std::fs::write(
-            dir.join("nanotorrent-test.torrent"),
-            torrent.as_bytes().unwrap(),
+        let torrent = crate::bittorrent::torrent_create::build(
+            &crate::bittorrent::torrent_create::CreateInput {
+                source: &payload,
+                version: crate::bittorrent::torrent_create::TorrentVersion::V1,
+                piece_length: None,
+                trackers: &[],
+                comment: "",
+                private: false,
+                created_by: crate::buildinfo::user_agent(),
+            },
         )
         .unwrap();
+
+        std::fs::write(dir.join("nanotorrent-test.torrent"), torrent).unwrap();
     }
 
     /// A background error reads in the user's language, and still carries the
@@ -5912,10 +5859,10 @@ mod migrate_label_tests {
         let before = cfg
             .export_value(key)
             .expect("default_save_path should be a setting this build has");
-        cfg.import_value(key, "\"xx-XX\"");
+        cfg.write_value(key, Some("\"xx-XX\""));
         assert_eq!(cfg.export_value(key).unwrap().as_deref(), Some("\"xx-XX\""));
 
-        cfg.restore_value(key, before.as_deref());
+        cfg.write_value(key, before.as_deref());
         assert_eq!(cfg.export_value(key).unwrap(), before, "not put back as it was");
     }
 }
@@ -5982,3 +5929,7 @@ mod pending_magnet_tests {
         assert_eq!(parse_pending_magnets(",junk,:1,cc:1"), vec![("cc".to_string(), true)]);
     }
 }
+
+#[cfg(test)]
+#[path = "session_live_tests.rs"]
+mod live_tests;

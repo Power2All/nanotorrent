@@ -42,6 +42,10 @@ pub struct Limits {
 }
 
 impl Default for Limits {
+    /// Five tries a minute, then an hour out. Deliberately strict: this guards
+    /// one password on a machine its owner can always reach by other means, so
+    /// the cost of being wrong is small and the cost of being too permissive
+    /// is someone else's.
     fn default() -> Self {
         Limits {
             max_failures: 5,
@@ -56,7 +60,6 @@ impl Default for Limits {
 /// Keyed by address, not by username: there is only one account, so counting
 /// per user would be one global counter that any passer-by could use to lock
 /// the owner out.
-#[derive(Default)]
 pub struct Attempts {
     limits: Limits,
     state: std::sync::Mutex<std::collections::HashMap<String, Record>>,
@@ -321,10 +324,11 @@ fn cross_site_write(req: &ServiceRequest) -> bool {
     //
     // Two places to look, because HTTP/1.1 and HTTP/2 disagree about where the
     // host lives. h2 has no `Host` header at all - it carries `:authority`,
-    // which actix puts in the request URI - and TLS is on by default with h2 in
-    // actix's ALPN list, so a browser here is usually speaking h2. Reading only
-    // `Host` compared the page's own origin against "" and refused every write
-    // the page attempted.
+    // which actix puts in the request URI. Reading only `Host` once compared
+    // the page's own origin against "" and refused every write the page
+    // attempted. The server no longer offers HTTP/2 (see `https_server` in
+    // mod.rs), so `Host` is what arrives; the fallback stays so this check
+    // cannot silently break again if that ever changes.
     //
     // Deliberately NOT `connection_info().host()`, which would consult
     // `Forwarded` and `X-Forwarded-Host` as well: those are set by the caller,

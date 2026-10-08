@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Nederlands (Nederland) - Partner Center: Dutch (Netherlands) (nl-NL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent is een Rust-port van PicoTorrent van Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versie 0.4.3
+Versie 0.4.4
 
-- Magnetlinks wachten niet meer op hun details: het venster Toevoegen opent meteen, en een magnet die wordt toegevoegd voordat de details binnen zijn, staat als ‘Metadata downloaden’ in de lijst tot ze er zijn, net als in qBittorrent.
+- Beveiliging: de webinterface via HTTPS is niet langer kwetsbaar voor een denial-of-serviceaanval in de HTTP/2-laag; die gebruikt nu alleen HTTP/1.1. U hoeft niets aan te passen.
+- Deellimieten: een verhoudingslimiet stopt een torrent nu bij de verhouding die in de lijst staat. Voorheen telde alleen wat er sinds de laatste start van NanoTorrent was geüpload, waardoor een torrent voorbij zijn limiet kon blijven seeden.
+- Opgelost: v1-torrents gemaakt met ‘Torrent aanmaken’ zijn altijd geldig en komen op elke computer hetzelfde uit, en ‘Forceer opnieuw controleren’ op een gepauzeerde torrent controleert die nu meteen in plaats van 0% te tonen tot hij wordt gestart.
+- Onder de motorkap: de bibliotheken waarop NanoTorrent is gebouwd, zijn bijgewerkt met hun nieuwste correcties.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

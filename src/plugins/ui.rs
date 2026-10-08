@@ -19,7 +19,7 @@
 // posts an event. That is why this module holds plain data and no Slint types.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 /// One line in a plugin's list.
 /// Serialized as-is for the web interface, field for field.
@@ -210,7 +210,6 @@ pub enum UiEvent {
 /// wants this same lock to read what changed. Calling it while holding the
 /// lock is an invitation to a deadlock the day one of these callbacks starts
 /// doing something less trivial than posting to a queue.
-#[derive(Default)]
 struct Registry {
     plugins: BTreeMap<String, PluginUi>,
     /// Into the plugin host's loop. A closure rather than a Sender so this
@@ -225,14 +224,16 @@ struct Registry {
     open: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
-fn registry() -> &'static Mutex<Registry> {
-    static REGISTRY: OnceLock<Mutex<Registry>> = OnceLock::new();
-    REGISTRY.get_or_init(Default::default)
-}
+static REGISTRY: Mutex<Registry> = Mutex::new(Registry {
+    plugins: BTreeMap::new(),
+    events: None,
+    repaint: None,
+    open: None,
+});
 
 /// Called by the plugin host once its loop is up.
 pub fn set_event_sink(sink: impl Fn(Origin, UiEvent) + Send + Sync + 'static) {
-    if let Ok(mut reg) = registry().lock() {
+    if let Ok(mut reg) = REGISTRY.lock() {
         reg.events = Some(Arc::new(sink));
     }
 }
@@ -243,7 +244,7 @@ pub fn set_presenter(
     repaint: impl Fn() + Send + Sync + 'static,
     open: impl Fn(String) + Send + Sync + 'static,
 ) {
-    if let Ok(mut reg) = registry().lock() {
+    if let Ok(mut reg) = REGISTRY.lock() {
         reg.repaint = Some(Arc::new(repaint));
         reg.open = Some(Arc::new(open));
     }
@@ -259,7 +260,7 @@ pub fn show(plugin: &str) {
     if ORIGIN.with(std::cell::Cell::get) == Origin::Web {
         return;
     }
-    let open = registry().lock().ok().and_then(|reg| reg.open.clone());
+    let open = REGISTRY.lock().ok().and_then(|reg| reg.open.clone());
     if let Some(open) = open {
         open(plugin.to_owned());
     }
@@ -270,18 +271,15 @@ pub fn show(plugin: &str) {
 /// The repaint call happens after the lock is released: it hops to the UI
 /// thread, which immediately wants the same lock to read what changed.
 pub fn update(plugin: &str, edit: impl FnOnce(&mut PluginUi)) {
-    let repaint = {
-        let Ok(mut reg) = registry().lock() else { return };
+    {
+        let Ok(mut reg) = REGISTRY.lock() else { return };
         edit(reg.plugins.entry(plugin.to_owned()).or_default());
-        reg.repaint.is_some()
-    };
-    if repaint {
-        request_repaint();
     }
+    request_repaint();
 }
 
 fn request_repaint() {
-    let repaint = registry().lock().ok().and_then(|reg| reg.repaint.clone());
+    let repaint = REGISTRY.lock().ok().and_then(|reg| reg.repaint.clone());
     if let Some(f) = repaint {
         f();
     }
@@ -289,7 +287,7 @@ fn request_repaint() {
 
 /// What one plugin currently declares, for the UI to draw.
 pub fn snapshot(plugin: &str) -> Option<PluginUi> {
-    registry().lock().ok()?.plugins.get(plugin).cloned()
+    REGISTRY.lock().ok()?.plugins.get(plugin).cloned()
 }
 
 /// Every plugin that has declared a window, in a stable order.
@@ -299,7 +297,7 @@ pub fn snapshot(plugin: &str) -> Option<PluginUi> {
 /// itself: the surface state lives here, not in the Slint window, so a second
 /// renderer costs nothing but the drawing.
 pub fn windows() -> Vec<WindowInfo> {
-    let Ok(reg) = registry().lock() else {
+    let Ok(reg) = REGISTRY.lock() else {
         return Vec::new();
     };
     reg.plugins
@@ -333,7 +331,7 @@ pub struct WindowInfo {
 /// `(plugin name, dropdown title)`. A plugin with a title but no items is not
 /// listed: a dropdown that opens onto nothing is worse than no dropdown.
 pub fn menus() -> Vec<(String, String)> {
-    let Ok(reg) = registry().lock() else {
+    let Ok(reg) = REGISTRY.lock() else {
         return Vec::new();
     };
     reg.plugins
@@ -367,25 +365,23 @@ pub fn display_name(plugin: &str) -> String {
 
 /// Every plugin's file-menu items, flattened into `(plugin, id, label)`.
 ///
-/// Ordered by plugin name so the menu does not reshuffle itself between
-/// right-clicks - a menu whose items move is a menu that gets misclicked.
+/// Ordered by plugin name - the registry is a BTreeMap - so the menu does not
+/// reshuffle itself between right-clicks: a menu whose items move is a menu
+/// that gets misclicked.
 pub fn file_menu_items() -> Vec<(String, String, String)> {
-    let reg = registry().lock().unwrap_or_else(|e| e.into_inner());
-    let mut out: Vec<(String, String, String)> = reg
-        .plugins
+    let reg = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+    reg.plugins
         .iter()
         .flat_map(|(plugin, ui)| {
             ui.file_menu
                 .iter()
                 .map(move |(id, label)| (plugin.clone(), id.clone(), label.clone()))
         })
-        .collect();
-    out.sort_by(|a, b| a.0.cmp(&b.0));
-    out
+        .collect()
 }
 
 pub fn menu_items(plugin: &str) -> Vec<(String, String)> {
-    registry()
+    REGISTRY
         .lock()
         .ok()
         .and_then(|reg| reg.plugins.get(plugin).map(|ui| ui.menu_items.clone()))
@@ -394,7 +390,7 @@ pub fn menu_items(plugin: &str) -> Vec<(String, String)> {
 
 /// Whether this plugin asked for a Configure button.
 pub fn configurable(plugin: &str) -> bool {
-    registry()
+    REGISTRY
         .lock()
         .is_ok_and(|reg| reg.plugins.get(plugin).is_some_and(|ui| ui.configurable))
 }
@@ -409,7 +405,7 @@ pub fn post(event: UiEvent) {
 
 /// The same, naming where the click came from.
 pub fn post_from(origin: Origin, event: UiEvent) {
-    let sink = registry().lock().ok().and_then(|reg| reg.events.clone());
+    let sink = REGISTRY.lock().ok().and_then(|reg| reg.events.clone());
     if let Some(sink) = sink {
         sink(origin, event);
     }
@@ -436,7 +432,7 @@ pub fn report_failure(plugin: &str, func: &str, err: &str) {
 /// the bar. Repaints, or the removed titles would stay on screen until
 /// something else happened to ask for one.
 pub fn clear_surfaces() {
-    if let Ok(mut reg) = registry().lock() {
+    if let Ok(mut reg) = REGISTRY.lock() {
         reg.plugins.clear();
     }
     request_repaint();
@@ -446,7 +442,7 @@ pub fn clear_surfaces() {
 /// outlive the plugin that put it there.
 pub fn clear() {
     clear_surfaces();
-    if let Ok(mut reg) = registry().lock() {
+    if let Ok(mut reg) = REGISTRY.lock() {
         reg.events = None;
     }
 }

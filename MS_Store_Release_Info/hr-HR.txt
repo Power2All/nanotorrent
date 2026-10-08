@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Hrvatski (Hrvatska) - Partner Center: Croatian (Croatia) (hr-HR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent je prijenos PicoTorrenta Viktora Elofssona na Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzija 0.4.3
+Verzija 0.4.4
 
-- Magnet poveznice više ne čekaju svoje pojedinosti: prozor za dodavanje otvara se odmah, a magnet dodan prije nego što pojedinosti stignu prikazuje se na popisu kao „Preuzimanje metadate” dok ne stignu, kao u qBittorrentu.
+- Sigurnost: web-sučelje preko HTTPS-a više nije izloženo napadu uskraćivanja usluge u svom HTTP/2 sloju; sada koristi samo HTTP/1.1. Ne morate ništa mijenjati.
+- Ograničenja dijeljenja: ograničenje omjera sada zaustavlja torrent na omjeru prikazanom na popisu. Prije se brojilo samo slanje od posljednjeg pokretanja NanoTorrenta, pa je torrent mogao nastaviti dijeliti i nakon svog ograničenja.
+- Ispravci: v1 torrenti napravljeni opcijom „Stvori torrent” uvijek su valjani i na svakom računalu ispadaju jednaki, a „Forsiraj provjeru” na pauziranom torrentu sada ga odmah provjerava umjesto da prikazuje 0% dok se ne pokrene.
+- Ispod haube: biblioteke na kojima je NanoTorrent izgrađen ažurirane su s najnovijim ispravcima.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

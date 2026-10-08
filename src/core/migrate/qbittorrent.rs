@@ -27,7 +27,8 @@ use std::sync::atomic::AtomicBool;
 use anyhow::Result;
 
 use crate::core::bencode;
-use crate::core::pico_import::{ImportEntry, ImportSource, Scan};
+use crate::bittorrent::session::AddTorrentSource;
+use crate::core::pico_import::{ImportEntry, Scan};
 
 /// The profile directory qBittorrent uses by default, if it is there.
 ///
@@ -67,43 +68,30 @@ fn read_one(fastresume: &Path) -> Option<ImportEntry> {
     // this is the one its UI shows.
     let save_path = bencode::dict_get(&resume, b"qBt-savePath")
         .or_else(|| bencode::dict_get(&resume, b"save_path"))
-        .and_then(bencode::text)
-        .filter(|s| !s.is_empty());
+        .and_then(bencode::text);
 
     // Category, not tags: a torrent has exactly one category, and this build
     // has one label per torrent, so the two line up. `qBt-tags` is a list and
     // flattening several into one would invent a grouping nobody chose.
     let label_name = bencode::dict_get(&resume, b"qBt-category")
-        .and_then(bencode::text)
-        .filter(|s| !s.is_empty());
+        .and_then(bencode::text);
 
     let torrent = fastresume.with_extension("torrent");
     if let Ok(bytes) = std::fs::read(&torrent) {
-        // The stem is the info hash, but it is not trusted: a renamed file
-        // would then import under a hash that is not its own and collide with
-        // something else. Hashing the info dict is the only answer that
-        // cannot be wrong.
-        let info = bencode::dict_get(&bytes, b"info")?;
-        let (v1, v2) = crate::bittorrent::metainfo::info_hashes(info);
-        return Some(ImportEntry {
-            info_hash: v1.or(v2)?,
-            source: ImportSource::TorrentBytes(bytes),
-            save_path,
-            label_id: None,
-            label_name,
-        });
+        // The stem is the info hash, but it is not trusted - see
+        // `from_torrent`.
+        return ImportEntry::from_torrent(bytes, save_path, label_name);
     }
 
     // No `.torrent`: a magnet qBittorrent has not resolved yet. The link is
     // all there is, and it is enough to re-add.
     let magnet = bencode::dict_get(&resume, b"qBt-magnetUri")
         .or_else(|| bencode::dict_get(&resume, b"magnet-uri"))
-        .and_then(bencode::text)
-        .filter(|m| !m.is_empty())?;
+        .and_then(bencode::text)?;
     let info_hash = magnet_info_hash(&magnet)?;
     Some(ImportEntry {
         info_hash,
-        source: ImportSource::Magnet(magnet),
+        source: AddTorrentSource::MagnetUri(magnet),
         save_path,
         label_id: None,
         label_name,
@@ -182,7 +170,7 @@ mod tests {
         assert_eq!(scan.entries.len(), 1);
         assert_eq!(scan.entries[0].info_hash, hash);
         assert_eq!(scan.entries[0].save_path.as_deref(), Some("D:\\Downloads"));
-        assert!(matches!(scan.entries[0].source, ImportSource::TorrentBytes(_)));
+        assert!(matches!(scan.entries[0].source, AddTorrentSource::TorrentFileBytes(_)));
     }
 
     /// The hash comes from the info dict, never the filename - a `.fastresume`
@@ -228,7 +216,7 @@ mod tests {
         let scan = scan(&p.0, &AtomicBool::new(false)).unwrap();
         assert_eq!(scan.unreadable, 0);
         assert_eq!(scan.entries[0].info_hash, hash);
-        assert!(matches!(scan.entries[0].source, ImportSource::Magnet(_)));
+        assert!(matches!(scan.entries[0].source, AddTorrentSource::MagnetUri(_)));
     }
 
     /// Neither metadata nor a link: counted, not dropped silently. "42 of your

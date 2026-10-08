@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -50,30 +50,27 @@ ui-slint = ["dep:slint", "dep:slint-build", "dep:rfd", "dep:raw-window-handle", 
 # for nothing. Basic auth needs no cookies. Re-add ws if live stats ever want
 # a socket rather than SSE.
 #
-# http2 is listed explicitly, but it is not optional in practice: actix-web's
-# `rustls-0_23` feature enables it, so TLS forces it in. actix-http 3.13.6 made
-# `h2` an OPTIONAL dependency behind its own `http2` feature, which looks like
-# the way out and is not: every one of actix-web's TLS features - rustls-0_23
-# included - lists "http2" among what it enables, so dropping it from the list
-# below changes nothing while TLS is wanted. Checked with
-# `cargo tree -e features -i h2@0.3.27`.
+# No http2 and no rustls-0_23, and the two go together. Every one of actix-web's
+# TLS features switches on its `http2` feature, which brings in h2 0.3 and puts
+# "h2" first in the ALPN list, so every browser spoke HTTP/2 through it. h2 0.3
+# carries RUSTSEC-2026-0258 - empty DATA frames queued without limit, reachable
+# before authentication - and is fixed only in h2 0.4, which actix-http (3.18.12,
+# the newest) does not take; 0.3.27 is the end of that line, with no backport.
 #
-# That matters because actix-http 3.13.6 - the newest published, with no 4.x
-# line in existence - still requires h2 ^0.3.27, which carries
-# RUSTSEC-2026-0258: h2 accepts and queues empty
-# DATA frames without limit, so a stream that is not actively drained
-# grows memory unboundedly, or panics when the length overflows. RustSec grades
-# it LOW.
+# So TLS comes from actix-http directly instead, whose own `rustls-0_23` feature
+# does not need http2, and the HTTPS listener is assembled from actix-server and
+# actix-http by hand - see `https_server` in src/webui/mod.rs. Without the
+# feature, h2 is not compiled at all: nothing offers HTTP/2, and the vulnerable
+# code is not in the binary to be reached. Check with `cargo tree -i h2@0.3.27`,
+# which must find nothing.
 #
-# h2 itself is fixed - in 0.4.16, current 0.4.19. What is not fixed is the 0.3
-# line: 0.3.27 is the last of its 28 releases and never got the backport. So
-# the blocker is actix's dependency, not h2, and the upgrade has to come from
-# actix-http. Nor can the offer be suppressed from here:
-# actix-http PREPENDS ["h2", "http/1.1"] to whatever `alpn_protocols` we set,
-# and rustls picks by server preference, so h2 wins for any modern browser.
-# Reachable only when the web interface is switched on (off by default) with
-# TLS. Removing it needs either a newer actix or a vendored actix-http.
-actix-web = { version = "4", default-features = false, features = ["macros", "compress-gzip", "http2", "unicode", "compat", "rustls-0_23"] }
+# The four below are already in the tree under actix-web; naming them costs no
+# new crate.
+actix-web = { version = "4", default-features = false, features = ["macros", "compress-gzip", "unicode", "compat"] }
+actix-http = { version = "3", default-features = false, features = ["rustls-0_23"] }
+actix-server = "2"
+actix-service = "2"
+actix-tls = { version = "3", default-features = false, features = ["accept", "rustls-0_23"] }
 anyhow = "1.0.104"
 # Password hashing for the web API. A slow KDF, not sha2 (already present):
 # people reuse passwords, and the settings DB is a plain file.
@@ -88,7 +85,6 @@ argon2 = "0.6"
 # Pure Rust, no build script, no C toolchain behind it.
 chacha20poly1305 = "0.11"
 base64 = "0.23"
-bencode = { version = "9.0.1", package = "librqbit-bencode", default-features = false }
 chrono = "0.4.45"
 flate2 = "1.1.9"
 futures = "0.3.33"
@@ -215,6 +211,11 @@ tracing = "0.1.44"
 # env-filter: everything this app does goes in the log at debug, while the
 # dependencies stay at info - librqbit traces every chunk and would bury it.
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[dev-dependencies]
+# librqbit's own bencode, so a test can parse an info dict exactly the way the
+# engine will. The app itself reads bencode with core::bencode.
+bencode = { version = "9.0.1", package = "librqbit-bencode", default-features = false }
 
 [build-dependencies]
 # Compiles src/ui_slint/*.slint. Optional so a headless build does not pay for

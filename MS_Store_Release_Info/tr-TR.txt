@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Türkçe (Türkiye) - Partner Center: Turkish (Turkey) (tr-TR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent, Viktor Elofsson'ın PicoTorrent uygulamasının Rust'a aktarımıd�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sürüm 0.4.3
+Sürüm 0.4.4
 
-- Magnet bağlantıları artık ayrıntılarını beklemiyor: Ekle penceresi hemen açılır ve ayrıntılar gelmeden eklenen bir magnet, gelene kadar listede “Metadata indiriliyor” olarak görünür; tıpkı qBittorrent’te olduğu gibi.
+- Güvenlik: HTTPS üzerinden web arayüzü artık HTTP/2 katmanındaki bir hizmet reddi saldırısına açık değil; şimdi yalnızca HTTP/1.1 kullanıyor. Sizin bir şey değiştirmeniz gerekmiyor.
+- Paylaşım sınırları: oran sınırı artık torrenti listede gösterilen oranda durduruyor. Önceden yalnızca NanoTorrent'in son başlatılmasından bu yana yapılan yüklemeler sayılıyordu, bu yüzden bir torrent sınırını aşarak paylaşmaya devam edebiliyordu.
+- Düzeltmeler: “Torrent oluştur” ile yapılan v1 torrentler artık her zaman geçerli ve her bilgisayarda aynı çıkıyor; duraklatılmış bir torrentte “Tekrar kontrole zorla” ise başlatılana kadar 0% göstermek yerine onu hemen denetliyor.
+- Arka planda: NanoTorrent'in üzerine kurulduğu kütüphaneler en son düzeltmeleriyle güncellendi.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

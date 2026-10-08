@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Tiếng Việt (Việt Nam) - Partner Center: Vietnamese (Vietnam) (vi-VN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent là bản chuyển sang Rust của PicoTorrent do Viktor Elofsson vi
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Phiên bản 0.4.3
+Phiên bản 0.4.4
 
-- Liên kết magnet không còn phải chờ thông tin chi tiết: hộp thoại Thêm mở ngay lập tức, và magnet được thêm trước khi có thông tin chi tiết sẽ hiển thị là “Đang tải siêu dữ liệu” trong danh sách cho đến khi có, giống như trong qBittorrent.
+- Bảo mật: giao diện web qua HTTPS không còn bị tấn công từ chối dịch vụ ở lớp HTTP/2 nữa; giờ đây nó chỉ dùng HTTP/1.1. Bạn không cần thay đổi gì.
+- Giới hạn chia sẻ: giới hạn tỷ lệ giờ dừng torrent đúng ở tỷ lệ hiển thị trong danh sách. Trước đây chỉ tính lượng tải lên kể từ lần khởi động NanoTorrent gần nhất, nên torrent có thể tiếp tục chia sẻ vượt quá giới hạn.
+- Sửa lỗi: torrent v1 tạo bằng “Tạo torrent” luôn hợp lệ và giống hệt nhau trên mọi máy tính, còn “Buộc kiểm tra lại” trên torrent đang tạm dừng giờ kiểm tra ngay thay vì hiển thị 0% cho đến khi được khởi động.
+- Thay đổi bên trong: các thư viện mà NanoTorrent dựa trên đã được cập nhật cùng các bản sửa lỗi mới nhất.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

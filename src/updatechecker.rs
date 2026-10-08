@@ -16,7 +16,7 @@ use crate::core::configuration::Configuration;
 /// Preferences, in the web drawer and from the command line - which made the
 /// host that answers that question, and supplies the download link the update
 /// dialog then offers, something anyone with access to the settings could
-/// change. A settings file could carry it too: `import_value` writes any key
+/// change. A settings file could carry it too: `write_value` writes any key
 /// already in the table, so the import path was a way in even after the
 /// control was taken off the surfaces.
 ///

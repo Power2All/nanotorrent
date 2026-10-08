@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Íslenska (Ísland) - Partner Center: Icelandic (Iceland) (is-IS)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent er Rust-útfærsla af PicoTorrent eftir Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Útgáfa 0.4.3
+Útgáfa 0.4.4
 
-- Segultenglar bíða ekki lengur eftir upplýsingum sínum: Bæta við-glugginn opnast strax og segull sem bætt er við áður en upplýsingarnar berast birtist sem „Hleð niður lýsigögnum“ á listanum þar til þær berast, eins og í qBittorrent.
+- Öryggi: vefviðmótið yfir HTTPS er ekki lengur berskjaldað fyrir álagsárás í HTTP/2-laginu sínu; það notar nú aðeins HTTP/1.1. Þú þarft ekki að breyta neinu.
+- Deilihámörk: hlutfallshámark stöðvar nú torrent við hlutfallið sem sýnt er í listanum. Áður voru aðeins upphleðslur frá síðustu ræsingu NanoTorrent taldar, svo torrent gat haldið áfram að deila fram yfir hámarkið.
+- Lagfæringar: v1-torrentar sem búnir eru til með „Búa til torrent“ eru alltaf gildir og koma eins út á hverri tölvu, og „Þvinga endurskoðun“ á torrent í bið skoðar hann nú strax í stað þess að sýna 0% þar til hann er ræstur.
+- Undir húddinu: söfnin sem NanoTorrent er byggt á hafa verið uppfærð með nýjustu lagfæringum sínum.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

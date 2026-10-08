@@ -21,7 +21,7 @@ use std::sync::atomic::AtomicBool;
 use anyhow::Result;
 
 use crate::core::bencode;
-use crate::core::pico_import::{ImportEntry, ImportSource, Scan};
+use crate::core::pico_import::{ImportEntry, Scan};
 
 /// Transmission's config directory, if it is there.
 pub fn detect() -> Option<PathBuf> {
@@ -50,9 +50,6 @@ pub fn scan(config: &Path, cancel: &AtomicBool) -> Result<Scan> {
 
 fn read_one(config: &Path, torrent: &Path) -> Option<ImportEntry> {
     let bytes = std::fs::read(torrent).ok()?;
-    let info = bencode::dict_get(&bytes, b"info")?;
-    let (v1, v2) = crate::bittorrent::metainfo::info_hashes(info);
-
     // Same stem, different folder and extension. Absent is fine.
     //
     // Built as a string, NOT with `with_extension`: the stem is
@@ -63,23 +60,15 @@ fn read_one(config: &Path, torrent: &Path) -> Option<ImportEntry> {
     let resume = std::fs::read(&resume_path).unwrap_or_default();
 
     let save_path = bencode::dict_get(&resume, b"destination")
-        .and_then(bencode::text)
-        .filter(|s| !s.is_empty());
+        .and_then(bencode::text);
 
     // `labels` is a bencoded list of strings; this build has one label per
     // torrent, so the first is taken rather than joining them into a name
     // nobody chose.
     let label_name = bencode::dict_get(&resume, b"labels")
-        .and_then(|l| bencode::text(l.get(1..)?))
-        .filter(|s| !s.is_empty());
+        .and_then(|l| bencode::text(l.get(1..)?));
 
-    Some(ImportEntry {
-        info_hash: v1.or(v2)?,
-        source: ImportSource::TorrentBytes(bytes),
-        save_path,
-        label_id: None,
-        label_name,
-    })
+    ImportEntry::from_torrent(bytes, save_path, label_name)
 }
 
 #[cfg(test)]

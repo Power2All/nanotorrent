@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Deutsch (Deutschland) - Partner Center: German (Germany) (de-DE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent ist eine Rust-Portierung von PicoTorrent von Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.3
+Version 0.4.4
 
-- Magnet-Links warten nicht mehr auf ihre Details: Der Hinzufügen-Dialog öffnet sich sofort, und ein Magnet, der vor dem Eintreffen der Details hinzugefügt wird, erscheint in der Liste als „Metadaten herunterladen“, bis sie da sind - wie in qBittorrent.
+- Sicherheit: Die Weboberfläche über HTTPS ist nicht mehr anfällig für einen Denial-of-Service-Angriff in ihrer HTTP/2-Schicht; sie verwendet jetzt nur noch HTTP/1.1. Sie müssen nichts ändern.
+- Freigabegrenzen: Eine Verhältnisgrenze stoppt einen Torrent jetzt bei dem Verhältnis, das in der Liste angezeigt wird. Bisher zählten nur Uploads seit dem letzten Start von NanoTorrent, sodass ein Torrent über seine Grenze hinaus weiter seeden konnte.
+- Fehlerbehebungen: Mit „Torrent erstellen“ erzeugte v1-Torrents sind immer gültig und fallen auf jedem Computer gleich aus, und „Überprüfung erzwingen“ prüft einen pausierten Torrent jetzt sofort, statt bis zum Start 0% anzuzeigen.
+- Unter der Haube: Die Bibliotheken, auf denen NanoTorrent aufbaut, wurden mit ihren neuesten Korrekturen aktualisiert.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

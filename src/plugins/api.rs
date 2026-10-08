@@ -119,9 +119,9 @@ pub fn register(
 
     // ---- reading the session -------------------------------------------
     if perms.contains(&Permission::Read) {
-    let s = session.clone();
+        let s = session.clone();
         engine.register_fn("torrents", move || -> Array {
-            s.torrents(&std::collections::HashMap::new())
+            s.torrents(&s.label_names())
                 .into_iter()
                 .map(|t| Dynamic::from_map(torrent_map(&t)))
                 .collect()
@@ -131,11 +131,7 @@ pub fn register(
         engine.register_fn("torrent", move |hash: &str| -> Dynamic {
             // A map or unit, rather than a Result: a plugin asking about a torrent
             // that just vanished is ordinary, not an error worth aborting on.
-            match s
-                .torrents(&std::collections::HashMap::new())
-                .into_iter()
-                .find(|t| t.info_hash == hash)
-            {
+            match s.torrent(hash) {
                 Some(t) => Dynamic::from_map(torrent_map(&t)),
                 None => Dynamic::UNIT,
             }
@@ -220,11 +216,7 @@ pub fn register(
 
         let s = session.clone();
         engine.register_fn("magnet_uri", move |hash: &str| -> String {
-            match s
-                .torrents(&std::collections::HashMap::new())
-                .into_iter()
-                .find(|t| t.info_hash == hash)
-            {
+            match s.torrent(hash) {
                 Some(t) => s.magnet_uri(hash, &t.name),
                 None => String::new(),
             }
@@ -996,43 +988,24 @@ fn store_set(cfg: &Configuration, key: &str, k: &str, v: &str) -> bool {
 /// engine does: it is the difference between checking that a feed is read and
 /// checking that a feed is read *the way plugins read one*.
 fn http_get(handle: &tokio::runtime::Handle, client: &reqwest::Client, url: &str) -> Map {
-    let mut map = Map::new();
-    match fetch(handle, client, url) {
-        Ok((status, body)) => {
-            map.insert("ok".into(), Dynamic::from((200..300).contains(&status)));
-            map.insert("status".into(), Dynamic::from(i64::from(status)));
-            map.insert("body".into(), Dynamic::from(body));
-            map.insert("error".into(), Dynamic::from(String::new()));
-        }
+    let text = fetch_bytes(handle, client, url).and_then(|(status, bytes)| {
+        String::from_utf8(bytes)
+            .map(|body| (status, body))
+            .map_err(|_| String::from("response was not valid UTF-8"))
+    });
+    let (ok, status, body, error) = match text {
+        Ok((status, body)) => ((200..300).contains(&status), i64::from(status), body, String::new()),
         // An unreachable server is ordinary for a plugin polling the internet
         // on a timer, so it is a field to check rather than a Rhai error that
         // kills the handler.
-        Err(err) => {
-            map.insert("ok".into(), Dynamic::from(false));
-            map.insert("status".into(), Dynamic::from(0_i64));
-            map.insert("body".into(), Dynamic::from(String::new()));
-            map.insert("error".into(), Dynamic::from(err));
-        }
-    }
+        Err(err) => (false, 0, String::new(), err),
+    };
+    let mut map = Map::new();
+    map.insert("ok".into(), Dynamic::from(ok));
+    map.insert("status".into(), Dynamic::from(status));
+    map.insert("body".into(), Dynamic::from(body));
+    map.insert("error".into(), Dynamic::from(error));
     map
-}
-
-/// One HTTP GET, run on the session's runtime because the plugin thread is not
-/// one and a second runtime for this would be absurd.
-///
-/// Capped in both directions - a deadline and a byte ceiling - because the URL
-/// comes from a script and the script may have got it from a feed, which is to
-/// say from a stranger.
-fn fetch(
-    handle: &tokio::runtime::Handle,
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<(u16, String), String> {
-    let bytes = fetch_bytes(handle, client, url)?;
-    let status = bytes.0;
-    String::from_utf8(bytes.1)
-        .map(|body| (status, body))
-        .map_err(|_| String::from("response was not valid UTF-8"))
 }
 
 /// Reject anything that is not http(s) BEFORE it reaches the client.
@@ -1049,6 +1022,12 @@ fn checked_url(url: &str) -> Result<String, String> {
     Ok(url.to_owned())
 }
 
+/// One HTTP GET, run on the session's runtime because the plugin thread is not
+/// one and a second runtime for this would be absurd.
+///
+/// Capped in both directions - a deadline and a byte ceiling - because the URL
+/// comes from a script and the script may have got it from a feed, which is to
+/// say from a stranger.
 fn fetch_bytes(
     handle: &tokio::runtime::Handle,
     client: &reqwest::Client,
@@ -1082,8 +1061,6 @@ fn fetch_bytes(
     })
 }
 
-/// Add whatever a feed pointed at: a magnet link as-is, anything else fetched
-/// first and added as torrent bytes.
 /// What a script may say about a torrent it is adding.
 ///
 /// A struct rather than four more `add_torrent_url` overloads: the next option
@@ -1146,6 +1123,8 @@ fn add_started(session: &Session, source: AddTorrentSource, save_path: Option<&s
     )
 }
 
+/// Add whatever a feed pointed at: a magnet link as-is, anything else fetched
+/// first and added as torrent bytes.
 fn add_url(
     handle: &tokio::runtime::Handle,
     client: &reqwest::Client,

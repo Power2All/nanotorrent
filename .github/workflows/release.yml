@@ -43,7 +43,7 @@ jobs:
     outputs:
       version: ${{ steps.get.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - id: get
         # [package] is the first table in Cargo.toml and dependencies spell
         # their versions inline, so the first line-anchored `version =` is ours.
@@ -58,7 +58,7 @@ jobs:
     needs: version
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -106,7 +106,7 @@ jobs:
           }
           "{0:N1} MB" -f ((Get-Item $exe).Length / 1MB)
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe
           path: installer/NanoTorrent-${{ needs.version.outputs.version }}-Setup.exe
@@ -126,10 +126,12 @@ jobs:
       CLANGCC: clang-18
       CLANGCXX: clang++-18
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
+      # libxkbcommon-x11-0 is not a build dependency: it is here so the AppImage
+      # step below has it to bundle. See the note there.
       - name: System packages
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libxkbcommon0 libxkbcommon-x11-0
 
       # Skia is compiled from source in this job, by clang, against the newest
       # libstdc++ headers on the image. 22.04's own clang is 14, and once the
@@ -203,11 +205,38 @@ jobs:
           install -Dm644 "packaging/linux/$APPID.metainfo.xml" \
             "AppDir/usr/share/metainfo/$APPID.metainfo.xml"
 
+          # winit does not LINK against xkbcommon - it dlopen()s it when the
+          # window opens - so linuxdeploy, which follows the binary's ELF
+          # dependencies, never sees it. A desktop has it installed anyway; a
+          # minimal system does not, and there the AppImage died at startup with
+          # "Library libxkbcommon-x11.so could not be loaded". That is what the
+          # AppImage catalog's test machine reported. Bundled explicitly, and
+          # found through the RUNPATH linuxdeploy gives the binary, because the
+          # dlopen() is made from the binary's own code.
+          #
+          # libxcb-xkb too: libxkbcommon-x11 needs it, and a dlopen()ed
+          # library's own dependencies are looked up through ITS RUNPATH, not
+          # the binary's - which linuxdeploy sets to $ORIGIN on everything it
+          # bundles, so they find each other in usr/lib. Checked by hand in an
+          # Ubuntu 22.04 container with the catalog's package list: without
+          # that RUNPATH the bundled copy is found and still fails to load.
+          LIBDIR=/usr/lib/x86_64-linux-gnu
           ./linuxdeploy --appdir AppDir \
             -e AppDir/usr/bin/nanotorrent \
             -d "$APPID.desktop" \
             -i "$APPID.png" \
+            --library "$LIBDIR/libxkbcommon.so.0" \
+            --library "$LIBDIR/libxkbcommon-x11.so.0" \
+            --library "$LIBDIR/libxcb-xkb.so.1" \
             --output appimage
+
+          # Fail here rather than in someone's sandbox: the libraries in the
+          # bundle, and a RUNPATH that lets the binary's dlopen() find them.
+          for lib in libxkbcommon.so.0 libxkbcommon-x11.so.0 libxcb-xkb.so.1; do
+            test -e "AppDir/usr/lib/$lib" || { echo "::error::$lib is not in the AppImage"; exit 1; }
+          done
+          readelf -dW AppDir/usr/bin/nanotorrent | grep -E 'R(UN)?PATH' | grep -q 'ORIGIN' \
+            || { echo "::error::the AppImage binary has no \$ORIGIN RUNPATH, so dlopen() cannot find bundled libraries"; exit 1; }
 
           mv ./*.AppImage "nanotorrent-${{ needs.version.outputs.version }}-x86_64.AppImage"
           chmod +x "nanotorrent-${{ needs.version.outputs.version }}-x86_64.AppImage"
@@ -226,7 +255,34 @@ jobs:
           # which a successful pack does not.
           APPIMAGE_EXTRACT_AND_RUN=1 "./nanotorrent-${{ needs.version.outputs.version }}-x86_64.AppImage" --version
 
-      - uses: actions/upload-artifact@v6
+      # The AppImage catalog's own test, in miniature: start it on a virtual
+      # display and look for a window within ten seconds. `--version` above
+      # exits before any window is made, so it cannot catch a library that is
+      # only loaded when one is - which is exactly how v0.4.3 failed there.
+      #
+      # The system copy of libxkbcommon-x11 is removed first, and that is the
+      # point: with it installed, a bundle missing it would pass here and still
+      # fail on a machine without it. --force-depends so only that one file set
+      # goes, not everything apt thinks depends on it.
+      - name: AppImage shows a window
+        run: |
+          sudo dpkg -r --force-depends libxkbcommon-x11-0
+          sudo apt-get install -y --no-install-recommends xvfb xdotool
+          Xvfb :99 -screen 0 800x600x24 >/dev/null 2>&1 &
+          export DISPLAY=:99
+          "./nanotorrent-${{ needs.version.outputs.version }}-x86_64.AppImage" --appimage-extract >/dev/null
+          (cd squashfs-root && ./AppRun > ../appimage-run.log 2>&1 &)
+          sleep 10
+          if xdotool search --onlyvisible --name 'NanoTorrent' >/dev/null 2>&1; then
+            echo "window shown: $(xdotool search --onlyvisible --name 'NanoTorrent' getwindowname | head -1)"
+          else
+            echo "::error::the AppImage showed no window within 10 seconds"
+            cat appimage-run.log
+            exit 1
+          fi
+          pkill -f squashfs-root/usr/bin/nanotorrent || true
+
+      - uses: actions/upload-artifact@v7
         with:
           name: nanotorrent-${{ needs.version.outputs.version }}-linux
           path: |
@@ -240,7 +296,7 @@ jobs:
     needs: version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -327,7 +383,7 @@ jobs:
             "nanotorrent-${{ needs.version.outputs.version }}.dmg"
           hdiutil verify "nanotorrent-${{ needs.version.outputs.version }}.dmg"
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: nanotorrent-${{ needs.version.outputs.version }}.dmg
           path: nanotorrent-${{ needs.version.outputs.version }}.dmg
@@ -346,7 +402,7 @@ jobs:
     steps:
       # No name filter: takes all four artifacts. merge-multiple flattens them
       # into one directory instead of one subdirectory each.
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true

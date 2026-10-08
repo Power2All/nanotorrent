@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versio 0.4.3
+Versio 0.4.4
 
-- Magneettilinkit eivät enää odota tietojaan: Lisää-ikkuna avautuu heti, ja ennen tietojen saapumista lisätty magneetti näkyy luettelossa tilassa ”Ladataan metadataa”, kunnes tiedot saapuvat, kuten qBittorrentissa.
+- Tietoturva: HTTPS:n kautta toimiva verkkokäyttöliittymä ei ole enää altis palvelunestohyökkäykselle HTTP/2-kerroksessaan; se käyttää nyt vain HTTP/1.1:tä. Sinun ei tarvitse muuttaa mitään.
+- Jakorajat: suhderaja pysäyttää nyt torrentin luettelossa näkyvään suhteeseen. Aiemmin laskettiin vain lähetykset NanoTorrentin edellisestä käynnistyksestä, joten torrent saattoi jatkaa jakamista rajansa yli.
+- Korjaukset: toiminnolla ”Luo torrent” tehdyt v1-torrentit ovat aina kelvollisia ja samanlaisia joka tietokoneella, ja ”Pakota uudelleentarkistus” tarkistaa keskeytetyn torrentin nyt heti sen sijaan, että näyttäisi 0% käynnistykseen asti.
+- Konepellin alla: kirjastot, joiden varaan NanoTorrent on rakennettu, on päivitetty uusimpine korjauksineen.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

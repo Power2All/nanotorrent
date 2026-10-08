@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Bahasa Melayu (Malaysia) - Partner Center: Malay (Malaysia) (ms-MY)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent ialah versi Rust bagi PicoTorrent oleh Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.3
+Versi 0.4.4
 
-- Pautan magnet tidak lagi menunggu butirannya: dialog Tambah dibuka serta-merta, dan magnet yang ditambah sebelum butirannya tiba dipaparkan sebagai “Memuat turun metadata” dalam senarai sehingga butirannya tiba, seperti dalam qBittorrent.
+- Keselamatan: antara muka web melalui HTTPS tidak lagi terdedah kepada serangan penafian perkhidmatan dalam lapisan HTTP/2nya; kini ia hanya menggunakan HTTP/1.1. Anda tidak perlu menukar apa-apa.
+- Had perkongsian: had nisbah kini menghentikan torrent pada nisbah yang ditunjukkan dalam senarai. Sebelum ini hanya muat naik sejak NanoTorrent terakhir dimulakan yang dikira, jadi torrent boleh terus menyemai melepasi hadnya.
+- Pembaikan: torrent v1 yang dibuat dengan “Cipta torrent” kini sentiasa sah dan sama pada setiap komputer, dan “Paksa semak semula” pada torrent yang dijeda kini terus menyemaknya dan bukan lagi memaparkan 0% sehingga ia dimulakan.
+- Di sebalik tabir: pustaka yang menjadi asas NanoTorrent telah dikemas kini dengan pembetulan terkininya.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

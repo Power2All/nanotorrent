@@ -8,17 +8,12 @@ use crate::ui::translator::Translator;
 /// Port of the status -> display string mapping in torrentlistmodel.cpp.
 pub fn state_text(tr: &Translator, status: &TorrentStatus) -> String {
     match status.state {
-        State::CheckingFiles | State::DownloadingChecking => {
-            tr.i18n("state_downloading_checking")
-        }
-        State::CheckingResumeData => tr.i18n("state_checking_resume_data"),
+        State::CheckingFiles => tr.i18n("state_downloading_checking"),
         State::Downloading => tr.i18n("state_downloading"),
         State::DownloadingMetadata => tr.i18n("state_downloading_metadata"),
         State::DownloadingPaused => tr.i18n("state_downloading_paused"),
-        State::DownloadingQueued => tr.i18n("state_downloading_queued"),
         State::Uploading => tr.i18n("state_uploading"),
         State::UploadingPaused => tr.i18n("state_uploading_paused"),
-        State::UploadingQueued => tr.i18n("state_uploading_queued"),
         State::Error => tr.i18n1("state_error", &status.error),
         State::Unknown => tr.i18n("state_unknown"),
     }
@@ -61,14 +56,12 @@ pub fn speed_text(rate: i64) -> String {
 }
 
 /// A timestamp in the Added / Completed columns, in local time.
-#[cfg_attr(not(feature = "ui-slint"), allow(dead_code))]
 pub fn date_text(dt: &chrono::DateTime<chrono::Local>) -> String {
     dt.format("%Y-%m-%d %H:%M").to_string()
 }
 
 /// [`date_text`] for a time that may not have happened yet - an unfinished
 /// torrent has no completion date, and the cell reads "-".
-#[cfg_attr(not(feature = "ui-slint"), allow(dead_code))]
 pub fn opt_date_text(dt: &Option<chrono::DateTime<chrono::Local>>) -> String {
     dt.as_ref().map(date_text).unwrap_or_else(|| String::from("-"))
 }

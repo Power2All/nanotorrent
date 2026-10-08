@@ -118,18 +118,21 @@ impl Configuration {
             .flatten()
     }
 
-    /// Write the raw string for a key.
+    /// Write the raw value column for a key, NULL included. True when the key
+    /// exists. The one write every setter goes through.
     ///
     /// An UPDATE, not an upsert: keys come from the migrations, so writing one
     /// that does not exist is a typo and silently doing nothing is the right
     /// outcome - it cannot invent a setting nothing reads.
-    fn set_value(&self, key: &str, val: &str) {
-        self.write_value(key, Some(val));
-    }
-
-    /// The one write every setter goes through. True when the key exists -
-    /// see `set_value` for why a missing one is left alone.
-    fn write_value(&self, key: &str, value: Option<&str>) -> bool {
+    ///
+    /// That is also exactly the filter an import of another client's settings
+    /// wants: a key this build does not have touches no rows, which is the
+    /// honest definition of "a setting we support" rather than a list that
+    /// would go stale. The value is stored as-is - PicoTorrent's `setting`
+    /// table holds JSON in the same column for the same reason this one does,
+    /// so a value copied across is already in the right shape. And it puts a
+    /// value back exactly as `export_value` found it, for a rollback.
+    pub fn write_value(&self, key: &str, value: Option<&str>) -> bool {
         self.db
             .with(|conn| {
                 conn.execute(
@@ -156,25 +159,6 @@ impl Configuration {
             .flatten()
     }
 
-    /// Put a value back exactly as `export_value` found it, NULL included.
-    pub fn restore_value(&self, key: &str, value: Option<&str>) {
-        self.write_value(key, value);
-    }
-
-    /// Write a value that came from somewhere else, and say whether it landed.
-    ///
-    /// For importing another client's settings. `set_value` writes with an
-    /// UPDATE, so a key this build does not have touches no rows - which is
-    /// exactly the filter an import wants, and it is the honest definition of
-    /// "a setting we support" rather than a list that would go stale.
-    ///
-    /// The value is stored as-is. PicoTorrent's `setting` table holds JSON in
-    /// the same column for the same reason this one does, so a value copied
-    /// across is already in the right shape.
-    pub fn import_value(&self, key: &str, json: &str) -> bool {
-        self.write_value(key, Some(json))
-    }
-
     /// Port of Configuration::Get<T> - the stored value is JSON.
     pub fn get<T: DeserializeOwned>(&self, key: &str) -> Option<T> {
         let val = self.get_value(key)?;
@@ -194,7 +178,7 @@ impl Configuration {
 
     /// Port of Configuration::Set<T>.
     pub fn set<T: Serialize>(&self, key: &str, value: &T) {
-        self.set_value(key, &serde_json::to_string(value).unwrap_or_default());
+        self.write_value(key, Some(&serde_json::to_string(value).unwrap_or_default()));
     }
 
     /// A boolean setting, false when missing or unparseable.
@@ -260,7 +244,6 @@ impl Configuration {
             .unwrap_or_default()
     }
 
-    /// Every label: name, colours, save path and the auto-apply rule.
     /// Saved widths for one list, as `column_id -> width`.
     ///
     /// Uses PicoTorrent's own `column_state` table, which has carried
@@ -301,6 +284,7 @@ impl Configuration {
         });
     }
 
+    /// Every label: name, colours, save path and the auto-apply rule.
     pub fn get_labels(&self) -> Vec<Label> {
         self.db
             .with(|conn| {

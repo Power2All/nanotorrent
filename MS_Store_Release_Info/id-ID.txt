@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.3
+Versi 0.4.4
 
-- Tautan magnet tidak lagi menunggu detailnya: dialog Tambah langsung terbuka, dan magnet yang ditambahkan sebelum detailnya tiba tampil sebagai “Mengunduh metadata” di daftar hingga detailnya tiba, seperti di qBittorrent.
+- Keamanan: antarmuka web melalui HTTPS tidak lagi rentan terhadap serangan penolakan layanan di lapisan HTTP/2-nya; kini hanya menggunakan HTTP/1.1. Anda tidak perlu mengubah apa pun.
+- Batas berbagi: batas rasio kini menghentikan torrent pada rasio yang ditampilkan di daftar. Sebelumnya hanya unggahan sejak NanoTorrent terakhir dijalankan yang dihitung, sehingga torrent bisa terus melakukan seeding melewati batasnya.
+- Perbaikan: torrent v1 yang dibuat dengan “Buat torrent” kini selalu valid dan hasilnya sama di setiap komputer, dan “Paksa periksa ulang” pada torrent yang dijeda kini langsung memeriksanya alih-alih menampilkan 0% sampai torrent dimulai.
+- Di balik layar: pustaka yang menjadi dasar NanoTorrent telah diperbarui dengan perbaikan terbarunya.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

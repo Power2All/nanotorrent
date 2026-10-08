@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.3 - Microsoft Store listing
+NanoTorrent 0.4.4 - Microsoft Store listing
 Language: Čeština (Česko) - Partner Center: Czech (Czechia) (cs-CZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,9 +28,12 @@ NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verze 0.4.3
+Verze 0.4.4
 
-- Magnet odkazy už nečekají na své podrobnosti: dialog Přidat se otevře hned a magnet přidaný dřív, než podrobnosti dorazí, se do jejich příchodu zobrazuje v seznamu jako „Stahování metadat“, stejně jako v qBittorrentu.
+- Zabezpečení: webové rozhraní přes HTTPS už není zranitelné útokem odepření služby ve své vrstvě HTTP/2; nyní používá pouze HTTP/1.1. Z vaší strany není třeba nic měnit.
+- Limity sdílení: limit poměru nyní zastaví torrent při poměru zobrazeném v seznamu. Dříve se počítalo jen odeslání od posledního spuštění NanoTorrentu, takže torrent mohl sdílet i po překročení limitu.
+- Opravy: v1 torrenty vytvořené pomocí „Vytvořit torrent“ jsou vždy platné a na každém počítači vyjdou stejně; „Vynucená kontrola“ u pozastaveného torrentu jej nyní zkontroluje hned, místo aby ukazovala 0%, dokud se nespustí.
+- Pod kapotou: knihovny, na kterých je NanoTorrent postaven, byly aktualizovány o nejnovější opravy.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----
