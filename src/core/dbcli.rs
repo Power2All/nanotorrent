@@ -166,7 +166,9 @@ fn file_arg(args: &[String], flag: &str) -> Result<std::path::PathBuf> {
     }
 }
 
-fn open(env: &Environment) -> Result<Arc<Database>> {
+/// Open and migrate the settings database, for a command-line path that runs
+/// outside startup and needs one of its own.
+pub fn open(env: &Environment) -> Result<Arc<Database>> {
     let db = Arc::new(Database::open(env).context("cannot open the settings database")?);
     db.migrate().context("cannot migrate the settings database")?;
     Ok(db)

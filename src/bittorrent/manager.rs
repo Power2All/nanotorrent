@@ -260,19 +260,13 @@ fn unique(candidate: PathBuf) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bittorrent::scratch_dir;
     use std::sync::Arc;
 
     fn cfg() -> Configuration {
         let db = Arc::new(crate::core::database::Database::open_in_memory().unwrap());
         db.migrate().unwrap();
         Configuration::new(db)
-    }
-
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("nt-mgr-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
     }
 
     #[test]
@@ -344,7 +338,7 @@ mod tests {
 
     #[test]
     fn a_handled_file_is_renamed_rather_than_deleted() {
-        let dir = scratch("aside");
+        let dir = scratch_dir("mgr-aside");
         let file = dir.join("a.torrent");
         std::fs::write(&file, b"d4:infod4:name1:aee").unwrap();
 
@@ -365,7 +359,7 @@ mod tests {
 
     #[test]
     fn only_torrent_files_are_picked_up() {
-        let dir = scratch("ext");
+        let dir = scratch_dir("mgr-ext");
         for name in ["a.torrent", "b.TORRENT", "c.txt", "d.torrent.added"] {
             std::fs::write(dir.join(name), b"x").unwrap();
         }

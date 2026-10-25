@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Filipino (Pilipinas) - Partner Center: Filipino (Philippines) (fil-PH)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ Ang NanoTorrent ay bersyong Rust ng PicoTorrent ni Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Bersyon 0.4.4
+Bersyon 0.4.5
 
-- Seguridad: hindi na bukas ang web interface sa HTTPS sa denial-of-service na atake sa HTTP/2 layer nito; HTTP/1.1 na lang ang gamit nito. Wala kang kailangang baguhin.
-- Limitasyon sa pagbabahagi: ang limitasyon sa ratio ay humihinto na ngayon sa torrent sa ratio na ipinapakita sa listahan. Dati, ang binibilang lang ay ang mga in-upload mula nang huling simulan ang NanoTorrent, kaya maaaring magpatuloy sa pag-seed ang isang torrent lampas sa limitasyon nito.
-- Mga ayos: ang mga v1 torrent na ginawa gamit ang “Gumawa ng torrent” ay laging valid at pare-pareho ang labas sa bawat computer, at agad nang sinusuri ng “Pilitin ang muling pagsuri” ang naka-pause na torrent sa halip na magpakita ng 0% hanggang simulan ito.
+- Bago: kaya nang tumakbo ng NanoTorrent nang walang window. Simulan ang “nanotorrent --headless” mula sa terminal at patuloy itong magda-download at magse-seed, at ang web interface ang daan papasok. Malinis itong pinahihinto ng Ctrl-C, at itinatakda ng --log-level kung gaano karami ang nila-log.
+- Kapag isinara ang NanoTorrent, sine-save na nito ang estado ng bawat torrent bago lumabas, kaya walang kailangang suriing muli sa susunod na pagsisimula.
+- Mga ayos: hindi na bumabalik na bahagya lang ang pagkaka-drawing ng window matapos itong ma-minimize nang ilang sandali, gumagana na rin ang mga limitasyon sa aktibong torrent kahit walang window, at gumagana na sa relative path ang pagbukas ng .torrent file mula sa terminal habang tumatakbo na ang NanoTorrent.
 - Sa loob: na-update ang mga library na pinagbatayan ng NanoTorrent, kasama ang pinakabago nilang mga ayos.
 
 

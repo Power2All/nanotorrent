@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Svenska (Sverige) - Partner Center: Swedish (Sweden) (sv-SE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent är en Rust-portning av PicoTorrent av Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.4
+Version 0.4.5
 
-- Säkerhet: webbgränssnittet över HTTPS är inte längre sårbart för en överbelastningsattack i sitt HTTP/2-lager; det använder nu bara HTTP/1.1. Du behöver inte ändra något.
-- Delningsgränser: en gräns för förhållande stoppar nu en torrent vid det förhållande som visas i listan. Tidigare räknades bara uppladdning sedan NanoTorrent senast startades, så en torrent kunde fortsätta seeda förbi sin gräns.
-- Korrigeringar: v1-torrenter som skapas med ”Skapa torrent” är alltid giltiga och blir likadana på alla datorer, och ”Tvinga återkontroll” på en pausad torrent kontrollerar den nu direkt i stället för att visa 0% tills den startas.
+- Nytt: NanoTorrent kan köras utan fönster. Starta ”nanotorrent --headless” från en terminal så fortsätter den att ladda ner och seeda, med webbgränssnittet som ingång. Ctrl-C stoppar den snyggt, och --log-level anger hur mycket som loggas.
+- När NanoTorrent stängs sparas nu tillståndet för varje torrent på vägen ut, så inget behöver kontrolleras igen vid nästa start.
+- Korrigeringar: fönstret kommer inte längre tillbaka delvis ritat efter att ha varit minimerat en stund, gränserna för aktiva torrenter gäller nu även utan fönstret, och att öppna en .torrent-fil från en terminal medan NanoTorrent redan körs fungerar med en relativ sökväg.
 - Under huven: biblioteken som NanoTorrent bygger på har uppdaterats med sina senaste rättelser.
 
 

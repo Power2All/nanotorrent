@@ -62,7 +62,8 @@ const PRIVATE: &[&str] = &[
 ];
 
 /// The file format. Field names are the JSON keys, so renaming one is a
-/// breaking change to files people already have.
+/// breaking change to files people already have - and that includes the
+/// fields of [`Label`] and [`Filter`], which are written as they are.
 #[derive(Serialize, Deserialize)]
 pub struct Export {
     /// Which build wrote this, for whoever opens the file in a year.
@@ -72,34 +73,9 @@ pub struct Export {
     #[serde(default)]
     pub settings: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
-    pub labels: Vec<LabelEntry>,
+    pub labels: Vec<Label>,
     #[serde(default)]
-    pub filters: Vec<FilterEntry>,
-}
-
-/// A label without its row id, which means nothing outside the database it
-/// came from.
-#[derive(Serialize, Deserialize)]
-pub struct LabelEntry {
-    pub name: String,
-    #[serde(default)]
-    pub color: String,
-    #[serde(default)]
-    pub color_enabled: bool,
-    #[serde(default)]
-    pub save_path: String,
-    #[serde(default)]
-    pub save_path_enabled: bool,
-    #[serde(default)]
-    pub apply_filter: String,
-    #[serde(default)]
-    pub apply_filter_enabled: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct FilterEntry {
-    pub name: String,
-    pub filter: String,
+    pub filters: Vec<Filter>,
 }
 
 /// What an import actually did.
@@ -189,27 +165,8 @@ pub fn export(db: &Arc<Database>) -> Result<String> {
         nanotorrent: String::from(crate::buildinfo::version()),
         exported: chrono::Utc::now().to_rfc3339(),
         settings,
-        labels: cfg
-            .get_labels()
-            .into_iter()
-            .map(|l| LabelEntry {
-                name: l.name,
-                color: l.color,
-                color_enabled: l.color_enabled,
-                save_path: l.save_path,
-                save_path_enabled: l.save_path_enabled,
-                apply_filter: l.apply_filter,
-                apply_filter_enabled: l.apply_filter_enabled,
-            })
-            .collect(),
-        filters: cfg
-            .get_filters()
-            .into_iter()
-            .map(|f| FilterEntry {
-                name: f.name,
-                filter: f.filter,
-            })
-            .collect(),
+        labels: cfg.get_labels(),
+        filters: cfg.get_filters(),
     };
 
     serde_json::to_string_pretty(&out).context("could not write the settings as JSON")
@@ -252,35 +209,22 @@ pub fn import(db: &Arc<Database>, json: &str) -> Result<Report> {
     // Matched by name, which is what the user named them; the row id is a fact
     // about the old database and means nothing here.
     let existing = cfg.get_labels();
-    for entry in file.labels {
-        let id = existing
+    for mut label in file.labels {
+        label.id = existing
             .iter()
-            .find(|l| l.name == entry.name)
+            .find(|l| l.name == label.name)
             .map_or(-1, |l| l.id);
-        cfg.upsert_label(&Label {
-            id,
-            name: entry.name,
-            color: entry.color,
-            color_enabled: entry.color_enabled,
-            save_path: entry.save_path,
-            save_path_enabled: entry.save_path_enabled,
-            apply_filter: entry.apply_filter,
-            apply_filter_enabled: entry.apply_filter_enabled,
-        });
+        cfg.upsert_label(&label);
         report.labels += 1;
     }
 
     let existing = cfg.get_filters();
-    for entry in file.filters {
-        let id = existing
+    for mut filter in file.filters {
+        filter.id = existing
             .iter()
-            .find(|f| f.name == entry.name)
+            .find(|f| f.name == filter.name)
             .map_or(-1, |f| f.id);
-        cfg.upsert_filter(&Filter {
-            id,
-            name: entry.name,
-            filter: entry.filter,
-        });
+        cfg.upsert_filter(&filter);
         report.filters += 1;
     }
 
@@ -319,6 +263,8 @@ mod tests {
         });
 
         let json = export(&from).expect("export");
+        // Row ids are a fact about the old database and stay out of the file.
+        assert!(!json.contains("\"id\""), "{json}");
 
         let to = db();
         let report = import(&to, &json).expect("import");
@@ -407,6 +353,22 @@ mod tests {
         .expect("import");
         assert_eq!(report.settings, 0);
         assert_eq!(report.skipped, vec![String::from("no_such_setting")]);
+    }
+
+    /// A label written with only its name - by hand, or by an older build -
+    /// still imports, with everything else at its default.
+    #[test]
+    fn a_label_with_only_a_name_imports() {
+        let to = db();
+        let report = import(
+            &to,
+            r#"{"nanotorrent":"x","exported":"x","labels":[{"name":"Old"}],
+                "filters":[{"name":"F","filter":"size > 1"}]}"#,
+        )
+        .expect("import");
+        assert_eq!((report.labels, report.filters), (1, 1));
+        let cfg = Configuration::new(to);
+        assert!(cfg.get_labels().iter().any(|l| l.name == "Old" && !l.save_path_enabled));
     }
 
     #[test]

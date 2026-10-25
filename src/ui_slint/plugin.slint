@@ -11,7 +11,7 @@
 // somewhere to work, not something to answer.
 
 import { ScrollView, Button, LineEdit, ListView, Palette, CheckBox, ComboBox } from "std-widgets.slint";
-import { L } from "globals.slint";
+import { L, Dialog, Screen } from "globals.slint";
 
 export struct PluginRowItem {
     id: string,
@@ -101,28 +101,22 @@ export struct PluginField {
     hint: string,
 }
 
-export component PluginWindow inherits Window {
-    icon: @image-url("../../res/app-256.png");
+export component PluginWindow inherits Dialog {
     // The plugin's own words, not an i18n key: it is the plugin's window.
     // `title` is a Window property already, hence the different name here.
     in property <string> window-title;
     title: root.window-title;
 
     preferred-width: 620px;
-    /// The tallest this window may be, in logical pixels - set from the work
-    /// area of the monitor it opens on. Huge by default so a platform where it
-    /// is not wired up behaves as if unclamped.
-    ///
-    /// A plugin picks neither its own size nor the screen it lands on, so this
-    /// is the one window here whose content is written by someone who cannot
-    /// test it. Clamping keeps a long list inside the screen and lets the
-    /// ListView scroll instead of the window growing past the bottom.
-    in property <length> screen-limit: 100000px;
-    preferred-height: min(440px, root.screen-limit);
-    max-height: root.screen-limit;
+    // Clamped to `Screen.limit`. A plugin picks neither its own size nor the
+    // screen it lands on, so this is the one window here whose content is
+    // written by someone who cannot test it. Clamping keeps a long list inside
+    // the screen and lets the ListView scroll instead of the window growing
+    // past the bottom.
+    preferred-height: min(440px, Screen.limit);
+    max-height: Screen.limit;
     min-width: 360px;
-    min-height: min(240px, root.screen-limit);
-    background: Palette.background;
+    min-height: min(240px, Screen.limit);
 
     in property <[PluginRowItem]> rows;
     /// An optional list above the main one: what the main list is showing the

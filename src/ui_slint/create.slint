@@ -1,10 +1,9 @@
 // Torrent creation: v1, v2 or hybrid, with tracker, comment and private options.
 
 import { Button, CheckBox, ComboBox, LineEdit, TextEdit, ScrollView, Palette } from "std-widgets.slint";
-import { L } from "globals.slint";
+import { L, Dialog, Screen } from "globals.slint";
 
-export component CreateTorrentDialog inherits Window {
-    icon: @image-url("../../res/app-256.png");
+export component CreateTorrentDialog inherits Dialog {
     title: L.s(L.revision, "create_torrent");
     // Width is pinned - nothing here reflows horizontally. Height is NOT:
     // the window takes its content's natural height, so it opens exactly
@@ -14,16 +13,13 @@ export component CreateTorrentDialog inherits Window {
     // short for it - that is when the ScrollView earns its keep.
     min-width: 600px;
     max-width: 600px;
-    /// See preferences.slint - the monitor work area, in logical pixels.
-    in property <length> screen-limit: 100000px;
     // min == max: not resizable, sized to content, clamped to the screen.
     // The form's own height, NOT the body's: the body holds a ScrollView, and
     // a ScrollView reports `preferred-height: 100%` rather than its content's
     // size - binding above it collapses the window. Same trap as
     // preferences.slint, same fix.
-    min-height: min(form.preferred-height + foot.preferred-height + 34px, root.screen-limit);
-    max-height: min(form.preferred-height + foot.preferred-height + 34px, root.screen-limit);
-    background: Palette.background;
+    min-height: min(form.preferred-height + foot.preferred-height + 34px, Screen.limit);
+    max-height: min(form.preferred-height + foot.preferred-height + 34px, Screen.limit);
 
     in-out property <string> source;
     in-out property <string> trackers;

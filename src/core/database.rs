@@ -105,9 +105,30 @@ struct Sealed {
 }
 
 impl Inner {
+    /// A connection to a plain file, or a test's in-memory one.
+    fn plain(conn: Connection) -> Result<Inner> {
+        Ok(Inner {
+            conn: Database::prepare(conn, None)?,
+            sealed: None,
+        })
+    }
+
+    /// `plain`, held in memory and written back sealed to `path`.
+    fn sealed(path: &Path, key: [u8; 32], plain: &[u8]) -> Result<Inner> {
+        let dirty = std::sync::Arc::new(AtomicBool::new(false));
+        Ok(Inner {
+            conn: Database::prepare(Database::deserialize(plain)?, Some(dirty.clone()))?,
+            sealed: Some(Sealed {
+                path: path.to_path_buf(),
+                key,
+                dirty,
+            }),
+        })
+    }
+
     /// Write the database back out, if anything has been committed since the
     /// last time. A no-op for a plain file, which SQLite has already written.
-    fn flush(&self) -> Result<()> {
+    fn flush(&mut self) -> Result<()> {
         let Some(sealed) = &self.sealed else {
             return Ok(());
         };
@@ -116,12 +137,12 @@ impl Inner {
         }
         // Raised again on failure so the next commit tries once more, rather
         // than the change being dropped because the flag had been cleared.
-        Self::write_sealed(&self.conn, sealed).inspect_err(|_| {
+        Self::write_sealed(&mut self.conn, sealed).inspect_err(|_| {
             sealed.dirty.store(true, Ordering::Relaxed);
         })
     }
 
-    fn write_sealed(conn: &Connection, sealed: &Sealed) -> Result<()> {
+    fn write_sealed(conn: &mut Connection, sealed: &Sealed) -> Result<()> {
         let plain = conn
             .serialize(rusqlite::MAIN_DB)
             .context("could not read the database out of memory")?;
@@ -195,12 +216,8 @@ impl Database {
         }
         tracing::info!("Loading settings database from {} (plain)", path.display());
 
-        let conn = Connection::open(path)?;
         Ok(Database {
-            inner: Mutex::new(Inner {
-                conn: Self::prepare(conn, None)?,
-                sealed: None,
-            }),
+            inner: Mutex::new(Inner::plain(Connection::open(path)?)?),
         })
     }
 
@@ -213,18 +230,8 @@ impl Database {
 
         let file = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
         let plain = super::dbkey::unseal(&key, &file)?;
-
-        let dirty = std::sync::Arc::new(AtomicBool::new(false));
-        let conn = Self::deserialize(&plain)?;
         Ok(Database {
-            inner: Mutex::new(Inner {
-                conn: Self::prepare(conn, Some(dirty.clone()))?,
-                sealed: Some(Sealed {
-                    path: path.to_path_buf(),
-                    key,
-                    dirty,
-                }),
-            }),
+            inner: Mutex::new(Inner::sealed(path, key, &plain)?),
         })
     }
 
@@ -245,7 +252,7 @@ impl Database {
     }
 
     /// The settings every connection here needs, whichever shape it is.
-    fn prepare(conn: Connection, dirty: Option<std::sync::Arc<AtomicBool>>) -> Result<Connection> {
+    fn prepare(mut conn: Connection, dirty: Option<std::sync::Arc<AtomicBool>>) -> Result<Connection> {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
         // SQLite opens lazily: `Connection::open` on a file that is not a
@@ -273,12 +280,8 @@ impl Database {
 
     #[cfg(test)]
     pub fn open_in_memory() -> Result<Database> {
-        let conn = Connection::open_in_memory()?;
         Ok(Database {
-            inner: Mutex::new(Inner {
-                conn: Self::prepare(conn, None)?,
-                sealed: None,
-            }),
+            inner: Mutex::new(Inner::plain(Connection::open_in_memory()?)?),
         })
     }
 
@@ -399,18 +402,11 @@ impl Database {
         match key {
             Some(key) => {
                 write_atomic(path, &super::dbkey::seal(&key, plain)?)?;
-                let dirty = std::sync::Arc::new(AtomicBool::new(false));
-                inner.conn = Self::prepare(Self::deserialize(plain)?, Some(dirty.clone()))?;
-                inner.sealed = Some(Sealed {
-                    path: path.to_path_buf(),
-                    key,
-                    dirty,
-                });
+                *inner = Inner::sealed(path, key, plain)?;
             }
             None => {
                 write_atomic(path, plain)?;
-                inner.conn = Self::prepare(Connection::open(path)?, None)?;
-                inner.sealed = None;
+                *inner = Inner::plain(Connection::open(path)?)?;
             }
         }
         Ok(())
@@ -418,10 +414,9 @@ impl Database {
 
     /// Port of Database::Migrate.
     pub fn migrate(&self) -> Result<()> {
-        let inner = self.inner.lock().unwrap();
-        let conn = &inner.conn;
+        let mut inner = self.inner.lock().unwrap();
 
-        conn.execute_batch(
+        inner.conn.execute_batch(
             "create table if not exists migration_history (\
                  id integer primary key,\
                  name text not null unique\
@@ -430,14 +425,16 @@ impl Database {
 
         tracing::info!("Found {} migrations", MIGRATIONS.len());
 
-        conn.execute_batch("BEGIN TRANSACTION;")?;
+        // Rolled back on drop, so every early return below - a failed
+        // migration or a failed lookup - leaves the database as it was.
+        let tx = inner.conn.transaction()?;
 
         for (name, sql) in MIGRATIONS {
             // The C++ version embedded migrations as Win32 resources whose
             // names are stored UPPERCASE in migration_history, so compare
             // case-insensitively to stay compatible with databases created
             // by the original client.
-            let exists: i64 = conn.query_row(
+            let exists: i64 = tx.query_row(
                 "select count(*) from migration_history where name = ?1 COLLATE NOCASE",
                 [name],
                 |row| row.get(0),
@@ -447,15 +444,14 @@ impl Database {
                 continue;
             }
 
-            if let Err(err) = conn.execute_batch(sql) {
+            if let Err(err) = tx.execute_batch(sql) {
                 tracing::error!("Failed to execute migration {name}: {err}");
-                conn.execute_batch("ROLLBACK;")?;
                 return Err(err.into());
             }
 
             // Record the name uppercase, matching the C++ convention, so the
             // original client can also open a database this port migrated.
-            conn.execute(
+            tx.execute(
                 "insert into migration_history (name) values (?1);",
                 [name.to_uppercase()],
             )?;
@@ -463,7 +459,7 @@ impl Database {
             tracing::info!("Migration {name} applied");
         }
 
-        conn.execute_batch("COMMIT;")?;
+        tx.commit()?;
 
         inner.flush()
     }
@@ -475,7 +471,7 @@ impl Database {
     /// closure's own: a query that failed is recoverable, a change that was
     /// never persisted is not.
     pub fn with<R>(&self, f: impl FnOnce(&Connection) -> rusqlite::Result<R>) -> rusqlite::Result<R> {
-        let inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap();
         let out = f(&inner.conn);
         // Not `out?` first: `f` may have committed something and then failed.
         inner.flush().map_err(persist_failed)?;

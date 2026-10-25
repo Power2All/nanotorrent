@@ -258,6 +258,21 @@ pub(crate) fn collect<T>(
     Scan { entries, unreadable }
 }
 
+/// A minimal but REAL torrent for the migrators' tests: its bytes, and its v1
+/// hash. `info_hashes` needs `pieces` present to call it a v1 torrent at all.
+#[cfg(test)]
+fn test_torrent(name: &str) -> (Vec<u8>, String) {
+    use crate::core::bencode::build;
+    let info = build::dict(&[
+        ("length", build::int(1234)),
+        ("name", build::str(name)),
+        ("piece length", build::int(16384)),
+        ("pieces", build::str("01234567890123456789")),
+    ]);
+    let hash = crate::bittorrent::metainfo::info_hashes(&info).0.unwrap();
+    (build::dict(&[("info", info)]), hash)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

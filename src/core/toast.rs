@@ -87,10 +87,7 @@ unsafe extern "system" {
 }
 
 #[cfg(windows)]
-fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
-    use std::os::windows::ffi::OsStrExt;
-    s.encode_wide().chain(std::iter::once(0)).collect()
-}
+use super::utils::wide;
 
 /// One-time setup so Windows recognises and displays our toasts. Best-effort:
 /// any failure is logged, never fatal.
@@ -119,7 +116,7 @@ pub fn register() {
     }
 
     // Tag this process so toasts and taskbar map to the same identity.
-    let id = wide(std::ffi::OsStr::new(AUMID));
+    let id = wide(AUMID);
     unsafe {
         SetCurrentProcessExplicitAppUserModelID(id.as_ptr());
     }
@@ -217,7 +214,7 @@ fn ensure_shortcut() -> anyhow::Result<()> {
         {
             // Build a VT_LPWSTR PROPVARIANT holding the AUMID. SetValue copies
             // it, so the CoTaskMem buffer is freed again right after.
-            let src = wide(std::ffi::OsStr::new(AUMID));
+            let src = wide(AUMID);
             let buf = CoTaskMemAlloc(src.len() * 2) as *mut u16;
             if !buf.is_null() {
                 std::ptr::copy_nonoverlapping(src.as_ptr(), buf, src.len());
@@ -245,20 +242,6 @@ fn ensure_shortcut() -> anyhow::Result<()> {
         (*link).Release();
     }
     Ok(())
-}
-
-/// Which of the two forms of `app_icon` to send: the file if we have it, the
-/// theme name if we do not.
-///
-/// Split out from [`notification_icon`] and compiled everywhere so the choice can be
-/// tested on any platform - the caller around it is Linux-only, and a rule
-/// that only runs on the machine you cannot build on is a rule nobody checks.
-#[cfg_attr(not(all(unix, not(target_os = "macos"))), allow(dead_code))]
-fn icon_hint(file: Option<std::path::PathBuf>, fallback: &str) -> String {
-    match file {
-        Some(path) => path.to_string_lossy().into_owned(),
-        None => String::from(fallback),
-    }
 }
 
 /// Configuration key gating the notification below.
@@ -303,7 +286,7 @@ pub fn download_complete(title: &str, name: &str) {
 /// full data directory), which is exactly the old behaviour.
 #[cfg(all(unix, not(target_os = "macos")))]
 fn notification_icon() -> String {
-    icon_hint(ensure_icon_file(), IDENTITY)
+    ensure_icon_file().map_or_else(|| IDENTITY.into(), |p| p.to_string_lossy().into_owned())
 }
 
 /// macOS ignores both `icon` and `appname` - it uses the bundle claimed in
@@ -336,24 +319,7 @@ pub fn download_complete(title: &str, name: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{TOAST_ICON_PNG, icon_hint};
-    use std::path::PathBuf;
-
-    /// An absolute path is a legal `app_icon` and is what makes the icon show
-    /// without the `.desktop` entry installed; the theme name is the fallback
-    /// for when the file could not be written at all.
-    #[test]
-    fn the_icon_hint_prefers_the_file_and_falls_back_to_the_name() {
-        let file = PathBuf::from("/home/someone/.local/share/nanotorrent/toast_icon.png");
-        assert_eq!(
-            icon_hint(Some(file.clone()), "org.nanotorrent.NanoTorrent"),
-            file.to_string_lossy()
-        );
-        assert_eq!(
-            icon_hint(None, "org.nanotorrent.NanoTorrent"),
-            "org.nanotorrent.NanoTorrent"
-        );
-    }
+    use super::TOAST_ICON_PNG;
 
     /// Read a PNG's dimensions out of its IHDR, which is at a fixed offset:
     /// 8-byte signature, 4-byte chunk length, the tag, then width and height

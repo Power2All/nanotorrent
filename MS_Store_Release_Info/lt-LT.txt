@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Lietuvių (Lietuva) - Partner Center: Lithuanian (Lithuania) (lt-LT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent yra Viktoro Elofssono PicoTorrent perkėlimas į Rust kalbą.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.4
+Versija 0.4.5
 
-- Sauga: žiniatinklio sąsaja per HTTPS nebėra pažeidžiama paslaugos trikdymo atakai savo HTTP/2 sluoksnyje; dabar ji naudoja tik HTTP/1.1. Jums nieko keisti nereikia.
-- Dalijimosi ribos: santykio riba dabar sustabdo torrentą ties sąraše rodomu santykiu. Anksčiau buvo skaičiuojami tik išsiuntimai nuo paskutinio NanoTorrent paleidimo, todėl torrentas galėjo toliau dalytis viršijęs savo ribą.
-- Pataisymai: v1 torrentai, sukurti naudojant „Sukurti torentą“, visada yra galiojantys ir visuose kompiuteriuose būna vienodi, o „Pakartotinai patikrinti“ dabar iš karto patikrina pristabdytą torrentą, o ne rodo 0%, kol jis paleidžiamas.
+- Nauja: NanoTorrent gali veikti be lango. Paleiskite „nanotorrent --headless“ iš terminalo ir jis toliau atsisiųs ir dalysis, o prieiga – per žiniatinklio sąsają. Ctrl-C jį tvarkingai sustabdo, o --log-level nustato, kiek rašoma į žurnalą.
+- Uždaromas NanoTorrent dabar išsaugo kiekvieno torrento būseną, todėl kitą kartą paleidus nieko nereikia tikrinti iš naujo.
+- Pataisymai: langas nebegrįžta iš dalies nupieštas, kai kurį laiką buvo sumažintas, aktyvių torrentų ribos dabar galioja ir be lango, o .torrent failo atidarymas iš terminalo, kai NanoTorrent jau paleistas, veikia ir su santykiniu keliu.
 - Po gaubtu: bibliotekos, kuriomis remiasi NanoTorrent, atnaujintos su naujausiais pataisymais.
 
 

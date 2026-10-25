@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-0.4.4-s verzió
+0.4.5-s verzió
 
-- Biztonság: a HTTPS-en futó webes felület már nem sebezhető szolgáltatásmegtagadásos támadással a HTTP/2 rétegében; mostantól csak HTTP/1.1-et használ. Önnek semmit sem kell módosítania.
-- Megosztási korlátok: az aránykorlát most a listában látható aránynál állítja le a torrentet. Korábban csak a NanoTorrent legutóbbi indítása óta feltöltött adatok számítottak, így egy torrent a korlátja után is tovább seedelhetett.
-- Javítások: a „Torrent létrehozása” funkcióval készült v1 torrentek mindig érvényesek, és minden gépen ugyanolyanok, a „Kényszerített újraellenőrzés” pedig a szüneteltetett torrentet most azonnal ellenőrzi, ahelyett hogy az indításig 0%-ot mutatna.
+- Újdonság: a NanoTorrent ablak nélkül is futhat. Indítsa el terminálból a „nanotorrent --headless” parancsot, és tovább tölt le és seedel, a webes felületen keresztül érhető el. A Ctrl-C tisztán leállítja, a --log-level pedig azt szabja meg, mennyi kerüljön a naplóba.
+- A NanoTorrent bezáráskor mostantól minden torrent állapotát elmenti, így a következő indításkor semmit sem kell újra ellenőrizni.
+- Javítások: az ablak már nem tér vissza részben kirajzolva, miután egy ideig kis méretre volt állítva, az aktív torrentekre vonatkozó korlátok most ablak nélkül is érvényesek, és egy .torrent fájl terminálból való megnyitása, miközben a NanoTorrent már fut, relatív elérési úttal is működik.
 - A motorháztető alatt: frissültek a könyvtárak, amelyekre a NanoTorrent épül, a legújabb javításaikkal együtt.
 
 

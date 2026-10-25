@@ -62,19 +62,13 @@ fn is_newer(remote: &str, local: &str) -> bool {
             .collect()
     };
 
-    let r = parse(remote);
-    let l = parse(local);
+    // Padded to one length, so "0.1" and "0.1.0" compare equal; after that a
+    // Vec compares component by component, which is exactly version order.
+    let (mut r, mut l) = (parse(remote), parse(local));
     let len = r.len().max(l.len());
-
-    for i in 0..len {
-        let rv = r.get(i).copied().unwrap_or(0);
-        let lv = l.get(i).copied().unwrap_or(0);
-        if rv != lv {
-            return rv > lv;
-        }
-    }
-
-    false
+    r.resize(len, 0);
+    l.resize(len, 0);
+    r > l
 }
 
 /// Where "Download" should send whoever is running *this* build.
@@ -106,8 +100,6 @@ pub fn check(handle: &tokio::runtime::Handle, cfg: &Configuration, slot: Slot, m
         return;
     }
 
-    let url = RELEASES_URL;
-
     // A version dismissed with "Ignore this update" stays dismissed for the
     // automatic check only. Asking directly overrides it.
     let ignored = if manual {
@@ -130,34 +122,10 @@ pub fn check(handle: &tokio::runtime::Handle, cfg: &Configuration, slot: Slot, m
     };
 
     handle.spawn(async move {
-
-        let response = match client
-            .get(url)
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await
-        {
-            Ok(r) => r,
-            Err(err) => {
-                report(&slot, None, Some(err.to_string()), manual);
-                return;
-            }
-        };
-
-        // A repo with no releases yet answers 404, and an over-quota client gets
-        // 403 - both come back as JSON that would otherwise parse into "no new
-        // version", which is right but silent. Say which it was.
-        if !response.status().is_success() {
-            let status = response.status();
-            tracing::info!("update check: {url} returned {status}");
-            report(&slot, None, Some(format!("{url} returned {status}")), manual);
-            return;
-        }
-
-        let json = match response.json::<serde_json::Value>().await {
+        let json = match fetch(client).await {
             Ok(j) => j,
             Err(err) => {
-                report(&slot, None, Some(err.to_string()), manual);
+                report(&slot, None, Some(err), manual);
                 return;
             }
         };
@@ -196,6 +164,27 @@ pub fn check(handle: &tokio::runtime::Handle, cfg: &Configuration, slot: Slot, m
             report(&slot, None, None, manual);
         }
     });
+}
+
+/// The latest release, as GitHub describes it.
+async fn fetch(client: reqwest::Client) -> Result<serde_json::Value, String> {
+    let response = client
+        .get(RELEASES_URL)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    // A repo with no releases yet answers 404, and an over-quota client gets
+    // 403 - both come back as JSON that would otherwise parse into "no new
+    // version", which is right but silent. Say which it was.
+    let status = response.status();
+    if !status.is_success() {
+        tracing::info!("update check: {RELEASES_URL} returned {status}");
+        return Err(format!("{RELEASES_URL} returned {status}"));
+    }
+
+    response.json().await.map_err(|err| err.to_string())
 }
 
 /// Leave a report in the slot, unless the automatic check found nothing worth

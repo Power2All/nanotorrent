@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Bahasa Melayu (Malaysia) - Partner Center: Malay (Malaysia) (ms-MY)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent ialah versi Rust bagi PicoTorrent oleh Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.4
+Versi 0.4.5
 
-- Keselamatan: antara muka web melalui HTTPS tidak lagi terdedah kepada serangan penafian perkhidmatan dalam lapisan HTTP/2nya; kini ia hanya menggunakan HTTP/1.1. Anda tidak perlu menukar apa-apa.
-- Had perkongsian: had nisbah kini menghentikan torrent pada nisbah yang ditunjukkan dalam senarai. Sebelum ini hanya muat naik sejak NanoTorrent terakhir dimulakan yang dikira, jadi torrent boleh terus menyemai melepasi hadnya.
-- Pembaikan: torrent v1 yang dibuat dengan “Cipta torrent” kini sentiasa sah dan sama pada setiap komputer, dan “Paksa semak semula” pada torrent yang dijeda kini terus menyemaknya dan bukan lagi memaparkan 0% sehingga ia dimulakan.
+- Baharu: NanoTorrent boleh berjalan tanpa tetingkap. Mulakan “nanotorrent --headless” dari terminal dan ia terus memuat turun dan menyemai, dengan antara muka web sebagai pintu masuk. Ctrl-C menghentikannya dengan kemas, dan --log-level menetapkan berapa banyak yang dilog.
+- Apabila ditutup, NanoTorrent kini menyimpan keadaan setiap torrent, jadi tiada apa-apa perlu disemak semula pada permulaan seterusnya.
+- Pembaikan: tetingkap tidak lagi kembali dalam keadaan separa dilukis selepas diminimumkan seketika, had torrent aktif kini turut terpakai tanpa tetingkap, dan membuka fail .torrent dari terminal semasa NanoTorrent sudah berjalan kini berfungsi dengan laluan relatif.
 - Di sebalik tabir: pustaka yang menjadi asas NanoTorrent telah dikemas kini dengan pembetulan terkininya.
 
 

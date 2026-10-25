@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Norsk bokmål (Norge) - Partner Center: Norwegian (Bokmal) (nb-NO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent er en Rust-portering av PicoTorrent av Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versjon 0.4.4
+Versjon 0.4.5
 
-- Sikkerhet: webgrensesnittet over HTTPS er ikke lenger sårbart for et tjenestenektangrep i HTTP/2-laget sitt; det bruker nå bare HTTP/1.1. Du trenger ikke endre noe.
-- Delingsgrenser: en grense for forhold stopper nå en torrent ved forholdet som vises i listen. Tidligere ble bare opplasting siden NanoTorrent sist ble startet telt, så en torrent kunne fortsette å dele forbi grensen sin.
-- Rettelser: v1-torrenter laget med «Opprett torrent» er alltid gyldige og blir like på alle datamaskiner, og «Påtving omsjekk» på en pauset torrent sjekker den nå med en gang i stedet for å vise 0% til den startes.
+- Nytt: NanoTorrent kan kjøre uten vindu. Start «nanotorrent --headless» fra en terminal, så fortsetter den å laste ned og dele, med webgrensesnittet som inngang. Ctrl-C stopper den ryddig, og --log-level bestemmer hvor mye som logges.
+- Når NanoTorrent lukkes, lagrer den nå tilstanden til hver torrent på vei ut, så ingenting må sjekkes på nytt ved neste oppstart.
+- Rettelser: vinduet kommer ikke lenger tilbake delvis tegnet etter å ha vært minimert en stund, grensene for aktive torrenter gjelder nå også uten vinduet, og å åpne en .torrent-fil fra en terminal mens NanoTorrent allerede kjører, fungerer med en relativ sti.
 - Under panseret: bibliotekene NanoTorrent er bygget på, er oppdatert med de nyeste rettelsene sine.
 
 

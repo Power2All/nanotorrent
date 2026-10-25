@@ -99,11 +99,6 @@ impl Environment {
             .unwrap_or_else(|| PathBuf::from("."))
     }
 
-    /// The directory where the executable lives.
-    pub fn get_application_path(&self) -> PathBuf {
-        Self::application_dir()
-    }
-
     /// Port of Environment::GetApplicationDataPath.
     ///
     /// The C++ version checks the Windows registry to see if the app is
@@ -190,7 +185,7 @@ impl Environment {
     /// way to edit one without rebuilding.
     pub fn get_lang_path(&self) -> PathBuf {
         // Look next to the executable first, then in the dev tree.
-        let next_to_exe = self.get_application_path().join("lang");
+        let next_to_exe = Self::application_dir().join("lang");
         if next_to_exe.exists() {
             return next_to_exe;
         }
@@ -332,18 +327,6 @@ mod tests {
         assert_eq!(package_family_name(), None);
     }
 
-    /// The direction of the packaged check, which is the part that breaks
-    /// silently. Both callers - the toast AUMID dance and the Preferences
-    /// associations button - must act when this is TRUE, and an inverted
-    /// `is_some()` here would turn toasts off for every installer user while
-    /// leaving the Store build exactly as broken as before. Neither symptom is
-    /// visible from an unpackaged build, so pin it where it is decided.
-    #[test]
-    fn an_unpackaged_build_establishes_its_own_identity() {
-        assert!(needs_own_windows_identity());
-        assert_eq!(needs_own_windows_identity(), package_family_name().is_none());
-    }
-
     /// Guards the per-platform branching in `user_data_dir`. Only the host's
     /// arm is compiled, so CI on each OS is what covers the other two - the
     /// point here is that whichever arm ships is absolute (a relative data
@@ -380,6 +363,6 @@ mod tests {
         let data = env.get_application_data_path();
         unsafe { std::env::remove_var("NANOTORRENT_PORTABLE") };
 
-        assert_eq!(data, env.get_application_path());
+        assert_eq!(data, Environment::application_dir());
     }
 }

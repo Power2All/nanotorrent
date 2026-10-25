@@ -87,18 +87,10 @@ mod tests {
             Config(dir)
         }
         fn torrent(&self, stem: &str, name: &str) -> String {
-            let info = build::dict(&[
-                ("length", build::int(1234)),
-                ("name", build::str(name)),
-                ("piece length", build::int(16384)),
-                ("pieces", build::str("01234567890123456789")),
-            ]);
-            std::fs::write(
-                self.0.join("torrents").join(format!("{stem}.torrent")),
-                build::dict(&[("info", info.clone())]),
-            )
-            .unwrap();
-            crate::bittorrent::metainfo::info_hashes(&info).0.unwrap()
+            let (torrent, hash) = super::super::test_torrent(name);
+            std::fs::write(self.0.join("torrents").join(format!("{stem}.torrent")), torrent)
+                .unwrap();
+            hash
         }
         fn resume(&self, stem: &str, pairs: &[(&str, Vec<u8>)]) {
             std::fs::write(

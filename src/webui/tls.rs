@@ -139,17 +139,10 @@ fn hostname() -> Option<String> {
 /// aws-lc-rs is the choice because it is already linked: librqbit's SHA-1 piece
 /// hashing runs through it. Idempotent, and safe to call from anywhere.
 pub fn ensure_crypto_provider() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        if rustls::crypto::aws_lc_rs::default_provider()
-            .install_default()
-            .is_err()
-        {
-            // Someone else got there first, which is fine - the point is that
-            // exactly one provider is installed, not that we installed it.
-            tracing::debug!("a rustls crypto provider was already installed");
-        }
-    });
+    // An Err means one is already installed - by an earlier call or by
+    // someone else - which is fine: the point is that exactly one provider is
+    // installed, not that we installed it.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
 /// Turn a PEM certificate and key into a rustls server config, failing with a

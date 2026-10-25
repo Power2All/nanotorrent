@@ -13,12 +13,10 @@
 //! keys still carry PicoTorrent's `libtorrent.` prefix - this build runs
 //! librqbit - and none of that is worth exposing to someone writing a script.
 
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 
 use crate::core::configuration::Configuration;
-use crate::core::database::Database;
 use crate::core::environment::Environment;
 use crate::ui::translator::Translator;
 
@@ -313,7 +311,9 @@ pub fn field(s: &Setting) -> Field {
     match &s.kind {
         Kind::Bool => plain("bool"),
         Kind::Int { lo, hi, unit } => int(*lo, *hi, unit),
-        Kind::Text | Kind::Secret => plain("text"),
+        Kind::Text | Kind::Secret | Kind::ListenAddress | Kind::File | Kind::Web(_) => {
+            plain("text")
+        }
         Kind::Dir => plain("dir"),
         Kind::Choice(v) | Kind::Index(v) | Kind::Persist(v) => choice(v),
         // The picker is worth more than free text here: a typo in a locale
@@ -332,10 +332,7 @@ pub fn field(s: &Setting) -> Field {
                 .collect(),
             ..Default::default()
         },
-        Kind::ListenAddress => plain("text"),
         Kind::ListenPort => int(1, 65535, ""),
-        Kind::File => plain("text"),
-        Kind::Web(_) => plain("text"),
     }
 }
 
@@ -352,47 +349,38 @@ pub fn find(name: &str) -> Option<&'static Setting> {
 
 /// The current value, rendered the way `--set` would accept it back.
 pub fn show(cfg: &Configuration, s: &Setting) -> String {
+    // Missing and empty both read as "(unset)".
+    let or_unset =
+        |v: Option<String>| v.filter(|v| !v.is_empty()).unwrap_or_else(|| String::from("(unset)"));
     match &s.kind {
         Kind::Bool => cfg.get_bool(s.key).to_string(),
-        Kind::Int { .. } => cfg
-            .get_int(s.key)
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| String::from("(unset)")),
+        Kind::Int { .. } => or_unset(cfg.get_int(s.key).map(|v| v.to_string())),
         Kind::Text
         | Kind::Dir
         | Kind::File
         | Kind::Locale
         | Kind::Choice(_)
-        | Kind::Web(_) => {
-            let v = cfg.get_string(s.key).unwrap_or_default();
-            if v.is_empty() { String::from("(unset)") } else { v }
-        }
+        | Kind::Web(_) => or_unset(cfg.get_string(s.key)),
         // Whether there is one, and nothing more. This is the only reader -
         // the desktop's Preferences dialog fills its field from the
         // configuration directly, so it still shows the real value to someone
         // already sitting at the machine.
-        Kind::Secret => {
-            let v = cfg.get_string(s.key).unwrap_or_default();
-            String::from(if v.is_empty() { "(unset)" } else { SECRET_SET })
-        }
+        Kind::Secret => or_unset(
+            cfg.get_string(s.key)
+                .filter(|v| !v.is_empty())
+                .map(|_| String::from(SECRET_SET)),
+        ),
         Kind::Index(names) => {
             let i = cfg.get_int(s.key).unwrap_or(0).max(0) as usize;
             names.get(i).map(|n| String::from(*n)).unwrap_or_else(|| String::from("(unknown)"))
         }
-        Kind::Persist(_) => {
-            let v = cfg.get_persistent(s.key).unwrap_or_default();
-            if v.is_empty() { String::from("(unset)") } else { v }
+        Kind::Persist(_) => or_unset(cfg.get_persistent(s.key)),
+        Kind::ListenAddress => {
+            or_unset(cfg.get_listen_interfaces().first().map(|i| i.address.clone()))
         }
-        Kind::ListenAddress => cfg
-            .get_listen_interfaces()
-            .first()
-            .map(|i| i.address.clone())
-            .unwrap_or_else(|| String::from("(unset)")),
-        Kind::ListenPort => cfg
-            .get_listen_interfaces()
-            .first()
-            .map(|i| i.port.to_string())
-            .unwrap_or_else(|| String::from("(unset)")),
+        Kind::ListenPort => {
+            or_unset(cfg.get_listen_interfaces().first().map(|i| i.port.to_string()))
+        }
     }
 }
 
@@ -407,14 +395,13 @@ fn accepts(s: &Setting, tr: &Translator) -> String {
                 format!("{lo}-{hi} {unit}")
             }
         }
-        Kind::Text | Kind::Secret => tr.i18n("cli_accepts_text"),
+        Kind::Text | Kind::Secret | Kind::Web(_) => tr.i18n("cli_accepts_text"),
         Kind::Dir => tr.i18n("cli_accepts_dir"),
         Kind::Locale => tr.i18n("cli_accepts_locale"),
         Kind::Choice(v) | Kind::Index(v) | Kind::Persist(v) => v.join("|"),
         Kind::ListenAddress => tr.i18n("cli_accepts_address"),
         Kind::ListenPort => String::from("1-65535"),
         Kind::File => tr.i18n("cli_accepts_file"),
-        Kind::Web(_) => tr.i18n("cli_accepts_text"),
     }
 }
 
@@ -557,9 +544,7 @@ pub fn handle(args: &[String]) -> Result<bool> {
     }
 
     let env = Environment::create();
-    let db = Arc::new(Database::open(&env).context("cannot open the settings database")?);
-    db.migrate().context("cannot migrate the settings database")?;
-    let cfg = Configuration::new(db);
+    let cfg = Configuration::new(crate::core::dbcli::open(&env)?);
     let tr = crate::load_translator(&env, &cfg);
 
     match flag {

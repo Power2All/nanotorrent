@@ -52,6 +52,15 @@ fn to_dh_bytes(n: &BigUint) -> [u8; DH_LEN] {
     out
 }
 
+/// A fresh DH keypair: private key X (160 random bits), public Y = G^X mod P.
+fn dh_keypair() -> (BigUint, [u8; DH_LEN]) {
+    let mut x = [0u8; 20];
+    rand::fill(&mut x[..]);
+    let x = BigUint::from_bytes_be(&x);
+    let y = to_dh_bytes(&BigUint::from(2u32).modpow(&x, &dh_prime()));
+    (x, y)
+}
+
 /// SHA1 over the concatenation of `parts`.
 fn sha1(parts: &[&[u8]]) -> [u8; 20] {
     let mut h = Sha1::new();
@@ -83,6 +92,14 @@ impl Rc4 {
             s.swap(k, j as usize);
         }
         Rc4 { s, i: 0, j: 0 }
+    }
+
+    /// The MSE stream cipher for one direction: keyed with
+    /// HASH(`label`, S, SKEY), first 1024 keystream bytes discarded.
+    fn keyed(label: &[u8], s: &[u8], skey: &[u8]) -> Self {
+        let mut rc4 = Rc4::new(&sha1(&[label, s, skey]));
+        rc4.discard(1024);
+        rc4
     }
 
     /// One byte of keystream (the pseudo-random generation algorithm).
@@ -122,14 +139,8 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let prime = dh_prime();
-    let g = BigUint::from(2u32);
-
-    // Private key Xa (160 random bits), public Ya = G^Xa mod P.
-    let mut xa_bytes = [0u8; 20];
-    rand::fill(&mut xa_bytes[..]);
-    let xa = BigUint::from_bytes_be(&xa_bytes);
-    let ya = to_dh_bytes(&g.modpow(&xa, &prime));
+    // Private key Xa, public Ya.
+    let (xa, ya) = dh_keypair();
 
     // Step 1: send Ya (no padding).
     write.write_all(&ya).await.context("sending DH public key")?;
@@ -141,34 +152,22 @@ where
     read.read_exact(&mut yb)
         .await
         .context("reading peer DH public key")?;
-    let s = to_dh_bytes(&BigUint::from_bytes_be(&yb).modpow(&xa, &prime));
+    let s = to_dh_bytes(&BigUint::from_bytes_be(&yb).modpow(&xa, &dh_prime()));
 
     // Key derivation.
     let req1 = sha1(&[b"req1", &s]);
     let req2 = sha1(&[b"req2", &info_hash]);
     let req3 = sha1(&[b"req3", &s]);
-    let mut req2_3 = [0u8; 20];
-    for i in 0..20 {
-        req2_3[i] = req2[i] ^ req3[i];
-    }
-    let mut enc = Rc4::new(&sha1(&[b"keyA", &s, &info_hash]));
-    enc.discard(1024);
-    let mut dec = Rc4::new(&sha1(&[b"keyB", &s, &info_hash]));
-    dec.discard(1024);
+    let req2_3: [u8; 20] = std::array::from_fn(|i| req2[i] ^ req3[i]);
+    let mut enc = Rc4::keyed(b"keyA", &s, &info_hash);
+    let mut dec = Rc4::keyed(b"keyB", &s, &info_hash);
 
     // Step 3: HASH('req1',S) || (HASH('req2',SKEY) xor HASH('req3',S)) ||
     // ENCRYPT(VC || crypto_provide || len(PadC)=0 || len(IA)=0).
-    let mut payload = Vec::with_capacity(16);
-    payload.extend_from_slice(&VC);
-    payload.extend_from_slice(&CRYPTO_RC4);
-    payload.extend_from_slice(&[0, 0]); // len(PadC) = 0
-    payload.extend_from_slice(&[0, 0]); // len(IA) = 0
+    let mut payload = [&VC[..], &CRYPTO_RC4, &[0, 0], &[0, 0]].concat();
     enc.apply(&mut payload);
 
-    let mut out = Vec::with_capacity(40 + payload.len());
-    out.extend_from_slice(&req1);
-    out.extend_from_slice(&req2_3);
-    out.extend_from_slice(&payload);
+    let out = [&req1[..], &req2_3, &payload].concat();
     write.write_all(&out).await.context("sending MSE request")?;
     write.flush().await.ok();
 
@@ -189,20 +188,38 @@ where
     if sel != CRYPTO_RC4 {
         bail!("peer did not select RC4 encryption (crypto_select={sel:?})");
     }
-    let mut lp = [0u8; 2];
-    read.read_exact(&mut lp).await.context("reading PadD length")?;
-    dec.apply(&mut lp);
-    let pad_d = u16::from_be_bytes(lp) as usize;
-    if pad_d > MAX_PAD {
-        bail!("peer PadD too large ({pad_d})");
-    }
-    if pad_d > 0 {
-        let mut pd = vec![0u8; pad_d];
-        read.read_exact(&mut pd).await.context("reading PadD")?;
-        dec.apply(&mut pd);
-    }
+    read_sized(
+        read,
+        &mut dec,
+        MAX_PAD,
+        ["reading PadD length", "peer PadD too large", "reading PadD"],
+    )
+    .await?;
 
     Ok((enc, dec))
+}
+
+/// Read an encrypted `len(X) || X` field: a u16 length, then that many bytes,
+/// both decrypted. Lengths over `max` are refused before anything is
+/// allocated. `texts` is the error wording: reading the length, too large,
+/// reading the body.
+async fn read_sized<R: AsyncRead + Unpin>(
+    read: &mut R,
+    dec: &mut Rc4,
+    max: usize,
+    [len_ctx, too_large, body_ctx]: [&'static str; 3],
+) -> Result<Vec<u8>> {
+    let mut lp = [0u8; 2];
+    read.read_exact(&mut lp).await.context(len_ctx)?;
+    dec.apply(&mut lp);
+    let n = u16::from_be_bytes(lp) as usize;
+    if n > max {
+        bail!("{too_large} ({n})");
+    }
+    let mut body = vec![0u8; n];
+    read.read_exact(&mut body).await.context(body_ctx)?;
+    dec.apply(&mut body);
+    Ok(body)
 }
 
 /// Scan byte-by-byte until the last `pat.len()` bytes match `pat`, skipping up
@@ -245,17 +262,11 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let prime = dh_prime();
-    let g = BigUint::from(2u32);
-
     // Our private key Xb, public Yb, shared secret S = Ya^Xb mod P.
-    let mut xb_bytes = [0u8; 20];
-    rand::fill(&mut xb_bytes[..]);
-    let xb = BigUint::from_bytes_be(&xb_bytes);
-    let yb = to_dh_bytes(&g.modpow(&xb, &prime));
+    let (xb, yb) = dh_keypair();
     write.write_all(&yb).await.context("sending DH public key")?;
     write.flush().await.ok();
-    let s = to_dh_bytes(&BigUint::from_bytes_be(&ya).modpow(&xb, &prime));
+    let s = to_dh_bytes(&BigUint::from_bytes_be(&ya).modpow(&xb, &dh_prime()));
 
     // Skip PadA and land on HASH('req1', S).
     let req1 = sha1(&[b"req1", &s]);
@@ -269,10 +280,7 @@ where
         .await
         .context("reading req2^req3")?;
     let req3 = sha1(&[b"req3", &s]);
-    let mut target = [0u8; 20];
-    for i in 0..20 {
-        target[i] = req2_3[i] ^ req3[i];
-    }
+    let target: [u8; 20] = std::array::from_fn(|i| req2_3[i] ^ req3[i]);
     let skey = candidates
         .iter()
         .find(|sk| sha1(&[b"req2", *sk]) == target)
@@ -281,10 +289,8 @@ where
 
     // The initiator encrypts with keyA, so we decrypt its stream with keyA and
     // encrypt ours with keyB.
-    let mut dec = Rc4::new(&sha1(&[b"keyA", &s, &skey]));
-    dec.discard(1024);
-    let mut enc = Rc4::new(&sha1(&[b"keyB", &s, &skey]));
-    enc.discard(1024);
+    let mut dec = Rc4::keyed(b"keyA", &s, &skey);
+    let mut enc = Rc4::keyed(b"keyB", &s, &skey);
 
     // ENCRYPT(VC || crypto_provide || len(PadC) || PadC || len(IA) || IA).
     let mut vc = [0u8; 8];
@@ -301,38 +307,25 @@ where
     if provide[3] & 0x02 == 0 {
         bail!("incoming peer did not offer RC4 (crypto_provide={provide:?})");
     }
-    let mut lp = [0u8; 2];
-    read.read_exact(&mut lp).await.context("reading len(PadC)")?;
-    dec.apply(&mut lp);
-    let pad_c = u16::from_be_bytes(lp) as usize;
-    if pad_c > MAX_PAD {
-        bail!("PadC too large ({pad_c})");
-    }
-    if pad_c > 0 {
-        let mut pc = vec![0u8; pad_c];
-        read.read_exact(&mut pc).await.context("reading PadC")?;
-        dec.apply(&mut pc);
-    }
-    let mut li = [0u8; 2];
-    read.read_exact(&mut li).await.context("reading len(IA)")?;
-    dec.apply(&mut li);
-    let ia_len = u16::from_be_bytes(li) as usize;
+    read_sized(
+        read,
+        &mut dec,
+        MAX_PAD,
+        ["reading len(PadC)", "PadC too large", "reading PadC"],
+    )
+    .await?;
     // IA carries the peer's first payload (typically the 68-byte BitTorrent
     // handshake). Cap it so a bogus length can't force a huge allocation.
-    if ia_len > 1024 {
-        bail!("IA too large ({ia_len})");
-    }
-    let mut ia = vec![0u8; ia_len];
-    if ia_len > 0 {
-        read.read_exact(&mut ia).await.context("reading IA")?;
-        dec.apply(&mut ia);
-    }
+    let ia = read_sized(
+        read,
+        &mut dec,
+        1024,
+        ["reading len(IA)", "IA too large", "reading IA"],
+    )
+    .await?;
 
     // Respond: ENCRYPT(VC || crypto_select=RC4 || len(PadD)=0).
-    let mut resp = Vec::with_capacity(14);
-    resp.extend_from_slice(&VC);
-    resp.extend_from_slice(&CRYPTO_RC4);
-    resp.extend_from_slice(&[0, 0]); // len(PadD) = 0
+    let mut resp = [&VC[..], &CRYPTO_RC4, &[0, 0]].concat();
     enc.apply(&mut resp);
     write
         .write_all(&resp)
@@ -387,6 +380,15 @@ struct EncryptedWrite<W> {
 }
 
 impl<W: AsyncWrite + Unpin> EncryptedWrite<W> {
+    fn new(inner: W, rc4: Rc4) -> Self {
+        EncryptedWrite {
+            inner,
+            rc4,
+            pending: Vec::new(),
+            pstart: 0,
+        }
+    }
+
     fn drain(&mut self, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         while self.pstart < self.pending.len() {
             match Pin::new(&mut self.inner).poll_write(cx, &self.pending[self.pstart..]) {
@@ -469,12 +471,7 @@ impl StreamTransform for MseTransform {
         Box::pin(async move {
             let (enc, dec) = client_handshake(&mut read, &mut write, info_hash.0).await?;
             let r: BoxAsyncRead = Box::new(EncryptedRead { inner: read, rc4: dec });
-            let w: BoxAsyncWrite = Box::new(EncryptedWrite {
-                inner: write,
-                rc4: enc,
-                pending: Vec::new(),
-                pstart: 0,
-            });
+            let w: BoxAsyncWrite = Box::new(EncryptedWrite::new(write, enc));
             Ok((r, w))
         })
     }
@@ -590,12 +587,7 @@ impl IncomingStreamTransform for IncomingMseTransform {
 
             let r: BoxAsyncRead =
                 Box::new(prefixed(ia, EncryptedRead { inner: read, rc4: dec }));
-            let w: BoxAsyncWrite = Box::new(EncryptedWrite {
-                inner: write,
-                rc4: enc,
-                pending: Vec::new(),
-                pstart: 0,
-            });
+            let w: BoxAsyncWrite = Box::new(EncryptedWrite::new(write, enc));
             Ok((r, w))
         })
     }
@@ -684,10 +676,8 @@ mod tests {
                 let s = to_dh_bytes(&BigUint::from_bytes_be(&ya).modpow(&xb, &prime));
                 // A encrypts with keyA, so B decrypts A with keyA and encrypts
                 // its own side with keyB.
-                let mut dec_a = Rc4::new(&sha1(&[b"keyA", &s, &info_hash]));
-                dec_a.discard(1024);
-                let mut enc_b = Rc4::new(&sha1(&[b"keyB", &s, &info_hash]));
-                enc_b.discard(1024);
+                let mut dec_a = Rc4::keyed(b"keyA", &s, &info_hash);
+                let mut enc_b = Rc4::keyed(b"keyB", &s, &info_hash);
 
                 // Read req1 || req2^req3 || ENCRYPT(VC||provide||0||0).
                 let mut hashes = [0u8; 40];
@@ -717,12 +707,7 @@ mod tests {
             });
 
             let (enc, dec) = client_handshake(&mut ar, &mut aw, info_hash).await.unwrap();
-            let mut w = EncryptedWrite {
-                inner: aw,
-                rc4: enc,
-                pending: Vec::new(),
-                pstart: 0,
-            };
+            let mut w = EncryptedWrite::new(aw, enc);
             let mut r = EncryptedRead { inner: ar, rc4: dec };
 
             w.write_all(&[0x99]).await.unwrap();
@@ -758,7 +743,7 @@ mod tests {
                     server_handshake(&mut br, &mut bw, ya, &candidates).await.unwrap();
                 assert!(ia.is_empty()); // our initiator sends len(IA)=0
                 let mut r = prefixed(ia, EncryptedRead { inner: br, rc4: dec });
-                let mut w = EncryptedWrite { inner: bw, rc4: enc, pending: Vec::new(), pstart: 0 };
+                let mut w = EncryptedWrite::new(bw, enc);
                 let mut byte = [0u8; 1];
                 r.read_exact(&mut byte).await.unwrap();
                 assert_eq!(byte[0], 0x99);
@@ -767,7 +752,7 @@ mod tests {
             });
 
             let (enc, dec) = client_handshake(&mut ar, &mut aw, info_hash).await.unwrap();
-            let mut w = EncryptedWrite { inner: aw, rc4: enc, pending: Vec::new(), pstart: 0 };
+            let mut w = EncryptedWrite::new(aw, enc);
             let mut r = EncryptedRead { inner: ar, rc4: dec };
             w.write_all(&[0x99]).await.unwrap();
             w.flush().await.unwrap();

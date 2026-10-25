@@ -1,5 +1,5 @@
 /// Application manifest. The Common-Controls v6 dependency is REQUIRED (see the
-/// note in main() - NWG imports comctl32 v6-only `GetWindowSubclass`).
+/// note in main() - Slint's native menus import comctl32 v6-only functions).
 #[cfg(windows)]
 const APP_MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
@@ -41,12 +41,14 @@ fn main() {
     // Embed the app icon into the .exe as a Win32 resource so Explorer and the
     // taskbar show it for the executable file itself.
     //
-    // We must ALSO embed the application manifest here: winresource replaces the
-    // exe's resource section, which would otherwise drop native-windows-gui's
-    // own manifest. Without the Common-Controls v6 dependency the loader binds
-    // to comctl32 v5.82 (system32), which lacks `GetWindowSubclass` that NWG
-    // imports -> "entry point GetWindowSubclass could not be located" at launch.
-    // So the icon and manifest travel together in one resource.
+    // The application manifest goes in the same resource. Its Common-Controls
+    // v6 dependency is not cosmetic: Slint's winit backend shows context menus
+    // through muda, which imports `SetWindowSubclass`, `DefSubclassProc` and
+    // `RemoveWindowSubclass` from comctl32 by name - and only v6 exports them
+    // by name. Without the dependency the loader binds to comctl32 v5.82
+    // (system32) and the exe fails at launch with "entry point ... could not
+    // be located". It is also what gives the startup-failure MessageBoxW in
+    // main.rs themed buttons rather than the classic unthemed ones.
     println!("cargo:rerun-if-changed=res/app.ico");
     #[cfg(windows)]
     {

@@ -515,8 +515,12 @@ const EXAMPLES: &[(&str, &str, &str)] = &[
 const SEEDED_KEY: &str = "plugins.seeded";
 
 fn seeded(cfg: &Configuration) -> BTreeSet<String> {
-    cfg.get_persistent(SEEDED_KEY)
-        .unwrap_or_default()
+    line_set(cfg.get_persistent(SEEDED_KEY))
+}
+
+/// The non-blank lines of a stored list, trimmed.
+fn line_set(text: Option<String>) -> BTreeSet<String> {
+    text.unwrap_or_default()
         .lines()
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -546,13 +550,7 @@ fn stem(path: &Path) -> String {
 /// platform this runs on, and a plugin called `a,b` would otherwise be
 /// impossible to switch off.
 pub fn disabled(cfg: &Configuration) -> BTreeSet<String> {
-    cfg.get_string(DISABLED_KEY)
-        .unwrap_or_default()
-        .lines()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .collect()
+    line_set(cfg.get_string(DISABLED_KEY))
 }
 
 /// Switch one plugin on or off.
@@ -649,8 +647,12 @@ fn run(
     dir: PathBuf,
     wake_rx: std::sync::mpsc::Receiver<Wake>,
 ) {
+    // A Rhai engine with the limits a plugin runs under, plus the host API.
     let engines = |name: &str, perms: &BTreeSet<Permission>, strings: strings::Strings| {
-        build_engine(session.clone(), cfg.clone(), name, perms, strings)
+        let mut engine = Engine::new();
+        apply_limits(&mut engine);
+        api::register(&mut engine, session.clone(), cfg.clone(), name, perms, strings);
+        engine
     };
 
     let mut plugins = load(engines, &cfg, &enabled_scripts(&dir, &cfg));
@@ -715,20 +717,6 @@ fn run(
         *slot = None;
     }
     tracing::info!("plugin host stopped");
-}
-
-/// A Rhai engine with the limits a plugin runs under, plus the host API.
-fn build_engine(
-    session: Arc<Session>,
-    cfg: Arc<Configuration>,
-    name: &str,
-    perms: &BTreeSet<Permission>,
-    strings: strings::Strings,
-) -> Engine {
-    let mut engine = Engine::new();
-    apply_limits(&mut engine);
-    api::register(&mut engine, session, cfg, name, perms, strings);
-    engine
 }
 
 /// Bound the damage a bad script can do. These are why this is Rhai: with Lua
@@ -810,11 +798,11 @@ fn load(
         // plugin written for the desktop is not broken on a headless server,
         // it just has nowhere to draw.
         //
-        // A compile-time check, not "has a window appeared yet": the host
+        // Decided at startup, not "has a window appeared yet": the host
         // starts before the UI does, so asking at this moment would report no
-        // UI on every desktop build too.
-        if wants.contains(&Permission::Ui) && !cfg!(feature = "ui-slint") {
-            tracing::info!("plugin {name} asks for a window, but this build has no UI");
+        // UI on every desktop run too.
+        if wants.contains(&Permission::Ui) && crate::headless() {
+            tracing::info!("plugin {name} asks for a window, but this run has none");
         }
 
         // Read here rather than in `api::register`, which never sees a path.

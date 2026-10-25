@@ -136,20 +136,12 @@ fn encode_path(path: &str) -> String {
     crate::core::utils::percent_encode(path.as_bytes(), b"/")
 }
 
-/// Read `url-list` out of a `.torrent`.
-///
-/// It sits at the top level, beside `info`, and is either a single string or a
-/// list of them. Absent for magnets, which is why a web seed can only come
-/// from a real torrent file.
-pub fn parse_url_list(torrent_bytes: &[u8]) -> Vec<String> {
-    parse_url_key(torrent_bytes, b"url-list")
-}
-
-/// The shared parser behind `url-list` (BEP 19) and `httpseeds` (BEP 17).
+/// Read `url-list` (BEP 19) or `httpseeds` (BEP 17) out of a `.torrent`.
 ///
 /// Both keys sit at the top level beside `info` and both are "either a string
-/// or a list of strings", so one parser does for both.
-fn parse_url_key(torrent_bytes: &[u8], key: &[u8]) -> Vec<String> {
+/// or a list of strings", so one parser does for both. Absent for magnets,
+/// which is why a web seed can only come from a real torrent file.
+pub fn parse_url_key(torrent_bytes: &[u8], key: &[u8]) -> Vec<String> {
     use crate::core::bencode;
     let Some(raw) = bencode::dict_get(torrent_bytes, key) else {
         return Vec::new();
@@ -205,6 +197,30 @@ const FETCH_ATTEMPTS: u32 = 3;
 /// How many times a dead web seed is restarted before it is left alone.
 const SEED_RESTARTS: u32 = 5;
 
+/// Send `req` and return its body, which must be exactly `len` bytes. `want`
+/// is the one status to accept, or `None` for any success.
+async fn get_exact(
+    req: reqwest::RequestBuilder,
+    url: &str,
+    len: u64,
+    want: Option<reqwest::StatusCode>,
+) -> Result<Vec<u8>> {
+    let resp = req.send().await.with_context(|| format!("GET {url}"))?;
+    let status = resp.status();
+    match want {
+        Some(want) if status != want => {
+            bail!("{url} answered {status}, expected {}", want.as_u16())
+        }
+        None if !status.is_success() => bail!("{url} answered {status}"),
+        _ => {}
+    }
+    let body = resp.bytes().await.context("reading body")?;
+    if body.len() as u64 != len {
+        bail!("{url} returned {} bytes, expected {len}", body.len());
+    }
+    Ok(body.to_vec())
+}
+
 /// The real one: an HTTP range request per span.
 #[derive(Debug)]
 pub struct HttpSource {
@@ -224,24 +240,14 @@ impl ByteSource for HttpSource {
         let url = file_url(&self.base, &self.torrent_name, file, self.multi_file);
         Box::pin(async move {
             let end = start + len - 1;
-            let resp = self
+            let req = self
                 .client
                 .get(&url)
-                .header(reqwest::header::RANGE, format!("bytes={start}-{end}"))
-                .send()
-                .await
-                .with_context(|| format!("GET {url}"))?;
+                .header(reqwest::header::RANGE, format!("bytes={start}-{end}"));
             // 206 is the only success we can use. A 200 means the server
             // ignored the Range and is sending the whole file, which for a
             // large file would be a very expensive way to get 16 KiB.
-            if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-                bail!("{url} answered {}, expected 206", resp.status());
-            }
-            let body = resp.bytes().await.context("reading body")?;
-            if body.len() as u64 != len {
-                bail!("{url} returned {} bytes, expected {len}", body.len());
-            }
-            Ok(body.to_vec())
+            get_exact(req, &url, len, Some(reqwest::StatusCode::PARTIAL_CONTENT)).await
         })
     }
 }
@@ -293,32 +299,12 @@ impl ByteSource for HttpSeedSource {
         len: u64,
     ) -> Option<futures::future::BoxFuture<'_, Result<Vec<u8>>>> {
         let url = self.piece_url(index);
+        // 200 here, unlike BEP 19: the request is not a range request, so
+        // the whole response IS the piece.
         Some(Box::pin(async move {
-            let resp = self
-                .client
-                .get(&url)
-                .send()
-                .await
-                .with_context(|| format!("GET {url}"))?;
-            // 200 here, unlike BEP 19: the request is not a range request, so
-            // the whole response IS the piece.
-            if !resp.status().is_success() {
-                bail!("{url} answered {}", resp.status());
-            }
-            let body = resp.bytes().await.context("reading body")?;
-            if body.len() as u64 != len {
-                bail!("{url} returned {} bytes, expected {len}", body.len());
-            }
-            Ok(body.to_vec())
+            get_exact(self.client.get(&url), &url, len, None).await
         }))
     }
-}
-
-/// Read `httpseeds` out of a `.torrent` - BEP 17's equivalent of `url-list`.
-///
-/// Same shape and the same place in the file, so the same parser does both.
-pub fn parse_http_seeds(torrent_bytes: &[u8]) -> Vec<String> {
-    parse_url_key(torrent_bytes, b"httpseeds")
 }
 
 /// What the responder needs to know about the torrent.
@@ -544,8 +530,8 @@ pub fn spawn_all(
     // and a client built locally would have quietly gone direct.
     client: reqwest::Client,
 ) {
-    let urls = parse_url_list(torrent_bytes);
-    let http_seeds = parse_http_seeds(torrent_bytes);
+    let urls = parse_url_key(torrent_bytes, b"url-list");
+    let http_seeds = parse_url_key(torrent_bytes, b"httpseeds");
     if urls.is_empty() && http_seeds.is_empty() {
         return;
     }
@@ -742,42 +728,42 @@ mod tests {
     fn url_list_reads_both_shapes() {
         // A single string.
         let one = b"d8:url-list19:http://example.com/4:infod0:0:ee";
-        assert_eq!(parse_url_list(one), vec!["http://example.com/"]);
+        assert_eq!(parse_url_key(one, b"url-list"), vec!["http://example.com/"]);
 
         // A list of them.
         let many = b"d8:url-listl19:http://example.com/20:https://example.com/e4:infod0:0:ee";
         assert_eq!(
-            parse_url_list(many),
+            parse_url_key(many, b"url-list"),
             vec!["http://example.com/", "https://example.com/"]
         );
 
         // Absent, and non-HTTP schemes (BEP 19 allows ftp; we do not speak it).
-        assert!(parse_url_list(b"d4:infod0:0:eee").is_empty());
+        assert!(parse_url_key(b"d4:infod0:0:eee", b"url-list").is_empty());
         let ftp = b"d8:url-list18:ftp://example.com/4:infod0:0:ee";
-        assert!(parse_url_list(ftp).is_empty());
+        assert!(parse_url_key(ftp, b"url-list").is_empty());
         // Malformed must not panic.
-        assert!(parse_url_list(b"d8:url-list").is_empty());
-        assert!(parse_url_list(b"junk").is_empty());
+        assert!(parse_url_key(b"d8:url-list", b"url-list").is_empty());
+        assert!(parse_url_key(b"junk", b"url-list").is_empty());
     }
 
     #[test]
     fn httpseeds_reads_the_same_shapes_as_url_list() {
         // BEP 17 keys the list `httpseeds`, otherwise identical.
         let one = b"d9:httpseeds23:http://example.com/seed4:infod0:0:ee";
-        assert_eq!(parse_http_seeds(one), vec!["http://example.com/seed"]);
+        assert_eq!(parse_url_key(one, b"httpseeds"), vec!["http://example.com/seed"]);
 
         let many = b"d9:httpseedsl18:http://a.example/s19:https://b.example/se4:infod0:0:ee";
         assert_eq!(
-            parse_http_seeds(many),
+            parse_url_key(many, b"httpseeds"),
             vec!["http://a.example/s", "https://b.example/s"]
         );
 
         // A torrent with only `url-list` has no BEP 17 seeds and vice versa.
-        assert!(parse_http_seeds(b"d8:url-list19:http://example.com/4:infod0:0:ee").is_empty());
-        assert!(parse_url_list(one).is_empty());
+        assert!(parse_url_key(b"d8:url-list19:http://example.com/4:infod0:0:ee", b"httpseeds").is_empty());
+        assert!(parse_url_key(one, b"url-list").is_empty());
 
         // Malformed must not panic, same as the other key.
-        assert!(parse_http_seeds(b"d9:httpseeds").is_empty());
+        assert!(parse_url_key(b"d9:httpseeds", b"httpseeds").is_empty());
     }
 
     #[test]
@@ -963,7 +949,7 @@ mod tests {
         torrent.truncate(torrent.len() - 1); // drop the closing 'e'
         torrent.extend_from_slice(entry.as_bytes());
         torrent.push(b'e');
-        assert_eq!(parse_url_list(&torrent), vec![URL], "url-list did not stick");
+        assert_eq!(parse_url_key(&torrent, b"url-list"), vec![URL], "url-list did not stick");
 
         // A session that CANNOT get data any other way.
         let session = librqbit::Session::new_with_opts(

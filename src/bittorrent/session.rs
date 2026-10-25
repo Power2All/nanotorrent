@@ -77,13 +77,6 @@ struct TorrentMeta {
     completed_on: Option<DateTime<Local>>,
     label_id: Option<i32>,
     queue_position: i64,
-    /// Session-local finished state from the previous tick (None = not yet
-    /// observed this session). Used to fire the completion notification only on
-    /// a real not-finished -> finished transition, never for torrents already
-    /// complete when first seen (librqbit reports finished=true at startup from
-    /// stale fastresume, which would otherwise pop a false toast and, worse,
-    /// suppress the real one after a recheck+re-download).
-    prev_finished: Option<bool>,
     /// Bytes this torrent has ever uploaded, across every session.
     ///
     /// Kept here and in the `torrent` table rather than read from the engine,
@@ -108,6 +101,22 @@ struct TorrentMeta {
     /// second would be pure waste. `None` means "not computed yet", which is
     /// also the state a magnet sits in until its metadata arrives.
     info_hashes: Option<(Option<String>, Option<String>)>,
+}
+
+impl TorrentMeta {
+    /// A torrent with no history yet: not completed, nothing uploaded.
+    fn new(added_on: DateTime<Local>, label_id: Option<i32>, queue_position: i64) -> Self {
+        TorrentMeta {
+            added_on,
+            completed_on: None,
+            label_id,
+            queue_position,
+            uploaded_total: 0,
+            seen_uploaded: 0,
+            flushed_uploaded: 0,
+            info_hashes: None,
+        }
+    }
 }
 
 /// Not downloaded at all.
@@ -137,8 +146,8 @@ fn accumulate_uploaded(total: i64, seen: i64, live: i64) -> (i64, i64) {
 /// The ratio is over the all-time upload total, the same figure the ratio
 /// column shows - not the engine's counter, which covers only the current
 /// session and so restarts at zero on every launch and every settings change.
-/// The live counter is folded in here as well as in `torrents()` because a
-/// headless build may never call that; the watermark makes folding twice safe.
+/// The live counter is folded in here, by both `torrents()` and the share-limit
+/// guard - a headless build may never call the former; the watermark makes folding twice safe.
 fn share_reading(
     meta: Option<&mut TorrentMeta>,
     live_uploaded: i64,
@@ -199,7 +208,8 @@ fn queue_target(at: usize, len: usize, to: QueueMove) -> usize {
 }
 
 /// Where a torrent should go in the queue.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum QueueMove {
     Top,
     Up,
@@ -313,6 +323,23 @@ pub fn magnet_label(uri: &str) -> String {
         .unwrap_or_else(|| uri.to_string())
 }
 
+/// The engine options every FRESH add starts from, `.torrent` or magnet.
+fn fresh_add_options(db: &Arc<Database>, params: &AddParams) -> AddTorrentOptions {
+    AddTorrentOptions {
+        paused: !params.start_torrent,
+        output_folder: incomplete_folder(&Configuration::new(db.clone()), params),
+        // A fresh add names a DESTINATION, so the containing-directory
+        // rule applies to it: one file lands in the folder as itself,
+        // several land in a directory named after the torrent. Only here -
+        // every other add in this file is a RE-add, pointing at data that
+        // is already somewhere, and must use the folder verbatim.
+        output_folder_subfolder: true,
+        only_files: params.only_files.clone(),
+        overwrite: true,
+        ..Default::default()
+    }
+}
+
 /// The engine options for adding a magnet, rebuilt for every attempt because
 /// the v2 interceptor collects state and must not be shared between two.
 fn magnet_add_options(
@@ -320,15 +347,7 @@ fn magnet_add_options(
     uri: &str,
     params: &AddParams,
 ) -> AddTorrentOptions {
-    let mut opts = AddTorrentOptions {
-        paused: !params.start_torrent,
-        output_folder: incomplete_folder(&Configuration::new(db.clone()), params),
-        // See `add_torrent`: a fresh add names a destination.
-        output_folder_subfolder: true,
-        only_files: params.only_files.clone(),
-        overwrite: true,
-        ..Default::default()
-    };
+    let mut opts = fresh_add_options(db, params);
     // Promotes a hybrid magnet's v1 hash into `xt` where the engine will find
     // it, and turns a v2-only link into a message rather than "didn't contain a
     // BTv1 infohash".
@@ -479,13 +498,14 @@ impl MagnetFetch {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Default)]
 pub enum TrackerRowKind {
     /// A peer-discovery source pseudo-row (DHT / LSD / PeX).
     Source,
     /// A "Tier #N" group header.
     Tier,
     /// A real tracker URL.
+    #[default]
     Tracker,
 }
 
@@ -503,6 +523,7 @@ pub struct PieceMap {
     pub inflight: Vec<u8>,
 }
 
+#[derive(Default)]
 pub struct TrackerRow {
     pub kind: TrackerRowKind,
     /// Text for the URL column (tracker rows are indented).
@@ -515,29 +536,21 @@ pub struct TrackerRow {
 }
 
 impl TrackerRow {
-    fn source(label: &str, status: String) -> Self {
-        TrackerRow {
-            kind: TrackerRowKind::Source,
-            label: label.to_string(),
-            status,
-            seeders: None,
-            leechers: None,
-            fails: 0,
-            next_announce: None,
-        }
-    }
-
-    /// Attach live peer counts to a discovery-source row.
+    /// A discovery-source row, with its live (seeds, leeches).
     ///
     /// `None` leaves the columns empty rather than showing zeros: nothing is
     /// connected through this source right now, which is not the same claim as
     /// "this source found a swarm with no seeds in it".
-    fn with_counts(mut self, counts: Option<(u32, u32)>) -> Self {
-        if let Some((seeds, leeches)) = counts {
-            self.seeders = Some(seeds);
-            self.leechers = Some(leeches);
+    fn source(label: &str, status: String, counts: Option<(u32, u32)>) -> Self {
+        let (seeders, leechers) = counts.unzip();
+        TrackerRow {
+            kind: TrackerRowKind::Source,
+            label: label.to_string(),
+            status,
+            seeders,
+            leechers,
+            ..Default::default()
         }
-        self
     }
 
     /// A tier heading row in the Trackers tab - a label with no statistics of
@@ -546,11 +559,7 @@ impl TrackerRow {
         TrackerRow {
             kind: TrackerRowKind::Tier,
             label,
-            status: String::new(),
-            seeders: None,
-            leechers: None,
-            fails: 0,
-            next_announce: None,
+            ..Default::default()
         }
     }
 }
@@ -869,6 +878,20 @@ fn azureus_peer_id(version: &str) -> librqbit::Id20 {
 
 /// Work out what strict mode allows, from the settings and this machine.
 ///
+/// The interface `network.bind_interface` names, if it names one.
+fn bound_interface(cfg: &Configuration) -> Option<String> {
+    cfg.get_string("network.bind_interface")
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+}
+
+/// Where torrents are saved unless the add says otherwise.
+fn default_save_path(cfg: &Configuration) -> PathBuf {
+    cfg.get_string("default_save_path")
+        .map(PathBuf::from)
+        .unwrap_or_else(Environment::get_downloads_path)
+}
+
 /// Returns the restrictions to build with, or the reason not to start at all.
 /// Kept next to the session because refusing to start IS the feature: a
 /// component that cannot be covered must not run, and protection that is not
@@ -876,10 +899,7 @@ fn azureus_peer_id(version: &str) -> librqbit::Id20 {
 fn strict_limits(cfg: &Configuration) -> Result<crate::core::netguard::Restrictions> {
     use crate::core::netguard::{Decision, Intent, decide, look_up};
 
-    let bind_interface = cfg
-        .get_string("network.bind_interface")
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty());
+    let bind_interface = bound_interface(cfg);
 
     let intent = Intent {
         strict: cfg.get_bool("network.strict"),
@@ -894,11 +914,9 @@ fn strict_limits(cfg: &Configuration) -> Result<crate::core::netguard::Restricti
     match decide(&intent, facts) {
         Decision::Open => Ok(Default::default()),
         Decision::Restricted(limits) => {
-            if limits.any() {
-                tracing::info!(
-                    "strict mode: not starting {}",
-                    limits.describe().join(", ")
-                );
+            let off = limits.describe();
+            if !off.is_empty() {
+                tracing::info!("strict mode: not starting {}", off.join(", "));
             }
             Ok(limits)
         }
@@ -961,10 +979,7 @@ fn build_session_options(
         // enforces it rather than each component remembering to ask: when the
         // tunnel drops the interface goes with it and every bound socket fails
         // at once, instead of quietly reverting to the real address.
-        bind_device_name: cfg
-            .get_string("network.bind_interface")
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty()),
+        bind_device_name: bound_interface(cfg),
         // librqbit 9 folds the three DHT switches into one Option - None is
         // "no DHT at all", and persistence is a field inside it.
         dht: (cfg.get_bool("libtorrent.enable_dht") && !limits.disable_dht)
@@ -1259,46 +1274,43 @@ pub enum CreateTorrentOutcome {
 async fn build_torrent(params: CreateTorrentParams) -> Result<CreateTorrentOutcome> {
     use crate::bittorrent::torrent_create;
 
-    // Hashing is blocking file I/O, so run it off the async worker.
-    let bytes = {
-        let source = params.source.clone();
-        let trackers = params.trackers.clone();
-        let comment = params.comment.clone();
-        let private = params.private;
-        let piece_length = params.piece_length;
-        let version = params.version;
-        let created_by = crate::buildinfo::user_agent();
-        tokio::task::spawn_blocking(move || {
-            torrent_create::build(&torrent_create::CreateInput {
-                source: &source,
-                version,
-                piece_length,
-                trackers: &trackers,
-                comment: &comment,
-                private,
-                created_by,
-            })
-        })
-        .await??
-    };
-
-    tokio::fs::write(&params.output, &bytes).await?;
-
-    let name = params
-        .source
+    let CreateTorrentParams {
+        source,
+        trackers,
+        comment,
+        private,
+        piece_length,
+        version,
+        output,
+        add_to_session,
+    } = params;
+    let name = source
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let save_path = params
-        .source
-        .parent()
-        .map(|p| p.to_string_lossy().into_owned());
+    let save_path = source.parent().map(|p| p.to_string_lossy().into_owned());
+
+    // Hashing is blocking file I/O, so run it off the async worker.
+    let bytes = tokio::task::spawn_blocking(move || {
+        torrent_create::build(&torrent_create::CreateInput {
+            source: &source,
+            version,
+            piece_length,
+            trackers: &trackers,
+            comment: &comment,
+            private,
+            created_by: crate::buildinfo::user_agent(),
+        })
+    })
+    .await??;
+
+    tokio::fs::write(&output, &bytes).await?;
 
     Ok(CreateTorrentOutcome::Created {
         name,
         bytes,
         save_path,
-        add_to_session: params.add_to_session,
+        add_to_session,
     })
 }
 
@@ -1314,10 +1326,7 @@ impl Session {
             .thread_name("pt-session")
             .build()?;
 
-        let default_save_path = cfg
-            .get_string("default_save_path")
-            .map(PathBuf::from)
-            .unwrap_or_else(Environment::get_downloads_path);
+        let default_save_path = default_save_path(cfg);
 
         let opts = build_session_options(cfg, env, strict_limits(cfg)?);
 
@@ -1461,30 +1470,22 @@ impl Session {
 
     /// Write a batch of upload totals in one transaction.
     ///
-    /// `with` hands out a shared reference, so the transaction is driven with
-    /// statements rather than rusqlite's `Transaction`, which needs `&mut`. The
-    /// batch is what matters: one commit instead of an fsync per torrent.
+    /// `with` hands out a shared reference, hence `unchecked_transaction`
+    /// (rolled back on drop if anything fails). The batch is what matters: one
+    /// commit instead of an fsync per torrent.
     fn write_uploaded_totals(&self, rows: &[(String, i64)]) {
         if rows.is_empty() {
             return;
         }
         let _ = self.db.with(|conn| {
-            conn.execute_batch("BEGIN TRANSACTION;")?;
-            let result = (|| -> rusqlite::Result<()> {
-                let mut stmt =
-                    conn.prepare("update torrent set uploaded_bytes = ?1 where info_hash = ?2")?;
-                for (hash, uploaded) in rows {
-                    stmt.execute(rusqlite::params![uploaded, hash])?;
-                }
-                Ok(())
-            })();
-            match result {
-                Ok(()) => conn.execute_batch("COMMIT;"),
-                Err(err) => {
-                    let _ = conn.execute_batch("ROLLBACK;");
-                    Err(err)
-                }
+            let tx = conn.unchecked_transaction()?;
+            let mut stmt =
+                tx.prepare("update torrent set uploaded_bytes = ?1 where info_hash = ?2")?;
+            for (hash, uploaded) in rows {
+                stmt.execute(rusqlite::params![uploaded, hash])?;
             }
+            drop(stmt);
+            tx.commit()
         });
     }
 
@@ -1510,10 +1511,7 @@ impl Session {
             }
         };
         let opts = build_session_options(cfg, env, limits);
-        let default_save_path = cfg
-            .get_string("default_save_path")
-            .map(PathBuf::from)
-            .unwrap_or_else(Environment::get_downloads_path);
+        let default_save_path = default_save_path(cfg);
 
         let inner_slot = self.inner.clone();
         let events = self.events.clone();
@@ -1630,20 +1628,19 @@ impl Session {
             meta.insert(
                 hash,
                 TorrentMeta {
-                    added_on: added_on
-                        .and_then(|ts| DateTime::from_timestamp(ts, 0))
-                        .map(|dt| dt.with_timezone(&Local))
-                        .unwrap_or_else(Local::now),
                     completed_on: completed_on
                         .and_then(|ts| DateTime::from_timestamp(ts, 0))
                         .map(|dt| dt.with_timezone(&Local)),
-                    label_id,
-                    queue_position,
-                    prev_finished: None,
                     uploaded_total: uploaded,
-                    seen_uploaded: 0,
                     flushed_uploaded: uploaded,
-                    info_hashes: None,
+                    ..TorrentMeta::new(
+                        added_on
+                            .and_then(|ts| DateTime::from_timestamp(ts, 0))
+                            .map(|dt| dt.with_timezone(&Local))
+                            .unwrap_or_else(Local::now),
+                        label_id,
+                        queue_position,
+                    )
                 },
             );
         }
@@ -1669,11 +1666,7 @@ impl Session {
     pub fn watch_binding(&self, cfg: &Configuration) -> bool {
         use std::sync::atomic::Ordering::Relaxed;
 
-        let name = cfg
-            .get_string("network.bind_interface")
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty());
-        let Some(name) = name.filter(|_| cfg.get_bool("network.strict")) else {
+        let Some(name) = bound_interface(cfg).filter(|_| cfg.get_bool("network.strict")) else {
             self.binding_lost.store(false, Relaxed);
             return true;
         };
@@ -1931,13 +1924,10 @@ impl Session {
         let metadata = handle.metadata.load_full()?;
         let bytes = metadata.torrent_bytes.to_vec();
 
-        let details = self
-            .rq_api()
-            .api_torrent_details(librqbit::api::TorrentIdOrHash::Id(handle.id()))
-            .ok()?;
+        let folder = handle.output_folder().to_string_lossy().into_owned();
         let paused = matches!(handle.stats().state, TorrentStatsState::Paused);
 
-        Some((bytes, details.output_folder, paused))
+        Some((bytes, folder, paused))
     }
 
     /// Build a .torrent file in the background (hashing can take a while);
@@ -1993,19 +1983,7 @@ impl Session {
         // `self`, so the client has to travel with it rather than be reached
         // for later.
         let http = self.http.clone();
-        let mut opts = AddTorrentOptions {
-            paused: !params.start_torrent,
-            output_folder: incomplete_folder(&Configuration::new(self.db.clone()), &params),
-            // A fresh add names a DESTINATION, so the containing-directory
-            // rule applies to it: one file lands in the folder as itself,
-            // several land in a directory named after the torrent. Only here -
-            // every other add in this file is a RE-add, pointing at data that
-            // is already somewhere, and must use the folder verbatim.
-            output_folder_subfolder: true,
-            only_files: params.only_files.clone(),
-            overwrite: true,
-            ..Default::default()
-        };
+        let mut opts = fresh_add_options(&self.db, &params);
 
         let add = match &source {
             AddTorrentSource::TorrentFileBytes(bytes) => {
@@ -2447,12 +2425,8 @@ impl Session {
         if wanted.is_empty() {
             return None;
         }
-        if let Some(found) = cfg
-            .get_labels()
-            .into_iter()
-            .find(|l| l.name.eq_ignore_ascii_case(wanted))
-        {
-            return Some(found.id);
+        if let Some(id) = Self::find_label(cfg, wanted) {
+            return Some(id);
         }
         cfg.upsert_label(&crate::core::configuration::Label {
             id: -1,
@@ -2460,13 +2434,17 @@ impl Session {
             ..Default::default()
         });
         // Read back to learn the id the database assigned.
-        let id = cfg
-            .get_labels()
-            .into_iter()
-            .find(|l| l.name.eq_ignore_ascii_case(wanted))
-            .map(|l| l.id)?;
+        let id = Self::find_label(cfg, wanted)?;
         created.push(id);
         Some(id)
+    }
+
+    /// A label's id from its name, case-insensitively.
+    fn find_label(cfg: &Configuration, name: &str) -> Option<i32> {
+        cfg.get_labels()
+            .into_iter()
+            .find(|l| l.name.eq_ignore_ascii_case(name))
+            .map(|l| l.id)
     }
 
     /// Record a newly added torrent in the database.
@@ -2491,17 +2469,8 @@ fn on_torrent_added(
         {
             let mut meta = meta.lock().unwrap();
             let queue_position = meta.len() as i64;
-            meta.entry(hash.clone()).or_insert(TorrentMeta {
-                added_on: now,
-                completed_on: None,
-                label_id: params.label_id,
-                queue_position,
-                prev_finished: None,
-                uploaded_total: 0,
-                seen_uploaded: 0,
-                flushed_uploaded: 0,
-                info_hashes: None,
-            });
+            meta.entry(hash.clone())
+                .or_insert(TorrentMeta::new(now, params.label_id, queue_position));
         }
 
         let _ = db.with(|conn| {
@@ -2597,27 +2566,20 @@ fn on_torrent_added(
         let Some(handle) = self.find(hash) else {
             return Vec::new();
         };
-        let tiers: Vec<Vec<String>> = self
-            .rq()
-            .tracker_tiers_snapshot(handle.info_hash())
-            .into_iter()
-            .map(|tier| tier.iter().map(|u| u.to_string()).collect())
-            .collect();
+        self.engine_tiers(&handle)
+    }
+
+    /// The tiers the engine is announcing to. A magnet has no announce-list,
+    /// so no tier structure is known: everything it has goes in one, sorted -
+    /// the engine holds them as a set, which has no order of its own.
+    fn engine_tiers(&self, handle: &ManagedTorrent) -> Vec<Vec<String>> {
+        let tiers = self.rq().tracker_tiers_snapshot(handle.info_hash());
         if !tiers.is_empty() {
             return tiers;
         }
-        // A magnet has no announce-list, so no tiers are known: everything it
-        // has goes in one.
-        match handle
-            .shared()
-            .trackers
-            .iter()
-            .map(|u| u.to_string())
-            .collect::<Vec<_>>()
-        {
-            flat if flat.is_empty() => Vec::new(),
-            flat => vec![flat],
-        }
+        let mut flat: Vec<String> = handle.shared().trackers.iter().map(|u| u.to_string()).collect();
+        flat.sort();
+        if flat.is_empty() { Vec::new() } else { vec![flat] }
     }
 
     /// Add a tracker to one torrent, and start using it.
@@ -2682,12 +2644,6 @@ fn on_torrent_added(
         }
         cfg.set_trackers(hash, &tiers);
         self.readd_with_trackers(hash, &cfg);
-    }
-
-    /// How many tiers this torrent has, for the "which tier" picker.
-    pub fn tracker_tier_count(&self, hash: &str) -> usize {
-        self.effective_tiers(hash, &Configuration::new(self.db.clone()))
-            .len()
     }
 
     /// Re-add a torrent so its stored extra trackers take effect.
@@ -2861,12 +2817,7 @@ fn on_torrent_added(
     /// torrent saying it has no limit at all. A single number could not carry
     /// both meanings, which is why the column is nullable.
     pub fn set_ratio_limit(&self, hash: &str, limit: Option<f64>) {
-        let _ = self.db.with(|conn| {
-            conn.execute(
-                "update torrent set ratio_limit = ?1 where info_hash = ?2",
-                rusqlite::params![limit, hash],
-            )
-        });
+        self.set_override(hash, "ratio_limit", limit);
         tracing::debug!(
             "{hash} ratio limit -> {}",
             limit.map_or(String::from("global"), |r| format!("{r:.2}"))
@@ -2895,16 +2846,22 @@ fn on_torrent_added(
     /// follow the global setting. `read_share_overrides` already reads this
     /// column - until now nothing wrote it.
     pub fn set_seed_time_limit(&self, hash: &str, limit: Option<i64>) {
-        let _ = self.db.with(|conn| {
-            conn.execute(
-                "update torrent set seed_time_limit = ?1 where info_hash = ?2",
-                rusqlite::params![limit, hash],
-            )
-        });
+        self.set_override(hash, "seed_time_limit", limit);
         tracing::debug!(
             "{hash} seed time limit -> {}",
             limit.map_or(String::from("global"), |m| format!("{m}m"))
         );
+    }
+
+    /// Write one share-limit override column. `column` is always one of the
+    /// two literals above, never input - it is spliced into the SQL.
+    fn set_override(&self, hash: &str, column: &'static str, value: impl rusqlite::ToSql) {
+        let _ = self.db.with(|conn| {
+            conn.execute(
+                &format!("update torrent set {column} = ?1 where info_hash = ?2"),
+                rusqlite::params![value, hash],
+            )
+        });
     }
 
     /// Read the stored priorities for one torrent, as a map of file index to
@@ -3018,11 +2975,7 @@ fn on_torrent_added(
     /// A label's id from its name, case-insensitively. `None` when no label
     /// by that name exists - callers decide whether that is worth saying.
     pub fn label_id(&self, name: &str) -> Option<i32> {
-        Configuration::new(self.db.clone())
-            .get_labels()
-            .into_iter()
-            .find(|l| l.name.eq_ignore_ascii_case(name))
-            .map(|l| l.id)
+        Self::find_label(&Configuration::new(self.db.clone()), name)
     }
 
     /// Every label's name by id - what [`Self::torrents`] needs to fill in
@@ -3126,29 +3079,21 @@ fn on_torrent_added(
                 // and no upload history to lose. Move that load later and this
                 // becomes a way to overwrite both - the flush below would write
                 // a session-only total over a real one.
-                let meta = meta_map.entry(hash.clone()).or_insert_with(|| TorrentMeta {
-                    added_on: Local::now(),
-                    completed_on: None,
-                    label_id: None,
-                    queue_position,
-                    prev_finished: None,
-                    uploaded_total: 0,
-                    seen_uploaded: 0,
-                    flushed_uploaded: 0,
-                    info_hashes: None,
-                });
+                let meta = meta_map
+                    .entry(hash.clone())
+                    .or_insert_with(|| TorrentMeta::new(Local::now(), None, queue_position));
 
                 // Accumulate rather than read. The engine's counter only ever
                 // covers the current session, so a rebuild or a re-add sends it
                 // backwards; when it does, the live figure IS the new session's
-                // whole contribution and is added as such.
-                let (total, seen) = accumulate_uploaded(
-                    meta.uploaded_total,
-                    meta.seen_uploaded,
+                // whole contribution and is added as such. The ratio is from
+                // that persisted total, not the engine's session figure:
+                // otherwise every settings change resets it to 0.00.
+                let (ratio, _) = share_reading(
+                    Some(&mut *meta),
                     stats.uploaded_bytes as i64,
+                    stats.progress_bytes,
                 );
-                meta.uploaded_total = total;
-                meta.seen_uploaded = seen;
 
                 // Write it back once it has moved enough to be worth a write.
                 // Every tick for every torrent would be an UPDATE per torrent
@@ -3170,7 +3115,6 @@ fn on_torrent_added(
                 // Completion is detected by the scan task in `new`, not here:
                 // this function is called only when something asks for the list,
                 // which on a headless build may be never.
-                meta.prev_finished = Some(stats.finished);
 
                 // Record the completion timestamp for the "Completed On" column.
                 if stats.finished && meta.completed_on.is_none() {
@@ -3241,19 +3185,7 @@ fn on_torrent_added(
                     0.0
                 };
 
-                // From the persisted total, not the engine's session figure:
-                // otherwise every settings change resets it to 0.00.
-                let ratio = if stats.progress_bytes > 0 {
-                    uploaded_total as f32 / stats.progress_bytes as f32
-                } else {
-                    0.0
-                };
-
-                let output_folder = self
-                    .rq_api()
-                    .api_torrent_details(librqbit::api::TorrentIdOrHash::Id(handle.id()))
-                    .map(|d| d.output_folder)
-                    .unwrap_or_default();
+                let output_folder = handle.output_folder().to_string_lossy().into_owned();
 
                 // Real seed counts + availability from the per-peer bitfields
                 // (per_peer_have_pieces visibility patch). Availability is the
@@ -3303,7 +3235,7 @@ fn on_torrent_added(
                     peers_total,
                     progress,
                     queue_position: meta.queue_position,
-                    ratio,
+                    ratio: ratio as f32,
                     save_path: output_folder,
                     seeds_current,
                     // Swarm-wide totals need a tracker scrape, which librqbit
@@ -3535,10 +3467,7 @@ fn on_torrent_added(
             .filter(|p| (0..=100).contains(p))
             .unwrap_or(5) as f64;
 
-        let path = cfg
-            .get_string("default_save_path")
-            .map(PathBuf::from)
-            .unwrap_or_else(Environment::get_downloads_path);
+        let path = default_save_path(cfg);
 
         let inner = self.inner.clone();
         let events = self.events.clone();
@@ -3860,12 +3789,7 @@ fn on_torrent_added(
         let handle = self.find(hash)?;
         let metadata = handle.metadata.load_full()?;
         let relative = &metadata.file_infos.get(index)?.relative_filename;
-        let folder = self
-            .rq_api()
-            .api_torrent_details(librqbit::api::TorrentIdOrHash::Id(handle.id()))
-            .ok()
-            .map(|d| d.output_folder)?;
-        Some(std::path::Path::new(&folder).join(relative))
+        Some(handle.output_folder().join(relative))
     }
 
     /// File list for the Files tab.
@@ -3990,7 +3914,7 @@ fn on_torrent_added(
                 None => tr.i18n("tracker_disabled"),
             }
         };
-        rows.push(TrackerRow::source("DHT", dht_status).with_counts(counts(librqbit::PeerSource::Dht)));
+        rows.push(TrackerRow::source("DHT", dht_status, counts(librqbit::PeerSource::Dht)));
         // LSD and PeX have no live figure to show, only their switch.
         let cfg = Configuration::new(self.db.clone());
         let switch_status = |key: &str| {
@@ -4002,70 +3926,55 @@ fn on_torrent_added(
                 "tracker_disabled"
             })
         };
-        rows.push(
-            TrackerRow::source("LSD", switch_status("libtorrent.enable_lsd"))
-                .with_counts(counts(librqbit::PeerSource::Lsd)),
-        );
-        rows.push(
-            TrackerRow::source("PeX", switch_status("libtorrent.enable_pex"))
-                .with_counts(counts(librqbit::PeerSource::Pex)),
-        );
+        rows.push(TrackerRow::source(
+            "LSD",
+            switch_status("libtorrent.enable_lsd"),
+            counts(librqbit::PeerSource::Lsd),
+        ));
+        rows.push(TrackerRow::source(
+            "PeX",
+            switch_status("libtorrent.enable_pex"),
+            counts(librqbit::PeerSource::Pex),
+        ));
 
         let stats: std::collections::HashMap<String, librqbit::TrackerStat> =
             rq.tracker_stats_snapshot(info_hash).into_iter().collect();
 
-        // Announce tiers; fall back to a single tier of all trackers (magnets
-        // have no announce-list, so no tier structure is known).
-        let mut tiers = rq.tracker_tiers_snapshot(info_hash);
-        if tiers.is_empty() {
-            let mut flat: Vec<String> = handle
-                .shared()
-                .trackers
-                .iter()
-                .map(|u| u.to_string())
-                .collect();
-            flat.sort();
-            if !flat.is_empty() {
-                tiers.push(flat);
-            }
-        }
+        let tiers = self.engine_tiers(&handle);
 
         // One tracker row, from whichever swarm's stats were handed in.
         // Lifted out of the tier loop because the v2 pass below builds the
         // same row from a different stats map.
         let tracker_row = |label: String, s: Option<&librqbit::TrackerStat>| -> TrackerRow {
+            let fails = s.map(|s| s.fails).unwrap_or(0);
             if paused {
-                TrackerRow {
-                    kind: TrackerRowKind::Tracker,
+                return TrackerRow {
                     label,
                     status: tr.i18n("tracker_paused"),
-                    seeders: None,
-                    leechers: None,
-                    fails: s.map(|s| s.fails).unwrap_or(0),
-                    next_announce: None,
-                }
-            } else {
-                TrackerRow {
-                    kind: TrackerRowKind::Tracker,
-                    label,
-                    // Engine emits the literal "Working" (translate it);
-                    // error strings pass through as-is.
-                    status: s
-                        .map(|s| s.status.clone())
-                        .filter(|s| !s.is_empty())
-                        .map(|st| {
-                            if st == "Working" {
-                                tr.i18n("tracker_working")
-                            } else {
-                                st
-                            }
-                        })
-                        .unwrap_or_else(|| tr.i18n("tracker_updating")),
-                    seeders: s.and_then(|s| s.seeders),
-                    leechers: s.and_then(|s| s.leechers),
-                    fails: s.map(|s| s.fails).unwrap_or(0),
-                    next_announce: s.and_then(|s| s.next_announce),
-                }
+                    fails,
+                    ..Default::default()
+                };
+            }
+            TrackerRow {
+                label,
+                // Engine emits the literal "Working" (translate it);
+                // error strings pass through as-is.
+                status: s
+                    .map(|s| s.status.clone())
+                    .filter(|s| !s.is_empty())
+                    .map(|st| {
+                        if st == "Working" {
+                            tr.i18n("tracker_working")
+                        } else {
+                            st
+                        }
+                    })
+                    .unwrap_or_else(|| tr.i18n("tracker_updating")),
+                seeders: s.and_then(|s| s.seeders),
+                leechers: s.and_then(|s| s.leechers),
+                fails,
+                next_announce: s.and_then(|s| s.next_announce),
+                ..Default::default()
             }
         };
 
@@ -4258,16 +4167,10 @@ mod layout_tests {
     //! `list_only` stops right after the folder is decided, so these ask the
     //! engine the question directly rather than downloading anything.
 
+    use crate::bittorrent::scratch_dir;
     use crate::bittorrent::torrent_create::{CreateInput, TorrentVersion, build};
     use librqbit::{AddTorrent, AddTorrentOptions, AddTorrentResponse};
     use std::path::{Path, PathBuf};
-
-    fn tmpdir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("nt-layout-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
 
     fn torrent_of(source: &Path) -> Vec<u8> {
         build(&CreateInput {
@@ -4322,7 +4225,7 @@ mod layout_tests {
     /// own wrapped around it.
     #[tokio::test]
     async fn a_single_file_torrent_is_written_straight_into_the_folder() {
-        let dir = tmpdir("single");
+        let dir = scratch_dir("layout-single");
         let file = dir.join("holiday.mkv");
         std::fs::write(&file, vec![7u8; 300_000]).unwrap();
 
@@ -4338,7 +4241,7 @@ mod layout_tests {
     /// Several files are wrapped in a directory named after the torrent.
     #[tokio::test]
     async fn a_multi_file_torrent_is_wrapped_in_a_directory_named_after_it() {
-        let dir = tmpdir("multi");
+        let dir = scratch_dir("layout-multi");
         let src = dir.join("Season 1");
         std::fs::create_dir_all(src.join("extras")).unwrap();
         std::fs::write(src.join("e01.mkv"), vec![1u8; 200_000]).unwrap();
@@ -4367,7 +4270,7 @@ mod layout_tests {
     /// exists, and those must keep using the folder they were handed.
     #[tokio::test]
     async fn without_the_flag_the_folder_is_used_verbatim() {
-        let dir = tmpdir("verbatim");
+        let dir = scratch_dir("layout-verbatim");
         let src = dir.join("Season 2");
         std::fs::create_dir_all(&src).unwrap();
         std::fs::write(src.join("e01.mkv"), vec![1u8; 200_000]).unwrap();
@@ -4389,15 +4292,10 @@ mod tests {
     /// loaded, and the watermark at zero because this session has seen nothing.
     fn stored(uploaded_total: i64) -> TorrentMeta {
         TorrentMeta {
-            added_on: chrono::Local::now(),
             completed_on: Some(chrono::Local::now()),
-            label_id: None,
-            queue_position: 0,
-            prev_finished: None,
             uploaded_total,
-            seen_uploaded: 0,
             flushed_uploaded: uploaded_total,
-            info_hashes: None,
+            ..TorrentMeta::new(chrono::Local::now(), None, 0)
         }
     }
 

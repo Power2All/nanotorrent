@@ -49,12 +49,7 @@ pub fn set_translator(lookup: Lookup) {
     TRANSLATE.with(|slot| *slot.borrow_mut() = Some(lookup));
     // Any window already open re-reads its captions. There are none at
     // startup, but changing language calls this again.
-    OPEN.with(|open| {
-        for window in open.borrow().values() {
-            let l = window.global::<L>();
-            l.set_revision(l.get_revision().wrapping_add(1));
-        }
-    });
+    OPEN.with(|open| open.borrow().values().for_each(super::bump_translations));
 }
 
 /// Teach the plugin host how to reach the UI. Called once, after the main
@@ -84,8 +79,7 @@ pub fn install(main: &MainWindow) {
 /// Re-read every open window's state, and rebuild the menu bar's plugin
 /// dropdowns.
 fn refresh() {
-    let main = MAIN.with(|slot| slot.borrow().clone());
-    if let Some(window) = main.and_then(|weak| weak.upgrade()) {
+    if let Some(window) = main_window() {
         let titles: Vec<SharedString> = ui::menus()
             .into_iter()
             .map(|(_, title)| SharedString::from(title))
@@ -124,19 +118,15 @@ pub fn open(name: &str) {
     // the same window: no fade-in, and whatever the last open left in it. Every
     // closed one goes, not just this plugin's, since this is the only moment
     // that sweeps the map.
-    let closed: Vec<String> = OPEN.with(|open| {
-        open.borrow()
-            .iter()
-            .filter(|(_, window)| !window.window().is_visible())
-            .map(|(name, _)| name.clone())
+    //
+    // Taken out of the map and dropped only once it is no longer borrowed, so
+    // nothing a window runs as it is destroyed can find the map locked.
+    let closed: Vec<(String, PluginWindow)> = OPEN.with(|open| {
+        open.borrow_mut()
+            .extract_if(|_, window| !window.window().is_visible())
             .collect()
     });
-    for name in closed {
-        // Bound rather than dropped inline, so the map is no longer borrowed
-        // when the window is destroyed.
-        let window = OPEN.with(|open| open.borrow_mut().remove(&name));
-        drop(window);
-    }
+    drop(closed);
 
     // Built outside the borrow: `make` wires callbacks, and a callback firing
     // while the map is mutably borrowed would panic.
@@ -162,7 +152,7 @@ pub fn open(name: &str) {
         // forward, not silently do nothing because it is already up.
         window.window().set_minimized(false);
         // Same treatment every other window gets.
-        super::clamp_to_screen(window, |w, h| w.set_screen_limit(h));
+        super::clamp_to_screen(window);
         true
     });
 
@@ -200,26 +190,15 @@ pub fn fill_menu(index: i32) {
         .map(|(plugin, _)| ui::menu_items(plugin))
         .unwrap_or_default();
 
-    let main = MAIN.with(|slot| slot.borrow().clone());
-    if let Some(window) = main.and_then(|weak| weak.upgrade()) {
-        let items: Vec<PluginButton> = items
-            .into_iter()
-            .map(|(id, label)| PluginButton {
-                id: SharedString::from(id),
-                label: SharedString::from(label),
-            })
-            .collect();
-        window.set_plugin_menu_items(ModelRc::new(VecModel::from(items)));
+    if let Some(window) = main_window() {
+        window.set_plugin_menu_items(buttons(&items));
     }
 }
 
 /// A plugin menu item was chosen. Addressed to whichever plugin's dropdown is
 /// open, which is the one the bar last filled.
 pub fn activate_menu(id: &str) {
-    let main = MAIN.with(|slot| slot.borrow().clone());
-    let Some(window) = main.and_then(|weak| weak.upgrade()) else {
-        return;
-    };
+    let Some(window) = main_window() else { return };
     let menus = ui::menus();
     let Some((plugin, _)) = usize::try_from(window.get_open_plugin())
         .ok()
@@ -380,15 +359,7 @@ fn apply(window: &PluginWindow, state: &ui::PluginUi) {
     window.set_status(SharedString::from(&state.status));
     window.set_placeholder(SharedString::from(&state.placeholder));
 
-    let buttons: Vec<PluginButton> = state
-        .buttons
-        .iter()
-        .map(|(id, label)| PluginButton {
-            id: SharedString::from(id),
-            label: SharedString::from(label),
-        })
-        .collect();
-    window.set_buttons(ModelRc::new(VecModel::from(buttons)));
+    window.set_buttons(buttons(&state.buttons));
 
     window.set_rows(rows_of(&state.rows));
     window.set_groups(rows_of(&state.groups));
@@ -407,6 +378,24 @@ fn apply(window: &PluginWindow, state: &ui::PluginUi) {
         window.set_form_title(SharedString::from(&state.form_title));
         window.set_fields(fields_of(&state.fields));
     }
+}
+
+/// The main window, while there is one.
+fn main_window() -> Option<MainWindow> {
+    MAIN.with(|slot| slot.borrow().as_ref().and_then(slint::Weak::upgrade))
+}
+
+/// `(id, label)` pairs - a window's buttons, a menu's items - as the markup
+/// takes them.
+fn buttons(pairs: &[(String, String)]) -> ModelRc<PluginButton> {
+    let buttons: Vec<PluginButton> = pairs
+        .iter()
+        .map(|(id, label)| PluginButton {
+            id: SharedString::from(id),
+            label: SharedString::from(label),
+        })
+        .collect();
+    ModelRc::new(VecModel::from(buttons))
 }
 
 fn fields_of(fields: &[ui::Field]) -> ModelRc<PluginField> {

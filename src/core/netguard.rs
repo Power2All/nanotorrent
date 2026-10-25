@@ -57,31 +57,19 @@ pub struct Restrictions {
 }
 
 impl Restrictions {
-    /// Whether anything at all is being held back, for the log line.
-    pub fn any(&self) -> bool {
-        self.disable_dht || self.disable_utp || self.disable_lsd || self.disable_upnp
-            || self.ipv4_only
-    }
-
     /// The switched-off components, for telling somebody what happened.
+    /// Empty when nothing is being held back.
     pub fn describe(&self) -> Vec<&'static str> {
-        let mut out = Vec::new();
-        if self.disable_dht {
-            out.push("DHT");
-        }
-        if self.disable_utp {
-            out.push("uTP");
-        }
-        if self.disable_lsd {
-            out.push("local peer discovery");
-        }
-        if self.disable_upnp {
-            out.push("UPnP port forwarding");
-        }
-        if self.ipv4_only {
-            out.push("IPv6");
-        }
-        out
+        [
+            (self.disable_dht, "DHT"),
+            (self.disable_utp, "uTP"),
+            (self.disable_lsd, "local peer discovery"),
+            (self.disable_upnp, "UPnP port forwarding"),
+            (self.ipv4_only, "IPv6"),
+        ]
+        .into_iter()
+        .filter_map(|(off, name)| off.then_some(name))
+        .collect()
     }
 }
 
@@ -190,7 +178,7 @@ pub fn look_up(name: &str) -> Facts {
                     }
                 }
                 network_interface::Addr::V6(v6) => {
-                    if !v6.ip.is_loopback() && (v6.ip.segments()[0] & 0xffc0) != 0xfe80 {
+                    if !v6.ip.is_loopback() && !v6.ip.is_unicast_link_local() {
                         facts.has_ipv6 = true;
                     }
                 }

@@ -45,32 +45,23 @@ fn decode(iso: &str) -> Option<Image> {
     let (_, bytes) = FLAG_PNGS.iter().find(|(code, _)| *code == iso)?;
 
     let mut decoder = png::Decoder::new(std::io::Cursor::new(*bytes));
-    // The source art is an indexed palette with a tRNS chunk. EXPAND turns
-    // that into plain RGB/RGBA - without it every flag comes back as palette
-    // indices and none of them decode.
-    decoder.set_transformations(png::Transformations::EXPAND);
+    // The source art is an indexed palette, with a tRNS chunk or without.
+    // EXPAND turns that into pixels - without it every flag comes back as
+    // palette indices and none of them decode - and ALPHA makes them RGBA
+    // whether or not there was transparency to expand.
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::ALPHA);
     let mut reader = decoder.read_info().ok()?;
     let mut buf = vec![0; reader.output_buffer_size()?];
     let info = reader.next_frame(&mut buf).ok()?;
 
-    // The source art is 8-bit RGB or RGBA; anything else would need a
+    // Anything but 8-bit RGBA by now - grey art, 16-bit art - would need a
     // conversion this does not have, so it is skipped rather than drawn wrong.
-    if info.bit_depth != png::BitDepth::Eight {
+    if info.bit_depth != png::BitDepth::Eight || info.color_type != png::ColorType::Rgba {
         return None;
     }
-    let rgba: Vec<u8> = match info.color_type {
-        png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
-        png::ColorType::Rgb => buf[..info.buffer_size()]
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .flat_map(|p| [p[0], p[1], p[2], 255])
-            .collect(),
-        _ => return None,
-    };
 
     Some(Image::from_rgba8(SharedPixelBuffer::clone_from_slice(
-        &rgba,
+        &buf[..info.buffer_size()],
         info.width,
         info.height,
     )))

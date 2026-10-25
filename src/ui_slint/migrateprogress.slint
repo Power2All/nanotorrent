@@ -10,19 +10,15 @@
 // phase a moving block instead.
 
 import { Button, Palette } from "std-widgets.slint";
-import { L } from "globals.slint";
+import { L, Dialog, Screen } from "globals.slint";
 
-export component MigrateProgressDialog inherits Window {
-    icon: @image-url("../../res/app-256.png");
+export component MigrateProgressDialog inherits Dialog {
     title: root.heading;
 
     min-width: 480px;
     max-width: 480px;
-    min-height: min(body.preferred-height, root.screen-limit);
-    /// The tallest this window may be, set from the monitor work area.
-    in property <length> screen-limit: 100000px;
-    max-height: min(body.preferred-height, root.screen-limit);
-    background: Palette.background;
+    min-height: min(body.preferred-height, Screen.limit);
+    max-height: min(body.preferred-height, Screen.limit);
 
     /// "Migrating from qBittorrent" - built in Rust, because the client's name
     /// is an argument and the translations never carry it.

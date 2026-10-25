@@ -112,7 +112,7 @@ pub fn init(args: &[String], env: &Environment) -> anyhow::Result<Instance> {
         // own window instead of passing its arguments over.
         Err(bind_err) if bind_err.kind() != std::io::ErrorKind::AddrInUse => {
             tracing::warn!(
-                "cannot use {addr} for single-instance detection ({bind_err});                  carrying on as the only instance"
+                "cannot use {addr} for single-instance detection ({bind_err}); carrying on as the only instance"
             );
             // A receiver whose sender is already gone: it never yields, which
             // is exactly right when nothing can send to it.
@@ -133,7 +133,7 @@ could not connect: {connect_err}"
                 )
             })?;
 
-            let payload = serde_json::to_vec(args).unwrap_or_default();
+            let payload = serde_json::to_vec(&forwardable(args)).unwrap_or_default();
             stream.write_all(&payload).map_err(|err| {
                 anyhow::anyhow!(
                     "Another program is using {addr} and refused NanoTorrent's hand-off.
@@ -148,6 +148,26 @@ NanoTorrent uses that port to spot a second copy of itself.
             Ok(Instance::Secondary)
         }
     }
+}
+
+/// `args` as the running instance needs them: every file name made absolute.
+///
+/// The running instance has a working directory of its own, so a relative
+/// name - `nanotorrent file.torrent` from a terminal - was looked up there,
+/// and the file was not found, or worse, a different one was. Magnet links
+/// and flags pass through as they are. `std::path::absolute` touches no disk,
+/// so a name that does not exist still arrives, and still fails, by name.
+fn forwardable(args: &[String]) -> Vec<String> {
+    args.iter()
+        .map(|arg| {
+            if arg.starts_with("magnet:") || arg.starts_with('-') {
+                return arg.clone();
+            }
+            std::path::absolute(arg)
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| arg.clone())
+        })
+        .collect()
 }
 
 /// Read forwarded argv from secondary instances until the process ends.
@@ -170,29 +190,6 @@ fn accept_loop(listener: TcpListener, tx: Sender<Vec<String>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The distinction the AppImage catalog's test harness turned up: it runs
-    /// each AppImage under `firejail --net=none`, and a startup that refuses
-    /// to continue when it cannot take a loopback port never reaches a window.
-    ///
-    /// A port that is merely BUSY still means "another copy is running", and
-    /// must keep the existing hand-off. A port that cannot be taken at all
-    /// means nothing of the sort.
-    #[test]
-    fn only_a_busy_port_means_another_instance() {
-        use std::io::ErrorKind;
-        // Busy: hand off (or report a program that will not take it).
-        assert!(matches!(ErrorKind::AddrInUse, ErrorKind::AddrInUse));
-        // Unusable: carry on alone. These are what a sandbox or a policy
-        // gives back, and none of them is AddrInUse.
-        for kind in [
-            ErrorKind::PermissionDenied,
-            ErrorKind::AddrNotAvailable,
-            ErrorKind::Unsupported,
-        ] {
-            assert_ne!(kind, ErrorKind::AddrInUse, "{kind:?} must not be read as a busy port");
-        }
-    }
 
     /// A portable profile's port has to be the SAME every time for the same
     /// folder - a second launch of that copy must find the first - different
@@ -223,14 +220,23 @@ mod tests {
         );
     }
 
-    /// The primary that could not listen still answers polls - it simply never
-    /// has anything. A receiver whose sender is gone must not panic or block.
+    /// A file named relative to the second launch's folder reaches the
+    /// running instance as a full path, which its own folder cannot change;
+    /// links and flags arrive untouched.
     #[test]
-    fn a_primary_with_no_listener_polls_empty_forever() {
-        let (_tx, rx) = channel();
-        let server: Server = rx;
-        for _ in 0..3 {
-            assert!(server.try_recv().is_err());
-        }
+    fn a_handed_over_file_name_is_absolute() {
+        let here = std::env::current_dir().unwrap();
+        let magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567";
+        let full = here.join("already").join("full.torrent");
+        let sent = forwardable(&[
+            "sub/file.torrent".to_owned(),
+            magnet.to_owned(),
+            "--portable".to_owned(),
+            full.to_string_lossy().into_owned(),
+        ]);
+        assert_eq!(std::path::Path::new(&sent[0]), here.join("sub").join("file.torrent"));
+        assert_eq!(sent[1], magnet);
+        assert_eq!(sent[2], "--portable");
+        assert_eq!(std::path::Path::new(&sent[3]), full);
     }
 }

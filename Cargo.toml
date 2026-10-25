@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.4.4"
+version = "0.4.5"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -145,7 +145,7 @@ rcgen = "0.14"
 # size) are constructor arguments rather than a hand-rolled debug hook - which
 # is the whole argument for it over embedding Lua. no_std off, no_module off:
 # plugins import each other from the plugin folder.
-rhai = "1"
+rhai = { version = "1", features = ["serde"] }
 # Native file/folder pickers for the Slint UI - Slint has none of its own.
 # xdg-portal rather than the gtk3 backend: a torrent client should not drag GTK
 # into a Linux build to show one Open dialog, and the portal is what Wayland
@@ -167,24 +167,19 @@ reqwest = { version = "0.13.4", features = ["json", "socks"] }
 # core::dbkey for why the whole file rather than page-by-page. Both are pure
 # rusqlite features - the alternative, bundled-sqlcipher, drags in OpenSSL and
 # with it a Perl build prerequisite, for one feature.
-rusqlite = { version = "0.40.2", features = ["bundled", "functions", "serialize", "hooks"] }
+rusqlite = { version = "0.41.0", features = ["bundled", "functions", "serialize", "hooks"] }
 # Default features deliberately: that selects aws-lc-rs, which the tree already
 # resolves rustls to. Picking `ring` here would compile a second crypto library.
 rustls = "0.23"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 # XML for plugins: parse_xml, so a feed reader plugin does not have to write a
-# parser in Rhai. Already in the tree via librqbit-upnp, so this costs nothing.
+# parser in Rhai.
 #
-# HELD at 0.41 deliberately. librqbit-upnp 9.0.1 asks for "0.41", and a 0.x
-# minor bump is breaking in semver, so moving to 0.42 does not upgrade the
-# shared copy - it compiles a second one alongside it. Bump this when the
-# vendored librqbit moves, not before.
 # 0.42, not the 0.41 librqbit-upnp pins, so two versions are compiled. Tried
 # pinning down to match and 0.41 has a different BytesText API - rewriting a
 # working parser to save one crate from the build is the wrong trade.
 quick-xml = "0.42"
-# The UI toolkit. Optional so --no-default-features gives a headless daemon.
 # Decoding res/flags/*.png into Slint images for the peers list. Already in the
 # tree via Slint's own image support, so naming it costs no new crate.
 png = { version = "0.18", optional = true }
@@ -195,6 +190,7 @@ copypasta = { version = "0.10", optional = true }
 # The HWND behind the Slint window, for EnableWindow. Same version slint
 # already pulls in, so this costs no new crate.
 raw-window-handle = { version = "0.6", optional = true }
+# The UI toolkit. Optional so --no-default-features gives a headless daemon.
 # raw-window-handle-06 for the HWND behind the Slint window: real modality on
 # Windows is EnableWindow on the owner, which needs it. Adds no crates - it is
 # already in the tree.

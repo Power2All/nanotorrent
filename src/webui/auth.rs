@@ -23,8 +23,8 @@ use subtle::ConstantTimeEq;
 ///
 /// Argon2 already makes each guess expensive, which is most of the defence.
 /// This exists because nothing previously stopped a client simply trying
-/// forever - and `bind_address` can be set to 0.0.0.0.
-/// How the lockout is tuned, from Preferences or the web drawer.
+/// forever - and `bind_address` can be set to 0.0.0.0. Tuned from Preferences
+/// or the web drawer.
 ///
 /// The window and the block are separate on purpose. They used to be one
 /// number, which forced a choice nobody should have to make: a long lockout
@@ -231,10 +231,6 @@ fn parse_basic(header: &str) -> Option<(String, String)> {
     Some((user.to_string(), pass.to_string()))
 }
 
-/// The 401 every failed or missing authentication gets.
-///
-/// One shape for all of them - wrong password, wrong username, no header at
-/// all - so the reply never says which part was wrong.
 /// Refuse an address that has failed too often, telling it when to come back.
 ///
 /// 429 rather than another 401: the credentials were not even looked at, and
@@ -255,6 +251,10 @@ fn forbidden(req: ServiceRequest) -> ServiceResponse<BoxBody> {
     )
 }
 
+/// The 401 every failed or missing authentication gets.
+///
+/// One shape for all of them - wrong password, wrong username, no header at
+/// all - so the reply never says which part was wrong.
 fn unauthorized(req: ServiceRequest) -> ServiceResponse<BoxBody> {
     // The realm makes browsers show their own credential prompt, which is all
     // the login UI a personal client needs.
@@ -387,10 +387,13 @@ pub async fn require_auth<B>(
 where
     B: MessageBody + 'static,
 {
-    let Some(creds) = req.app_data::<web::Data<Credentials>>().cloned() else {
-        // Misconfiguration, not a client error: fail closed rather than
-        // waving the request through because state is missing.
-        tracing::error!("auth middleware has no credentials in app data - denying");
+    // Misconfiguration, not a client error: fail closed rather than waving
+    // the request through because state is missing.
+    let (Some(creds), Some(attempts)) = (
+        req.app_data::<web::Data<Credentials>>().cloned(),
+        req.app_data::<web::Data<Attempts>>().cloned(),
+    ) else {
+        tracing::error!("auth middleware is missing its app data - denying");
         return Ok(unauthorized(req));
     };
 
@@ -432,10 +435,7 @@ where
     // Checked BEFORE the password is verified: an Argon2 hash per attempt is
     // the expensive part, so a locked-out address must not be able to make the
     // server do that work at all.
-    let attempts = req.app_data::<web::Data<Attempts>>().cloned();
-    if let Some(a) = attempts.as_ref()
-        && let Some(wait) = a.locked_for(&who)
-    {
+    if let Some(wait) = attempts.locked_for(&who) {
         tracing::warn!("locked out {who} for another {}s", wait.as_secs());
         return Ok(too_many_requests(req, wait));
     }
@@ -452,14 +452,12 @@ where
 
     match supplied {
         Some((user, pass)) if creds.verify(&user, &pass) => {
-            if let Some(a) = attempts.as_ref() {
-                a.record_success(&who);
-            }
+            attempts.record_success(&who);
             next.call(req).await.map(|res| res.map_into_boxed_body())
         }
         _ => {
-            if attempted && let Some(a) = attempts.as_ref() {
-                a.record_failure(&who);
+            if attempted {
+                attempts.record_failure(&who);
             }
             tracing::warn!("rejected web request to {} from {who}", req.path());
             Ok(unauthorized(req))

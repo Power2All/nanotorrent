@@ -109,13 +109,21 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
         let c = chars[i];
         match c {
             ' ' | '\t' | '\r' | '\n' => i += 1,
-            '(' => {
-                tokens.push(Token::LParen);
-                i += 1;
-            }
-            ')' => {
-                tokens.push(Token::RParen);
-                i += 1;
+            '(' | ')' | '=' | '!' | '>' | '<' => {
+                // `!`, `>` and `<` may take a following `=`; nothing else does.
+                let eq = matches!(c, '!' | '>' | '<') && chars.get(i + 1) == Some(&'=');
+                tokens.push(match (c, eq) {
+                    ('(', _) => Token::LParen,
+                    (')', _) => Token::RParen,
+                    ('=', _) => Token::Op(Op::Eq),
+                    ('!', true) => Token::Op(Op::Ne),
+                    ('>', true) => Token::Op(Op::Gte),
+                    ('>', false) => Token::Op(Op::Gt),
+                    ('<', true) => Token::Op(Op::Lte),
+                    ('<', false) => Token::Op(Op::Lt),
+                    (other, _) => return Err(format!("unexpected character: {other}")),
+                });
+                i += if eq { 2 } else { 1 };
             }
             '"' => {
                 let mut s = String::new();
@@ -129,32 +137,6 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 }
                 i += 1;
                 tokens.push(Token::Str(s));
-            }
-            '=' => {
-                tokens.push(Token::Op(Op::Eq));
-                i += 1;
-            }
-            '!' if i + 1 < chars.len() && chars[i + 1] == '=' => {
-                tokens.push(Token::Op(Op::Ne));
-                i += 2;
-            }
-            '>' => {
-                if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token::Op(Op::Gte));
-                    i += 2;
-                } else {
-                    tokens.push(Token::Op(Op::Gt));
-                    i += 1;
-                }
-            }
-            '<' => {
-                if i + 1 < chars.len() && chars[i + 1] == '=' {
-                    tokens.push(Token::Op(Op::Lte));
-                    i += 2;
-                } else {
-                    tokens.push(Token::Op(Op::Lt));
-                    i += 1;
-                }
             }
             c if c.is_ascii_digit() => {
                 let mut num = String::new();
@@ -408,5 +390,21 @@ mod tests {
         assert!(TorrentFilter::parse(r#""unterminated"#).is_err());
         assert!(TorrentFilter::parse(r#"dl > 5xb"#).is_err()); // unknown unit
         assert!(TorrentFilter::parse(r#"(status = "downloading""#).is_err()); // unbalanced paren
+    }
+
+    /// Only `!`, `>` and `<` take a following `=`; `(=` is two tokens.
+    #[test]
+    fn operators_lex_with_one_character_of_lookahead() {
+        use Op::*;
+        let ops: Vec<Token> = tokenize("= != > >= < <= (=)").unwrap();
+        assert_eq!(
+            ops,
+            [Eq, Ne, Gt, Gte, Lt, Lte]
+                .map(Token::Op)
+                .into_iter()
+                .chain([Token::LParen, Token::Op(Eq), Token::RParen])
+                .collect::<Vec<_>>()
+        );
+        assert!(tokenize("a ! b").is_err(), "a lone ! is not an operator");
     }
 }

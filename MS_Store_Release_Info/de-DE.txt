@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Deutsch (Deutschland) - Partner Center: German (Germany) (de-DE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent ist eine Rust-Portierung von PicoTorrent von Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.4
+Version 0.4.5
 
-- Sicherheit: Die Weboberfläche über HTTPS ist nicht mehr anfällig für einen Denial-of-Service-Angriff in ihrer HTTP/2-Schicht; sie verwendet jetzt nur noch HTTP/1.1. Sie müssen nichts ändern.
-- Freigabegrenzen: Eine Verhältnisgrenze stoppt einen Torrent jetzt bei dem Verhältnis, das in der Liste angezeigt wird. Bisher zählten nur Uploads seit dem letzten Start von NanoTorrent, sodass ein Torrent über seine Grenze hinaus weiter seeden konnte.
-- Fehlerbehebungen: Mit „Torrent erstellen“ erzeugte v1-Torrents sind immer gültig und fallen auf jedem Computer gleich aus, und „Überprüfung erzwingen“ prüft einen pausierten Torrent jetzt sofort, statt bis zum Start 0% anzuzeigen.
+- Neu: NanoTorrent kann ohne Fenster laufen. Starten Sie „nanotorrent --headless“ in einem Terminal, und das Programm lädt und seedet weiter; bedient wird es über die Weboberfläche. Ctrl-C beendet es sauber, und --log-level legt fest, wie viel protokolliert wird.
+- Beim Beenden speichert NanoTorrent jetzt den Zustand jedes Torrents, sodass beim nächsten Start nichts erneut geprüft werden muss.
+- Fehlerbehebungen: Das Fenster erscheint nicht mehr teilweise gezeichnet, nachdem es eine Weile minimiert war, die Begrenzungen für aktive Torrents gelten jetzt auch ohne Fenster, und das Öffnen einer .torrent-Datei aus einem Terminal, während NanoTorrent bereits läuft, funktioniert mit einem relativen Pfad.
 - Unter der Haube: Die Bibliotheken, auf denen NanoTorrent aufbaut, wurden mit ihren neuesten Korrekturen aktualisiert.
 
 

@@ -11,9 +11,9 @@
 //
 // The layout this was matched against is captured in docs/ui-baseline/.
 
-import { Clip, L, TipBox } from "globals.slint";
-import { DetailTab, TabStrip, PathIcon, WebTabIcon, ConnectionIcon } from "tabs.slint";
-export { Clip, L }
+import { Clip, L, TipBox, Dialog, Screen } from "globals.slint";
+import { DetailTab, TabStrip, PathIcon, GearIcon, WebTabIcon, ConnectionIcon } from "tabs.slint";
+export { Clip, L, Screen }
 
 import { PreferencesDialog } from "preferences.slint";
 import { CliHelpDialog } from "clihelp.slint";
@@ -169,16 +169,19 @@ export global DCols {
     in-out property <length> trackers-total;
 }
 
-/// A cell in a detail tab's list: 12px text in a fixed-width box.
+/// A cell in a list: text in a fixed-width box, 12px in the detail tabs and
+/// 13px in the torrent list.
 ///
 /// The tabs used a HorizontalLayout with padding and spacing, which cannot be
 /// resized - a column has to be one number the header and the rows both read.
-/// `indent` is the Files tree, which was the layout's padding before.
+/// `indent` is the Files tree, which was the layout's padding before. A
+/// Rectangle wrapping a Text, not a Text: `padding-left` is not a Text
+/// property, so right-aligned values ran straight into the next column.
 component DCell inherits Rectangle {
     in property <length> w;
     in property <string> text;
     in property <TextHorizontalAlignment> align: left;
-    in property <bool> bold;
+    in property <length> font-size: 12px;
     /// Drawn faded, for a value that is switched off rather than absent.
     in property <bool> dim;
     in property <length> indent: 0px;
@@ -195,8 +198,7 @@ component DCell inherits Rectangle {
         x: 6px + root.indent;
         width: parent.width - 12px - root.indent;
         height: parent.height;
-        font-size: 12px;
-        font-weight: root.bold ? 700 : 400;
+        font-size: root.font-size;
         horizontal-alignment: root.align;
         vertical-alignment: center;
         overflow: elide;
@@ -615,35 +617,16 @@ component ColumnHeader inherits Rectangle {
     }
 }
 
-// A Rectangle wrapping a Text, not a Text: `padding-left` is not a Text
-// property, so right-aligned values ran straight into the next column.
-component Cell inherits Rectangle {
-    in property <length> w;
-    in property <string> text;
-    in property <TextHorizontalAlignment> align: left;
-    in property <color> fg: Palette.foreground;
-    width: w;
-    Text {
-        text: root.text;
-        color: root.fg;
-        x: 6px;
-        width: parent.width - 12px;
-        height: parent.height;
-        vertical-alignment: center;
-        horizontal-alignment: root.align;
-        overflow: elide;
-        font-size: 13px;
-    }
-}
-
 // One row of the context menu, drawn by Slint rather than by the platform -
 // see the note on ctx-popup for why that is not a style choice.
 component MenuRow inherits Rectangle {
     in property <string> label;
     /// Draws a tick to the left of the label, the way a Win32 menu marks a
-    /// toggle. Only the View menu's three panel toggles opt in, and they sit
-    /// together between separators, so the gutter lines up with itself
-    /// without indenting every other row in the menu.
+    /// toggle or a choice. Only toggles and the rows of a choice opt in - the
+    /// panel toggles between their separators, and the expanded Filter,
+    /// Labels, Theme and Tags lists - so the gutter lines up with itself
+    /// without indenting every other row in the menu, and the gutter is what
+    /// indents a list's rows under its title.
     in property <bool> checkable;
     in property <bool> checked;
     // Greyed and inert, the way a disabled Win32 menu item is - Pause on an
@@ -721,6 +704,26 @@ component MenuSep inherits Rectangle {
     Rectangle { y: 3px; height: 1px; background: Palette.border; }
 }
 
+// The box every menu draws its rows in: the menu bar's dropdowns, a plugin's,
+// and the popups. It is as tall as its rows; `rows-width` is their width, for
+// a panel that sizes itself - or its popup - to its captions.
+component MenuPanel inherits Rectangle {
+    out property <length> rows-width: rows.preferred-width;
+    // min-height, not preferred-height: the latter resolves to 0 for a
+    // layout inside an absolutely positioned Rectangle, so the panel was
+    // drawn zero pixels tall and looked like it never opened. Every row has a
+    // fixed height, so for these the two are the same number anyway.
+    height: rows.min-height;
+    background: Palette.alternate-background;
+    border-color: Palette.border;
+    border-width: 1px;
+    border-radius: 6px;
+    rows := VerticalLayout {
+        padding: 4px;
+        @children
+    }
+}
+
 
 // One value in a details list.
 //
@@ -731,20 +734,17 @@ component MenuSep inherits Rectangle {
 component DataText inherits Rectangle {
     in property <string> text;
     in property <length> font-size: 12px;
-    in property <bool> bold;
     in property <TextHorizontalAlignment> align: left;
-    in property <color> fg: Palette.foreground;
 
     label := Text {
         text: root.text;
         width: 100%;
         height: 100%;
         font-size: root.font-size;
-        font-weight: root.bold ? 700 : 400;
         horizontal-alignment: root.align;
         vertical-alignment: center;
         overflow: elide;
-        color: root.fg;
+        color: Palette.foreground;
     }
 
     TouchArea {
@@ -893,18 +893,9 @@ component TrashIcon inherits Rectangle {
 }
 
 // A play triangle, for "start / resume".
-component PlayIcon inherits Rectangle {
-    in property <color> ink;
-    width: 20px;
-    height: 20px;
-    Path {
-        width: 20px;
-        height: 20px;
-        viewbox-width: 20;
-        viewbox-height: 20;
-        fill: root.ink;
-        commands: "M 4 2 L 17 10 L 4 18 Z";
-    }
+component PlayIcon inherits PathIcon {
+    size: 20px;
+    d: "M 4 2 L 17 10 L 4 18 Z";
 }
 
 // A filled square, for "stop / pause".
@@ -948,47 +939,15 @@ component QueueArrowIcon inherits Rectangle {
     }
 }
 
-// A cog, for "preferences". A straight-line polygon: see the note on
-// IconButton about not depending on SVG arc support.
 // A turtle, for the alternative (slower) limits - the same joke every client
 // makes, and the reason the button reads as "slow down" without a label.
-// Straight lines only, for the reason IconButton gives.
-component TurtleIcon inherits Rectangle {
-    in property <color> ink;
-    width: 20px;
-    height: 20px;
-    Path {
-        x: 1px;
-        y: 1px;
-        width: 18px;
-        height: 18px;
-        viewbox-width: 24;
-        viewbox-height: 24;
-        fill: root.ink;
-        // Shell, then head, then two feet.
-        commands: "M 4 14 L 7 8 L 15 8 L 18 14 Z M 18 11 L 22 10 L 22 13 L 18 13 Z M 5 15 L 8 15 L 8 18 L 5 18 Z M 14 15 L 17 15 L 17 18 L 14 18 Z";
-    }
-}
-
-component GearIcon inherits Rectangle {
-    in property <color> ink;
-    width: 20px;
-    height: 20px;
-    // A solid cog, hub and all. The hub used to be punched out in the colour
-    // behind it, which only works while that colour is known - the button is
-    // transparent until hovered, so the punch did nothing and the deep teeth
-    // left it reading as an asterisk. Shallower teeth and no hole is the shape
-    // that survives being 16px tall.
-    Path {
-        x: 1px;
-        y: 1px;
-        width: 18px;
-        height: 18px;
-        viewbox-width: 24;
-        viewbox-height: 24;
-        fill: root.ink;
-        commands: "M 22.67 9.34 L 22.67 14.66 L 20.18 14.66 L 19.66 15.90 L 21.43 17.67 L 17.67 21.43 L 15.90 19.66 L 14.66 20.18 L 14.66 22.67 L 9.34 22.67 L 9.34 20.18 L 8.10 19.66 L 6.33 21.43 L 2.57 17.67 L 4.34 15.90 L 3.82 14.66 L 1.33 14.66 L 1.33 9.34 L 3.82 9.34 L 4.34 8.10 L 2.57 6.33 L 6.33 2.57 L 8.10 4.34 L 9.34 3.82 L 9.34 1.33 L 14.66 1.33 L 14.66 3.82 L 15.90 4.34 L 17.67 2.57 L 21.43 6.33 L 19.66 8.10 L 20.18 9.34 Z";
-    }
+// 18px rather than the toolbar's 20: the button centres it, which leaves the
+// 1px margin this art was drawn for.
+component TurtleIcon inherits PathIcon {
+    size: 18px;
+    viewbox: 24;
+    // Shell, then head, then two feet.
+    d: "M 4 14 L 7 8 L 15 8 L 18 14 Z M 18 11 L 22 10 L 22 13 L 18 13 Z M 5 15 L 8 15 L 8 18 L 5 18 Z M 14 15 L 17 15 L 17 18 L 14 18 Z";
 }
 
 // --- details tab bar ------------------------------------------------------
@@ -1328,7 +1287,6 @@ export component MainWindow inherits Window {
     // so. -1 means the session's own order.
     in property <int> sort-column: -1;
     in property <bool> sort-ascending: true;
-    in property <string> status;
     in property <int> selected-count;
     in property <string> dht-nodes: "105";
     in property <string> rate-down: "0 bytes/s";
@@ -1528,21 +1486,16 @@ export component MainWindow inherits Window {
         x: root.menu-x;
         y: root.menu-y;
         width: 260px;
-        height: col-menu.preferred-height;
+        height: col-menu.height;
         close-policy: close-on-click-outside;
-        Rectangle {
+        col-menu := MenuPanel {
             background: Palette.background;
-            border-color: Palette.border;
-            border-width: 1px;
             border-radius: 4px;
-            col-menu := VerticalLayout {
-                padding: 4px;
-                MenuRow {
-                    label: L.s(L.revision, "reset_column_widths");
-                    activated => {
-                        root.columns-reset(root.header-menu-list);
-                        col-popup.close();
-                    }
+            MenuRow {
+                label: L.s(L.revision, "reset_column_widths");
+                activated => {
+                    root.columns-reset(root.header-menu-list);
+                    col-popup.close();
                 }
             }
         }
@@ -1559,27 +1512,19 @@ export component MainWindow inherits Window {
         // draws - children are not clipped to it - so the menu appeared
         // perfectly and hit-tested against nothing. No hover, no clicks, and
         // nothing to see wrong in a screenshot.
-        width: tracker-menu.preferred-width;
-        height: tracker-menu.preferred-height;
+        width: tracker-menu.rows-width;
+        height: tracker-menu.height;
         close-policy: close-on-click-outside;
-        Rectangle {
+        tracker-menu := MenuPanel {
             background: Palette.background;
-            border-color: Palette.border;
-            border-width: 1px;
-            border-radius: 6px;
             width: 100%;
-            height: 100%;
-            tracker-menu := VerticalLayout {
-                padding: 4px;
-                spacing: 0px;
-                MenuRow {
-                    label: L.s(L.revision, "edit_tracker");
-                    activated => { root.edit-tracker(); tracker-popup.close(); }
-                }
-                MenuRow {
-                    label: L.s(L.revision, "remove_tracker");
-                    activated => { root.remove-tracker(); tracker-popup.close(); }
-                }
+            MenuRow {
+                label: L.s(L.revision, "edit_tracker");
+                activated => { root.edit-tracker(); tracker-popup.close(); }
+            }
+            MenuRow {
+                label: L.s(L.revision, "remove_tracker");
+                activated => { root.remove-tracker(); tracker-popup.close(); }
             }
         }
     }
@@ -1592,43 +1537,35 @@ export component MainWindow inherits Window {
         x: root.menu-x;
         y: root.menu-y;
         width: 260px;
-        height: file-menu-layout.preferred-height;
+        height: file-menu.height;
         close-policy: PopupClosePolicy.close-on-click-outside;
 
-        Rectangle {
-            background: Palette.alternate-background;
-            border-color: Palette.border;
-            border-width: 1px;
-            border-radius: 6px;
-
-            file-menu-layout := VerticalLayout {
-                padding: 4px;
-                // NanoTorrent's own, and the only one it has: hand the file to
-                // whatever this system opens it with. Everything else a file
-                // row does - the priority, the include tick - is a click in the
-                // row itself, so there is nothing else to put here.
-                MenuRow {
-                    label: L.s(L.revision, "open_file");
-                    activated => {
-                        root.file-open(root.file-row);
-                        file-ctx-popup.close();
-                    }
+        file-menu := MenuPanel {
+            // NanoTorrent's own, and the only one it has: hand the file to
+            // whatever this system opens it with. Everything else a file
+            // row does - the priority, the include tick - is a click in the
+            // row itself, so there is nothing else to put here.
+            MenuRow {
+                label: L.s(L.revision, "open_file");
+                activated => {
+                    root.file-open(root.file-row);
+                    file-ctx-popup.close();
                 }
-                if root.file-menu-items.length > 0: MenuSep { }
-                for item[i] in root.file-menu-items: MenuRow {
-                    // The plugin's name is part of the label, not a tooltip:
-                    // an item reading "Verify your password" must be visibly
-                    // somebody's, and a tooltip is not visible.
-                    label: item.title + ": " + item.label;
-                    activated => {
-                        root.file-menu-activated(
-                            item.plugin,
-                            item.id,
-                            root.file-menu-index,
-                            root.file-menu-name,
-                        );
-                        file-ctx-popup.close();
-                    }
+            }
+            if root.file-menu-items.length > 0: MenuSep { }
+            for item[i] in root.file-menu-items: MenuRow {
+                // The plugin's name is part of the label, not a tooltip:
+                // an item reading "Verify your password" must be visibly
+                // somebody's, and a tooltip is not visible.
+                label: item.title + ": " + item.label;
+                activated => {
+                    root.file-menu-activated(
+                        item.plugin,
+                        item.id,
+                        root.file-menu-index,
+                        root.file-menu-name,
+                    );
+                    file-ctx-popup.close();
                 }
             }
         }
@@ -1642,7 +1579,7 @@ export component MainWindow inherits Window {
         width: 210px;
         // Bound to the layout instead of hardcoded, so adding or removing an
         // item cannot leave dead space at the bottom or clip the last row.
-        height: menu-layout.preferred-height;
+        height: ctx-menu.height;
         // A Slint PopupWindow captures the pointer while it is open, whatever
         // the close policy, so a click on another row never reaches that row.
         // no-auto-close was tried and only added the risk of a menu that will
@@ -1656,126 +1593,118 @@ export component MainWindow inherits Window {
         // in the module docs.
         close-policy: PopupClosePolicy.close-on-click-outside;
 
-        Rectangle {
-            background: Palette.alternate-background;
-            border-color: Palette.border;
-            border-width: 1px;
-            border-radius: 6px;
-
-            menu-layout := VerticalLayout {
-                padding: 4px;
-                spacing: 0px;
-                MenuRow {
-                    label: L.s(L.revision, "pause");
-                    enabled: root.ctx-can-pause;
-                    activated => { root.action("pause"); ctx-popup.close(); }
-                }
-                MenuRow {
-                    label: L.s(L.revision, "resume");
-                    enabled: root.ctx-can-resume;
-                    activated => { root.action("resume"); ctx-popup.close(); }
-                }
-                MenuRow { label: L.s(L.revision, "force_recheck"); activated => { root.action("recheck"); ctx-popup.close(); } }
-                // Only meaningful while a torrent is actually announcing, which
-                // is the same condition that lets it be paused.
-                MenuRow {
-                    label: L.s(L.revision, "force_reannounce");
-                    enabled: root.ctx-can-pause;
-                    activated => { root.action("reannounce"); ctx-popup.close(); }
-                }
-                MenuSep { }
-                MenuRow { label: L.s(L.revision, "move"); activated => { root.action("move"); ctx-popup.close(); } }
-                MenuRow { label: L.s(L.revision, "set_location"); activated => { root.action("set-location"); ctx-popup.close(); } }
-                // Assigning a label, as opposed to View > Labels which filters
-                // by one. Drawn inline rather than as a nested PopupWindow:
-                // the outer popup closes on any click outside itself, so a
-                // child popup never gets its click.
-                MenuRow {
-                    label: L.s(L.revision, "label") + "  " + (root.ctx-labels-open ? "-" : "+");
-                    activated => { root.ctx-labels-open = !root.ctx-labels-open; }
-                }
-                if root.ctx-labels-open: VerticalLayout {
-                    for name[i] in root.ctx-label-names: MenuRow {
-                        label: "    " + name;
-                        activated => { root.assign-label(i); ctx-popup.close(); }
-                    }
-                }
-                // Tags, unlike labels, are many per torrent - so these toggle
-                // rather than replace, and the menu stays open so several can
-                // be set in one go.
-                MenuRow {
-                    label: L.s(L.revision, "tags") + "  " + (root.ctx-tags-open ? "-" : "+");
-                    activated => { root.ctx-tags-open = !root.ctx-tags-open; }
-                }
-                if root.ctx-tags-open: VerticalLayout {
-                    for name[i] in root.ctx-tag-names: MenuRow {
-                        // A tick rather than a checkbox: MenuRow draws a label,
-                        // and a mixed selection reads as unticked, which the
-                        // click then corrects for every torrent at once.
-                        label: (root.ctx-tag-on[i] ? "  ✓ " : "     ") + name;
-                        activated => { root.toggle-tag(i); }
-                    }
-                    if root.ctx-tag-names.length == 0: MenuRow {
-                        label: "    " + L.s(L.revision, "no_tags_yet");
-                        enabled: false;
-                    }
-                }
-                // A torrent's own ratio limit, overriding the global one.
-                // Presets rather than a number field: a popup menu has nowhere
-                // to type, and these are the values people actually pick.
-                MenuRow {
-                    label: L.s(L.revision, "share_ratio_limit") + "  " + (root.ctx-ratio-open ? "-" : "+");
-                    activated => { root.ctx-ratio-open = !root.ctx-ratio-open; }
-                }
-                if root.ctx-ratio-open: VerticalLayout {
-                    for choice[i] in root.ctx-ratio-choices: MenuRow {
-                        label: "    " + choice;
-                        activated => { root.set-torrent-ratio(i); ctx-popup.close(); }
-                    }
-                }
-                // The other half of the same limit: seed for this long, then
-                // do whatever the share-limit action says.
-                MenuRow {
-                    label: L.s(L.revision, "seed_time_limit") + "  " + (root.ctx-seed-time-open ? "-" : "+");
-                    activated => { root.ctx-seed-time-open = !root.ctx-seed-time-open; }
-                }
-                if root.ctx-seed-time-open: VerticalLayout {
-                    for choice[i] in root.ctx-seed-time-choices: MenuRow {
-                        label: "    " + choice;
-                        activated => { root.set-torrent-seed-time(i); ctx-popup.close(); }
-                    }
-                }
-                MenuSep { }
-                MenuRow {
-                    label: L.s(L.revision, "queue_position_menu") + "  " + (root.ctx-queue-open ? "-" : "+");
-                    activated => { root.ctx-queue-open = !root.ctx-queue-open; }
-                }
-                if root.ctx-queue-open: VerticalLayout {
-                    MenuRow { label: "    " + L.s(L.revision, "queue_top"); activated => { root.action("queue-top"); ctx-popup.close(); } }
-                    MenuRow { label: "    " + L.s(L.revision, "up"); activated => { root.action("queue-up"); ctx-popup.close(); } }
-                    MenuRow { label: "    " + L.s(L.revision, "down"); activated => { root.action("queue-down"); ctx-popup.close(); } }
-                    MenuRow { label: "    " + L.s(L.revision, "queue_bottom"); activated => { root.action("queue-bottom"); ctx-popup.close(); } }
-                }
-                MenuSep { }
-                MenuRow { label: L.s(L.revision, "remove_torrent"); activated => { root.remove-confirm(false); ctx-popup.close(); } }
-                MenuRow { label: L.s(L.revision, "remove_torrent_and_files"); activated => { root.remove-confirm(true); ctx-popup.close(); } }
-                MenuSep { }
-                MenuRow { label: L.s(L.revision, "copy_info_hash"); activated => { root.action("copy-hash"); ctx-popup.close(); } }
-                MenuRow { label: L.s(L.revision, "magnet_link_s"); activated => { root.action("copy-magnet"); ctx-popup.close(); } }
-                MenuRow { label: L.s(L.revision, "open_in_explorer"); activated => { root.action("open-folder"); ctx-popup.close(); } }
+        ctx-menu := MenuPanel {
+            MenuRow {
+                label: L.s(L.revision, "pause");
+                enabled: root.ctx-can-pause;
+                activated => { root.action("pause"); ctx-popup.close(); }
             }
+            MenuRow {
+                label: L.s(L.revision, "resume");
+                enabled: root.ctx-can-resume;
+                activated => { root.action("resume"); ctx-popup.close(); }
+            }
+            MenuRow { label: L.s(L.revision, "force_recheck"); activated => { root.action("recheck"); ctx-popup.close(); } }
+            // Only meaningful while a torrent is actually announcing, which
+            // is the same condition that lets it be paused.
+            MenuRow {
+                label: L.s(L.revision, "force_reannounce");
+                enabled: root.ctx-can-pause;
+                activated => { root.action("reannounce"); ctx-popup.close(); }
+            }
+            MenuSep { }
+            MenuRow { label: L.s(L.revision, "move"); activated => { root.action("move"); ctx-popup.close(); } }
+            MenuRow { label: L.s(L.revision, "set_location"); activated => { root.action("set-location"); ctx-popup.close(); } }
+            // Assigning a label, as opposed to View > Labels which filters
+            // by one. Drawn inline rather than as a nested PopupWindow:
+            // the outer popup closes on any click outside itself, so a
+            // child popup never gets its click.
+            MenuRow {
+                label: L.s(L.revision, "label") + "  " + (root.ctx-labels-open ? "-" : "+");
+                activated => { root.ctx-labels-open = !root.ctx-labels-open; }
+            }
+            if root.ctx-labels-open: VerticalLayout {
+                for name[i] in root.ctx-label-names: MenuRow {
+                    label: "    " + name;
+                    activated => { root.assign-label(i); ctx-popup.close(); }
+                }
+            }
+            // Tags, unlike labels, are many per torrent - so these toggle
+            // rather than replace, and the menu stays open so several can
+            // be set in one go.
+            MenuRow {
+                label: L.s(L.revision, "tags") + "  " + (root.ctx-tags-open ? "-" : "+");
+                activated => { root.ctx-tags-open = !root.ctx-tags-open; }
+            }
+            if root.ctx-tags-open: VerticalLayout {
+                for name[i] in root.ctx-tag-names: MenuRow {
+                    // A mixed selection reads as unticked, which the click
+                    // then corrects for every torrent at once.
+                    label: name;
+                    checkable: true;
+                    checked: root.ctx-tag-on[i];
+                    activated => { root.toggle-tag(i); }
+                }
+                if root.ctx-tag-names.length == 0: MenuRow {
+                    label: "    " + L.s(L.revision, "no_tags_yet");
+                    enabled: false;
+                }
+            }
+            // A torrent's own ratio limit, overriding the global one.
+            // Presets rather than a number field: a popup menu has nowhere
+            // to type, and these are the values people actually pick.
+            MenuRow {
+                label: L.s(L.revision, "share_ratio_limit") + "  " + (root.ctx-ratio-open ? "-" : "+");
+                activated => { root.ctx-ratio-open = !root.ctx-ratio-open; }
+            }
+            if root.ctx-ratio-open: VerticalLayout {
+                for choice[i] in root.ctx-ratio-choices: MenuRow {
+                    label: "    " + choice;
+                    activated => { root.set-torrent-ratio(i); ctx-popup.close(); }
+                }
+            }
+            // The other half of the same limit: seed for this long, then
+            // do whatever the share-limit action says.
+            MenuRow {
+                label: L.s(L.revision, "seed_time_limit") + "  " + (root.ctx-seed-time-open ? "-" : "+");
+                activated => { root.ctx-seed-time-open = !root.ctx-seed-time-open; }
+            }
+            if root.ctx-seed-time-open: VerticalLayout {
+                for choice[i] in root.ctx-seed-time-choices: MenuRow {
+                    label: "    " + choice;
+                    activated => { root.set-torrent-seed-time(i); ctx-popup.close(); }
+                }
+            }
+            MenuSep { }
+            MenuRow {
+                label: L.s(L.revision, "queue_position_menu") + "  " + (root.ctx-queue-open ? "-" : "+");
+                activated => { root.ctx-queue-open = !root.ctx-queue-open; }
+            }
+            if root.ctx-queue-open: VerticalLayout {
+                MenuRow { label: "    " + L.s(L.revision, "queue_top"); activated => { root.action("queue-top"); ctx-popup.close(); } }
+                MenuRow { label: "    " + L.s(L.revision, "up"); activated => { root.action("queue-up"); ctx-popup.close(); } }
+                MenuRow { label: "    " + L.s(L.revision, "down"); activated => { root.action("queue-down"); ctx-popup.close(); } }
+                MenuRow { label: "    " + L.s(L.revision, "queue_bottom"); activated => { root.action("queue-bottom"); ctx-popup.close(); } }
+            }
+            MenuSep { }
+            MenuRow { label: L.s(L.revision, "remove_torrent"); activated => { root.remove-confirm(false); ctx-popup.close(); } }
+            MenuRow { label: L.s(L.revision, "remove_torrent_and_files"); activated => { root.remove-confirm(true); ctx-popup.close(); } }
+            MenuSep { }
+            MenuRow { label: L.s(L.revision, "copy_info_hash"); activated => { root.action("copy-hash"); ctx-popup.close(); } }
+            MenuRow { label: L.s(L.revision, "magnet_link_s"); activated => { root.action("copy-magnet"); ctx-popup.close(); } }
+            MenuRow { label: L.s(L.revision, "open_in_explorer"); activated => { root.action("open-folder"); ctx-popup.close(); } }
         }
     }
 
     callback sort(int);
-    /// A column's new width, once the drag has finished. Rust remembers it.
-    callback column-resized(int, length);
+    /// A column's new width, once the drag has finished: which list (the
+    /// RESIZABLE_LISTS index, as below), which column, new width. Rust
+    /// remembers it.
+    callback column-resized(int, int, length);
     /// The details panel's height and its internal divider, once a drag has
     /// finished. Same reason as above: persisting is a database write, and the
     /// drag handlers run per mouse event.
     callback panel-resized(length, length);
-    /// Which tab (0 files, 1 peers, 2 trackers), which column, new width.
-    callback detail-column-resized(int, int, length);
 
     // --- column sizing menu ------------------------------------------------
     /// Which list the header menu was opened on: 0 torrents, 1 files,
@@ -1784,8 +1713,7 @@ export component MainWindow inherits Window {
     /// Fit every column in this list to its content, once.
     callback columns-reset(int);
     /// Fit ONE column to its content: which list, which column. The list index
-    /// is the RESIZABLE_LISTS one, so the detail tabs are 1..3 here even
-    /// though `detail-column-resized` numbers the tabs 0..2.
+    /// is the RESIZABLE_LISTS one, so the detail tabs are 1..3.
     callback column-fit(int, int);
     /// The window got wider or narrower. Only the Overview reacts: its right
     /// half holds the info hashes, which have a width worth keeping whole,
@@ -1864,6 +1792,9 @@ export component MainWindow inherits Window {
     // Named PQL filters and labels from the database, plus a leading "None".
     in property <[string]> filter-names;
     in property <[string]> label-names;
+    /// Which entry of each is in force - 0 is "None" - for the tick.
+    in-out property <int> active-filter;
+    in-out property <int> active-label;
     callback pick-filter(int);
     callback pick-label(int);
 
@@ -2141,7 +2072,8 @@ export component MainWindow inherits Window {
                     tint: #8b5cf6;
                     tip: L.s(L.revision, "preferences");
                     activated => { root.action("preferences"); }
-                    GearIcon { ink: parent.ink; }
+                    // 18px for the same margin as the turtle beside it.
+                    GearIcon { ink: parent.ink; size: 18px; }
                 }
 
                 ToolbarSep {}
@@ -2254,7 +2186,7 @@ export component MainWindow inherits Window {
                                     Cols.total += width - Cols.w[i];
                                     Cols.w[i] = width;
                                 }
-                                done(width) => { root.column-resized(i, width); }
+                                done(width) => { root.column-resized(0, i, width); }
                                 fit() => { root.column-fit(0, i); }
                             }
                         }
@@ -2350,11 +2282,11 @@ export component MainWindow inherits Window {
 
                         HorizontalLayout {
                             alignment: start;
-                            Cell { w: Cols.w[0]; text: row.name; fg: row.selected ? Palette.selection-foreground : Palette.foreground; }
-                            Cell { w: Cols.w[1]; text: row.queue; align: right; }
-                            Cell { w: Cols.w[2]; text: row.size; align: right; }
-                            Cell { w: Cols.w[3]; text: row.remaining; align: right; }
-                            Cell { w: Cols.w[4]; text: row.status; }
+                            DCell { font-size: 13px; w: Cols.w[0]; text: row.name; fg: row.selected ? Palette.selection-foreground : Palette.foreground; }
+                            DCell { font-size: 13px; w: Cols.w[1]; text: row.queue; align: right; }
+                            DCell { font-size: 13px; w: Cols.w[2]; text: row.size; align: right; }
+                            DCell { font-size: 13px; w: Cols.w[3]; text: row.remaining; align: right; }
+                            DCell { font-size: 13px; w: Cols.w[4]; text: row.status; }
 
                             // The cell StandardTableView could never draw.
                             Rectangle {
@@ -2392,16 +2324,16 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            Cell { w: Cols.w[6]; text: row.eta; align: right; }
-                            Cell { w: Cols.w[7]; text: row.dl; align: right; }
-                            Cell { w: Cols.w[8]; text: row.ul; align: right; }
-                            Cell { w: Cols.w[9]; text: row.availability; align: right; }
-                            Cell { w: Cols.w[10]; text: row.ratio; align: right; }
-                            Cell { w: Cols.w[11]; text: row.seeds; align: right; }
-                            Cell { w: Cols.w[12]; text: row.peers; align: right; }
-                            Cell { w: Cols.w[13]; text: row.added; }
-                            Cell { w: Cols.w[14]; text: row.completed; }
-                            Cell { w: Cols.w[15]; text: row.label; }
+                            DCell { font-size: 13px; w: Cols.w[6]; text: row.eta; align: right; }
+                            DCell { font-size: 13px; w: Cols.w[7]; text: row.dl; align: right; }
+                            DCell { font-size: 13px; w: Cols.w[8]; text: row.ul; align: right; }
+                            DCell { font-size: 13px; w: Cols.w[9]; text: row.availability; align: right; }
+                            DCell { font-size: 13px; w: Cols.w[10]; text: row.ratio; align: right; }
+                            DCell { font-size: 13px; w: Cols.w[11]; text: row.seeds; align: right; }
+                            DCell { font-size: 13px; w: Cols.w[12]; text: row.peers; align: right; }
+                            DCell { font-size: 13px; w: Cols.w[13]; text: row.added; }
+                            DCell { font-size: 13px; w: Cols.w[14]; text: row.completed; }
+                            DCell { font-size: 13px; w: Cols.w[15]; text: row.label; }
                         }
                     }
                   }
@@ -2660,7 +2592,7 @@ export component MainWindow inherits Window {
                             DCols.files-total += w - DCols.files[i];
                             DCols.files[i] = w;
                         }
-                        done(i, w) => { root.detail-column-resized(0, i, w); }
+                        done(i, w) => { root.column-resized(1, i, w); }
                         fit(i) => { root.column-fit(1, i); }
                         menu(x, y) => {
                             root.menu-x = x;
@@ -2836,7 +2768,7 @@ export component MainWindow inherits Window {
                                 DCols.peers-total += w - DCols.peers[i];
                                 DCols.peers[i] = w;
                             }
-                            done(i, w) => { root.detail-column-resized(1, i, w); }
+                            done(i, w) => { root.column-resized(2, i, w); }
                             fit(i) => { root.column-fit(2, i); }
                             menu(x, y) => {
                                 root.menu-x = x;
@@ -2932,7 +2864,7 @@ export component MainWindow inherits Window {
                                 DCols.trackers-total += w - DCols.trackers[i];
                                 DCols.trackers[i] = w;
                             }
-                            done(i, w) => { root.detail-column-resized(2, i, w); }
+                            done(i, w) => { root.column-resized(3, i, w); }
                             fit(i) => { root.column-fit(3, i); }
                             menu(x, y) => {
                                 root.menu-x = x;
@@ -3147,14 +3079,6 @@ export component MainWindow inherits Window {
                     // bar that means something is wrong right now.
                     BoundIcon { ink: root.bound-lost ? #d1242f : #2ea043; }
                 }
-
-                Rectangle { horizontal-stretch: 1; }
-                Text {
-                    text: root.status;
-                    vertical-alignment: center;
-                    font-size: 12px;
-                    color: #888;
-                }
             }
         }
     }
@@ -3217,193 +3141,168 @@ export component MainWindow inherits Window {
         clicked => { root.open-menu = 0; }
     }
 
-    if root.open-menu == 1: Rectangle {
+    if root.open-menu == 1: MenuPanel {
         x: file-title.x;
         y: menu-bar.height;
         width: 240px;
-        // min-height, not preferred-height: the latter resolves to 0 for a
-        // layout inside an absolutely positioned Rectangle, so the panel
-        // was drawn zero pixels tall and looked like it never opened.
-        height: file-layout.min-height;
-        background: Palette.alternate-background;
-        border-color: Palette.border;
-        border-width: 1px;
-        border-radius: 6px;
-        file-layout := VerticalLayout {
-                padding: 4px;
-                MenuRow { label: L.s(L.revision, "amp_add_torrent"); activated => { root.action("add-torrent"); root.open-menu = 0; } }
-                MenuRow { label: L.s(L.revision, "add_magnet_link_s"); activated => { root.action("add-magnet"); root.open-menu = 0; } }
-                MenuRow { label: L.s(L.revision, "create_torrent"); activated => { root.action("create"); root.open-menu = 0; } }
-                MenuSep { }
-                MenuRow {
-                    label: L.s(L.revision, "migrate_from") + "  " + (root.migrate-open ? "-" : "+");
-                    activated => { root.migrate-open = !root.migrate-open; }
-                }
-                // Expanded in place rather than as a flyout, matching
-                // View > Theme - one submenu idiom in the whole menu bar.
-                Rectangle {
-                    height: root.migrate-open ? root.migrate-names.length * 24px : 0px;
-                    clip: true;
-                    VerticalLayout {
-                        for name[i] in root.migrate-names: MenuRow {
-                            // Every client stays selectable, including one
-                            // with no profile in the usual place: that opens a
-                            // folder picker instead of refusing, which is how
-                            // a backup - or an install somewhere unusual -
-                            // gets imported. The ellipsis is the usual promise
-                            // that a dialog follows.
-                            label: "    " + name + (root.migrate-found[i] ? "" : "...");
-                            activated => { root.migrate(i); root.open-menu = 0; }
-                        }
-                    }
-                }
-                MenuSep { }
-                MenuRow { label: L.s(L.revision, "amp_exit"); activated => { root.action("exit"); root.open-menu = 0; } }
+        MenuRow { label: L.s(L.revision, "amp_add_torrent"); activated => { root.action("add-torrent"); root.open-menu = 0; } }
+        MenuRow { label: L.s(L.revision, "add_magnet_link_s"); activated => { root.action("add-magnet"); root.open-menu = 0; } }
+        MenuRow { label: L.s(L.revision, "create_torrent"); activated => { root.action("create"); root.open-menu = 0; } }
+        MenuSep { }
+        MenuRow {
+            label: L.s(L.revision, "migrate_from") + "  " + (root.migrate-open ? "-" : "+");
+            activated => { root.migrate-open = !root.migrate-open; }
         }
+        // Expanded in place rather than as a flyout, matching
+        // View > Theme - one submenu idiom in the whole menu bar.
+        Rectangle {
+            height: root.migrate-open ? root.migrate-names.length * 24px : 0px;
+            clip: true;
+            VerticalLayout {
+                for name[i] in root.migrate-names: MenuRow {
+                    // Every client stays selectable, including one
+                    // with no profile in the usual place: that opens a
+                    // folder picker instead of refusing, which is how
+                    // a backup - or an install somewhere unusual -
+                    // gets imported. The ellipsis is the usual promise
+                    // that a dialog follows.
+                    label: "    " + name + (root.migrate-found[i] ? "" : "...");
+                    activated => { root.migrate(i); root.open-menu = 0; }
+                }
+            }
+        }
+        MenuSep { }
+        MenuRow { label: L.s(L.revision, "amp_exit"); activated => { root.action("exit"); root.open-menu = 0; } }
     }
 
-    if root.open-menu == 2: Rectangle {
+    if root.open-menu == 2: MenuPanel {
         x: view-title.x;
         y: menu-bar.height;
         width: 260px;
-        height: view-layout.min-height;
-        background: Palette.alternate-background;
-        border-color: Palette.border;
-        border-width: 1px;
-        border-radius: 6px;
-        view-layout := VerticalLayout {
-                padding: 4px;
-                // Submenus expand in place. A nested PopupWindow would never
-                // get its click: the outer one closes on any click outside
-                // itself, the same reason the context menu does this.
-                MenuRow {
-                    label: L.s(L.revision, "amp_filter") + "  " + (root.filters-open ? "-" : "+");
-                    activated => { root.filters-open = !root.filters-open; }
-                }
-                Rectangle {
-                    height: root.filters-open ? root.filter-names.length * 24px : 0px;
-                    clip: true;
-                    VerticalLayout {
-                        for f[i] in root.filter-names: MenuRow {
-                            label: "    " + f;
-                            activated => { root.pick-filter(i); root.open-menu = 0; }
-                        }
-                    }
-                }
-                MenuRow {
-                    label: L.s(L.revision, "labels") + "  " + (root.labels-open ? "-" : "+");
-                    activated => { root.labels-open = !root.labels-open; }
-                }
-                Rectangle {
-                    height: root.labels-open ? root.label-names.length * 24px : 0px;
-                    clip: true;
-                    VerticalLayout {
-                        for l[i] in root.label-names: MenuRow {
-                            label: "    " + l;
-                            activated => { root.pick-label(i); root.open-menu = 0; }
-                        }
-                    }
-                }
-                MenuSep { }
-                MenuRow {
-                    label: L.s(L.revision, "amp_details_panel");
-                    checkable: true;
-                    checked: root.show-details;
-                    activated => {
-                        root.show-details = !root.show-details;
-                        root.view-toggled("ui.show_details_panel", root.show-details);
-                        root.open-menu = 0;
-                    }
-                }
-                MenuRow {
-                    label: L.s(L.revision, "amp_status_bar");
-                    checkable: true;
-                    checked: root.show-status;
-                    activated => {
-                        root.show-status = !root.show-status;
-                        root.view-toggled("ui.show_status_bar", root.show-status);
-                        root.open-menu = 0;
-                    }
-                }
-                MenuRow {
-                    label: L.s(L.revision, "amp_console");
-                    checkable: true;
-                    checked: root.show-console;
-                    activated => {
-                        root.show-console = !root.show-console;
-                        root.view-toggled("ui.show_console_input", root.show-console);
-                        root.open-menu = 0;
-                    }
-                }
-                MenuSep { }
-                MenuRow {
-                    label: L.s(L.revision, "theme") + "  " + (root.theme-open ? "-" : "+");
-                    activated => { root.theme-open = !root.theme-open; }
-                }
-                Rectangle {
-                    height: root.theme-open ? 72px : 0px;
-                    clip: true;
-                    VerticalLayout {
-                        MenuRow {
-                            label: "    " + (root.theme-id == "light" || root.theme-id == "dark" ? "   " : "\u{2713} ") + L.s(L.revision, "theme_system");
-                            activated => { root.pick-theme("system"); root.open-menu = 0; }
-                        }
-                        MenuRow {
-                            label: "    " + (root.theme-id == "light" ? "\u{2713} " : "   ") + L.s(L.revision, "theme_light");
-                            activated => { root.pick-theme("light"); root.open-menu = 0; }
-                        }
-                        MenuRow {
-                            label: "    " + (root.theme-id == "dark" ? "\u{2713} " : "   ") + L.s(L.revision, "theme_dark");
-                            activated => { root.pick-theme("dark"); root.open-menu = 0; }
-                        }
-                    }
-                }
-                MenuSep { }
-                MenuRow { label: L.s(L.revision, "preferences"); activated => { root.action("preferences"); root.open-menu = 0; } }
+        // Submenus expand in place. A nested PopupWindow would never
+        // get its click: the outer one closes on any click outside
+        // itself, the same reason the context menu does this.
+        MenuRow {
+            label: L.s(L.revision, "amp_filter") + "  " + (root.filters-open ? "-" : "+");
+            activated => { root.filters-open = !root.filters-open; }
         }
+        Rectangle {
+            height: root.filters-open ? root.filter-names.length * 24px : 0px;
+            clip: true;
+            VerticalLayout {
+                for f[i] in root.filter-names: MenuRow {
+                    label: f;
+                    checkable: true;
+                    checked: i == root.active-filter;
+                    activated => { root.active-filter = i; root.pick-filter(i); root.open-menu = 0; }
+                }
+            }
+        }
+        MenuRow {
+            label: L.s(L.revision, "labels") + "  " + (root.labels-open ? "-" : "+");
+            activated => { root.labels-open = !root.labels-open; }
+        }
+        Rectangle {
+            height: root.labels-open ? root.label-names.length * 24px : 0px;
+            clip: true;
+            VerticalLayout {
+                for l[i] in root.label-names: MenuRow {
+                    label: l;
+                    checkable: true;
+                    checked: i == root.active-label;
+                    activated => { root.active-label = i; root.pick-label(i); root.open-menu = 0; }
+                }
+            }
+        }
+        MenuSep { }
+        MenuRow {
+            label: L.s(L.revision, "amp_details_panel");
+            checkable: true;
+            checked: root.show-details;
+            activated => {
+                root.show-details = !root.show-details;
+                root.view-toggled("ui.show_details_panel", root.show-details);
+                root.open-menu = 0;
+            }
+        }
+        MenuRow {
+            label: L.s(L.revision, "amp_status_bar");
+            checkable: true;
+            checked: root.show-status;
+            activated => {
+                root.show-status = !root.show-status;
+                root.view-toggled("ui.show_status_bar", root.show-status);
+                root.open-menu = 0;
+            }
+        }
+        MenuRow {
+            label: L.s(L.revision, "amp_console");
+            checkable: true;
+            checked: root.show-console;
+            activated => {
+                root.show-console = !root.show-console;
+                root.view-toggled("ui.show_console_input", root.show-console);
+                root.open-menu = 0;
+            }
+        }
+        MenuSep { }
+        MenuRow {
+            label: L.s(L.revision, "theme") + "  " + (root.theme-open ? "-" : "+");
+            activated => { root.theme-open = !root.theme-open; }
+        }
+        Rectangle {
+            height: root.theme-open ? 72px : 0px;
+            clip: true;
+            VerticalLayout {
+                MenuRow {
+                    label: L.s(L.revision, "theme_system");
+                    checkable: true;
+                    checked: root.theme-id != "light" && root.theme-id != "dark";
+                    activated => { root.pick-theme("system"); root.open-menu = 0; }
+                }
+                MenuRow {
+                    label: L.s(L.revision, "theme_light");
+                    checkable: true;
+                    checked: root.theme-id == "light";
+                    activated => { root.pick-theme("light"); root.open-menu = 0; }
+                }
+                MenuRow {
+                    label: L.s(L.revision, "theme_dark");
+                    checkable: true;
+                    checked: root.theme-id == "dark";
+                    activated => { root.pick-theme("dark"); root.open-menu = 0; }
+                }
+            }
+        }
+        MenuSep { }
+        MenuRow { label: L.s(L.revision, "preferences"); activated => { root.action("preferences"); root.open-menu = 0; } }
     }
 
     // A plugin's own dropdown. One declaration serves every plugin: only one
     // is open at a time, and `plugin-menu-x` says which title it hangs under.
-    if root.open-menu == 4: Rectangle {
+    if root.open-menu == 4: MenuPanel {
         x: root.plugin-menu-x;
         y: menu-bar.height;
         width: 240px;
-        height: plugin-menu-layout.min-height;
-        background: Palette.alternate-background;
-        border-color: Palette.border;
-        border-width: 1px;
-        border-radius: 6px;
-        plugin-menu-layout := VerticalLayout {
-            padding: 4px;
-            for entry in root.plugin-menu-items: MenuRow {
-                label: entry.label;
-                activated => { root.activate-plugin-menu(entry.id); root.open-menu = 0; }
-            }
+        for entry in root.plugin-menu-items: MenuRow {
+            label: entry.label;
+            activated => { root.activate-plugin-menu(entry.id); root.open-menu = 0; }
         }
     }
 
-    if root.open-menu == 3: Rectangle {
+    if root.open-menu == 3: MenuPanel {
         x: help-title.x;
         y: menu-bar.height;
         // Sized to the captions rather than fixed: the longest of these is a
         // translation away from not fitting, and a menu row that runs off the
         // panel is a link nobody can read. Width only, so this cannot feed
         // back into the height the way a wrapping caption would.
-        width: max(220px, help-layout.preferred-width);
-        height: help-layout.min-height;
-        background: Palette.alternate-background;
-        border-color: Palette.border;
-        border-width: 1px;
-        border-radius: 6px;
-        help-layout := VerticalLayout {
-                padding: 4px;
-                MenuRow { label: L.s(L.revision, "documentation"); activated => { root.action("docs"); root.open-menu = 0; } }
-                MenuRow { label: L.s(L.revision, "plugin_api_documentation"); activated => { root.action("plugin-docs"); root.open-menu = 0; } }
-                MenuRow { label: L.s(L.revision, "command_line_help"); activated => { root.action("cli-help"); root.open-menu = 0; } }
-                MenuRow { label: L.s(L.revision, "amp_check_for_update"); activated => { root.action("check-update"); root.open-menu = 0; } }
-                MenuRow { label: L.s(L.revision, "amp_about"); activated => { root.action("about"); root.open-menu = 0; } }
-        }
+        width: max(220px, self.rows-width);
+        MenuRow { label: L.s(L.revision, "documentation"); activated => { root.action("docs"); root.open-menu = 0; } }
+        MenuRow { label: L.s(L.revision, "plugin_api_documentation"); activated => { root.action("plugin-docs"); root.open-menu = 0; } }
+        MenuRow { label: L.s(L.revision, "command_line_help"); activated => { root.action("cli-help"); root.open-menu = 0; } }
+        MenuRow { label: L.s(L.revision, "amp_check_for_update"); activated => { root.action("check-update"); root.open-menu = 0; } }
+        MenuRow { label: L.s(L.revision, "amp_about"); activated => { root.action("about"); root.open-menu = 0; } }
     }
 
     // Modal guard. On Windows EnableWindow already makes the window inert, so
@@ -3414,22 +3313,26 @@ export component MainWindow inherits Window {
         width: 100%;
         height: 100%;
     }
+
+    // Flipped to make the renderer repaint the whole window - see the modal
+    // timer in mod.rs. A 1/255 black wash is below what a screen shows, and
+    // a Rectangle takes no input.
+    in property <bool> repaint-all;
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: root.repaint-all ? #00000001 : transparent;
+    }
 }
 
 
 // Add-magnet dialog. A separate Window rather than an in-window overlay, which
 // is what the platform expects of a dialog.
-export component AddMagnetDialog inherits Window {
-    icon: @image-url("../../res/app-256.png");
+export component AddMagnetDialog inherits Dialog {
     title: L.s(L.revision, "add_magnet_link_s");
     preferred-width: 560px;
-    preferred-height: min(300px, root.screen-limit);
-    background: Palette.background;
-    /// The tallest this window may be, in logical pixels - set from the
-    /// monitor work area. Huge by default so a build that cannot read it
-    /// behaves as if unclamped.
-    in property <length> screen-limit: 100000px;
-    max-height: root.screen-limit;
+    preferred-height: min(300px, Screen.limit);
+    max-height: Screen.limit;
 
     in-out property <string> links;
     callback accepted();
@@ -3498,17 +3401,11 @@ export struct FileRow {
 }
 
 // Add-torrent dialog: parsed file list, save path, label and start toggle.
-export component AddTorrentDialog inherits Window {
-    icon: @image-url("../../res/app-256.png");
+export component AddTorrentDialog inherits Dialog {
     title: L.s(L.revision, "add_torrent_s");
     preferred-width: 640px;
-    preferred-height: min(540px, root.screen-limit);
-    background: Palette.background;
-    /// The tallest this window may be, in logical pixels - set from the
-    /// monitor work area. Huge by default so a build that cannot read it
-    /// behaves as if unclamped.
-    in property <length> screen-limit: 100000px;
-    max-height: root.screen-limit;
+    preferred-height: min(540px, Screen.limit);
+    max-height: Screen.limit;
 
     in property <string> torrent-name;
     in property <string> torrent-size;

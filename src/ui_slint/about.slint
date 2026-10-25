@@ -1,10 +1,9 @@
 // The About box: version, build stamp and a link to the project site.
 
 import { ScrollView, Button, Palette } from "std-widgets.slint";
-import { L } from "globals.slint";
+import { L, Dialog, Screen } from "globals.slint";
 
-export component AboutDialog inherits Window {
-    icon: @image-url("../../res/app-256.png");
+export component AboutDialog inherits Dialog {
     title: L.s(L.revision, "about_nanotorrent");
     // Width is pinned - nothing here reflows horizontally. Height is NOT:
     // the window takes its content's natural height, so it opens exactly
@@ -17,13 +16,8 @@ export component AboutDialog inherits Window {
     // min == max, both bound to the limit: binding only max leaves an
     // already-shown window at its old height, because nothing forces a
     // re-layout. This is the shape the Preferences dialog uses.
-    min-height: min(body.preferred-height, root.screen-limit);
-    /// The tallest this window may be, in logical pixels - set from the
-    /// monitor work area. Huge by default so a build that cannot read it
-    /// behaves as if unclamped.
-    in property <length> screen-limit: 100000px;
-    max-height: min(body.preferred-height, root.screen-limit);
-    background: Palette.background;
+    min-height: min(body.preferred-height, Screen.limit);
+    max-height: min(body.preferred-height, Screen.limit);
 
     in property <string> version;
     in property <string> build-stamp;

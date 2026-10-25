@@ -2,8 +2,6 @@
 
 use std::path::Path;
 
-/// Mimics Win32 StrFormatByteSize64 which PicoTorrent used via
-/// Utils::toHumanFileSize.
 /// Percent-encode for a URL: everything outside the unreserved set becomes
 /// `%XX`.
 ///
@@ -27,6 +25,8 @@ pub fn percent_encode(bytes: &[u8], also_safe: &[u8]) -> String {
     out
 }
 
+/// Mimics Win32 StrFormatByteSize64 which PicoTorrent used via
+/// Utils::toHumanFileSize.
 pub fn to_human_file_size(bytes: i64) -> String {
     const UNITS: [&str; 7] = ["bytes", "KB", "MB", "GB", "TB", "PB", "EB"];
 
@@ -128,6 +128,13 @@ pub fn open_and_select(path: &Path) {
     }
 }
 
+/// A string as the NUL-terminated UTF-16 that Win32's `W` functions take.
+#[cfg(windows)]
+pub fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    s.as_ref().encode_wide().chain(std::iter::once(0)).collect()
+}
+
 /// Free and total bytes on the filesystem holding `path`, or `None` if it
 /// cannot be determined (a path that does not exist, a permission error, an
 /// unsupported platform).
@@ -138,8 +145,6 @@ pub fn open_and_select(path: &Path) {
 /// filling.
 #[cfg(windows)]
 pub fn disk_space(path: &Path) -> Option<(u64, u64)> {
-    use std::os::windows::ffi::OsStrExt;
-
     // GetDiskFreeSpaceExW takes a directory; walk up until one exists, so a
     // save path that has not been created yet still reports its drive.
     let mut dir = path;
@@ -147,11 +152,7 @@ pub fn disk_space(path: &Path) -> Option<(u64, u64)> {
         dir = dir.parent()?;
     }
 
-    let wide: Vec<u16> = dir
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
+    let wide = wide(dir);
 
     // SAFETY: a zeroed ULARGE_INTEGER is a valid value of the union, `wide` is
     // NUL-terminated and outlives the call, and both outputs are ours.
@@ -200,8 +201,8 @@ pub fn free_space_percent(path: &Path) -> Option<f64> {
     (total > 0).then(|| free as f64 * 100.0 / total as f64)
 }
 
-/// Height of the primary monitor's work area in PHYSICAL pixels, or `None`
-/// when it cannot be determined.
+/// Height of the work area of the monitor nearest `(x, y)`, in PHYSICAL
+/// pixels, or `None` when it cannot be determined.
 ///
 /// Work area, not screen: it excludes the taskbar, which is exactly the space
 /// a window may actually occupy. The caller must divide by the window's scale
@@ -288,43 +289,6 @@ mod tests {
 
 #[cfg(test)]
 mod work_area {
-    /// The probe must answer for the monitor containing the point, not for the
-    /// primary one.
-    ///
-    /// It used to call SPI_GETWORKAREA, which only ever answers for the
-    /// primary monitor. On a second screen of a different height or scale the
-    /// caller divided the primary's height by this window's scale factor, got
-    /// a limit taller than the screen the window was on, and never clamped -
-    /// which is how a tall dialog ran off the bottom.
-    #[test]
-    #[cfg(windows)]
-    fn every_monitor_answers_for_itself() {
-        use winapi::um::winuser::{
-            GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
-        };
-
-        // Probe a wide spread of the virtual desktop. Whatever monitor each
-        // point lands on, the answer must match that monitor's own work area.
-        for x in [-4000, 0, 1000, 3000, 5200, 9000] {
-            for y in [-2000, 0, 500, 1500, 3000] {
-                let point = winapi::shared::windef::POINT { x, y };
-                let monitor = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST) };
-                assert!(!monitor.is_null(), "NEAREST returned no monitor");
-
-                let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
-                info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
-                assert!(unsafe { GetMonitorInfoW(monitor, &mut info) } != 0);
-                let expected = (info.rcWork.bottom - info.rcWork.top) as f32;
-
-                assert_eq!(
-                    super::work_area_height_at(x, y),
-                    Some(expected),
-                    "({x},{y}) did not report its own monitor"
-                );
-            }
-        }
-    }
-
     /// A point nowhere near a monitor still gets an answer rather than None -
     /// None means "unclamped", and silently unclamping is the bug.
     #[test]

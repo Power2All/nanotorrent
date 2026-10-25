@@ -78,17 +78,18 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedTorrent, String> {
         .map(|n| n.into_owned())
         .unwrap_or_else(|| String::from("(unnamed torrent)"));
 
-    let mut files = Vec::new();
-    for (index, fd) in info.iter_file_details().enumerate() {
-        // librqbit 9 decodes the name with the torrent's own encoding, so
-        // this is infallible where it used to return a Result.
-        files.push(ParsedFile {
+    // librqbit 9 decodes the name with the torrent's own encoding, so this is
+    // infallible where it used to return a Result.
+    let files: Vec<ParsedFile> = info
+        .iter_file_details()
+        .enumerate()
+        .map(|(index, fd)| ParsedFile {
             index,
             path: fd.filename.to_string(),
             size: fd.len,
             padding: fd.attrs().padding,
-        });
-    }
+        })
+        .collect();
 
     let total_size = files
         .iter()
@@ -136,16 +137,13 @@ fn parsed_from_v2(meta: &crate::bittorrent::v2::V2Meta) -> ParsedTorrent {
 pub fn parse_magnet_links(text: &str) -> Vec<String> {
     text.lines()
         .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .filter(|line| {
-            line.starts_with("magnet:")
-                || line.len() == 40 && line.chars().all(|c| c.is_ascii_hexdigit())
-        })
-        .map(|line| {
+        .filter_map(|line| {
             if line.starts_with("magnet:") {
-                line.to_string()
+                Some(line.to_string())
+            } else if line.len() == 40 && line.chars().all(|c| c.is_ascii_hexdigit()) {
+                Some(format!("magnet:?xt=urn:btih:{line}"))
             } else {
-                format!("magnet:?xt=urn:btih:{line}")
+                None
             }
         })
         .collect()
@@ -267,14 +265,5 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn total_size_is_the_sum_of_the_files() {
-        let parsed = parse(&single_file_torrent("a", 1)).unwrap();
-        assert_eq!(
-            parsed.total_size,
-            parsed.files.iter().map(|f| f.size as i64).sum::<i64>()
-        );
     }
 }

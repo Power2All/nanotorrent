@@ -1870,7 +1870,7 @@ async function loadAskPrefs() {
 // question gets answered by reflex, and `confirm()` has nowhere to put a
 // "do not ask again" box.
 function askFirst({ setting, head, subject, note, first, second }) {
-  if (setting && !ASK[setting]) return Promise.resolve({ secondary: false });
+  if (!ASK[setting]) return Promise.resolve({ secondary: false });
 
   $("ask-head").textContent = head;
   $("ask-subject").textContent = subject || "";
@@ -1883,11 +1883,10 @@ function askFirst({ setting, head, subject, note, first, second }) {
   // Unticked every time: a box that remembered its own last answer would turn
   // "just this once" into a standing instruction.
   $("ask-remember").checked = false;
-  $("ask-remember-row").hidden = !setting;
 
   return new Promise((resolve) => {
     const done = async (result) => {
-      if (result && setting && $("ask-remember").checked) {
+      if (result && $("ask-remember").checked) {
         ASK[setting] = false;
         try {
           await api("POST", "/api/settings", { name: setting, value: "false" });
@@ -1919,7 +1918,7 @@ async function browseTo(path) {
 
     const box = $("browser-list");
     box.textContent = "";
-    const dirs = listing.entries.filter((e) => e.is_dir);
+    const dirs = listing.entries;
     if (!dirs.length) {
       const none = document.createElement("div");
       none.style.padding = ".6rem";
@@ -2522,10 +2521,6 @@ const PRIORITIES = [
 const RATIO_PRESETS = [1, 2, 3, 5];
 const SEED_PRESETS = [30, 60, 360, 1440];
 
-function option(value, text, selected) {
-  return new Option(text, value, false, Boolean(selected));
-}
-
 /// Minutes as the ETA column spells them, so nothing new needs translating.
 function minutesLabel(m) {
   return m % 60 === 0 ? `${m / 60}h` : `${m}m`;
@@ -2660,7 +2655,7 @@ function drawFiles(files) {
     size.textContent = `${bytes(f.length)} - ${(f.progress * 100).toFixed(0)}%`;
     const pick = document.createElement("select");
     for (const [value, text] of PRIORITIES) {
-      pick.append(option(value, text, value === f.priority));
+      pick.append(new Option(text, value, false, value === f.priority));
     }
     pick.addEventListener("change", () =>
       act(() => api("POST", `/api/torrents/${detHash}/files`, {
@@ -2794,10 +2789,10 @@ function drawTrackers(rows) {
 
   const tier = $("tdet-tier");
   tier.textContent = "";
-  for (let i = 0; i < detTiers; i++) tier.append(option(i, `${T.tier} #${i}`));
+  for (let i = 0; i < detTiers; i++) tier.append(new Option(`${T.tier} #${i}`, i));
   // Selected by default: adding to a tier of its own is the safe choice, since
   // it cannot change the announce order of what is already there.
-  tier.append(option(detTiers, T.new_tier, true));
+  tier.append(new Option(T.new_tier, detTiers, false, true));
 }
 
 function drawTags(meta) {
@@ -2833,31 +2828,25 @@ function saveTags(extra) {
 }
 
 function drawLimits(meta) {
-  // Three states, not two: "follow the global setting" is null in the column,
-  // and 0 is this torrent saying it has no limit at all. A single control has
-  // to carry both, so they are separate entries rather than an empty box.
-  const ratio = $("tdet-ratio");
-  ratio.textContent = "";
-  ratio.append(option("", T.share_ratio_global, meta.ratio_limit === null));
-  ratio.append(option("0", T.share_ratio_none, meta.ratio_limit === 0));
-  for (const r of RATIO_PRESETS) {
-    ratio.append(option(String(r), r.toFixed(1), meta.ratio_limit === r));
+  fillLimit($("tdet-ratio"), meta.ratio_limit, RATIO_PRESETS, (r, custom) => r.toFixed(custom ? 2 : 1));
+  fillLimit($("tdet-seed"), meta.seed_time_limit, SEED_PRESETS, minutesLabel);
+}
+
+// Three states, not two: "follow the global setting" is null in the column,
+// and 0 is this torrent saying it has no limit at all. A single control has
+// to carry both, so they are separate entries rather than an empty box.
+// `label(value, custom)` names a preset, or a value that is not one.
+function fillLimit(select, value, presets, label) {
+  select.textContent = "";
+  select.append(new Option(T.share_ratio_global, "", false, value === null));
+  select.append(new Option(T.share_ratio_none, "0", false, value === 0));
+  for (const p of presets) {
+    select.append(new Option(label(p, false), String(p), false, value === p));
   }
   // A value set from the desktop that is not one of the presets still has to
   // show, or the box would claim a limit the torrent does not have.
-  if (meta.ratio_limit !== null && meta.ratio_limit > 0 && !RATIO_PRESETS.includes(meta.ratio_limit)) {
-    ratio.append(option(String(meta.ratio_limit), meta.ratio_limit.toFixed(2), true));
-  }
-
-  const seed = $("tdet-seed");
-  seed.textContent = "";
-  seed.append(option("", T.share_ratio_global, meta.seed_time_limit === null));
-  seed.append(option("0", T.share_ratio_none, meta.seed_time_limit === 0));
-  for (const m of SEED_PRESETS) {
-    seed.append(option(String(m), minutesLabel(m), meta.seed_time_limit === m));
-  }
-  if (meta.seed_time_limit !== null && meta.seed_time_limit > 0 && !SEED_PRESETS.includes(meta.seed_time_limit)) {
-    seed.append(option(String(meta.seed_time_limit), minutesLabel(meta.seed_time_limit), true));
+  if (value !== null && value > 0 && !presets.includes(value)) {
+    select.append(new Option(label(value, true), String(value), false, true));
   }
 }
 
@@ -3019,29 +3008,38 @@ function installGrips() {
     if (th.querySelector(".grip")) return;
     const grip = document.createElement("div");
     grip.className = "grip";
-    grip.addEventListener("mousedown", (ev) => {
-      ev.preventDefault();
-      const startX = ev.clientX;
-      const startW = cols[i].getBoundingClientRect().width;
-      document.body.classList.add("resizing");
-
-      const move = (e) => {
-        // 40px floor: narrower than this and the header caption is gone, so
-        // there is nothing left to grab or read.
-        cols[i].style.width = Math.max(40, startW + e.clientX - startX) + "px";
-      };
-      const up = () => {
-        document.removeEventListener("mousemove", move);
-        document.removeEventListener("mouseup", up);
-        document.body.classList.remove("resizing");
-        const saved = store.get("cols", {});
-        saved[i] = Math.round(cols[i].getBoundingClientRect().width);
-        store.set("cols", saved);
-      };
-      document.addEventListener("mousemove", move);
-      document.addEventListener("mouseup", up);
+    // 40px floor: narrower than this and the header caption is gone, so
+    // there is nothing left to grab or read.
+    dragWidth(grip, cols[i], (w) => Math.max(40, w), (w) => {
+      const saved = store.get("cols", {});
+      saved[i] = w;
+      store.set("cols", saved);
     });
     th.append(grip);
+  });
+}
+
+// Drag `grip` sideways to resize `el`. `clamp` bounds the width, `moved` runs
+// after every step, and `done` gets the width it was let go at.
+function dragWidth(grip, el, clamp, done, moved) {
+  grip.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    // Captured, so the drag keeps tracking - and still ends - with the pointer
+    // off the grip or outside the window.
+    grip.setPointerCapture(ev.pointerId);
+    const startX = ev.clientX;
+    const startW = el.getBoundingClientRect().width;
+    document.body.classList.add("resizing");
+    const move = (e) => {
+      el.style.width = clamp(startW + e.clientX - startX) + "px";
+      if (moved) moved();
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("lostpointercapture", () => {
+      grip.removeEventListener("pointermove", move);
+      document.body.classList.remove("resizing");
+      done(Math.round(el.getBoundingClientRect().width));
+    }, { once: true });
   });
 }
 loadColumns();
@@ -3197,11 +3195,12 @@ async function drawPlugList() {
 // round trip to learn a constant.
 const CHART_LIMITS = { min: 48, max: 320, default: 96 };
 
+const clampChart = (w) => Math.min(CHART_LIMITS.max, Math.max(CHART_LIMITS.min, w));
+
 function loadCharts() {
-  const clamp = (w) =>
-    Math.min(CHART_LIMITS.max, Math.max(CHART_LIMITS.min, Number(w) || CHART_LIMITS.default));
-  $("ch-dl").style.width = clamp(store.get("chart.down", CHART_LIMITS.default)) + "px";
-  $("ch-ul").style.width = clamp(store.get("chart.up", CHART_LIMITS.default)) + "px";
+  const saved = (key) => clampChart(Number(store.get(key, CHART_LIMITS.default)) || CHART_LIMITS.default);
+  $("ch-dl").style.width = saved("chart.down") + "px";
+  $("ch-ul").style.width = saved("chart.up") + "px";
   installChartGrip("ch-dl", "down");
   installChartGrip("ch-ul", "up");
 }
@@ -3218,26 +3217,7 @@ function installChartGrip(svgId, which) {
   const place = () => { grip.style.left = (svg.offsetLeft + svg.offsetWidth - 8) + "px"; };
   place();
 
-  grip.addEventListener("mousedown", (ev) => {
-    ev.preventDefault();
-    const startX = ev.clientX;
-    const startW = svg.getBoundingClientRect().width;
-    document.body.classList.add("resizing");
-    const move = (e) => {
-      const w = Math.min(CHART_LIMITS.max,
-                Math.max(CHART_LIMITS.min, startW + e.clientX - startX));
-      svg.style.width = w + "px";
-      place();
-    };
-    const up = () => {
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", up);
-      document.body.classList.remove("resizing");
-      store.set(`chart.${which}`, Math.round(svg.getBoundingClientRect().width));
-    };
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", up);
-  });
+  dragWidth(grip, svg, clampChart, (w) => store.set(`chart.${which}`, w), place);
 
   // Double-click resets this one to the default, like the desktop's.
   svg.addEventListener("dblclick", () => {
@@ -3316,7 +3296,7 @@ loadCharts();
 function setLink(state, clients) {
   const el = $("link");
   el.className = "stat link " + state;
-  el.title = state === "ok" ? T.connected : (state === "down" ? T.reconnecting : T.connecting);
+  el.title = state === "ok" ? T.connected : T.reconnecting;
   // The viewer count is only known while connected, and a stale one would
   // claim an audience that may have gone.
   $("clients").textContent = state === "ok" && clients > 0 ? String(clients) : "";

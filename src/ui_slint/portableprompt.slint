@@ -6,10 +6,9 @@
 // wired to the translator directly rather than through a `Ui`.
 
 import { ScrollView, Button, Palette } from "std-widgets.slint";
-import { L } from "globals.slint";
+import { L, Dialog } from "globals.slint";
 
-export component PortablePromptDialog inherits Window {
-    icon: @image-url("../../res/app-256.png");
+export component PortablePromptDialog inherits Dialog {
     title: L.s(L.revision, "portable_copy_title");
     // Pinned width, content height - the same shape as the database prompt,
     // so a long translation grows the window rather than being cut off.
@@ -17,7 +16,6 @@ export component PortablePromptDialog inherits Window {
     max-width: 520px;
     min-height: body.preferred-height;
     max-height: body.preferred-height;
-    background: Palette.background;
 
     /// The question, with the two folders already filled in.
     in property <string> body-text;

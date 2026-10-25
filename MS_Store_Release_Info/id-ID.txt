@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.4
+Versi 0.4.5
 
-- Keamanan: antarmuka web melalui HTTPS tidak lagi rentan terhadap serangan penolakan layanan di lapisan HTTP/2-nya; kini hanya menggunakan HTTP/1.1. Anda tidak perlu mengubah apa pun.
-- Batas berbagi: batas rasio kini menghentikan torrent pada rasio yang ditampilkan di daftar. Sebelumnya hanya unggahan sejak NanoTorrent terakhir dijalankan yang dihitung, sehingga torrent bisa terus melakukan seeding melewati batasnya.
-- Perbaikan: torrent v1 yang dibuat dengan “Buat torrent” kini selalu valid dan hasilnya sama di setiap komputer, dan “Paksa periksa ulang” pada torrent yang dijeda kini langsung memeriksanya alih-alih menampilkan 0% sampai torrent dimulai.
+- Baru: NanoTorrent bisa berjalan tanpa jendela. Jalankan “nanotorrent --headless” dari terminal dan aplikasi ini terus mengunduh dan melakukan seeding, dengan antarmuka web sebagai jalan masuknya. Ctrl-C menghentikannya dengan rapi, dan --log-level mengatur seberapa banyak yang dicatat.
+- Saat ditutup, NanoTorrent kini menyimpan status setiap torrent, jadi tidak ada yang perlu diperiksa ulang saat dijalankan berikutnya.
+- Perbaikan: jendela tidak lagi kembali dalam keadaan tergambar sebagian setelah diminimalkan beberapa saat, batas torrent aktif kini juga berlaku tanpa jendela, dan membuka file .torrent dari terminal saat NanoTorrent sudah berjalan kini bisa dengan jalur relatif.
 - Di balik layar: pustaka yang menjadi dasar NanoTorrent telah diperbarui dengan perbaikan terbarunya.
 
 

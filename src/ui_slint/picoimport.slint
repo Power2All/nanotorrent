@@ -9,10 +9,9 @@
 // box that arrives ticked is one nobody reads.
 
 import { ScrollView, Button, CheckBox, Palette } from "std-widgets.slint";
-import { L } from "globals.slint";
+import { L, Dialog, Screen } from "globals.slint";
 
-export component PicoImportDialog inherits Window {
-    icon: @image-url("../../res/app-256.png");
+export component PicoImportDialog inherits Dialog {
     // Set from Rust: the title names the client, and `L.s` passes no
     // arguments - bound to the key directly it showed "Import from {0}...".
     title: root.window-title;
@@ -20,13 +19,8 @@ export component PicoImportDialog inherits Window {
 
     min-width: 520px;
     max-width: 520px;
-    min-height: min(body.preferred-height, root.screen-limit);
-    /// The tallest this window may be, in logical pixels - set from the
-    /// monitor work area. Huge by default so a build that cannot read it
-    /// behaves as if unclamped.
-    in property <length> screen-limit: 100000px;
-    max-height: min(body.preferred-height, root.screen-limit);
-    background: Palette.background;
+    min-height: min(body.preferred-height, Screen.limit);
+    max-height: min(body.preferred-height, Screen.limit);
 
     /// The two captions that name the other client. Set from Rust rather than
     /// looked up here: the name is an ARGUMENT, so the translations never carry

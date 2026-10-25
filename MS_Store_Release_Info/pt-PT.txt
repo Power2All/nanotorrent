@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Português (Portugal) - Partner Center: Portuguese (Portugal) (pt-PT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ O NanoTorrent é uma adaptação em Rust do PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versão 0.4.4
+Versão 0.4.5
 
-- Segurança: a interface web por HTTPS já não está exposta a um ataque de negação de serviço na sua camada HTTP/2; agora usa apenas HTTP/1.1. Não precisa de alterar nada.
-- Limites de partilha: um limite de rácio passa a parar o torrent no rácio mostrado na lista. Antes, só contava o envio desde o último arranque do NanoTorrent, pelo que um torrent podia continuar a partilhar além do seu limite.
-- Correções: os torrents v1 feitos com «Criar torrent» são sempre válidos e saem idênticos em qualquer computador, e «Forçar reverificação» num torrent em pausa passa a verificá-lo de imediato, em vez de mostrar 0% até ser iniciado.
+- Novidade: o NanoTorrent pode funcionar sem janela. Inicie «nanotorrent --headless» a partir de um terminal e ele continua a transferir e a partilhar, com a interface web como forma de acesso. Ctrl-C termina-o de forma limpa, e --log-level define quanto é registado.
+- Ao ser fechado, o NanoTorrent passa a guardar o estado de cada torrent, pelo que nada tem de ser verificado de novo no próximo arranque.
+- Correções: a janela já não volta parcialmente desenhada depois de ficar minimizada algum tempo, os limites de torrents ativos passam a aplicar-se também sem a janela, e abrir um ficheiro .torrent a partir de um terminal com o NanoTorrent já em execução funciona com um caminho relativo.
 - Por dentro: as bibliotecas em que o NanoTorrent se baseia foram atualizadas, com as correções mais recentes.
 
 

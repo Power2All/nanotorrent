@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Català (Espanya) - Partner Center: Catalan (Spain) (ca-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ El NanoTorrent és una adaptació en Rust del PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versió 0.4.4
+Versió 0.4.5
 
-- Seguretat: la interfície web per HTTPS ja no és vulnerable a un atac de denegació de servei a la seva capa HTTP/2; ara només fa servir HTTP/1.1. No cal que canvieu res.
-- Límits de compartició: ara un límit de proporció atura el torrent a la proporció que es mostra a la llista. Abans només es comptava el que s'havia pujat des de l'última vegada que es va iniciar NanoTorrent, i un torrent podia continuar compartint més enllà del límit.
-- Correccions: els torrents v1 fets amb «Crea un torrent» sempre són vàlids i surten iguals a tots els ordinadors, i «Força la reverificació» en un torrent en pausa ara el comprova de seguida en lloc de mostrar 0% fins que s'inicia.
+- Novetat: NanoTorrent pot funcionar sense finestra. Inicieu «nanotorrent --headless» des d'un terminal i continua baixant i compartint, amb la interfície web com a punt d'accés. Ctrl-C l'atura netament, i --log-level estableix quant es registra.
+- En tancar-se, NanoTorrent ara desa l'estat de cada torrent, de manera que no cal tornar a comprovar res en el següent inici.
+- Correccions: la finestra ja no torna dibuixada a mitges després d'estar minimitzada una estona, els límits de torrents actius ara també s'apliquen sense la finestra, i obrir un fitxer .torrent des d'un terminal mentre NanoTorrent ja s'està executant funciona amb un camí relatiu.
 - Canvis interns: s’han actualitzat les biblioteques sobre les quals es construeix NanoTorrent, amb les seves últimes correccions.
 
 

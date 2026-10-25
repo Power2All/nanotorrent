@@ -29,10 +29,21 @@ fn skip_at(data: &[u8], i: usize, depth: u32) -> Option<usize> {
     }
     match *data.get(i)? {
         b'i' => Some(i + data.get(i..)?.iter().position(|&b| b == b'e')? + 1),
-        b'l' | b'd' => {
+        b'l' => {
             let mut j = i + 1;
             while *data.get(j)? != b'e' {
                 j = skip_at(data, j, depth + 1)?;
+            }
+            Some(j + 1)
+        }
+        // Keys must be strings. `entries` stops at the first one that is
+        // not, so a dict this let through would be read short - a v2 file
+        // tree missing every file after it - rather than refused.
+        b'd' => {
+            let mut j = i + 1;
+            while *data.get(j)? != b'e' {
+                let (_, key_end) = string_at(data, j)?;
+                j = skip_at(data, key_end, depth + 1)?;
             }
             Some(j + 1)
         }
@@ -78,6 +89,13 @@ pub fn entries(data: &[u8]) -> impl Iterator<Item = (&[u8], &[u8])> {
 /// Decode a bencoded string token (`<len>:<bytes>`) into its raw bytes.
 pub fn string(data: &[u8]) -> Option<&[u8]> {
     string_at(data, 0).map(|(s, _)| s)
+}
+
+/// Decode a bencoded integer token (`i<n>e`) - a whole value, as `dict_get`
+/// returns one.
+pub fn int(data: &[u8]) -> Option<i64> {
+    let digits = data.strip_prefix(b"i")?.strip_suffix(b"e")?;
+    std::str::from_utf8(digits).ok()?.parse().ok()
 }
 
 /// The bencoded string at `i`: its contents, and the index just past it.
@@ -143,6 +161,17 @@ mod tests {
         // A list comes back whole, for a caller that wants to walk it itself.
         assert_eq!(dict_get(d, b"list"), Some(&b"li1ei2ee"[..]));
         assert_eq!(dict_get(d, b"absent"), None);
+    }
+
+    #[test]
+    fn skip_steps_over_each_kind_whole() {
+        assert_eq!(skip(b"i42e", 0), Some(4));
+        assert_eq!(skip(b"3:abc", 0), Some(5));
+        assert_eq!(skip(b"l3:abci7ee", 0), Some(10));
+        assert_eq!(skip(b"d3:key5:valuee", 0), Some(14));
+        // A dict key that is not a string, or a key with no value.
+        assert_eq!(skip(b"di1e5:valuee", 0), None);
+        assert_eq!(skip(b"d3:keye", 0), None);
     }
 
     /// The case `dict_get` cannot serve: keys that are themselves the data.

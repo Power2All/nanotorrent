@@ -7,20 +7,14 @@
 // way to stop being told would be to turn the whole check off.
 
 import { ScrollView, Button, Palette } from "std-widgets.slint";
-import { L } from "globals.slint";
+import { L, Dialog, Screen } from "globals.slint";
 
-export component UpdateDialog inherits Window {
-    icon: @image-url("../../res/app-256.png");
+export component UpdateDialog inherits Dialog {
     title: L.s(L.revision, "update_available");
     min-width: 460px;
     max-width: 460px;
-    /// The tallest this window may be, in logical pixels - set from the
-    /// monitor work area. Huge by default so a build that cannot read it
-    /// behaves as if unclamped.
-    in property <length> screen-limit: 100000px;
-    min-height: min(body.preferred-height, root.screen-limit);
-    max-height: min(body.preferred-height, root.screen-limit);
-    background: Palette.background;
+    min-height: min(body.preferred-height, Screen.limit);
+    max-height: min(body.preferred-height, Screen.limit);
 
     in property <string> new-version;
     in property <string> current-version;

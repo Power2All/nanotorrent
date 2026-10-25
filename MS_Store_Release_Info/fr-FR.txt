@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Français (France) - Partner Center: French (France) (fr-FR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent est un portage en Rust de PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.4
+Version 0.4.5
 
-- Sécurité : l’interface web en HTTPS n’est plus exposée à une attaque par déni de service dans sa couche HTTP/2 ; elle n’utilise plus que HTTP/1.1. Vous n’avez rien à changer.
-- Limites de partage : une limite de ratio arrête désormais un torrent au ratio affiché dans la liste. Auparavant, seuls les envois depuis le dernier démarrage de NanoTorrent étaient comptés, si bien qu'un torrent pouvait continuer à partager au-delà de sa limite.
-- Corrections : les torrents v1 faits avec « Créer un torrent » sont toujours valides et identiques sur chaque ordinateur, et « Forcer la revérification » sur un torrent en pause le vérifie désormais tout de suite au lieu d’afficher 0% jusqu’à son démarrage.
+- Nouveauté : NanoTorrent peut fonctionner sans fenêtre. Lancez « nanotorrent --headless » depuis un terminal : il continue à télécharger et à partager, et l’interface web sert de point d’accès. Ctrl-C l’arrête proprement, et --log-level règle la quantité de journalisation.
+- À la fermeture, NanoTorrent enregistre désormais l’état de chaque torrent, si bien que rien n’est à revérifier au prochain démarrage.
+- Corrections : la fenêtre ne revient plus à moitié dessinée après être restée réduite un moment, les limites de torrents actifs s’appliquent désormais aussi sans la fenêtre, et ouvrir un fichier .torrent depuis un terminal alors que NanoTorrent est déjà lancé fonctionne avec un chemin relatif.
 - Sous le capot : les bibliothèques sur lesquelles repose NanoTorrent ont été mises à jour, avec leurs derniers correctifs.
 
 

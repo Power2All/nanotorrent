@@ -217,8 +217,9 @@ struct Ui {
     /// Set once the window exists, so a dialog can push a setting back into it
     /// (the theme) without the caller having to thread the window through.
     main: RefCell<Option<slint::Weak<MainWindow>>>,
-    /// The tray icon, kept here so a language change can refresh its menu -
-    /// it owns its own copy of the `L` global.
+    /// The tray icon. Holding it here is what keeps it alive - dropping the
+    /// handle removes the icon - and lets a language change refresh its menu,
+    /// since it owns its own copy of the `L` global.
     tray: RefCell<Option<Tray>>,
     /// The running web interface, so Preferences can restart it in place.
     web: RefCell<Option<actix_web::dev::ServerHandle>>,
@@ -329,8 +330,8 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
                 "  - over SSH: use `ssh -X`, or run it at the machine itself\n",
                 "  - under sudo: use `sudo -E` (it does not need root anyway)\n",
                 "  - from a text console: switch back to the desktop session\n",
-                "On a machine with no desktop at all, build the headless daemon instead\n",
-                "(`cargo build --release --no-default-features`) and use the web interface.",
+                "On a machine with no desktop at all, run it with --headless instead\n",
+                "and use the web interface.",
             )
         } else {
             ""
@@ -490,8 +491,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
             });
     }
 
-    // Kept alive by the timer closure: dropping the handle removes the icon.
-    let tray = install_tray(&window, &ui);
+    install_tray(&window, &ui);
     let tray_visible = std::cell::Cell::new(ui.cfg.get_bool("show_in_notification_area"));
 
     // A separate, faster timer for the modal guard. Polling beats touching
@@ -501,6 +501,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     let modal_timer = slint::Timer::default();
     {
         let (w, u) = (window.as_weak(), ui.clone());
+        let away = std::cell::Cell::new(true);
         modal_timer.start(
             slint::TimerMode::Repeated,
 			std::time::Duration::from_millis(100),
@@ -510,6 +511,19 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
                 // unblocking in the right order, and this only catches a
                 // dialog closed by some route that did not go through it.
                 set_modal(&u, any_dialog_open(&u, &window));
+                // Back from minimised or the tray: repaint all of it. The
+                // Skia software renderer redraws only what changed and copies
+                // only that to the screen, trusting the window to have kept
+                // the rest - and Windows throws a window's pixels away when
+                // it has been minimised for long, so a restored window showed
+                // whatever had been behind it wherever nothing had changed.
+                // Slint has no public "repaint everything", so this flips a
+                // near-invisible full-window overlay (`repaint-all`).
+                let handle = window.window();
+                let gone = handle.is_minimized() || !handle.is_visible();
+                if away.replace(gone) && !gone {
+                    window.set_repaint_all(!window.get_repaint_all());
+                }
             },
         );
     }
@@ -537,7 +551,7 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
                 poll_magnets(&ui);
                 poll_update(&ui);
                 if let Some(window) = w.upgrade() {
-                    if let Some(tray) = tray.as_ref() {
+                    if let Some(tray) = ui.tray.borrow().as_ref() {
                         // Only on a change: show()/hide() re-register with the
                         // shell, so calling them every tick would churn the
                         // icon once a second.
@@ -606,14 +620,14 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
 /// `show_in_notification_area`, minimising hides the window when
 /// `minimize_to_notification_area` is also on, and closing consults
 /// `ui.close_action` ("exit", "minimize" or "ask").
-fn install_tray(window: &MainWindow, ui: &Rc<Ui>) -> Option<Tray> {
+fn install_tray(window: &MainWindow, ui: &Rc<Ui>) {
     let tray = match Tray::new() {
         Ok(tray) => tray,
         Err(err) => {
             // A Linux desktop with no StatusNotifierItem host lands here. The
             // app carries on without an icon rather than refusing to start.
             tracing::error!("cannot create the tray icon: {err}");
-            return None;
+            return;
         }
     };
     {
@@ -634,16 +648,11 @@ fn install_tray(window: &MainWindow, ui: &Rc<Ui>) -> Option<Tray> {
             }
         });
     }
-    {
-        let w = window.as_weak();
-        tray.on_exit(move || {
-            if let Some(window) = w.upgrade() {
-                // Not "exit": choosing Exit from the tray is already an
-                // explicit decision, so it skips the close prompt.
-                window.invoke_action("exit-now".into());
-            }
-        });
-    }
+    // Not the "exit" action: choosing Exit from the tray is already an
+    // explicit decision, so it skips the close prompt.
+    tray.on_exit(|| {
+        let _ = slint::quit_event_loop();
+    });
 
     // Built either way and merely shown or hidden by the setting, so toggling
     // it in Preferences takes effect without a restart. The refresh tick keeps
@@ -658,8 +667,7 @@ fn install_tray(window: &MainWindow, ui: &Rc<Ui>) -> Option<Tray> {
     if ui.cfg.get_bool("show_in_notification_area") {
         show_tray(&tray, true);
     }
-    *ui.tray.borrow_mut() = Some(tray.clone_strong());
-    Some(tray)
+    *ui.tray.borrow_mut() = Some(tray);
 }
 
 /// Show or hide the tray icon.
@@ -758,19 +766,8 @@ fn caption_width(text: &str) -> f32 {
         .sum()
 }
 
-/// The torrent list's column captions and widths.
-///
-/// Each column is the wider of its designed width and what its caption needs,
-/// so switching language cannot clip a header. Returns the widths, the
-/// captions and their total.
-/// Identifies each list in `column_state`. PicoTorrent keyed the same table
-/// by list, which is what lets the four of them keep separate widths.
-pub const TORRENT_LIST: &str = "torrents";
-pub const DETAIL_LISTS: [&str; 3] = ["files", "peers", "trackers"];
-
 /// The details tabs' columns: caption key and designed width, in the order
-/// they are drawn. The tab order matches `DETAIL_LISTS` and the `int` the
-/// markup sends back.
+/// they are drawn. The tab order matches `RESIZABLE_LISTS[1..]`.
 ///
 /// Widths that used to be `horizontal-stretch: 1` get a real number here -
 /// a column that can be dragged has to be a number the header and the rows
@@ -800,6 +797,10 @@ const DETAIL_COLUMNS: [&[(&str, f32)]; 3] = [
 ];
 
 /// Every list whose columns can be sized, in the order the markup sends.
+///
+/// Also what identifies each list in `column_state`. PicoTorrent keyed the
+/// same table by list, which is what lets the four of them keep separate
+/// widths.
 pub const RESIZABLE_LISTS: [&str; 4] = ["torrents", "files", "peers", "trackers"];
 
 /// Widen every column to the widest thing in it - caption or cell.
@@ -827,23 +828,6 @@ fn fit_to_content(captions: &[SharedString], cells: &[Vec<String>]) -> Vec<f32> 
             (widest + PADDING).clamp(MIN, MAX)
         })
         .collect()
-}
-
-/// Widths, captions and total for one details tab.
-///
-/// Same rules as the torrent list: a saved width wins over the designed one
-/// but never over what the caption needs, so a longer translation cannot clip
-/// its own header.
-fn detail_columns(
-    tab: usize,
-    tr: &Translator,
-    saved: &std::collections::HashMap<i64, f32>,
-) -> (Vec<f32>, Vec<SharedString>, f32) {
-    // 12px of cell padding. No sort arrow here - the detail lists do not sort.
-    let captions = DETAIL_COLUMNS[tab]
-        .iter()
-        .map(|(key, base)| (ui_string(tr, key), *base));
-    sized_columns(captions, 12.0, saved)
 }
 
 /// Widths, captions and total for a list, from each column's caption and
@@ -877,7 +861,7 @@ fn sized_columns(
 
 /// Push the torrent list's columns into `Cols`, and the details tabs' with them.
 fn apply_columns(window: &MainWindow, ui: &Rc<Ui>) {
-    let saved = ui.cfg.get_column_widths(TORRENT_LIST);
+    let saved = ui.cfg.get_column_widths(RESIZABLE_LISTS[0]);
     let (widths, titles, total) = columns(&ui.tr.borrow(), &saved);
     apply_detail_columns(window, ui);
     let cols = window.global::<Cols>();
@@ -1000,23 +984,6 @@ fn save_widths(ui: &Rc<Ui>, list: usize, widths: &[f32]) {
     }
 }
 
-/// The window's size in LOGICAL pixels, which is what layouts speak in.
-///
-/// `size()` is physical: on a 200% display it is twice the number every width
-/// here is expressed in, so scaling columns against it would double them.
-fn logical_size(window: &MainWindow) -> (f32, f32) {
-    let handle = window.window();
-    let size = handle.size();
-    let scale = handle.scale_factor();
-    let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
-    (size.width as f32 / scale, size.height as f32 / scale)
-}
-
-/// How much width a list has to play with, minus what the scrollbar takes.
-fn available_width(window: &MainWindow) -> f32 {
-    logical_size(window).0 - 24.0
-}
-
 /// Put the Overview's divider where the right-hand column stops needing room.
 ///
 /// The right column is the one with a hard requirement: it carries the info
@@ -1050,7 +1017,10 @@ fn fit_overview(window: &MainWindow) {
     .into_iter()
     .fold(0.0f32, f32::max);
 
-    let available = available_width(window);
+    // In LOGICAL pixels, which is what layouts speak in: `size()` is physical,
+    // twice every width here on a 200% display. Minus what the scrollbar takes.
+    let handle = window.window();
+    let available = handle.size().to_logical(handle.scale_factor()).width - 24.0;
     // The left column keeps a floor of its own: handing the whole panel to the
     // right side would leave the name and save path unreadable, which is worse
     // than eliding a hash the context menu can widen again.
@@ -1062,9 +1032,11 @@ fn fit_overview(window: &MainWindow) {
 fn apply_detail_columns(window: &MainWindow, ui: &Rc<Ui>) {
     let d = window.global::<DCols>();
     let tr = ui.tr.borrow();
-    for (tab, list) in DETAIL_LISTS.iter().enumerate() {
+    for (tab, (list, columns)) in RESIZABLE_LISTS[1..].iter().zip(DETAIL_COLUMNS).enumerate() {
         let saved = ui.cfg.get_column_widths(list);
-        let (w, titles, total) = detail_columns(tab, &tr, &saved);
+        // 12px of cell padding. No sort arrow here - the detail lists do not sort.
+        let captions = columns.iter().map(|(key, base)| (ui_string(&tr, key), *base));
+        let (w, titles, total) = sized_columns(captions, 12.0, &saved);
         let w = ModelRc::new(VecModel::from(w));
         let titles = ModelRc::new(VecModel::from(titles));
         match tab {
@@ -1087,20 +1059,25 @@ fn apply_detail_columns(window: &MainWindow, ui: &Rc<Ui>) {
     }
 }
 
+/// The torrent list's column captions and widths.
+///
+/// Each column is the wider of its designed width and what its caption needs,
+/// so switching language cannot clip a header. Returns the widths, the
+/// captions and their total.
 fn columns(tr: &Translator, saved: &std::collections::HashMap<i64, f32>)
 -> (Vec<f32>, Vec<SharedString>, f32) {
-    // key, designed width. "#", "DL" and "UL" have no key: they are the same
-    // symbols in every locale the original ships.
+    // key, designed width. "#", "DL" and "UL" are not keys but the captions
+    // themselves: they are the same symbols in every locale the original ships.
     const COLUMNS: [(&str, f32); 16] = [
         ("name", 260.0),
-        ("", 44.0),
+        ("#", 44.0),
         ("size", 90.0),
         ("size_remaining", 120.0),
         ("status", 110.0),
         ("progress", 80.0),
         ("eta", 70.0),
-        ("", 90.0),
-        ("", 90.0),
+        ("DL", 90.0),
+        ("UL", 90.0),
         ("availability", 90.0),
         ("ratio", 60.0),
         ("seeds", 80.0),
@@ -1109,12 +1086,9 @@ fn columns(tr: &Translator, saved: &std::collections::HashMap<i64, f32>)
         ("completed_on", 130.0),
         ("label", 100.0),
     ];
-    const FIXED: [&str; 16] = [
-        "", "#", "", "", "", "", "", "DL", "UL", "", "", "", "", "", "", "",
-    ];
-    let captions = COLUMNS.iter().zip(FIXED).map(|((key, base), fixed)| {
-        let caption = if key.is_empty() { SharedString::from(fixed) } else { ui_string(tr, key) };
-        (caption, *base)
+    let captions = COLUMNS.iter().map(|&(key, base)| {
+        let caption = if matches!(key, "#" | "DL" | "UL") { key.into() } else { ui_string(tr, key) };
+        (caption, base)
     });
     // 12px of cell padding, plus room for the "  ^" sort arrow the caption
     // grows by when the column is the active sort.
@@ -1168,43 +1142,32 @@ fn set_modal(ui: &Rc<Ui>, blocked: bool) {
     }
 }
 
-/// Make a dialog's own X button unblock the main window before it hides.
-///
-/// That path never reaches `dismiss`, so without this the title-bar close
-/// still flickered another application to the front while the Cancel button
-/// no longer did.
-fn wire_dialog_close<T>(dialog: &T, ui: &Rc<Ui>)
+/// Show a dialog and keep it: close handling and translations wired, its
+/// height clamped to the screen, and stored in its slot, which is what keeps
+/// it alive while it is open - `dialog_visible` drops it once it is not.
+fn present<T>(ui: &Rc<Ui>, slot: &RefCell<Option<T>>, dialog: T)
 where
-    T: slint::ComponentHandle,
+    T: slint::ComponentHandle + 'static,
     for<'a> L<'a>: slint::Global<'a, T>,
+    for<'a> Screen<'a>: slint::Global<'a, T>,
 {
     // Globals are per top-level component, not per process: every dialog gets
     // its own copy of L, and an unwired one returns "" - which showed up as a
     // Preferences window with no title at all.
-    wire_translations(dialog, ui);
+    wire_translations(&dialog, ui);
 
+    // The dialog's own X button unblocks the main window before it hides.
+    // That path never reaches `dismiss`, so without this the title-bar close
+    // still flickered another application to the front while the Cancel
+    // button no longer did.
     let u = ui.clone();
     dialog.window().on_close_requested(move || {
         set_modal(&u, false);
         slint::CloseRequestResponse::HideWindow
     });
-}
 
-/// Show a dialog and keep it: close handling and translations wired, its
-/// height clamped to the screen, and stored in its slot, which is what keeps
-/// it alive while it is open - `dialog_visible` drops it once it is not.
-fn present<T>(
-    ui: &Rc<Ui>,
-    slot: &RefCell<Option<T>>,
-    dialog: T,
-    set_limit: impl FnOnce(&T, f32) + 'static,
-) where
-    T: slint::ComponentHandle + 'static,
-    for<'a> L<'a>: slint::Global<'a, T>,
-{
-    wire_dialog_close(&dialog, ui);
     let _ = dialog.show();
-    clamp_to_screen(&dialog, set_limit);
+    clamp_to_screen(&dialog);
     *slot.borrow_mut() = Some(dialog);
 }
 
@@ -1305,6 +1268,9 @@ fn any_dialog_open(ui: &Rc<Ui>, owner: &MainWindow) -> bool {
         dialog_visible(&ui.torrent_dialog, owner),
         dialog_visible(&ui.close_prompt, owner),
         dialog_visible(&ui.db_prompt, owner),
+        dialog_visible(&ui.remove_dialog, owner),
+        dialog_visible(&ui.pico_dialog, owner),
+        dialog_visible(&ui.migrate_dialog, owner),
     ];
     open.iter().any(|open| *open)
 }
@@ -1480,7 +1446,8 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     // so "Active limit", "Active downloads" and "Active seeds" were stored by
     // Preferences and acted on by nothing.
     //
-    // A headless build has no such tick, so the limits do not apply there yet.
+    // A headless run has no window and so no such tick; `run_headless` in
+    // main.rs makes this same call on a timer of its own.
     ui.session.enforce_queue(
         &rows,
         ui.cfg.get_int("libtorrent.active_limit").unwrap_or(0),
@@ -2112,6 +2079,13 @@ fn prune<'a>(rows: Vec<TreeRow<'a>>, collapsed: &HashSet<String>) -> Vec<TreeRow
     out
 }
 
+/// Take `item` out of `set` if it is there, put it in if it is not.
+fn toggle<T: Eq + std::hash::Hash>(set: &mut HashSet<T>, item: T) {
+    if !set.remove(&item) {
+        set.insert(item);
+    }
+}
+
 /// Do these rows differ from the ones the list is already showing?
 ///
 /// The detail lists each built a brand-new model every tick, which Slint reads
@@ -2122,11 +2096,7 @@ fn list_changed<T>(current: &ModelRc<T>, rows: &[T]) -> bool
 where
     T: Clone + PartialEq + 'static,
 {
-    current.row_count() != rows.len()
-        || rows
-            .iter()
-            .enumerate()
-            .any(|(index, row)| current.row_data(index).as_ref() != Some(row))
+    current.iter().ne(rows.iter().cloned())
 }
 
 fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
@@ -2279,7 +2249,7 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
 
             // Tier names, ending in "New tier" - so choosing the last entry is
             // how a tier gets added, and there is no separate button for it.
-            let count = ui.session.tracker_tier_count(hash);
+            let count = ui.session.tracker_tiers(hash).len();
             let names: Vec<SharedString> = (0..count)
                 .map(|i| SharedString::from(format!("{} #{i}", ui_string(&tr2, "tier"))))
                 .chain(std::iter::once(ui_string(&tr2, "new_tier")))
@@ -2540,7 +2510,7 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             // is a question about nothing.
             let heading = u.tr.borrow().i18n("confirm_tracker_edit");
             let weak = window.as_weak();
-            open_confirm(&u, CONFIRM_TRACKER_KEY, heading, to.clone(), move |u| {
+            open_confirm(&u, CONFIRM_TRACKER_KEY, heading, to.clone(), "", ("yes", None), move |u, _| {
                 let Some(hash) = u.detail_hash.borrow().clone() else { return };
                 let Some(window) = weak.upgrade() else { return };
                 if u.session.edit_tracker(&hash, &from, &to) {
@@ -2560,7 +2530,7 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             let url = window.get_tracker_target().to_string();
             let heading = u.tr.borrow().i18n1("confirm_remove_tracker", &url);
             let weak = window.as_weak();
-            open_confirm(&u, CONFIRM_TRACKER_KEY, heading, String::new(), move |u| {
+            open_confirm(&u, CONFIRM_TRACKER_KEY, heading, String::new(), "", ("yes", None), move |u, _| {
                 let Some(hash) = u.detail_hash.borrow().clone() else { return };
                 u.session.remove_tracker(&hash, &url);
                 // Whatever was being edited is gone with the row.
@@ -2646,13 +2616,7 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     {
         let (w, u) = (window.as_weak(), ui.clone());
         window.on_toggle_detail_folder(move |path| {
-            let path = path.to_string();
-            {
-                let mut shut = u.detail_collapsed.borrow_mut();
-                if !shut.remove(&path) {
-                    shut.insert(path);
-                }
-            }
+            toggle(&mut u.detail_collapsed.borrow_mut(), path.to_string());
             // Redrawn now rather than left to the one-second tick: a fold that
             // takes up to a second to happen reads as a click that missed.
             let Some(window) = w.upgrade() else { return };
@@ -2683,9 +2647,7 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
                 selected.clear();
                 selected.extend(hashes[lo..=hi.min(hashes.len() - 1)].iter().cloned());
             } else if ctrl {
-                if !selected.remove(&hash) {
-                    selected.insert(hash);
-                }
+                toggle(&mut selected, hash);
                 *u.anchor.borrow_mut() = index;
             } else {
                 selected.clear();
@@ -2751,21 +2713,17 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             window.set_ctx_tags_open(false);
             window.set_ctx_ratio_open(false);
             window.set_ctx_seed_time_open(false);
-            window.set_ctx_ratio_choices(ModelRc::new(VecModel::from(
-                std::iter::once(ui_string(&u.tr.borrow(), "share_ratio_global"))
-                    .chain(std::iter::once(ui_string(&u.tr.borrow(), "share_ratio_none")))
-                    .chain(RATIO_PRESETS.iter().map(|r| SharedString::from(format!("{r:.1}"))))
-                    .collect::<Vec<_>>(),
-            )));
-            window.set_ctx_seed_time_choices(ModelRc::new(VecModel::from(
-                std::iter::once(ui_string(&u.tr.borrow(), "share_ratio_global"))
-                    .chain(std::iter::once(ui_string(&u.tr.borrow(), "share_ratio_none")))
-                    .chain(SEED_TIME_PRESETS.iter().map(|m| SharedString::from(match m {
-                        m if m % 60 == 0 => format!("{}h", m / 60),
-                        m => format!("{m}m"),
-                    })))
-                    .collect::<Vec<_>>(),
-            )));
+            window.set_ctx_ratio_choices(limit_choices(
+                &u,
+                RATIO_PRESETS.iter().map(|r| format!("{r:.1}")),
+            ));
+            window.set_ctx_seed_time_choices(limit_choices(
+                &u,
+                SEED_TIME_PRESETS.iter().map(|m| match m {
+                    m if m % 60 == 0 => format!("{}h", m / 60),
+                    m => format!("{m}m"),
+                }),
+            ));
         }
 
         // Grey out whichever of Pause/Resume does not apply, judged by the
@@ -2842,25 +2800,6 @@ fn open_remove_prompt(ui: &Rc<Ui>, files: Option<bool>) {
         return;
     }
 
-    // Turned off, and the caller already knows what to do: just do it. With no
-    // choice made, the dialog is the only place that choice can come from, so
-    // it is shown whatever the setting says.
-    if !ui.cfg.get_bool(CONFIRM_REMOVE_KEY)
-        && let Some(delete_files) = files
-    {
-        remove_all(ui, &targets, delete_files);
-        return;
-    }
-
-    // Re-using one dialog would mean it kept the previous selection alive; the
-    // targets are captured below, so a fresh one each time is also the simplest
-    // way to be sure they are current.
-    let Ok(dialog) = RemoveDialog::new()
-        .inspect_err(|err| tracing::error!("cannot create the remove dialog: {err}"))
-    else {
-        return;
-    };
-
     // The name when there is one, a count when there are several - a list of
     // twenty names would not fit and nobody reads it anyway.
     let subject = {
@@ -2877,122 +2816,92 @@ fn open_remove_prompt(ui: &Rc<Ui>, files: Option<bool>) {
         }
     };
 
-    {
+    let buttons = match files {
+        // Nothing was said: offer both, with the safe one primary.
+        None => ("remove_torrent", Some("remove_torrent_and_files")),
+        // It was said: one button, worded as the menu entry was, so the
+        // dialog confirms the thing that was actually clicked.
+        Some(true) => ("remove_torrent_and_files", None),
+        Some(false) => ("remove_torrent", None),
+    };
+    let (heading, note) = {
         let tr = ui.tr.borrow();
-        dialog.set_heading(tr.i18n("remove_confirm").into());
-        dialog.set_subject(subject.into());
-        dialog.set_note(tr.i18n("remove_keeps_files").into());
-        match files {
-            // Nothing was said: offer both, with the safe one primary.
-            None => {
-                dialog.set_primary_text(tr.i18n("remove_torrent").into());
-                dialog.set_secondary_text(tr.i18n("remove_torrent_and_files").into());
-            }
-            // It was said: one button, worded as the menu entry was, so the
-            // dialog confirms the thing that was actually clicked.
-            Some(true) => {
-                dialog.set_primary_text(tr.i18n("remove_torrent_and_files").into());
-                dialog.set_secondary_text(SharedString::new());
-            }
-            Some(false) => {
-                dialog.set_primary_text(tr.i18n("remove_torrent").into());
-                dialog.set_secondary_text(SharedString::new());
-            }
-        }
-    }
-
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        let targets = targets.clone();
-        dialog.on_chosen(move |secondary, remember| {
-            // With one button the caller's choice stands; with two, the second
-            // button is the one that takes the files.
-            let delete_files = files.unwrap_or(secondary);
-            if remember {
-                u.cfg.set(CONFIRM_REMOVE_KEY, &false);
-            }
-            remove_all(&u, &targets, delete_files);
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-            *u.remove_dialog.borrow_mut() = None;
-        });
-    }
-
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_cancelled(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-            *u.remove_dialog.borrow_mut() = None;
-        });
-    }
-
-    present(ui, &ui.remove_dialog, dialog, |d, h| d.set_screen_limit(h));
+        (tr.i18n("remove_confirm"), tr.i18n("remove_keeps_files"))
+    };
+    open_confirm(ui, CONFIRM_REMOVE_KEY, heading, subject, &note, buttons, move |u, secondary| {
+        // With one button the caller's choice stands; with two, the second
+        // button is the one that takes the files.
+        remove_all(u, &targets, files.unwrap_or(secondary));
+    });
 }
 
 /// The setting behind the tracker prompts.
 pub const CONFIRM_TRACKER_KEY: &str = "ui.confirm_tracker_change";
 
-/// Ask a yes-or-no question, unless the user has said not to, then act.
+/// Ask a question, unless the user has said not to, then act.
 ///
-/// The same dialog the removal prompt uses, with one action instead of two -
-/// a tracker edit has only one thing it can do, so a second button would be a
-/// choice nobody is being offered.
+/// `buttons` are the locale keys of the primary button and, when there is a
+/// choice to make, the secondary one; `act` is told whether the secondary was
+/// pressed. A tracker edit has only one thing it can do, so a second button
+/// there would be a choice nobody is being offered.
+///
+/// With one button and the setting turned off, the caller already knows what
+/// to do: it just happens. With two, the dialog is the only place the choice
+/// can come from, so it is shown whatever the setting says.
 fn open_confirm(
     ui: &Rc<Ui>,
     setting_key: &'static str,
     heading: String,
     subject: String,
-    act: impl Fn(&Rc<Ui>) + 'static,
+    note: &str,
+    (primary, secondary): (&str, Option<&str>),
+    act: impl Fn(&Rc<Ui>, bool) + 'static,
 ) {
-    if !ui.cfg.get_bool(setting_key) {
-        act(ui);
+    if secondary.is_none() && !ui.cfg.get_bool(setting_key) {
+        act(ui, false);
         return;
     }
 
+    // A fresh dialog each time: the caller's targets are captured in `act`,
+    // so re-using one would keep a previous selection alive.
     let dialog = match RemoveDialog::new() {
         Ok(d) => d,
         Err(err) => {
             tracing::error!("cannot create the confirmation dialog: {err}");
             // Asking was the point, but refusing to act because a window would
-            // not open is worse: the user asked for this.
-            act(ui);
+            // not open is worse: the user asked for this. Not with two
+            // buttons, though - then nobody has said which.
+            if secondary.is_none() {
+                act(ui, false);
+            }
             return;
         }
     };
 
-    dialog.set_heading(heading.into());
-    dialog.set_subject(subject.into());
-    dialog.set_note(SharedString::new());
-    dialog.set_primary_text(ui.tr.borrow().i18n("yes").into());
-    dialog.set_secondary_text(SharedString::new());
+    {
+        let tr = ui.tr.borrow();
+        dialog.set_heading(heading.into());
+        dialog.set_subject(subject.into());
+        dialog.set_note(note.into());
+        dialog.set_primary_text(tr.i18n(primary).into());
+        dialog.set_secondary_text(secondary.map(|key| tr.i18n(key)).unwrap_or_default().into());
+    }
 
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_chosen(move |_secondary, remember| {
+        dialog.on_chosen(move |secondary, remember| {
             if remember {
                 u.cfg.set(setting_key, &false);
             }
-            act(&u);
+            act(&u, secondary);
             if let Some(d) = weak.upgrade() {
                 dismiss(&u, &d);
             }
-            *u.remove_dialog.borrow_mut() = None;
         });
     }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_cancelled(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-            *u.remove_dialog.borrow_mut() = None;
-        });
-    }
+    dialog.on_cancelled(closer(&dialog, ui));
 
-    present(ui, &ui.remove_dialog, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.remove_dialog, dialog);
 }
 
 fn remove_all(ui: &Rc<Ui>, targets: &[String], delete_files: bool) {
@@ -3118,10 +3027,6 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
                     let _ = window.hide();
                 }
             }
-            // The tray's Exit. Deliberate enough not to be second-guessed.
-            "exit-now" => {
-                let _ = slint::quit_event_loop();
-            }
             // The dialogs are still Win32-only; the port lands them next.
             other => tracing::info!("action '{other}' is not implemented in the Slint UI yet"),
         }
@@ -3194,21 +3099,13 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
 
     {
         let u = ui.clone();
-        window.on_detail_column_resized(move |tab, column, width| {
-            // The markup sends the tab as an index into DETAIL_LISTS; anything
-            // else is a markup bug rather than something to store under a
-            // wrong list id.
-            if let Some(list) = DETAIL_LISTS.get(tab.max(0) as usize) {
-                u.cfg.set_column_width(list, column.max(0) as i64, width);
+        window.on_column_resized(move |list, column, width| {
+            // The markup sends the list as an index into RESIZABLE_LISTS;
+            // anything else is a markup bug rather than something to store
+            // under a wrong list id.
+            if let Some(name) = RESIZABLE_LISTS.get(list.max(0) as usize) {
+                u.cfg.set_column_width(name, column.max(0) as i64, width);
             }
-        });
-    }
-
-    {
-        let u = ui.clone();
-        window.on_column_resized(move |column, width| {
-            u.cfg
-                .set_column_width(TORRENT_LIST, column.max(0) as i64, width);
         });
     }
 
@@ -3275,7 +3172,7 @@ fn open_add_magnet(ui: &Rc<Ui>) {
 
     dialog.on_cancelled(closer(&dialog, ui));
 
-    present(ui, &ui.magnet_dialog, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.magnet_dialog, dialog);
 }
 
 /// File > Add torrent: pick one or more `.torrent` files, then run them
@@ -3688,12 +3585,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
                 return;
             };
             let Some(out) = b.excluded.get(sel) else { return };
-            {
-                let mut out = out.borrow_mut();
-                if !out.remove(&index) {
-                    out.insert(index);
-                }
-            }
+            toggle(&mut out.borrow_mut(), index);
             b.redraw(sel);
         });
     }
@@ -3706,27 +3598,12 @@ fn show_next_pending(ui: &Rc<Ui>) {
                 return;
             };
             let Some(folded) = b.shut.get(sel) else { return };
-            let path = path.to_string();
-            {
-                let mut folded = folded.borrow_mut();
-                if !folded.remove(&path) {
-                    folded.insert(path);
-                }
-            }
+            toggle(&mut folded.borrow_mut(), path.to_string());
             b.redraw(sel);
         });
     }
 
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_browse(move || {
-            if let Some(dir) = pick_folder(&u, "save_torrent_to")
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_save_path(dir.into());
-            }
-        });
-    }
+    dialog.on_browse(browse(&dialog, ui, "save_torrent_to", AddTorrentDialog::set_save_path));
 
     {
         let (weak, u, b) = (dialog.as_weak(), ui.clone(), batch.clone());
@@ -3748,22 +3625,21 @@ fn show_next_pending(ui: &Rc<Ui>) {
                 // shut folder has no rows, and a file nobody can see is still a
                 // file the user left ticked. A magnet still without metadata
                 // has no files, and takes all of them.
+                //
+                // None means "everything", which is not the same as an explicit
+                // list of all of them - keep the distinction the session
+                // expects. `excluded` only ever holds indices of files the
+                // list shows, so it is empty exactly when nothing is unticked.
                 let only_files = match &entry.source {
                     AddSource::Torrent(_, t) => {
                         let out = b.excluded[i].borrow();
-                        let shown = t.files.iter().filter(|f| !f.padding);
-                        let mut total = 0;
-                        let mut included: Vec<usize> = Vec::new();
-                        for file in shown {
-                            total += 1;
-                            if !out.contains(&file.index) {
-                                included.push(file.index);
-                            }
-                        }
-                        // None means "everything", which is not the same as an
-                        // explicit list of all of them - keep the distinction
-                        // the session expects.
-                        (included.len() != total).then_some(included)
+                        (!out.is_empty()).then(|| {
+                            t.files
+                                .iter()
+                                .filter(|f| !f.padding && !out.contains(&f.index))
+                                .map(|f| f.index)
+                                .collect()
+                        })
                     }
                     AddSource::Magnet(_) => None,
                 };
@@ -3774,17 +3650,12 @@ fn show_next_pending(ui: &Rc<Ui>) {
                         save_path: save_path.clone(),
                         start_torrent: start,
                         only_files,
-                        label_id: None,
+                        ..default_add_params()
                     },
                 );
             }
             drop(entries);
-
-            dismiss(&u, &d);
-            *u.torrent_dialog.borrow_mut() = None;
-            u.add_batch.borrow_mut().take();
-            // Anything dropped in while the dialog was open gets its own batch.
-            show_next_pending(&u);
+            close_add_dialog(&u, &d);
         });
     }
 
@@ -3792,15 +3663,21 @@ fn show_next_pending(ui: &Rc<Ui>) {
         let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_cancelled(move || {
             if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
+                close_add_dialog(&u, &d);
             }
-            *u.torrent_dialog.borrow_mut() = None;
-            u.add_batch.borrow_mut().take();
-            show_next_pending(&u);
         });
     }
 
-    present(ui, &ui.torrent_dialog, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.torrent_dialog, dialog);
+}
+
+/// Close the Add dialog and let go of its batch.
+fn close_add_dialog(ui: &Rc<Ui>, d: &AddTorrentDialog) {
+    dismiss(ui, d);
+    *ui.torrent_dialog.borrow_mut() = None;
+    ui.add_batch.borrow_mut().take();
+    // Anything dropped in while the dialog was open gets its own batch.
+    show_next_pending(ui);
 }
 
 /// Themes and close actions, in the order the combo boxes show them. Kept
@@ -3978,12 +3855,7 @@ fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
     dialog.set_web_password_set(password_set);
     dialog.set_web_password(SharedString::new());
 
-    dialog.set_web_tls_modes(ModelRc::new(VecModel::from(
-        ["tls_self_signed", "tls_custom", "tls_off"]
-            .iter()
-            .map(|key| ui_string(&ui.tr.borrow(), key))
-            .collect::<Vec<_>>(),
-    )));
+    dialog.set_web_tls_modes(strings(ui, &["tls_self_signed", "tls_custom", "tls_off"]));
     let mode = cfg
         .get_string("webui.tls_mode")
         .unwrap_or_else(|| String::from("self-signed"));
@@ -4267,16 +4139,12 @@ fn wire_rules(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
             clear_label_editor(&d);
         });
     }
-    {
-        let weak = dialog.as_weak();
-        dialog.on_browse_label_path(move || {
-            if let Some(dir) = rfd::FileDialog::new().pick_folder()
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_edit_label_path(dir.to_string_lossy().as_ref().into());
-            }
-        });
-    }
+    dialog.on_browse_label_path(browse(
+        dialog,
+        ui,
+        "save_path",
+        PreferencesDialog::set_edit_label_path,
+    ));
 
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
@@ -4354,9 +4222,10 @@ fn wire_rules(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
 ///
 /// The margin covers the title bar and borders, which sit outside the client
 /// area this height applies to.
-pub(super) fn clamp_to_screen<T>(window: &T, set: impl FnOnce(&T, f32) + 'static)
+pub(super) fn clamp_to_screen<T>(window: &T)
 where
     T: slint::ComponentHandle + 'static,
+    for<'a> Screen<'a>: slint::Global<'a, T>,
 {
     // Deferred by one turn of the event loop, and that is the whole point.
     //
@@ -4377,7 +4246,7 @@ where
         if let Ok(forced) = std::env::var("NANOTORRENT_SCREEN_LIMIT")
             && let Ok(h) = forced.parse::<f32>()
         {
-            set(&window, h);
+            window.global::<Screen>().set_limit(h);
             return;
         }
 
@@ -4395,7 +4264,7 @@ where
         const CHROME: f32 = 56.0;
         let usable = (physical / scale) - CHROME;
         if usable.is_finite() && usable > 200.0 {
-            set(&window, usable);
+            window.global::<Screen>().set_limit(usable);
         }
     });
 }
@@ -4559,15 +4428,12 @@ fn open_preferences(ui: &Rc<Ui>) {
         // opens, so without this it comes back holding whatever was last typed
         // - including a password still sitting in the field, and settings that
         // may have changed underneath it since.
-        load_preferences(existing, ui);
-        wire_rules(existing, ui);
-        wire_web(existing, ui);
-        wire_plugins(existing, ui);
+        fill_preferences(existing, ui);
         let _ = existing.show();
         // Re-clamped on every open, not just the first: the dialog is kept
         // alive between opens, so if it was last used on another monitor it
         // would otherwise keep that screen's limit on this one.
-        clamp_to_screen(existing, |d, h| d.set_screen_limit(h));
+        clamp_to_screen(existing);
         return;
     }
 
@@ -4577,10 +4443,7 @@ fn open_preferences(ui: &Rc<Ui>) {
         return;
     };
 
-    load_preferences(&dialog, ui);
-    wire_rules(&dialog, ui);
-    wire_web(&dialog, ui);
-    wire_plugins(&dialog, ui);
+    fill_preferences(&dialog, ui);
 
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
@@ -4614,49 +4477,20 @@ fn open_preferences(ui: &Rc<Ui>) {
         });
     }
     dialog.on_cancelled(closer(&dialog, ui));
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_browse_save_path(move || {
-            if let Some(dir) = pick_folder(&u, "save_path")
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_save_path(dir.into());
-            }
-        });
-    }
-    // The three folder pickers added with the transfer settings. One closure
-    // shape each, differing only in which property they fill - kept explicit
-    // rather than generic, because a macro here would be longer than the three.
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_browse_incomplete(move || {
-            if let Some(dir) = pick_folder(&u, "incomplete_path")
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_incomplete_path(dir.into());
-            }
-        });
-    }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_browse_move_completed(move || {
-            if let Some(dir) = pick_folder(&u, "move_completed_path")
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_move_completed_path(dir.into());
-            }
-        });
-    }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_browse_watch(move || {
-            if let Some(dir) = pick_folder(&u, "watch_path")
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_watch_path(dir.into());
-            }
-        });
-    }
+    dialog.on_browse_save_path(browse(&dialog, ui, "save_path", PreferencesDialog::set_save_path));
+    dialog.on_browse_incomplete(browse(
+        &dialog,
+        ui,
+        "incomplete_path",
+        PreferencesDialog::set_incomplete_path,
+    ));
+    dialog.on_browse_move_completed(browse(
+        &dialog,
+        ui,
+        "move_completed_path",
+        PreferencesDialog::set_move_completed_path,
+    ));
+    dialog.on_browse_watch(browse(&dialog, ui, "watch_path", PreferencesDialog::set_watch_path));
     {
         // A `for` over a model cannot write back through the loop variable, so
         // the checkbox reports and this puts the answer in the model.
@@ -4724,10 +4558,7 @@ fn open_preferences(ui: &Rc<Ui>) {
             // over the import. `load_preferences` also clears the note, which
             // is why the report goes in afterwards.
             if done.is_ok() {
-                load_preferences(&d, &u);
-                wire_rules(&d, &u);
-                wire_web(&d, &u);
-                wire_plugins(&d, &u);
+                fill_preferences(&d, &u);
             }
             show_db_note(&d, &u, done);
         });
@@ -4762,10 +4593,27 @@ fn open_preferences(ui: &Rc<Ui>) {
         Err(err) => tracing::error!("could not register associations: {err:#}"),
     });
 
-    present(ui, &ui.prefs_dialog, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.prefs_dialog, dialog);
 }
 
-/// Fill every Preferences tab from the settings database.
+/// Fill every Preferences tab, the rule, web and plugin ones included, from
+/// the settings database.
+fn fill_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
+    load_preferences(d, ui);
+    wire_rules(d, ui);
+    wire_web(d, ui);
+    wire_plugins(d, ui);
+}
+
+/// Translated strings for a combo box, in the order of `keys`.
+fn strings(ui: &Ui, keys: &[&str]) -> ModelRc<SharedString> {
+    let tr = ui.tr.borrow();
+    ModelRc::new(VecModel::from(
+        keys.iter().map(|key| ui_string(&tr, key)).collect::<Vec<_>>(),
+    ))
+}
+
+/// Fill the plain settings from the database.
 ///
 /// Called on open and again on re-open: the dialog is kept alive between
 /// showings, so without this it would still hold whatever was typed last time.
@@ -4799,23 +4647,16 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     d.set_languages(ModelRc::new(VecModel::from(langs)));
     d.set_language_index(index as i32);
 
-    d.set_themes(ModelRc::new(VecModel::from(
-        ["theme_system", "theme_light", "theme_dark"]
-            .iter()
-            .map(|key| ui_string(&ui.tr.borrow(), key))
-            .collect::<Vec<_>>(),
-    )));
+    d.set_themes(strings(ui, &["theme_system", "theme_light", "theme_dark"]));
     let theme = cfg
         .get_string("theme_id")
         .unwrap_or_else(|| String::from("system"));
     d.set_theme_index(THEMES.iter().position(|t| *t == theme).unwrap_or(0) as i32);
 
-    d.set_close_actions(ModelRc::new(VecModel::from(
-        ["close_ask_every_time", "close_minimize_short", "close_exit"]
-            .iter()
-            .map(|key| ui_string(&ui.tr.borrow(), key))
-            .collect::<Vec<_>>(),
-    )));
+    d.set_close_actions(strings(
+        ui,
+        &["close_ask_every_time", "close_minimize_short", "close_exit"],
+    ));
     // close_action is persistent - it survives restore-defaults, unlike the rest.
     let close = cfg.get_persistent("ui.close_action").unwrap_or_default();
     d.set_close_action_index(CLOSE_ACTIONS.iter().position(|a| *a == close).unwrap_or(0) as i32);
@@ -4876,19 +4717,17 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     d.set_require_incoming_encryption(cfg.get_bool("libtorrent.require_incoming_encryption"));
     d.set_anonymous_mode(cfg.get_bool("libtorrent.anonymous_mode"));
 
-    d.set_proxy_types(ModelRc::new(VecModel::from(
-        [
+    d.set_proxy_types(strings(
+        ui,
+        &[
             "proxy_type_none",
             "socks4",
             "socks5",
             "socks5_with_credentials",
             "http",
             "http_with_credentials",
-        ]
-        .iter()
-        .map(|key| ui_string(&ui.tr.borrow(), key))
-        .collect::<Vec<_>>(),
-    )));
+        ],
+    ));
     d.set_proxy_type_index(cfg.get_int("libtorrent.proxy_type").unwrap_or(0) as i32);
     d.set_proxy_host(
         cfg.get_string("libtorrent.proxy_host")
@@ -4967,12 +4806,10 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
             .into(),
     );
     d.set_seed_time_limit(cfg.get_int("queue.seed_time_limit").unwrap_or(-1).to_string().into());
-    d.set_share_actions(ModelRc::new(VecModel::from(
-        ["share_action_pause", "share_action_remove", "share_action_remove_data"]
-            .iter()
-            .map(|key| ui_string(&ui.tr.borrow(), key))
-            .collect::<Vec<_>>(),
-    )));
+    d.set_share_actions(strings(
+        ui,
+        &["share_action_pause", "share_action_remove", "share_action_remove_data"],
+    ));
     d.set_share_action_index(match cfg.get_string("queue.share_limit_action").as_deref() {
         Some("remove") => 1,
         Some("remove_with_data") => 2,
@@ -5033,6 +4870,44 @@ const RATIO_PRESETS: [f64; 4] = [1.0, 2.0, 3.0, 5.0];
 /// translating.
 const SEED_TIME_PRESETS: [i64; 4] = [30, 60, 360, 1440];
 
+/// The context menu's ratio and seed-time choices: "follow the global
+/// setting", "none", then `presets` as they read.
+fn limit_choices(ui: &Ui, presets: impl Iterator<Item = String>) -> ModelRc<SharedString> {
+    let tr = ui.tr.borrow();
+    let leading = [ui_string(&tr, "share_ratio_global"), ui_string(&tr, "share_ratio_none")];
+    ModelRc::new(VecModel::from(
+        leading.into_iter().chain(presets.map(SharedString::from)).collect::<Vec<_>>(),
+    ))
+}
+
+/// The limit a `limit_choices` index stands for.
+///
+/// 0 is "follow the global setting", which is NULL in the column - not
+/// `zero`, which would mean "stop immediately" and is what 1 picks.
+fn preset<T: Copy>(index: i32, presets: &[T], zero: T) -> Option<T> {
+    match index {
+        0 => None,
+        1 => Some(zero),
+        other => presets.get(other as usize - 2).copied(),
+    }
+}
+
+/// Apply a context-menu choice to every selected torrent, then show it
+/// straight away rather than on the next tick.
+fn for_targets(
+    window: &slint::Weak<MainWindow>,
+    ui: &Rc<Ui>,
+    model: &Rc<VecModel<Row>>,
+    act: impl Fn(&str),
+) {
+    for hash in ui.targets() {
+        act(&hash);
+    }
+    if let Some(window) = window.upgrade() {
+        refresh(&window, ui, model);
+    }
+}
+
 /// The locale key for a priority level.
 fn priority_key(level: i64) -> &'static str {
     match level {
@@ -5064,6 +4939,24 @@ fn pick_folder(ui: &Rc<Ui>, title_key: &str) -> Option<String> {
         .set_title(ui.tr.borrow().i18n(title_key))
         .pick_folder()
         .map(|dir| dir.to_string_lossy().into_owned())
+}
+
+/// A Browse button's handler: ask for a folder with `pick_folder`, and put the
+/// answer in the field `set` fills.
+fn browse<T: slint::ComponentHandle + 'static>(
+    dialog: &T,
+    ui: &Rc<Ui>,
+    title_key: &'static str,
+    set: fn(&T, SharedString),
+) -> impl Fn() + 'static {
+    let (weak, u) = (dialog.as_weak(), ui.clone());
+    move || {
+        if let Some(dir) = pick_folder(&u, title_key)
+            && let Some(d) = weak.upgrade()
+        {
+            set(&d, dir.into());
+        }
+    }
 }
 
 /// Minutes past midnight as "HH:MM", for the schedule fields.
@@ -5322,11 +5215,6 @@ fn set_num(cfg: &crate::core::configuration::Configuration, key: &str, text: &st
 fn sort_rows(rows: &mut [TorrentStatus], column: usize, ascending: bool) {
     use std::cmp::Ordering;
 
-    // Total order over f32 without unwrapping a partial_cmp that NaN can fail:
-    // availability and ratio are computed, and a NaN would panic a sort.
-    fn f(a: f32, b: f32) -> Ordering {
-        a.partial_cmp(&b).unwrap_or(Ordering::Equal)
-    }
     fn s(a: &str, b: &str) -> Ordering {
         a.to_lowercase().cmp(&b.to_lowercase())
     }
@@ -5338,13 +5226,16 @@ fn sort_rows(rows: &mut [TorrentStatus], column: usize, ascending: bool) {
             2 => a.total_wanted.cmp(&b.total_wanted),
             3 => a.total_wanted_remaining.cmp(&b.total_wanted_remaining),
             4 => s(&format!("{:?}", a.state), &format!("{:?}", b.state)),
-            5 => f(a.progress, b.progress),
+            // total_cmp, a total order over f32: availability and ratio are
+            // computed, and a NaN must not panic the sort. It lands at one
+            // end rather than anywhere.
+            5 => a.progress.total_cmp(&b.progress),
             // No ETA sorts last ascending, which is where "unknown" belongs.
             6 => a.eta.is_none().cmp(&b.eta.is_none()).then(a.eta.cmp(&b.eta)),
             7 => a.download_payload_rate.cmp(&b.download_payload_rate),
             8 => a.upload_payload_rate.cmp(&b.upload_payload_rate),
-            9 => f(a.availability, b.availability),
-            10 => f(a.ratio, b.ratio),
+            9 => a.availability.total_cmp(&b.availability),
+            10 => a.ratio.total_cmp(&b.ratio),
             11 => a.seeds_current.cmp(&b.seeds_current),
             12 => a.peers_current.cmp(&b.peers_current),
             13 => a.added_on.cmp(&b.added_on),
@@ -5473,7 +5364,7 @@ fn open_about(ui: &Rc<Ui>) {
     });
     dialog.on_closed(closer(&dialog, ui));
 
-    present(ui, &ui.about_dialog, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.about_dialog, dialog);
 }
 
 /// Help > Command line: the same text `--help` prints.
@@ -5495,7 +5386,7 @@ fn open_cli_help(ui: &Rc<Ui>) {
     dialog.set_text(crate::help_text(&ui.tr.borrow()).into());
     dialog.on_closed(closer(&dialog, ui));
 
-    present(ui, &ui.cli_help_dialog, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.cli_help_dialog, dialog);
 }
 
 /// Show what an update check found.
@@ -5612,7 +5503,7 @@ fn open_db_prompt(ui: &Rc<Ui>) {
         });
     }
 
-    present(ui, &ui.db_prompt, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.db_prompt, dialog);
 }
 
 /// The "a new version is available" window.
@@ -5653,7 +5544,7 @@ fn open_update(ui: &Rc<Ui>, info: &crate::updatechecker::UpdateInfo) {
     }
     dialog.on_closed(closer(&dialog, ui));
 
-    present(ui, &ui.update_dialog, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.update_dialog, dialog);
 }
 
 /// Piece sizes offered by the Create dialog, and the values behind them.
@@ -5715,18 +5606,7 @@ fn open_create_torrent(ui: &Rc<Ui>) {
             }
         });
     }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_pick_folder(move || {
-            if let Some(path) = rfd::FileDialog::new()
-                .set_title(u.tr.borrow().i18n("source_folder"))
-                .pick_folder()
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_source(path.to_string_lossy().as_ref().into());
-            }
-        });
-    }
+    dialog.on_pick_folder(browse(&dialog, ui, "source_folder", CreateTorrentDialog::set_source));
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_accepted(move || {
@@ -5790,7 +5670,7 @@ fn open_create_torrent(ui: &Rc<Ui>) {
     }
     dialog.on_cancelled(closer(&dialog, ui));
 
-    present(ui, &ui.create_dialog, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.create_dialog, dialog);
 }
 
 /// Drain a finished create-torrent run. Called from the refresh tick.
@@ -5810,12 +5690,7 @@ fn poll_create_torrent(ui: &Rc<Ui>) {
                 // the new torrent seeds in place instead of re-downloading it.
                 ui.session.add_torrent(
                     AddTorrentSource::TorrentFileBytes(bytes),
-                    AddParams {
-                        save_path,
-                        start_torrent: true,
-                        only_files: None,
-                        label_id: None,
-                    },
+                    AddParams { save_path, ..default_add_params() },
                 );
             }
             tracing::info!("created torrent: {name}");
@@ -5850,27 +5725,10 @@ fn menu_pick<T>(index: i32, entries: &[T]) -> Option<&T> {
 }
 
 /// Build the model behind a Filters/Labels menu: "None" first, then the
-/// entries, with the active one ticked.
-///
-/// Slint's MenuItem has no checked state, so the tick is part of the title -
-/// which is why this runs again after every pick.
-fn menu_model(
-    names: impl Iterator<Item = String>,
-    active: i32,
-    none: &str,
-) -> ModelRc<SharedString> {
-    let titles = std::iter::once(none.to_string())
-        .chain(names)
-        .enumerate()
-        .map(|(i, name)| {
-            SharedString::from(if i as i32 == active {
-                format!("\u{2713} {name}")
-            } else {
-                format!("   {name}")
-            })
-        })
-        .collect::<Vec<_>>();
-    ModelRc::new(VecModel::from(titles))
+/// entries. The tick on the active one is the markup's.
+fn menu_model(names: impl Iterator<Item = String>, none: &str) -> ModelRc<SharedString> {
+    let titles = std::iter::once(none.to_string()).chain(names).map(SharedString::from);
+    ModelRc::new(VecModel::from(titles.collect::<Vec<_>>()))
 }
 
 /// How many one-second samples the toolbar chart keeps: one minute of history.
@@ -5928,16 +5786,8 @@ fn spark_path(values: &[i64], peak: i64) -> String {
 /// the same shape the Win32 menus use.
 fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     let none = ui.tr.borrow().i18n("none");
-    window.set_filter_names(menu_model(
-        ui.cfg.get_filters().into_iter().map(|f| f.name),
-        0,
-        &none,
-    ));
-    window.set_label_names(menu_model(
-        ui.cfg.get_labels().into_iter().map(|l| l.name),
-        0,
-        &none,
-    ));
+    window.set_filter_names(menu_model(ui.cfg.get_filters().into_iter().map(|f| f.name), &none));
+    window.set_label_names(menu_model(ui.cfg.get_labels().into_iter().map(|l| l.name), &none));
 
     // The toolbar charts' widths, restored the way the dialog splitters are.
     //
@@ -6031,11 +5881,11 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
                 }
             });
             // Refresh now rather than waiting for the tick: a filter that only
-            // takes effect a second after the click reads as a dead menu.
+            // takes effect a second after the click reads as a dead menu. The
+            // names are re-read too, so ones Preferences added show up.
             if let Some(window) = w.upgrade() {
                 window.set_filter_names(menu_model(
                     filters.into_iter().map(|f| f.name),
-                    index,
                     &u.tr.borrow().i18n("none"),
                 ));
                 refresh(&window, &u, &m);
@@ -6043,43 +5893,19 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
         });
     }
 
-    // Assigning a label from the context menu. Index 0 is "None", which
-    // clears it - the same shape the filter and label menus use.
     {
         let (u, m3, w3) = (ui.clone(), model.clone(), window.as_weak());
         window.on_set_torrent_ratio(move |index| {
-            // 0 is "follow the global setting", which is NULL in the column -
-            // not 0, which would mean "stop immediately".
-            let limit = match index {
-                0 => None,
-                1 => Some(0.0),
-                other => RATIO_PRESETS.get(other as usize - 2).copied(),
-            };
-            for hash in u.targets() {
-                u.session.set_ratio_limit(&hash, limit);
-            }
-            if let Some(window) = w3.upgrade() {
-                refresh(&window, &u, &m3);
-            }
+            let limit = preset(index, &RATIO_PRESETS, 0.0);
+            for_targets(&w3, &u, &m3, |hash| u.session.set_ratio_limit(hash, limit));
         });
     }
 
     {
         let (u, m3, w3) = (ui.clone(), model.clone(), window.as_weak());
         window.on_set_torrent_seed_time(move |index| {
-            // Same shape as the ratio above: 0 is NULL (follow the global),
-            // 1 is 0 minutes (stop as soon as it finishes).
-            let limit = match index {
-                0 => None,
-                1 => Some(0),
-                other => SEED_TIME_PRESETS.get(other as usize - 2).copied(),
-            };
-            for hash in u.targets() {
-                u.session.set_seed_time_limit(&hash, limit);
-            }
-            if let Some(window) = w3.upgrade() {
-                refresh(&window, &u, &m3);
-            }
+            let limit = preset(index, &SEED_TIME_PRESETS, 0);
+            for_targets(&w3, &u, &m3, |hash| u.session.set_seed_time_limit(hash, limit));
         });
     }
 
@@ -6119,17 +5945,14 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
         });
     }
 
+    // Assigning a label from the context menu. Index 0 is "None", which
+    // clears it - the same shape the filter and label menus use.
     {
         let (u, m3, w3) = (ui.clone(), model.clone(), window.as_weak());
         window.on_assign_label(move |index| {
             let labels = u.cfg.get_labels();
             let label_id = menu_pick(index, &labels).map(|l| l.id);
-            for hash in u.targets() {
-                u.session.set_label(&hash, label_id);
-            }
-            if let Some(window) = w3.upgrade() {
-                refresh(&window, &u, &m3);
-            }
+            for_targets(&w3, &u, &m3, |hash| u.session.set_label(hash, label_id));
         });
     }
 
@@ -6141,7 +5964,6 @@ fn wire_filters(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
             if let Some(window) = w.upgrade() {
                 window.set_label_names(menu_model(
                     labels.into_iter().map(|l| l.name),
-                    index,
                     &u.tr.borrow().i18n("none"),
                 ));
                 refresh(&window, &u, &m);
@@ -6266,7 +6088,7 @@ fn ask_on_close(window: &MainWindow, ui: &Rc<Ui>) {
     }
     dialog.on_cancelled(closer(&dialog, ui));
 
-    present(ui, &ui.close_prompt, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.close_prompt, dialog);
 }
 
 /// Hide a minimised window into the tray, when both settings ask for it.
@@ -7030,24 +6852,15 @@ fn open_migrate(window: &MainWindow, ui: &Rc<Ui>, source: crate::core::migrate::
             if let Some(d) = weak.upgrade() {
                 dismiss(&u, &d);
             }
-            *u.pico_dialog.borrow_mut() = None;
             let Some(window) = owner.upgrade() else { return };
             run_migration(&window, &u, source, path.clone(), purge, settings);
         });
     }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_cancelled(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-            *u.pico_dialog.borrow_mut() = None;
-        });
-    }
+    dialog.on_cancelled(closer(&dialog, ui));
 
     // Globals are per top-level component: an unwired L returns "" for every
     // caption, which is a dialog with blank buttons.
-    present(ui, &ui.pico_dialog, dialog, |d, h| d.set_screen_limit(h));
+    present(ui, &ui.pico_dialog, dialog);
 }
 
 /// Run the migration on a worker thread, reporting into a progress window.
@@ -7092,21 +6905,10 @@ fn run_migration(
             }
         });
     }
-    {
-        let (weak, u) = (progress.as_weak(), ui.clone());
-        progress.on_closed(move || {
-            if let Some(d) = weak.upgrade() {
-                dismiss(&u, &d);
-            }
-            *u.migrate_dialog.borrow_mut() = None;
-        });
-    }
+    progress.on_closed(closer(&progress, ui));
 
-    wire_dialog_close(&progress, ui);
-    let _ = progress.show();
-    clamp_to_screen(&progress, |d, h| d.set_screen_limit(h));
     let handle = progress.as_weak();
-    *ui.migrate_dialog.borrow_mut() = Some(progress);
+    present(ui, &ui.migrate_dialog, progress);
 
     let session = ui.session.clone();
     // Raised for the worker's lifetime, so the per-add toasts stay quiet

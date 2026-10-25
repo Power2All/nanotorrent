@@ -50,10 +50,11 @@ A file added, edited or deleted while NanoTorrent is running is picked up the
 next time the plugin settings are applied - press Ok in Preferences ▸ Plugins
 and the folder is read again.
 
-Plugins work in headless builds too — that is arguably where they are most
-useful, since there is no window to watch. There is no Preferences dialog
-there, so use `--plugins on` and, for now, approve permissions from a desktop
-build sharing the same profile.
+Plugins work headless too — a headless build, or `--headless` — and that is
+arguably where they are most useful, since there is no window to watch. There
+is no Preferences dialog there, so use `--plugins on` and, for now, approve
+permissions from the window: start once without `--headless`, or use a
+desktop build sharing the same profile.
 
 ## Permissions
 
@@ -575,8 +576,8 @@ selection of its own, so the two can never end up disagreeing after a reload.
 The shape is fixed — a list, a text field, some buttons — and there is no
 layout language. That is deliberate: a plugin says what goes in the window and
 NanoTorrent decides how it looks, so a script cannot draw something that passes
-for part of the client asking for a password. In a headless build every `ui_*`
-call does nothing and the host says so once in the log, rather than failing.
+for part of the client asking for a password. In a headless run every `ui_*`
+call draws nothing and the host says so once in the log, rather than failing.
 
 `remove` takes two arities rather than a default argument: Rhai has no optional
 parameters, and `remove(hash)` deleting files by accident is a mistake a plugin
@@ -693,7 +694,7 @@ details panel. What a plugin changes in the session still shows up in both
 surfaces, because both read the same session — a torrent a plugin pauses reads
 as paused everywhere.
 
-Plugin windows are desktop-only. A headless build has nowhere to put one, so
+Plugin windows are desktop-only. A headless run has nowhere to put one, so
 the `ui_*` calls do nothing there; everything else in a plugin works the same.
 
 File-menu items are the exception: the web interface draws them, so on a
