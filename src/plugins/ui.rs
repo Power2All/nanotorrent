@@ -64,7 +64,11 @@ pub struct Field {
 }
 
 /// Everything the UI knows about one plugin.
-#[derive(Clone, Default)]
+///
+/// Serialised as the web interface's view of its window and form. The menus
+/// and the icon are left out: the browser gets those from other endpoints, or
+/// not at all.
+#[derive(Clone, Default, serde::Serialize)]
 pub struct PluginUi {
     // ---- its window ----------------------------------------------------
     /// Empty until the plugin calls `ui_window`, which is also what decides
@@ -93,15 +97,18 @@ pub struct PluginUi {
     // ---- its menu ------------------------------------------------------
     /// The dropdown's name in the menu bar. Empty falls back to the plugin's
     /// own name, so a plugin need not repeat itself.
+    #[serde(skip)]
     pub menu_title: String,
     /// `(id, label)` pairs. Empty means no dropdown: a menu with no items is
     /// a title that opens onto nothing.
+    #[serde(skip)]
     pub menu_items: Vec<(String, String)>,
 
     // ---- its items on the file context menu ----------------------------
     /// `(id, label)` pairs offered when a file is right-clicked in a torrent's
     /// details panel. Empty means the plugin adds nothing there, which is the
     /// default and what every plugin written before this did.
+    #[serde(skip)]
     pub file_menu: Vec<(String, String)>,
 
     /// The plugin's own icon, as SVG path data on a 16x16 grid.
@@ -113,6 +120,7 @@ pub struct PluginUi {
     ///
     /// Empty means the plugin never called `ui_icon`, and the front ends fall
     /// back to its initial.
+    #[serde(skip)]
     pub icon: String,
 
     // ---- its settings --------------------------------------------------
@@ -168,11 +176,22 @@ pub fn with_origin<T>(origin: Origin, f: impl FnOnce() -> T) -> T {
 }
 
 /// A click, on its way back to the plugin that drew it.
+///
+/// Also what the browser may send back, tagged by `kind`: named variants
+/// rather than free-form, so a request cannot invent an event the desktop
+/// window could not raise. The web layer fills in `plugin` from the URL.
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
 pub enum UiEvent {
     Row { plugin: String, id: String },
     /// A row in the upper list.
     Group { plugin: String, id: String },
-    Button { plugin: String, id: String, input: String },
+    Button {
+        plugin: String,
+        id: String,
+        #[serde(default)]
+        input: String,
+    },
     /// An item in the plugin's own menu-bar dropdown.
     Menu { plugin: String, id: String },
     /// One of the plugin's items on a file's context menu, with the file it
@@ -184,6 +203,7 @@ pub enum UiEvent {
         id: String,
         hash: String,
         index: i64,
+        #[serde(default)]
         name: String,
     },
     /// A form was saved. `values` is field id to value; a checkbox is "1" or
@@ -192,9 +212,11 @@ pub enum UiEvent {
     Form {
         plugin: String,
         id: String,
+        #[serde(default)]
         values: Vec<(String, String)>,
     },
     /// A form was dismissed without saving.
+    #[serde(rename = "formcancel")]
     FormCancelled { plugin: String, id: String },
     /// Configure, on the plugin's row in Preferences.
     Configure { plugin: String },
@@ -216,7 +238,7 @@ struct Registry {
     /// module does not have to know the host's own event type. None until the
     /// host is running, which is the normal state when plugins are off.
     events: Option<Arc<dyn Fn(Origin, UiEvent) + Send + Sync>>,
-    /// Set by the Slint side. None in a headless build, which is why every
+    /// Set by the Slint side. None in a headless run, which is why every
     /// `ui_*` host function is a no-op there rather than an error.
     repaint: Option<Arc<dyn Fn() + Send + Sync>>,
     /// Put one plugin's window on screen. Separate from `repaint` because
@@ -348,7 +370,6 @@ pub fn menus() -> Vec<(String, String)> {
         .collect()
 }
 
-/// The items in one plugin's dropdown, as `(id, label)`.
 /// A plugin's name as it belongs in a menu.
 ///
 /// The name is the file stem, so it is whatever the author called the file -
@@ -380,6 +401,7 @@ pub fn file_menu_items() -> Vec<(String, String, String)> {
         .collect()
 }
 
+/// The items in one plugin's dropdown, as `(id, label)`.
 pub fn menu_items(plugin: &str) -> Vec<(String, String)> {
     REGISTRY
         .lock()
@@ -633,5 +655,25 @@ mod tests {
 
         update("win-named", |ui| ui.title = String::from("Feeds"));
         assert!(snapshot("win-named").unwrap().has_window());
+    }
+
+    /// The `kind`s the web page sends, spelled as it spells them, and nothing
+    /// else: an event the window could not raise must not parse.
+    #[test]
+    fn the_browser_can_send_exactly_the_events_the_window_can_raise() {
+        let parse = |json: &str| serde_json::from_str::<UiEvent>(json);
+        for kind in ["opened", "configure"] {
+            assert!(parse(&format!(r#"{{"kind":"{kind}","plugin":"p"}}"#)).is_ok(), "{kind}");
+        }
+        for kind in ["row", "group", "button", "menu", "form", "formcancel"] {
+            assert!(parse(&format!(r#"{{"kind":"{kind}","plugin":"p","id":"x"}}"#)).is_ok(), "{kind}");
+        }
+        assert!(matches!(
+            parse(r#"{"kind":"filemenu","plugin":"p","id":"x","hash":"h","index":2}"#),
+            Ok(UiEvent::FileMenu { index: 2, .. })
+        ));
+        for bad in ["formcancelled", "FormCancelled", "Row", "anything"] {
+            assert!(parse(&format!(r#"{{"kind":"{bad}","plugin":"p","id":"x"}}"#)).is_err(), "{bad}");
+        }
     }
 }

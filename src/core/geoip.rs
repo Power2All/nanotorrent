@@ -44,9 +44,12 @@ impl GeoIp {
 
         let cache = env.get_application_data_path().join("geoip.mmdb");
         let this = self.clone();
+        // Built here because `cfg` is a borrow and the task is 'static. Through
+        // the proxy when one is set, like every other request this app makes.
+        let client = crate::core::http::client(cfg);
 
         handle.spawn(async move {
-            match load_database(&url, &cache).await {
+            match load_database(client, &url, &cache).await {
                 Ok(data) => match maxminddb::Reader::from_source(data) {
                     Ok(reader) => {
                         tracing::info!("GeoIP database loaded");
@@ -80,7 +83,15 @@ impl GeoIp {
 
 /// The country database, from the on-disk cache when it is fresh enough and
 /// from the network otherwise.
-async fn load_database(url: &str, cache: &PathBuf) -> anyhow::Result<Vec<u8>> {
+///
+/// A `client` that could not be built - a proxy that is configured but
+/// unusable - is a failed download, not a reason to go direct: the stale cache
+/// is still used, and nothing leaves this machine around the proxy.
+async fn load_database(
+    client: reqwest::Result<reqwest::Client>,
+    url: &str,
+    cache: &PathBuf,
+) -> anyhow::Result<Vec<u8>> {
     // Fresh enough cache?
     if let Ok(meta) = tokio::fs::metadata(cache).await
         && meta
@@ -93,7 +104,10 @@ async fn load_database(url: &str, cache: &PathBuf) -> anyhow::Result<Vec<u8>> {
         return Ok(data);
     }
 
-    let fresh = download(url).await;
+    let fresh = match client {
+        Ok(client) => download(&client, url).await,
+        Err(err) => Err(err.into()),
+    };
     match fresh {
         Ok(data) => {
             let _ = tokio::fs::write(cache, &data).await;
@@ -111,30 +125,30 @@ async fn load_database(url: &str, cache: &PathBuf) -> anyhow::Result<Vec<u8>> {
 }
 
 /// Fetch and decompress the database. DB-IP ships it gzipped.
-async fn download(url: &str) -> anyhow::Result<Vec<u8>> {
+async fn download(client: &reqwest::Client, url: &str) -> anyhow::Result<Vec<u8>> {
     // Month-stamped URLs (DB-IP publishes one file per month). If the
     // current month isn't up yet, fall back to the previous one.
     if url.contains("{YYYY-MM}") {
         let now = chrono::Utc::now();
         let this_month = url.replace("{YYYY-MM}", &now.format("%Y-%m").to_string());
-        match download_raw(&this_month).await {
+        match download_raw(client, &this_month).await {
             Ok(data) => return Ok(data),
             Err(err) => tracing::debug!("GeoIP download {this_month} failed: {err:#}"),
         }
         let previous = now - chrono::Duration::days(28);
         let last_month = url.replace("{YYYY-MM}", &previous.format("%Y-%m").to_string());
-        return download_raw(&last_month).await;
+        return download_raw(client, &last_month).await;
     }
 
-    download_raw(url).await
+    download_raw(client, url).await
 }
 
 /// One HTTP GET, with no decompression - split out so [`download`] can decide
 /// what to do with the bytes.
-async fn download_raw(url: &str) -> anyhow::Result<Vec<u8>> {
+async fn download_raw(client: &reqwest::Client, url: &str) -> anyhow::Result<Vec<u8>> {
     use std::io::Read;
 
-    let response = reqwest::get(url).await?.error_for_status()?;
+    let response = client.get(url).send().await?.error_for_status()?;
     let bytes = response.bytes().await?;
 
     // The database ships gzipped (…mmdb.gz); accept plain files too.

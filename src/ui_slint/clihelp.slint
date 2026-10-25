@@ -2,21 +2,15 @@
 // no terminal in front of them.
 
 import { Button, ScrollView, Palette } from "std-widgets.slint";
-import { L } from "globals.slint";
+import { L, Dialog, Screen } from "globals.slint";
 
-export component CliHelpDialog inherits Window {
-    icon: @image-url("../../res/app-256.png");
+export component CliHelpDialog inherits Dialog {
     title: L.s(L.revision, "command_line_help");
     preferred-width: 700px;
-    preferred-height: min(660px, root.screen-limit);
+    preferred-height: min(660px, Screen.limit);
     min-width: 400px;
     min-height: 300px;
-    /// The tallest this window may be, in logical pixels - set from the
-    /// monitor work area. Huge by default so a build that cannot read it
-    /// behaves as if unclamped.
-    in property <length> screen-limit: 100000px;
-    max-height: root.screen-limit;
-    background: Palette.background;
+    max-height: Screen.limit;
 
     in property <string> text;
 

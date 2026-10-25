@@ -112,6 +112,7 @@ pub fn register_torrent() -> anyhow::Result<()> {
 /// key's default value).
 #[cfg(windows)]
 pub(crate) fn set_string(subkey: &str, value_name: Option<&str>, data: &str) -> anyhow::Result<()> {
+    use super::utils::wide;
     use std::ptr::{null, null_mut};
     use winapi::um::winnt::{KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ};
     use winapi::um::winreg::{HKEY_CURRENT_USER, RegCloseKey, RegCreateKeyExW, RegSetValueExW};
@@ -158,11 +159,3 @@ pub(crate) fn set_string(subkey: &str, value_name: Option<&str>, data: &str) -> 
     Ok(())
 }
 
-#[cfg(windows)]
-fn wide(s: &str) -> Vec<u16> {
-    use std::os::windows::ffi::OsStrExt;
-    std::ffi::OsStr::new(s)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect()
-}

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Cymraeg (Y Deyrnas Unedig) - Partner Center: Welsh (United Kingdom) (cy-GB)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ Trosiad Rust o PicoTorrent gan Viktor Elofsson yw NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Fersiwn 0.4.4
+Fersiwn 0.4.5
 
-- Diogelwch: nid yw’r rhyngwyneb gwe dros HTTPS bellach yn agored i ymosodiad gwrthod gwasanaeth yn ei haen HTTP/2; mae’n defnyddio HTTP/1.1 yn unig nawr. Does dim angen newid dim ar eich ochr chi.
-- Terfynau rhannu: mae terfyn cymhareb bellach yn atal torrent ar y gymhareb a ddangosir yn y rhestr. Yn flaenorol, dim ond uwchlwythiadau ers i NanoTorrent gael ei gychwyn ddiwethaf a gyfrifwyd, felly gallai torrent barhau i hadu y tu hwnt i'w derfyn.
-- Atgyweiriadau: mae torrentiau v1 a wneir gyda “Creu torrent” bob amser yn ddilys ac yn dod allan yr un fath ar bob cyfrifiadur, ac mae “Gorfodi ailwirio” bellach yn gwirio torrent sydd wedi’i oedi yn syth yn lle dangos 0% nes iddo gael ei gychwyn.
+- Newydd: gall NanoTorrent redeg heb ffenestr. Dechreuwch “nanotorrent --headless” o derfynell ac mae’n dal ati i lwytho i lawr a hadu, gyda’r rhyngwyneb gwe yn ffordd i mewn. Mae Ctrl-C yn ei atal yn lân, ac mae --log-level yn gosod faint sy’n cael ei gofnodi.
+- Mae cau NanoTorrent bellach yn cadw cyflwr pob torrent ar y ffordd allan, felly does dim angen ailwirio dim y tro nesaf y caiff ei gychwyn.
+- Atgyweiriadau: nid yw’r ffenestr bellach yn dod yn ôl wedi’i lluniadu’n rhannol ar ôl bod wedi’i lleihau am sbel, mae’r terfynau ar gyfer torrentiau gweithredol bellach yn berthnasol heb y ffenestr hefyd, ac mae agor ffeil .torrent o derfynell tra bo NanoTorrent eisoes yn rhedeg yn gweithio gyda llwybr cymharol.
 - O dan y bonet: mae’r llyfrgelloedd y mae NanoTorrent wedi’i adeiladu arnynt wedi’u diweddaru gyda’u trwsiadau diweddaraf.
 
 

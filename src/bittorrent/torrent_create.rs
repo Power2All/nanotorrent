@@ -140,10 +140,7 @@ pub(crate) fn sha256(data: &[u8]) -> [u8; 32] {
 
 /// One interior node of a v2 merkle tree: SHA-256 over two child hashes.
 pub(crate) fn hash_pair(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
-    let mut h = Sha256::new();
-    h.update(a);
-    h.update(b);
-    h.finalize().into()
+    Sha256::new().chain_update(a).chain_update(b).finalize().into()
 }
 
 /// Merkle root over `leaves` (already padded to a power-of-two count).
@@ -308,21 +305,15 @@ fn hash_file_v2(path: &Path, piece_length: u32) -> Result<FileV2> {
     let piece_layer = if num_blocks <= blocks_per_piece {
         Vec::new()
     } else {
-        // Reduce up to the layer where each node spans exactly one piece.
-        let mut layer = leaves;
-        let mut span = 1usize;
-        while span < blocks_per_piece {
-            layer = layer.chunks(2).map(|p| hash_pair(&p[0], &p[1])).collect();
-            span *= 2;
-        }
+        // One node per piece: the root of that piece's run of (padded) leaves.
         // Keep only nodes that cover real data; trailing all-padding pieces are
         // "beyond the end of file" and omitted.
         let real_pieces = num_blocks.div_ceil(blocks_per_piece);
-        let mut out = Vec::with_capacity(real_pieces * 32);
-        for node in layer.iter().take(real_pieces) {
-            out.extend_from_slice(node);
-        }
-        out
+        leaves
+            .chunks(blocks_per_piece)
+            .take(real_pieces)
+            .flat_map(merkle_root)
+            .collect()
     };
 
     Ok(FileV2 {
@@ -416,18 +407,16 @@ fn tree_insert(tree: &mut Vec<(Vec<u8>, Ben)>, comps: &[String], leaf: Ben) {
         return;
     }
     // Find or create the sub-dict for comps[0].
-    let entry = tree.iter_mut().find(|(k, _)| *k == key);
-    let sub = match entry {
-        Some((_, Ben::Dict(d))) => d,
-        _ => {
-            tree.push((key.clone(), Ben::Dict(Vec::new())));
-            match &mut tree.last_mut().unwrap().1 {
-                Ben::Dict(d) => d,
-                _ => unreachable!(),
-            }
-        }
-    };
-    tree_insert(sub, &comps[1..], leaf);
+    let i = tree
+        .iter()
+        .position(|(k, v)| *k == key && matches!(v, Ben::Dict(_)))
+        .unwrap_or_else(|| {
+            tree.push((key, Ben::Dict(Vec::new())));
+            tree.len() - 1
+        });
+    if let Ben::Dict(sub) = &mut tree[i].1 {
+        tree_insert(sub, &comps[1..], leaf);
+    }
 }
 
 // Public builder
@@ -592,6 +581,7 @@ pub fn build(input: &CreateInput) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bittorrent::scratch_dir;
     use std::io::Write;
 
     /// Each version must emit ITS OWN keys and no others.
@@ -817,14 +807,6 @@ mod tests {
         assert!(validate_piece_length(3 * BLOCK as u32).is_err()); // not power of two
     }
 
-    /// A fresh, empty scratch folder for one test.
-    fn scratch_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("nt-tc-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     /// Write `len` bytes of a pattern that differs per `seed`, creating parent
     /// folders. Patterned rather than constant so that two files, or a file
     /// and its own shifted copy, never hash alike by accident.
@@ -900,7 +882,7 @@ mod tests {
     /// and empty files, which carry no data but must still be listed.
     #[test]
     fn v1_pieces_match_the_files_they_describe() {
-        let root = scratch_dir("v1verify");
+        let root = scratch_dir("tc-v1verify");
         put(&root, "unaligned.bin", 40_000, 1);
         put(&root, "aligned.bin", 32_768, 2);
         put(&root, "empty.bin", 0, 0);
@@ -946,7 +928,7 @@ mod tests {
     /// in the order the filesystem hands back, which is why it was replaced.
     #[test]
     fn v1_info_dict_matches_librqbit_where_it_was_right() {
-        let root = scratch_dir("v1rqbit");
+        let root = scratch_dir("tc-v1rqbit");
         put(&root, "single.bin", 40_000, 1);
         put(&root, "chain/x/y/z.bin", 70_000, 3);
         put(&root, "private.bin", 3_000, 4);
@@ -989,7 +971,7 @@ mod tests {
     /// written in - so the same folder makes the same torrent on every machine.
     #[test]
     fn v1_folder_order_is_sorted_and_repeatable() {
-        let root = scratch_dir("v1order");
+        let root = scratch_dir("tc-v1order");
         // Created in reverse, which is the order tmpfs and some others list.
         for (i, name) in ["d/z.bin", "d/m/q.bin", "d/m/b.bin", "d/a.bin"].iter().enumerate() {
             put(&root, name, 1000 + i, i as u8);
@@ -1032,7 +1014,7 @@ mod tests {
 
     #[test]
     fn info_hashes_are_pinned_per_version() {
-        let root = scratch_dir("pinned");
+        let root = scratch_dir("tc-pinned");
         put(&root, "pinned/a.bin", 40_000, 1);
         put(&root, "pinned/sub/b.bin", 16_384, 2);
         put(&root, "pinned/sub/empty.bin", 0, 0);
@@ -1073,7 +1055,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_symlink_back_to_a_parent_is_not_followed() {
-        let root = scratch_dir("symloop");
+        let root = scratch_dir("tc-symloop");
         put(&root, "d/a.bin", 1000, 1);
         put(&root, "outside.bin", 500, 2);
         std::os::unix::fs::symlink(root.join("d"), root.join("d/loop")).unwrap();
@@ -1093,7 +1075,7 @@ mod tests {
     #[test]
     fn a_file_name_that_is_not_unicode_is_refused() {
         use std::os::unix::ffi::OsStrExt;
-        let root = scratch_dir("notutf8");
+        let root = scratch_dir("tc-notutf8");
         std::fs::create_dir_all(root.join("d")).unwrap();
         let bad = root.join("d").join(std::ffi::OsStr::from_bytes(b"caf\xe9.bin"));
         std::fs::write(bad, b"x").unwrap();

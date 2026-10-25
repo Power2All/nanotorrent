@@ -73,8 +73,7 @@ fn read_one(profile: &Path, key: &str, value: &[u8]) -> Option<ImportEntry> {
     let save_path = bencode::dict_get(value, b"path")
         .and_then(bencode::text)
         .as_deref()
-        .and_then(parent_of)
-        .filter(|s| !s.is_empty());
+        .and_then(parent_of);
 
     // `label` is the single label; `labels` is a newer list. Take the single
     // one, and the first of the list otherwise - this build has one label per
@@ -86,8 +85,7 @@ fn read_one(profile: &Path, key: &str, value: &[u8]) -> Option<ImportEntry> {
             // A bencoded list: step over the leading 'l' and read the first
             // string in it.
             bencode::text(list.get(1..)?)
-        })
-        .filter(|s| !s.is_empty());
+        });
 
     ImportEntry::from_torrent(bytes, save_path, label_name)
 }
@@ -123,14 +121,9 @@ mod tests {
             Profile(dir)
         }
         fn torrent(&self, file: &str, name: &str) -> String {
-            let info = build::dict(&[
-                ("length", build::int(1234)),
-                ("name", build::str(name)),
-                ("piece length", build::int(16384)),
-                ("pieces", build::str("01234567890123456789")),
-            ]);
-            std::fs::write(self.0.join(file), build::dict(&[("info", info.clone())])).unwrap();
-            crate::bittorrent::metainfo::info_hashes(&info).0.unwrap()
+            let (torrent, hash) = super::super::test_torrent(name);
+            std::fs::write(self.0.join(file), torrent).unwrap();
+            hash
         }
         fn resume(&self, pairs: &[(&str, Vec<u8>)]) {
             std::fs::write(self.0.join("resume.dat"), build::dict(pairs)).unwrap();

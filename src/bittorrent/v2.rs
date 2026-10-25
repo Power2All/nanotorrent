@@ -37,6 +37,7 @@
 use std::collections::HashMap;
 
 use super::torrent_create::{BLOCK, hash_pair, merkle_root, sha256};
+use crate::core::bencode;
 
 /// One file from a v2 `file tree`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,11 +125,6 @@ fn zero_hash(levels: u32) -> [u8; 32] {
     h
 }
 
-/// `log2(n)` for a power of two.
-fn log2_exact(n: usize) -> u32 {
-    n.trailing_zeros()
-}
-
 /// The merkle root of one piece's worth of data, computed in one go.
 ///
 /// `data` is the piece's REAL bytes (a file's last piece is short). `pad_blocks`
@@ -170,68 +166,53 @@ fn piece_layer_matches_root(
         return false;
     }
     let mut layer = piece_hashes.to_vec();
-    layer.resize(nodes, zero_hash(log2_exact(blocks_per_piece)));
+    layer.resize(nodes, zero_hash(blocks_per_piece.ilog2()));
     merkle_root(&layer) == *pieces_root
 }
 
 // ---------------------------------------------------- BEP 52 hash exchange ---
 
-/// What to ask a peer for, to obtain one run of a file's piece layer.
-///
-/// Mirrors the `hash request` message (engine patch 0008). Only needed for a
-/// **magnet**: a `.torrent` already carries `piece layers`, and a file that
-/// fits in a single piece never needs one because its `pieces root` IS its
-/// piece hash.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HashRequestPlan {
-    /// Layers above the leaves at which the requested hashes sit. For the
-    /// piece layer this is `log2(piece_length / 16 KiB)`.
-    pub base_layer: u32,
-    /// Offset of the first requested hash within that layer.
-    pub index: u32,
-    /// How many hashes to ask for. A power of two, at least 2, at most 512.
-    pub length: u32,
-    /// Ancestor hashes needed to walk the answer back up to `pieces root`.
-    pub proof_layers: u32,
-}
-
 /// The BEP's own ceiling on one request: "Length SHOULD NOT be greater than
 /// 512." A file with more piece-layer nodes than this needs several requests.
 const MAX_HASHES_PER_REQUEST: usize = 512;
 
-/// Plan the requests that fetch a file's whole piece layer.
+/// Plan the `hash request`s (engine patch 0008) that fetch a file's whole
+/// piece layer. Only needed for a **magnet**: a `.torrent` already carries
+/// `piece layers`.
 ///
 /// Empty when the file needs no layer at all - either it has no data, or it
 /// fits in one piece and its `pieces root` is already the piece hash.
-pub fn plan_piece_layer_requests(file_length: u64, piece_length: u32) -> Vec<HashRequestPlan> {
+pub fn plan_piece_layer_requests(
+    pieces_root: [u8; 32],
+    file_length: u64,
+    piece_length: u32,
+) -> Vec<librqbit_peer_protocol::HashRequest> {
     let blocks_per_piece = piece_length as usize / BLOCK;
     let num_blocks = (file_length as usize).div_ceil(BLOCK);
     if num_blocks <= blocks_per_piece {
         return Vec::new();
     }
 
+    // All powers of two: `piece_length` is checked to be one, at least BLOCK.
     let total_leaves = num_blocks.next_power_of_two();
-    let base_layer = log2_exact(blocks_per_piece);
+    let base_layer = blocks_per_piece.ilog2();
     let nodes = total_leaves / blocks_per_piece;
-    let root_level = log2_exact(total_leaves);
+    let root_level = total_leaves.ilog2();
 
+    // Runs are a power of two and index must be a multiple of the run
+    // length, which `per_request` being a power-of-two divisor of `nodes`
+    // guarantees.
     let per_request = nodes.min(MAX_HASHES_PER_REQUEST);
-    let mut plans = Vec::new();
-    let mut index = 0usize;
-    while index < nodes {
-        // Runs are a power of two and index must be a multiple of the run
-        // length, which `per_request` being a power-of-two divisor of `nodes`
-        // guarantees.
-        let length = per_request;
-        plans.push(HashRequestPlan {
+    (0..nodes)
+        .step_by(per_request)
+        .map(|index| librqbit_peer_protocol::HashRequest {
+            pieces_root,
             base_layer,
             index: index as u32,
-            length: length as u32,
-            proof_layers: root_level - base_layer - log2_exact(length),
-        });
-        index += length;
-    }
-    plans
+            length: per_request as u32,
+            proof_layers: root_level - base_layer - per_request.ilog2(),
+        })
+        .collect()
 }
 
 /// Check a peer's `hashes` answer against the file's `pieces root`.
@@ -324,12 +305,12 @@ impl V2Hashes {
                 .collect();
             let nodes = num_blocks.next_power_of_two() / blocks_per_piece;
             let mut padded = hashes;
-            padded.resize(nodes, zero_hash(log2_exact(blocks_per_piece)));
+            padded.resize(nodes, zero_hash(blocks_per_piece.ilog2()));
             files.insert(
                 root,
                 FileLayer {
                     padded,
-                    piece_layer: log2_exact(blocks_per_piece),
+                    piece_layer: blocks_per_piece.ilog2(),
                 },
             );
         }
@@ -342,149 +323,56 @@ impl V2Hashes {
     }
 }
 
-/// The hashes for one request against one file's layer.
-///
-/// Split out from the trait so it can be tested directly against
-/// [`verify_hashes`], which is the only check that matters: whatever this
-/// produces has to walk back up to `pieces_root`.
-fn answer_hash_request(
-    layer: &FileLayer,
-    base_layer: u32,
-    index: u32,
-    length: u32,
-    proof_layers: u32,
-) -> Option<Vec<[u8; 32]>> {
-    // Below the piece layer we hold nothing.
-    if base_layer < layer.piece_layer {
-        return None;
-    }
-    let length = length as usize;
-    let index = index as usize;
-    if length < 2 || !length.is_power_of_two() || !index.is_multiple_of(length) {
-        return None;
-    }
-
-    // Collapse the piece layer up to the requested one. `1 << 0` is the
-    // no-op case where the request is for the piece layer itself.
-    let per_node = 1usize.checked_shl(base_layer - layer.piece_layer)?;
-    if per_node > layer.padded.len() {
-        return None;
-    }
-    let level: Vec<[u8; 32]> = layer
-        .padded
-        .chunks(per_node)
-        .map(merkle_root)
-        .collect();
-
-    let base = level.get(index..index.checked_add(length)?)?;
-    let mut out = base.to_vec();
-
-    // The proof: at each step up, the sibling of the node we are standing on.
-    let mut above: Vec<[u8; 32]> = level.chunks(length).map(merkle_root).collect();
-    let mut pos = index / length;
-    for _ in 0..proof_layers {
-        if above.len() < 2 {
-            // Asked for more ancestors than this tree has. Rejecting beats
-            // padding the answer out with hashes that mean nothing.
-            return None;
-        }
-        out.push(above[pos ^ 1]);
-        above = above
-            .chunks(2)
-            .map(|pair| hash_pair(&pair[0], &pair[1]))
-            .collect();
-        pos /= 2;
-    }
-    Some(out)
-}
-
 impl librqbit::HashProvider for V2Hashes {
+    /// The hashes for one request against one file's layer. Whatever this
+    /// produces has to walk back up to `pieces_root` under [`verify_hashes`].
     fn hashes_for(
         &self,
         request: &librqbit_peer_protocol::HashRequest,
     ) -> Option<Vec<[u8; 32]>> {
         let layer = self.files.get(&request.pieces_root)?;
-        answer_hash_request(
-            layer,
-            request.base_layer,
-            request.index,
-            request.length,
-            request.proof_layers,
-        )
-    }
-}
+        // Below the piece layer we hold nothing.
+        if request.base_layer < layer.piece_layer {
+            return None;
+        }
+        let length = request.length as usize;
+        let index = request.index as usize;
+        if length < 2 || !length.is_power_of_two() || !index.is_multiple_of(length) {
+            return None;
+        }
 
-// --------------------------------------------------------------- bencode ---
+        // Collapse the piece layer up to the requested one. `1 << 0` is the
+        // no-op case where the request is for the piece layer itself.
+        let per_node = 1usize.checked_shl(request.base_layer - layer.piece_layer)?;
+        if per_node > layer.padded.len() {
+            return None;
+        }
+        let level: Vec<[u8; 32]> = layer
+            .padded
+            .chunks(per_node)
+            .map(merkle_root)
+            .collect();
 
-/// A borrowed bencode value. Only what BEP 52 needs to be read.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Val<'a> {
-    Int(i64),
-    Bytes(&'a [u8]),
-    List(Vec<Val<'a>>),
-    /// Kept as a list, not a map: bencode dict keys are ordered, and the v2
-    /// file tree's order IS the torrent's file order.
-    Dict(Vec<(&'a [u8], Val<'a>)>),
-}
+        let base = level.get(index..index.checked_add(length)?)?;
+        let mut out = base.to_vec();
 
-impl<'a> Val<'a> {
-    fn get(&self, key: &[u8]) -> Option<&Val<'a>> {
-        match self {
-            Val::Dict(entries) => entries.iter().find(|(k, _)| *k == key).map(|(_, v)| v),
-            _ => None,
-        }
-    }
-    fn as_int(&self) -> Option<i64> {
-        match self {
-            Val::Int(i) => Some(*i),
-            _ => None,
-        }
-    }
-    fn as_bytes(&self) -> Option<&'a [u8]> {
-        match self {
-            Val::Bytes(b) => Some(b),
-            _ => None,
-        }
-    }
-    fn as_dict(&self) -> Option<&[(&'a [u8], Val<'a>)]> {
-        match self {
-            Val::Dict(d) => Some(d),
-            _ => None,
-        }
-    }
-}
-
-/// Decode one bencode value at `i`, returning it and the index just past it.
-fn decode(b: &[u8], i: usize) -> Option<(Val<'_>, usize)> {
-    match *b.get(i)? {
-        b'i' => {
-            let end = b[i..].iter().position(|c| *c == b'e')? + i;
-            let n: i64 = std::str::from_utf8(&b[i + 1..end]).ok()?.parse().ok()?;
-            Some((Val::Int(n), end + 1))
-        }
-        b'l' => {
-            let mut items = Vec::new();
-            let mut j = i + 1;
-            while *b.get(j)? != b'e' {
-                let (v, next) = decode(b, j)?;
-                items.push(v);
-                j = next;
+        // The proof: at each step up, the sibling of the node we are standing on.
+        let mut above: Vec<[u8; 32]> = level.chunks(length).map(merkle_root).collect();
+        let mut pos = index / length;
+        for _ in 0..request.proof_layers {
+            if above.len() < 2 {
+                // Asked for more ancestors than this tree has. Rejecting beats
+                // padding the answer out with hashes that mean nothing.
+                return None;
             }
-            Some((Val::List(items), j + 1))
+            out.push(above[pos ^ 1]);
+            above = above
+                .chunks(2)
+                .map(|pair| hash_pair(&pair[0], &pair[1]))
+                .collect();
+            pos /= 2;
         }
-        b'd' => {
-            let mut items = Vec::new();
-            let mut j = i + 1;
-            while *b.get(j)? != b'e' {
-                let (k, after) = crate::core::bencode::string_at(b, j)?;
-                let (v, next) = decode(b, after)?;
-                items.push((k, v));
-                j = next;
-            }
-            Some((Val::Dict(items), j + 1))
-        }
-        b'0'..=b'9' => crate::core::bencode::string_at(b, i).map(|(s, end)| (Val::Bytes(s), end)),
-        _ => None,
+        Some(out)
     }
 }
 
@@ -496,7 +384,7 @@ fn decode(b: &[u8], i: usize) -> Option<(Val<'_>, usize)> {
 /// this module to do. Errors are strings because every caller is showing them
 /// to a person who just picked a file.
 pub fn parse(torrent_bytes: &[u8]) -> Result<Option<V2Meta>, String> {
-    let info_bytes = match crate::core::bencode::dict_get(torrent_bytes, b"info") {
+    let info_bytes = match bencode::dict_get(torrent_bytes, b"info") {
         Some(b) => b,
         None => return Err("torrent has no info dictionary".into()),
     };
@@ -505,12 +393,9 @@ pub fn parse(torrent_bytes: &[u8]) -> Result<Option<V2Meta>, String> {
     // each file's `pieces root`. A magnet has none of it, which is why the
     // info dict is parsed separately below.
     let mut layers: HashMap<[u8; 32], Vec<[u8; 32]>> = HashMap::new();
-    if let Some(raw) = crate::core::bencode::dict_get(torrent_bytes, b"piece layers")
-        && let Some((v, _)) = decode(raw, 0)
-        && let Some(entries) = v.as_dict()
-    {
-        for (k, v) in entries {
-            if let (Ok(root), Some(bytes)) = (<[u8; 32]>::try_from(*k), v.as_bytes()) {
+    if let Some(raw) = bencode::dict_get(torrent_bytes, b"piece layers") {
+        for (k, v) in bencode::entries(raw) {
+            if let (Ok(root), Some(bytes)) = (<[u8; 32]>::try_from(k), bencode::string(v)) {
                 if !bytes.len().is_multiple_of(32) {
                     return Err("a piece layers entry is not a whole number of hashes".into());
                 }
@@ -564,17 +449,18 @@ impl V2Info {
 
 /// Parse a v2 info dictionary. `Ok(None)` for a v1-only dict.
 pub fn parse_info_dict(info_bytes: &[u8]) -> Result<Option<V2Info>, String> {
-    let (info, _) = decode(info_bytes, 0).ok_or("info dictionary is not valid bencode")?;
+    // Walked once whole up front, so a malformed or nesting-bomb dict is
+    // refused here rather than half-read by the lookups below.
+    bencode::skip(info_bytes, 0).ok_or("info dictionary is not valid bencode")?;
+    let int = |key: &[u8]| bencode::dict_get(info_bytes, key).and_then(bencode::int);
 
-    match info.get(b"meta version").and_then(Val::as_int) {
+    match int(b"meta version") {
         None => return Ok(None), // v1 only: not ours
         Some(2) => {}
         Some(v) => return Err(format!("unsupported meta version {v}; only v2 is defined")),
     }
 
-    let piece_length: u32 = info
-        .get(b"piece length")
-        .and_then(Val::as_int)
+    let piece_length: u32 = int(b"piece length")
         .and_then(|v| u32::try_from(v).ok())
         .ok_or("v2 torrent has no usable piece length")?;
     if piece_length < BLOCK as u32 || !piece_length.is_power_of_two() {
@@ -583,15 +469,13 @@ pub fn parse_info_dict(info_bytes: &[u8]) -> Result<Option<V2Info>, String> {
         ));
     }
 
-    let name = info
-        .get(b"name")
-        .and_then(Val::as_bytes)
+    let name = bencode::dict_get(info_bytes, b"name")
+        .and_then(bencode::string)
         .map(|b| String::from_utf8_lossy(b).into_owned())
         .unwrap_or_else(|| String::from("(unnamed torrent)"));
 
-    let tree = info
-        .get(b"file tree")
-        .and_then(Val::as_dict)
+    let tree = bencode::dict_get(info_bytes, b"file tree")
+        .filter(|t| t.starts_with(b"d"))
         .ok_or("v2 torrent has no file tree")?;
 
     let mut files = Vec::new();
@@ -605,8 +489,8 @@ pub fn parse_info_dict(info_bytes: &[u8]) -> Result<Option<V2Info>, String> {
         name,
         piece_length,
         files,
-        has_v1: info.get(b"pieces").is_some(),
-        private: info.get(b"private").and_then(Val::as_int) == Some(1),
+        has_v1: bencode::dict_get(info_bytes, b"pieces").is_some(),
+        private: int(b"private") == Some(1),
         info_hash_v2: sha256(info_bytes),
         info_bytes: info_bytes.to_vec(),
     }))
@@ -617,20 +501,22 @@ pub fn parse_info_dict(info_bytes: &[u8]) -> Result<Option<V2Info>, String> {
 /// A leaf is a dict holding the empty-string key; everything else is a
 /// directory. That empty key is what makes the format unambiguous, since a
 /// directory and a file can otherwise look alike.
+///
+/// Recursion is bounded: `parse_info_dict` has already walked the whole dict
+/// through `bencode::skip`, which refuses nesting past its depth guard.
 fn walk_file_tree(
-    dict: &[(&[u8], Val<'_>)],
+    dict: &[u8],
     path: &mut Vec<String>,
     out: &mut Vec<V2File>,
 ) -> Result<(), String> {
-    for (key, value) in dict {
+    for (key, value) in bencode::entries(dict) {
         if key.is_empty() {
             // Leaf: this node's own path is the file.
-            let length = value
-                .get(b"length")
-                .and_then(Val::as_int)
+            let length = bencode::dict_get(value, b"length")
+                .and_then(bencode::int)
                 .and_then(|v| u64::try_from(v).ok())
                 .ok_or_else(|| format!("v2 file {} has no length", path.join("/")))?;
-            let pieces_root = match value.get(b"pieces root").and_then(Val::as_bytes) {
+            let pieces_root = match bencode::dict_get(value, b"pieces root").and_then(bencode::string) {
                 Some(b) => Some(
                     <[u8; 32]>::try_from(b)
                         .map_err(|_| format!("v2 file {} has a malformed pieces root", path.join("/")))?,
@@ -640,9 +526,6 @@ fn walk_file_tree(
                     return Err(format!("v2 file {} has no pieces root", path.join("/")));
                 }
             };
-            if length > 0 && pieces_root.is_none() {
-                return Err(format!("v2 file {} has no pieces root", path.join("/")));
-            }
             out.push(V2File {
                 components: path.clone(),
                 length,
@@ -657,8 +540,8 @@ fn walk_file_tree(
         if component == ".." || component == "." || component.contains('/') || component.contains('\\') {
             return Err(format!("v2 file tree has an illegal path component {component:?}"));
         }
-        let entries = value
-            .as_dict()
+        let entries = Some(value)
+            .filter(|v| v.starts_with(b"d"))
             .ok_or_else(|| format!("v2 file tree entry {component:?} is not a dictionary"))?;
         path.push(component);
         walk_file_tree(entries, path, out)?;
@@ -748,29 +631,10 @@ fn build_layout(
 /// Indexed by the engine's global piece index, which lines up with
 /// [`V2Layout::pieces`] because [`synthetic_v1`] lays the files out in the same
 /// order and pads each to a piece boundary.
-#[derive(Debug)]
-pub struct V2Verifier {
-    pieces: Vec<V2Piece>,
-}
-
-impl V2Verifier {
-    pub fn new(layout: &V2Layout) -> Self {
-        Self {
-            pieces: layout.pieces.clone(),
-        }
-    }
-}
-
-impl librqbit::PieceVerifier for V2Verifier {
+impl librqbit::PieceVerifier for V2Layout {
     fn hasher(&self, piece_index: u32) -> Option<Box<dyn librqbit::PieceHasher>> {
         let piece = self.pieces.get(piece_index as usize)?;
-        Some(Box::new(V2PieceHasher {
-            remaining: piece.real_len as usize,
-            block: Vec::with_capacity(BLOCK),
-            leaves: Vec::new(),
-            expected: piece.hash,
-            pad_blocks: piece.pad_blocks,
-        }))
+        Some(Box::new(V2PieceHasher::new(piece)))
     }
 }
 
@@ -789,6 +653,18 @@ struct V2PieceHasher {
     leaves: Vec<[u8; 32]>,
     expected: [u8; 32],
     pad_blocks: usize,
+}
+
+impl V2PieceHasher {
+    fn new(piece: &V2Piece) -> Self {
+        V2PieceHasher {
+            remaining: piece.real_len as usize,
+            block: Vec::with_capacity(BLOCK),
+            leaves: Vec::new(),
+            expected: piece.hash,
+            pad_blocks: piece.pad_blocks,
+        }
+    }
 }
 
 impl librqbit::PieceHasher for V2PieceHasher {
@@ -863,6 +739,14 @@ struct MagnetInner {
     meta: Option<V2Meta>,
 }
 
+impl V2Magnet {
+    fn lock(&self) -> anyhow::Result<std::sync::MutexGuard<'_, MagnetInner>> {
+        self.inner
+            .lock()
+            .map_err(|_| anyhow::anyhow!("v2 magnet state poisoned"))
+    }
+}
+
 impl MagnetInner {
     fn complete(&self) -> bool {
         self.expected
@@ -875,10 +759,7 @@ impl MagnetInner {
         let info = self.info.clone().ok_or("bug: no info dict")?;
         let mut layers: HashMap<[u8; 32], Vec<[u8; 32]>> = HashMap::new();
         for (root, runs) in &self.received {
-            let mut all: Vec<[u8; 32]> = Vec::new();
-            for run in runs.values() {
-                all.extend_from_slice(run);
-            }
+            let mut all: Vec<[u8; 32]> = runs.values().flatten().copied().collect();
             // Trim the tree padding: nodes past the file's real piece count
             // cover nothing but zeros.
             if let Some(want) = self.wanted.get(root) {
@@ -910,14 +791,11 @@ impl librqbit::MetadataInterceptor for V2Magnet {
             .ok_or_else(|| anyhow::anyhow!("a v2 magnet resolved to a v1 info dictionary"))?;
 
         let mut out = Vec::new();
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| anyhow::anyhow!("v2 magnet state poisoned"))?;
+        let mut inner = self.lock()?;
 
         for f in &info.files {
             let Some(root) = f.pieces_root else { continue };
-            let plans = plan_piece_layer_requests(f.length, info.piece_length);
+            let plans = plan_piece_layer_requests(root, f.length, info.piece_length);
             if plans.is_empty() {
                 continue; // fits in one piece: its pieces root IS the hash
             }
@@ -926,15 +804,7 @@ impl librqbit::MetadataInterceptor for V2Magnet {
                 root,
                 f.length.div_ceil(info.piece_length as u64) as usize,
             );
-            for p in plans {
-                out.push(librqbit_peer_protocol::HashRequest {
-                    pieces_root: root,
-                    base_layer: p.base_layer,
-                    index: p.index,
-                    length: p.length,
-                    proof_layers: p.proof_layers,
-                });
-            }
+            out.extend(plans);
         }
         tracing::debug!(files = info.files.len(), requests = out.len(), "v2 magnet: planned");
         inner.info = Some(info);
@@ -961,10 +831,7 @@ impl librqbit::MetadataInterceptor for V2Magnet {
             anyhow::bail!("peer sent hashes that do not match the file's pieces root");
         }
 
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| anyhow::anyhow!("v2 magnet state poisoned"))?;
+        let mut inner = self.lock()?;
         inner
             .received
             .entry(request.pieces_root)
@@ -980,10 +847,7 @@ impl librqbit::MetadataInterceptor for V2Magnet {
 
     fn substitute_info(&self, info_bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
         tracing::debug!("v2 magnet: substitute_info");
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| anyhow::anyhow!("v2 magnet state poisoned"))?;
+        let mut inner = self.lock()?;
         if inner.meta.is_none() {
             // No file needed a piece layer - every one of them fits in a
             // single piece, so its pieces root is already its piece hash.
@@ -1008,13 +872,7 @@ impl librqbit::PieceVerifier for V2Magnet {
             .layout
             .pieces
             .get(piece_index as usize)?;
-        Some(Box::new(V2PieceHasher {
-            remaining: piece.real_len as usize,
-            block: Vec::with_capacity(BLOCK),
-            leaves: Vec::new(),
-            expected: piece.hash,
-            pad_blocks: piece.pad_blocks,
-        }))
+        Some(Box::new(V2PieceHasher::new(piece)))
     }
 }
 
@@ -1030,7 +888,7 @@ impl librqbit::PieceVerifier for V2Magnet {
 ///
 /// The `pieces` blob is **filler**. It exists so the engine can compute a
 /// piece count and index into something; every actual comparison goes through
-/// [`V2Verifier`], which checks the real merkle roots. Nothing here is ever
+/// [`V2Layout`]'s verifier, which checks the real merkle roots. Nothing here is ever
 /// sent to a peer: it is a local driving model, and the genuine info dict is
 /// kept in [`V2Meta::info_bytes`] for metadata exchange.
 pub fn synthetic_v1(meta: &V2Meta) -> Vec<u8> {
@@ -1132,14 +990,9 @@ pub fn prepare(torrent_bytes: &[u8]) -> Result<V2Prep, String> {
         return Ok(V2Prep::V1Only);
     };
     let truncated = librqbit::Id20::new(meta.truncated_info_hash());
-    let hashes = {
-        let h = V2Hashes::new(&meta);
-        if h.is_empty() {
-            None
-        } else {
-            Some(std::sync::Arc::new(h) as std::sync::Arc<dyn librqbit::HashProvider>)
-        }
-    };
+    let hashes = Some(V2Hashes::new(&meta))
+        .filter(|h| !h.is_empty())
+        .map(|h| std::sync::Arc::new(h) as std::sync::Arc<dyn librqbit::HashProvider>);
     if meta.has_v1 {
         return Ok(V2Prep::Hybrid {
             secondary: truncated,
@@ -1150,11 +1003,11 @@ pub fn prepare(torrent_bytes: &[u8]) -> Result<V2Prep, String> {
     Ok(V2Prep::V2Only(Box::new(PreparedV2 {
         synthetic,
         wire_hash: truncated,
-        info_bytes: meta.info_bytes.clone(),
-        verifier: std::sync::Arc::new(V2Verifier::new(&meta.layout)),
-        hashes,
         files: meta.files.len(),
         pieces: meta.layout.pieces.len(),
+        info_bytes: meta.info_bytes,
+        verifier: std::sync::Arc::new(meta.layout),
+        hashes,
     })))
 }
 
@@ -1280,18 +1133,12 @@ fn decode_hex(s: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bittorrent::scratch_dir;
     use crate::bittorrent::torrent_create::{CreateInput, TorrentVersion, build};
-
-    fn tmpdir(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("nt-v2-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
-    }
 
     /// Build a torrent for `payload` with our own writer, then read it back.
     fn round_trip(name: &str, payload: &[u8], piece_length: u32, version: TorrentVersion) -> V2Meta {
-        let dir = tmpdir(name);
+        let dir = scratch_dir(&format!("v2-{name}"));
         let file = dir.join("payload.bin");
         std::fs::write(&file, payload).unwrap();
         let built = build(&CreateInput {
@@ -1382,7 +1229,7 @@ mod tests {
     #[test]
     fn files_are_piece_aligned() {
         let pl = 4 * BLOCK as u32;
-        let dir = tmpdir("multi");
+        let dir = scratch_dir("v2-multi");
         let sub = dir.join("data");
         std::fs::create_dir_all(&sub).unwrap();
         // Deliberately not a multiple of the piece length: file "a" ends mid
@@ -1442,7 +1289,7 @@ mod tests {
         assert!(!v2.has_v1, "v2-only reported a v1 half");
 
         // A plain v1 torrent is not this module's business.
-        let dir = tmpdir("v1");
+        let dir = scratch_dir("v2-v1");
         let f = dir.join("payload.bin");
         std::fs::write(&f, &payload).unwrap();
         let built = build(&CreateInput {
@@ -1479,7 +1326,7 @@ mod tests {
     fn a_forged_piece_layer_is_rejected() {
         let pl = 4 * BLOCK as u32;
         let payload: Vec<u8> = (0..(9 * BLOCK)).map(|i| (i * 5) as u8).collect();
-        let dir = tmpdir("forge");
+        let dir = scratch_dir("v2-forge");
         let file = dir.join("payload.bin");
         std::fs::write(&file, &payload).unwrap();
         let built = build(&CreateInput {
@@ -1520,7 +1367,7 @@ mod tests {
     #[test]
     fn the_synthetic_layout_has_exactly_the_v2_pieces() {
         let pl = 4 * BLOCK as u32;
-        let dir = tmpdir("synth");
+        let dir = scratch_dir("v2-synth");
         let sub = dir.join("data");
         std::fs::create_dir_all(&sub).unwrap();
         // Sizes chosen so every padding case appears: a file ending mid-piece,
@@ -1556,15 +1403,16 @@ mod tests {
         // the same count.
         let synth = synthetic_v1(&meta);
         let info = crate::core::bencode::dict_get(&synth, b"info").unwrap();
-        let (v, _) = decode(info, 0).unwrap();
-        let entries = match v.get(b"files").unwrap() {
-            Val::List(l) => l.clone(),
-            _ => panic!("synthetic info has no file list"),
-        };
-        let total: u64 = entries
-            .iter()
-            .map(|e| e.get(b"length").unwrap().as_int().unwrap() as u64)
-            .sum();
+        let list = bencode::dict_get(info, b"files").expect("synthetic info has no file list");
+        let mut entries = Vec::new();
+        let mut i = 1;
+        while list[i] != b'e' {
+            let end = bencode::skip(list, i).unwrap();
+            entries.push(&list[i..end]);
+            i = end;
+        }
+        let length = |e: &[u8]| bencode::int(bencode::dict_get(e, b"length").unwrap()).unwrap() as u64;
+        let total: u64 = entries.iter().map(|e| length(e)).sum();
         assert_eq!(
             total.div_ceil(pl as u64) as usize,
             meta.layout.pieces.len(),
@@ -1574,8 +1422,8 @@ mod tests {
         // And each real file must begin exactly on a piece boundary.
         let mut offset = 0u64;
         for e in &entries {
-            let len = e.get(b"length").unwrap().as_int().unwrap() as u64;
-            let is_pad = e.get(b"attr").and_then(Val::as_bytes) == Some(b"p");
+            let len = length(e);
+            let is_pad = bencode::dict_get(e, b"attr").and_then(bencode::string) == Some(b"p");
             if !is_pad && len > 0 {
                 assert_eq!(
                     offset % pl as u64,
@@ -1589,7 +1437,7 @@ mod tests {
 
         // The filler `pieces` blob has to agree on the count too, or the
         // engine's own bounds checks disagree with ours.
-        let pieces = v.get(b"pieces").unwrap().as_bytes().unwrap();
+        let pieces = bencode::string(bencode::dict_get(info, b"pieces").unwrap()).unwrap();
         assert_eq!(pieces.len(), meta.layout.pieces.len() * 20);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -1605,7 +1453,7 @@ mod tests {
         let pl = 4 * BLOCK as u32;
         let payload: Vec<u8> = (0..(5 * BLOCK)).map(|i| (i * 17) as u8).collect();
         let meta = round_trip("verifier", &payload, pl, TorrentVersion::V2);
-        let verifier = V2Verifier::new(&meta.layout);
+        let verifier = &meta.layout;
 
         assert_eq!(meta.layout.pieces.len(), 2);
 
@@ -1680,14 +1528,17 @@ mod tests {
 
     /// Answer a hash request out of the full tree, the way a seeding peer
     /// would: the requested run, then the uncle hashes upward.
-    fn answer(tree: &[Vec<[u8; 32]>], plan: &HashRequestPlan) -> (Vec<[u8; 32]>, Vec<[u8; 32]>) {
+    fn answer(
+        tree: &[Vec<[u8; 32]>],
+        plan: &librqbit_peer_protocol::HashRequest,
+    ) -> (Vec<[u8; 32]>, Vec<[u8; 32]>) {
         let base_layer = &tree[plan.base_layer as usize];
         let start = plan.index as usize;
         let base = base_layer[start..start + plan.length as usize].to_vec();
 
         let mut proof = Vec::new();
         // The run's own root sits this far up; its siblings are the uncles.
-        let first = plan.base_layer as usize + log2_exact(plan.length as usize) as usize;
+        let first = plan.base_layer as usize + (plan.length as usize).ilog2() as usize;
         let mut pos = start / plan.length as usize;
         for level in (first..).take(plan.proof_layers as usize) {
             let sibling = if pos.is_multiple_of(2) { pos + 1 } else { pos - 1 };
@@ -1722,16 +1573,9 @@ mod tests {
         let provider = V2Hashes::new(&meta);
         assert!(!provider.is_empty(), "a 33-block file has a piece layer");
 
-        for plan in plan_piece_layer_requests(payload.len() as u64, pl) {
-            let request = librqbit_peer_protocol::HashRequest {
-                pieces_root: root,
-                base_layer: plan.base_layer,
-                index: plan.index,
-                length: plan.length,
-                proof_layers: plan.proof_layers,
-            };
+        for plan in plan_piece_layer_requests(root, payload.len() as u64, pl) {
             let hashes = provider
-                .hashes_for(&request)
+                .hashes_for(&plan)
                 .expect("a planned request must be answerable");
 
             let (base, proof) = hashes.split_at(plan.length as usize);
@@ -1766,20 +1610,13 @@ mod tests {
         let root = meta.files[0].pieces_root.unwrap();
         let provider = V2Hashes::new(&meta);
 
-        let plans = plan_piece_layer_requests(payload.len() as u64, pl);
+        let plans = plan_piece_layer_requests(root, payload.len() as u64, pl);
         assert!(plans.len() > 1, "600 blocks should need several requests");
         assert!(plans.iter().all(|p| p.proof_layers > 0));
 
         let mut recovered = Vec::new();
         for plan in &plans {
-            let request = librqbit_peer_protocol::HashRequest {
-                pieces_root: root,
-                base_layer: plan.base_layer,
-                index: plan.index,
-                length: plan.length,
-                proof_layers: plan.proof_layers,
-            };
-            let hashes = provider.hashes_for(&request).expect("answerable");
+            let hashes = provider.hashes_for(plan).expect("answerable");
             let (base, proof) = hashes.split_at(plan.length as usize);
             assert!(
                 verify_hashes(base, proof, plan.index, &root),
@@ -1878,7 +1715,7 @@ mod tests {
         let tree = full_tree(&payload);
         assert_eq!(*tree.last().unwrap(), vec![root], "test tree disagrees");
 
-        let plans = plan_piece_layer_requests(payload.len() as u64, pl);
+        let plans = plan_piece_layer_requests(root, payload.len() as u64, pl);
         assert_eq!(plans.len(), 1, "one request should cover 64 nodes");
         let plan = plans[0];
         assert_eq!(plan.base_layer, 2, "piece layer is 2 above the leaves");
@@ -1915,7 +1752,7 @@ mod tests {
         let tree = full_tree(&payload);
         let root = *tree.last().unwrap().first().unwrap();
 
-        let plans = plan_piece_layer_requests(payload.len() as u64, pl);
+        let plans = plan_piece_layer_requests(root, payload.len() as u64, pl);
         assert!(plans.len() > 1, "600 blocks should need several requests");
         assert!(
             plans.iter().all(|p| p.proof_layers > 0),
@@ -1956,7 +1793,7 @@ mod tests {
         use librqbit::{MetadataInterceptor, PieceVerifier};
 
         let pl = 4 * BLOCK as u32;
-        let dir = tmpdir("magnetflow");
+        let dir = scratch_dir("v2-magnetflow");
         let sub = dir.join("d");
         std::fs::create_dir_all(&sub).unwrap();
         // One file needing several piece-layer nodes, and one small enough to
@@ -2006,13 +1843,7 @@ mod tests {
         let tree = full_tree(&big);
         let mut done = false;
         for (i, r) in requests.iter().enumerate() {
-            let plan = HashRequestPlan {
-                base_layer: r.base_layer,
-                index: r.index,
-                length: r.length,
-                proof_layers: r.proof_layers,
-            };
-            let (base, proof) = answer(&tree, &plan);
+            let (base, proof) = answer(&tree, r);
             let mut all = base.clone();
             all.extend_from_slice(&proof);
             done = magnet.on_hashes(r, &all).unwrap();
@@ -2029,7 +1860,7 @@ mod tests {
         // "missing field `pieces`" while this test passed.
         let substituted = magnet.substitute_info(&info_bytes).unwrap();
         let raw: librqbit::TorrentMetaV1Info<librqbit::ByteBuf> =
-            bencode::from_bytes(&substituted)
+            ::bencode::from_bytes(&substituted)
                 .expect("substitute_info must return the info dict alone");
         let info = raw.validate().unwrap();
         assert_eq!(
@@ -2069,13 +1900,7 @@ mod tests {
 
         let tree = full_tree(&payload);
         let r = &requests[0];
-        let plan = HashRequestPlan {
-            base_layer: r.base_layer,
-            index: r.index,
-            length: r.length,
-            proof_layers: r.proof_layers,
-        };
-        let (mut base, proof) = answer(&tree, &plan);
+        let (mut base, proof) = answer(&tree, r);
         base[2][0] ^= 0xff; // one hash swapped for something else
         let mut all = base;
         all.extend_from_slice(&proof);
@@ -2101,7 +1926,7 @@ mod tests {
     /// that the file lands where the torrent says it should.
     #[tokio::test]
     async fn a_v2_only_torrent_verifies_through_the_engine() {
-        let dir = tmpdir("engine-v2");
+        let dir = scratch_dir("v2-engine-v2");
         let payload: Vec<u8> = (0..(5 * BLOCK)).map(|i| (i * 29) as u8).collect();
         let file = dir.join("payload.bin");
         std::fs::write(&file, &payload).unwrap();
@@ -2193,7 +2018,7 @@ mod tests {
     /// genuinely multi-file one does. This pins the second half of that.
     #[tokio::test]
     async fn a_multi_file_v2_torrent_lands_in_the_right_places() {
-        let dir = tmpdir("engine-v2-multi");
+        let dir = scratch_dir("v2-engine-v2-multi");
         let src = dir.join("payload");
         std::fs::create_dir_all(src.join("sub")).unwrap();
         let a: Vec<u8> = (0..(5 * BLOCK)).map(|i| (i * 13) as u8).collect();
@@ -2317,7 +2142,7 @@ mod tests {
         );
         eprintln!("joining swarm as {want}");
 
-        let dir = tmpdir("live-v2-magnet");
+        let dir = scratch_dir("v2-live-v2-magnet");
         let magnet = std::sync::Arc::new(V2Magnet::default());
 
         // DHT on: the magnet carries no trackers, so it is the only way to
@@ -2415,7 +2240,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "talks to the real DHT"]
     async fn the_dht_is_alive() {
-        let dir = tmpdir("dht-health");
+        let dir = scratch_dir("v2-dht-health");
         let session = librqbit::Session::new_with_opts(
             dir.clone(),
             librqbit::SessionOptions {
@@ -2468,7 +2293,7 @@ mod tests {
         let id = librqbit::Id20::new(bytes.try_into().unwrap());
         eprintln!("asking the DHT who has {hex}");
 
-        let dir = tmpdir("dht-peers");
+        let dir = scratch_dir("v2-dht-peers");
         let session = librqbit::Session::new_with_opts(
             dir.clone(),
             librqbit::SessionOptions {
@@ -2550,6 +2375,20 @@ mod tests {
 
         // Unrecognised: passed through, so the engine gets to report it.
         assert_eq!(normalise_magnet("magnet:?dn=x"), "magnet:?dn=x");
+    }
+
+    /// A `file tree` nested deep enough to exhaust the stack is refused by
+    /// the bencode depth guard before the walk recurses into it.
+    #[test]
+    fn a_nesting_bomb_file_tree_is_refused() {
+        let depth = 100_000;
+        let info = [
+            &b"d12:meta versioni2e9:file tree"[..],
+            &b"d1:a".repeat(depth),
+            &b"e".repeat(depth + 1),
+        ]
+        .concat();
+        assert!(parse_info_dict(&info).is_err());
     }
 
     #[test]

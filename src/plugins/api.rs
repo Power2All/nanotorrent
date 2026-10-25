@@ -144,44 +144,14 @@ pub fn register(
         // a plugin that could see a torrent but not its files was reading half a
         // record.
         let s = session.clone();
-        engine.register_fn("files", move |hash: &str| -> Array {
-            let stored = s.file_priorities(hash);
-            s.files(hash)
-                .into_iter()
-                .enumerate()
-                .map(|(index, f)| {
-                    let mut m = Map::new();
-                    m.insert("index".into(), Dynamic::from(index as i64));
-                    m.insert("name".into(), Dynamic::from(f.name));
-                    m.insert("length".into(), Dynamic::from(f.length as i64));
-                    m.insert("progress".into(), Dynamic::from(f.progress as f64));
-                    m.insert(
-                        "priority".into(),
-                        Dynamic::from(
-                            stored
-                                .get(&index)
-                                .copied()
-                                .unwrap_or(crate::bittorrent::session::PRIORITY_NORMAL),
-                        ),
-                    );
-                    Dynamic::from_map(m)
-                })
-                .collect()
+        // The same rows the web API serves, so the two cannot drift apart.
+        engine.register_fn("files", move |hash: &str| {
+            rhai::serde::to_dynamic(crate::webui::file_rows(&s, hash))
         });
 
         let s = session.clone();
-        engine.register_fn("peers", move |hash: &str| -> Array {
-            s.peers(hash)
-                .into_iter()
-                .map(|p| {
-                    let mut m = Map::new();
-                    m.insert("addr".into(), Dynamic::from(p.addr));
-                    m.insert("state".into(), Dynamic::from(p.state));
-                    m.insert("fetched_bytes".into(), Dynamic::from(p.fetched_bytes as i64));
-                    m.insert("pieces".into(), Dynamic::from(p.pieces as i64));
-                    Dynamic::from_map(m)
-                })
-                .collect()
+        engine.register_fn("peers", move |hash: &str| {
+            rhai::serde::to_dynamic(crate::webui::peer_rows(&s, hash))
         });
 
         let s = session.clone();
@@ -288,12 +258,8 @@ pub fn register(
         engine.register_fn("queue_move", move |hash: &str, to: &str| -> bool {
             // Named rather than numeric: "queue_move(h, 2)" says nothing at the
             // call site, and an unknown name is a typo worth reporting as false.
-            let to = match to {
-                "top" => crate::bittorrent::session::QueueMove::Top,
-                "up" => crate::bittorrent::session::QueueMove::Up,
-                "down" => crate::bittorrent::session::QueueMove::Down,
-                "bottom" => crate::bittorrent::session::QueueMove::Bottom,
-                _ => return false,
+            let Ok(to) = serde_json::from_value(serde_json::Value::from(to)) else {
+                return false;
             };
             s.move_in_queue(hash, to);
             true
@@ -586,7 +552,7 @@ pub fn register(
     // client decides how it looks, so a plugin window cannot drift away from
     // the rest of the application or be made to imitate part of it.
     //
-    // Every one of these is a no-op in a headless build. A plugin written for
+    // Every one of these draws nothing in a headless run. A plugin written for
     // the desktop should degrade to doing nothing visible on a server, not
     // fail on its first line.
     if perms.contains(&Permission::Ui) {
@@ -760,9 +726,7 @@ pub fn register(
     // the kind of thing that makes a subsystem technically possible and
     // practically not worth it.
     engine.register_fn("parse_json", |text: &str| -> Dynamic {
-        serde_json::from_str::<serde_json::Value>(text)
-            .map(|v| json_to_dynamic(&v))
-            .unwrap_or(Dynamic::UNIT)
+        serde_json::from_str(text).unwrap_or(Dynamic::UNIT)
     });
 
     register_regex(engine);
@@ -777,24 +741,6 @@ pub fn register(
     // something has `data_set`, and one that wants a file has `add_torrent_url`.
 }
 
-/// One of a plugin's lists, from the array of maps it handed over.
-///
-/// A row that is not a map is dropped; a row missing a field gets an empty
-/// one. Neither is worth throwing over - a blank line is a mistake the plugin
-/// author can see, where an aborted handler is not.
-/// The compiled form of a pattern, from a small cache.
-///
-/// Cached because the obvious way to use these is inside a loop over a feed's
-/// items, which would otherwise recompile the same pattern for every row.
-///
-/// `size_limit` bounds the compiled program: the default is generous, and a
-/// plugin has no business building a megabyte of automaton. `dot_matches_new_line`
-/// stays off, so `.` means what someone writing a rule against a one-line title
-/// expects.
-///
-/// ponytail: a plain map with a cap and a clear-when-full, not an LRU. The
-/// working set here is a handful of patterns from one plugin's rules; anything
-/// cleverer would be more code than the thing it manages.
 /// Keep an icon to SVG path data, or reject it entirely.
 ///
 /// The string is put straight into markup by the web interface, so the one
@@ -821,9 +767,22 @@ fn sanitise_icon(path: &str) -> String {
     }
 }
 
+/// The compiled form of a pattern, from a small cache.
+///
+/// Cached because the obvious way to use these is inside a loop over a feed's
+/// items, which would otherwise recompile the same pattern for every row.
+///
+/// `size_limit` bounds the compiled program: the default is generous, and a
+/// plugin has no business building a megabyte of automaton. `dot_matches_new_line`
+/// stays off, so `.` means what someone writing a rule against a one-line title
+/// expects.
+///
+/// ponytail: a plain map with a cap and a clear-when-full, not an LRU. The
+/// working set here is a handful of patterns from one plugin's rules; anything
+/// cleverer would be more code than the thing it manages.
 fn compiled(pattern: &str) -> Option<std::sync::Arc<regex::Regex>> {
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex, OnceLock};
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
 
     /// Beyond this many distinct patterns the cache is emptied rather than
     /// grown. A plugin cycling through hundreds of one-off patterns gets
@@ -832,9 +791,8 @@ fn compiled(pattern: &str) -> Option<std::sync::Arc<regex::Regex>> {
     /// 64 KiB of compiled program is far more than a feed rule needs.
     const SIZE_LIMIT: usize = 64 * 1024;
 
-    static CACHE: OnceLock<Mutex<HashMap<String, Option<Arc<regex::Regex>>>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(Default::default);
-    let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+    static CACHE: Mutex<BTreeMap<String, Option<Arc<regex::Regex>>>> = Mutex::new(BTreeMap::new());
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
 
     if let Some(hit) = cache.get(pattern) {
         return hit.clone();
@@ -907,6 +865,11 @@ fn register_regex(engine: &mut Engine) {
     });
 }
 
+/// One of a plugin's lists, from the array of maps it handed over.
+///
+/// A row that is not a map is dropped; a row missing a field gets an empty
+/// one. Neither is worth throwing over - a blank line is a mistake the plugin
+/// author can see, where an aborted handler is not.
 fn list(rows: Array) -> Vec<super::ui::Row> {
     rows.into_iter()
         .filter_map(|r| r.try_cast::<Map>())
@@ -1170,31 +1133,6 @@ fn add_url(
         Err(err) => {
             tracing::warn!(target: "plugin", "add_torrent_url: {url}: {err}");
             false
-        }
-    }
-}
-
-fn json_to_dynamic(value: &serde_json::Value) -> Dynamic {
-    match value {
-        serde_json::Value::Null => Dynamic::UNIT,
-        serde_json::Value::Bool(b) => Dynamic::from(*b),
-        // Rhai has i64 and f64 and no arbitrary precision, so a number that
-        // fits neither lands as a string rather than silently losing digits.
-        serde_json::Value::Number(n) => match (n.as_i64(), n.as_f64()) {
-            (Some(i), _) => Dynamic::from(i),
-            (None, Some(f)) => Dynamic::from(f),
-            (None, None) => Dynamic::from(n.to_string()),
-        },
-        serde_json::Value::String(s) => Dynamic::from(s.clone()),
-        serde_json::Value::Array(items) => {
-            Dynamic::from(items.iter().map(json_to_dynamic).collect::<Array>())
-        }
-        serde_json::Value::Object(fields) => {
-            let mut map = Map::new();
-            for (k, v) in fields {
-                map.insert(k.as_str().into(), json_to_dynamic(v));
-            }
-            Dynamic::from_map(map)
         }
     }
 }
@@ -2290,10 +2228,11 @@ mod tests {
 
     #[test]
     fn json_becomes_something_rhai_can_walk() {
-        let value: serde_json::Value =
-            serde_json::from_str(r#"{"n": 3, "f": 1.5, "s": "x", "b": true, "a": [1, 2], "z": null}"#)
-                .unwrap();
-        let map = json_to_dynamic(&value).cast::<Map>();
+        let map = serde_json::from_str::<Dynamic>(
+            r#"{"n": 3, "f": 1.5, "s": "x", "b": true, "a": [1, 2], "z": null}"#,
+        )
+        .unwrap()
+        .cast::<Map>();
 
         assert_eq!(map.get("n").unwrap().clone().as_int().unwrap(), 3);
         assert_eq!(map.get("f").unwrap().clone().as_float().unwrap(), 1.5);

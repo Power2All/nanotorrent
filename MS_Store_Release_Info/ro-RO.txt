@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Română (România) - Partner Center: Romanian (Romania) (ro-RO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent este o portare în Rust a PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiunea 0.4.4
+Versiunea 0.4.5
 
-- Securitate: interfața web prin HTTPS nu mai este expusă unui atac de tip denial of service în stratul său HTTP/2; acum folosește doar HTTP/1.1. Nu trebuie să schimbați nimic.
-- Limite de partajare: o limită de raport oprește acum un torrent la raportul afișat în listă. Înainte se numărau doar încărcările de la ultima pornire a NanoTorrent, așa că un torrent putea continua să partajeze peste limita sa.
-- Remedieri: torrentele v1 create cu „Creează torrent” sunt mereu valide și ies identice pe orice computer, iar „Forțează reverificarea” pe un torrent în pauză îl verifică acum imediat, în loc să afișeze 0% până la pornire.
+- Nou: NanoTorrent poate rula fără fereastră. Porniți „nanotorrent --headless” dintr-un terminal și continuă să descarce și să partajeze, cu interfața web drept cale de acces. Ctrl-C îl oprește curat, iar --log-level stabilește cât se înregistrează în jurnal.
+- La închidere, NanoTorrent salvează acum starea fiecărui torrent, așa că la următoarea pornire nu mai trebuie reverificat nimic.
+- Remedieri: fereastra nu mai revine desenată parțial după ce a stat minimizată o vreme, limitele pentru torrentele active se aplică acum și fără fereastră, iar deschiderea unui fișier .torrent dintr-un terminal în timp ce NanoTorrent rulează deja funcționează cu o cale relativă.
 - Sub capotă: bibliotecile pe care se bazează NanoTorrent au fost actualizate cu cele mai recente remedieri.
 
 

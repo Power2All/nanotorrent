@@ -174,10 +174,6 @@ struct AppState {
     /// Capability tokens for the streaming endpoint - the one way in that is
     /// not the web interface's password. See [`streamtoken`].
     stream_tokens: Arc<streamtoken::StreamTokens>,
-    /// Whether this server speaks TLS. Kept here rather than read from the
-    /// request, because the HTTPS listener is built without actix's own TLS
-    /// wiring (see [`build`]) and so the request's `AppConfig` cannot say.
-    https: bool,
 }
 
 impl AppState {
@@ -292,21 +288,6 @@ async fn h_health() -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({ "status": "ok" }))
 }
 
-/// The web remote itself - one file, compiled in.
-///
-/// Embedded rather than served from disk for the same reason `lang/*.json` is:
-/// a single executable with nothing beside it to lose, and no path to get
-/// wrong on three platforms.
-/// Fill the page's `{{key}}` placeholders from the configured language.
-///
-/// Substituted here rather than fetched by the page: a second round trip would
-/// show English first and then repaint, and this costs one pass over a page
-/// that is already in memory.
-///
-/// `{{__T__}}` is special - it becomes a JSON object of every key the page
-/// asked for, which the script uses for the strings it builds at runtime.
-/// Serialising it as JSON is what keeps an apostrophe in a French translation
-/// from ending a JavaScript string literal.
 /// Every string key the page asks for, through either channel.
 ///
 /// Shared with the test that checks they all resolve: if the test scanned
@@ -344,6 +325,16 @@ fn template_keys(html: &str) -> Vec<&str> {
     keys
 }
 
+/// Fill the page's `{{key}}` placeholders from the configured language.
+///
+/// Substituted here rather than fetched by the page: a second round trip would
+/// show English first and then repaint, and this costs one pass over a page
+/// that is already in memory.
+///
+/// `{{__T__}}` is special - it becomes a JSON object of every key the page
+/// asked for, which the script uses for the strings it builds at runtime.
+/// Serialising it as JSON is what keeps an apostrophe in a French translation
+/// from ending a JavaScript string literal.
 fn render_page(tr: &crate::ui::translator::Translator) -> String {
     let html = include_str!("index.html");
 
@@ -392,6 +383,11 @@ async fn h_favicon() -> impl Responder {
         .body(&include_bytes!("../../res/app-256.png")[..])
 }
 
+/// The web remote itself - one file, compiled in.
+///
+/// Embedded rather than served from disk for the same reason `lang/*.json` is:
+/// a single executable with nothing beside it to lose, and no path to get
+/// wrong on three platforms.
 async fn h_index(state: web::Data<AppState>) -> impl Responder {
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
@@ -842,21 +838,9 @@ async fn with_torrent<F>(
 where
     F: FnOnce(&Session, &str) + Send + 'static,
 {
-    let st = state.clone();
-    let found = web::block(move || {
-        if !st.session.exists(&hash) {
-            return false;
-        }
-        op(&st.session, &hash);
-        true
-    })
-    .await?;
-
-    if found {
-        Ok(HttpResponse::NoContent().finish())
-    } else {
-        Err(ErrorNotFound("no torrent with that info hash"))
-    }
+    torrent_json(state, hash, move |st, h| op(&st.session, h))
+        .await
+        .map(|_| HttpResponse::NoContent().finish())
 }
 
 
@@ -870,7 +854,7 @@ where
 #[derive(Deserialize)]
 struct QueueRequest {
     /// "top", "up", "down" or "bottom".
-    to: String,
+    to: crate::bittorrent::session::QueueMove,
 }
 
 /// `POST /api/torrents/{hash}/queue` - move one torrent in the queue.
@@ -879,18 +863,7 @@ async fn h_queue(
     hash: web::Path<String>,
     body: web::Json<QueueRequest>,
 ) -> actix_web::Result<HttpResponse> {
-    use crate::bittorrent::session::QueueMove;
-    let to = match body.into_inner().to.as_str() {
-        "top" => QueueMove::Top,
-        "up" => QueueMove::Up,
-        "down" => QueueMove::Down,
-        "bottom" => QueueMove::Bottom,
-        other => {
-            return Err(ErrorBadRequest(format!(
-                "unknown queue move {other:?}, expected top/up/down/bottom"
-            )));
-        }
-    };
+    let to = body.into_inner().to;
     with_torrent(&state, hash.into_inner(), move |s, h| {
         s.move_in_queue(h, to)
     })
@@ -905,17 +878,31 @@ async fn h_reannounce(
     with_torrent(&state, hash.into_inner(), |s, h| s.reannounce(h)).await
 }
 
-/// One peer, for `GET /api/torrents/{hash}/peers`.
+/// One peer, for `GET /api/torrents/{hash}/peers` and the plugin `peers()`.
 #[derive(Serialize)]
-struct PeerRow {
+pub(crate) struct PeerRow {
     addr: String,
     state: String,
     fetched_bytes: u64,
     pieces: u32,
 }
 
+pub(crate) fn peer_rows(session: &Session, hash: &str) -> Vec<PeerRow> {
+    session
+        .peers(hash)
+        .into_iter()
+        .map(|p| PeerRow {
+            addr: p.addr,
+            state: p.state,
+            fetched_bytes: p.fetched_bytes,
+            pieces: p.pieces,
+        })
+        .collect()
+}
+
+/// One file, for `GET /api/torrents/{hash}/files` and the plugin `files()`.
 #[derive(Serialize)]
-struct FileRow {
+pub(crate) struct FileRow {
     index: usize,
     name: String,
     length: u64,
@@ -925,6 +912,27 @@ struct FileRow {
     priority: i64,
 }
 
+pub(crate) fn file_rows(session: &Session, hash: &str) -> Vec<FileRow> {
+    let stored = session.file_priorities(hash);
+    session
+        .files(hash)
+        .into_iter()
+        .enumerate()
+        .map(|(index, f)| FileRow {
+            index,
+            name: f.name,
+            length: f.length,
+            progress: f.progress,
+            // Absent means nobody has touched it, which is Normal - only
+            // rows that differ are stored.
+            priority: stored
+                .get(&index)
+                .copied()
+                .unwrap_or(crate::bittorrent::session::PRIORITY_NORMAL),
+        })
+        .collect()
+}
+
 /// A `Range: bytes=...` header as an inclusive (start, end), given the length.
 ///
 /// Only the single-range forms a media player actually sends: `bytes=a-b`,
@@ -932,19 +940,6 @@ struct FileRow {
 /// multipart reply, which no player asks for, so it is refused rather than
 /// half-answered. `None` means the header was absent or unusable and the whole
 /// file should be sent.
-/// The whole file as an inclusive byte range, or `None` if there is no byte in
-/// it to name.
-///
-/// `(0, len - 1)` written out, because `len - 1` on a u64 is not a small
-/// mistake: at `len == 0` it panics in a debug build and wraps to 18 exabytes
-/// in a release one, and a zero-length file is an ordinary thing for a torrent
-/// to contain. `parse_range` already refuses every range against an empty file
-/// through the same `checked_sub`; this is the path that had no header to
-/// parse.
-fn whole_file_range(len: u64) -> Option<(u64, u64)> {
-    Some((0, len.checked_sub(1)?))
-}
-
 fn parse_range(header: &str, len: u64) -> Option<(u64, u64)> {
     let spec = header.trim().strip_prefix("bytes=")?.trim();
     if spec.contains(',') {
@@ -974,7 +969,7 @@ fn parse_range(header: &str, len: u64) -> Option<(u64, u64)> {
     if start > end { None } else { Some((start, end)) }
 }
 
-/// A torrent filename, safe to put in a header or a playlist.
+/// A torrent filename, safe to put in a header.
 ///
 /// Two separate problems, one answer:
 ///
@@ -1031,63 +1026,6 @@ fn stream_content_type(name: &str) -> &'static str {
     }
 }
 
-/// `GET /api/torrents/{hash}/files/{index}/playlist.m3u` - a playlist the
-/// operating system will open in a media player.
-///
-/// The browser downloads this; the OS opens it. NanoTorrent launches nothing,
-/// which is why this works from the web interface at all, and why it works the
-/// same from another machine.
-async fn h_playlist(
-    req: actix_web::HttpRequest,
-    state: web::Data<AppState>,
-    path: web::Path<(String, usize)>,
-) -> actix_web::Result<HttpResponse> {
-    let (hash, index) = path.into_inner();
-
-    // Opened only to learn the name and to be sure the file is really there -
-    // a playlist pointing at a 404 is worse than a refusal.
-    let probe = state
-        .session
-        .stream_file(&hash, index, None)
-        .ok_or_else(|| ErrorNotFound("no such torrent, file, or metadata not resolved yet"))?;
-    let name = probe.name.clone();
-    drop(probe);
-
-    let token = state
-        .stream_tokens
-        .issue(&hash, index)
-        .ok_or_else(|| ErrorBadRequest("that is not an info hash"))?;
-
-    // The client's own view of how it reached us. Host is client-supplied, but
-    // this URL is going straight back to that same client, so a spoofed one
-    // only misdirects the spoofer. The scheme is this server's own, not the
-    // request's: see `AppState::https`.
-    let scheme = if state.https { "https" } else { "http" };
-    let base = format!("{scheme}://{}", req.connection_info().host());
-    let url = format!("{base}/api/torrents/{hash}/files/{index}/stream?token={token}");
-
-    // Sanitised for the BODY as much as for the header. An .m3u is
-    // line-oriented, so a newline in a torrent's filename appends a line of the
-    // torrent author's choosing to the playlist - including another URL, which
-    // the media player would then go and fetch. The header was already being
-    // cleaned; the body was not, which is the half that mattered.
-    let safe = safe_filename(&name);
-
-    // #EXTINF gives the player something to show instead of the URL. -1 because
-    // the duration is not knowable from here, which players accept.
-    let body = format!("#EXTM3U\n#EXTINF:-1,{safe}\n{url}\n");
-    Ok(HttpResponse::Ok()
-        .content_type("audio/x-mpegurl")
-        .insert_header((
-            "Content-Disposition",
-            format!("attachment; filename=\"{safe}.m3u\""),
-        ))
-        // A playlist carrying a token has no business in a shared cache, or in
-        // the browser's back/forward cache after the token dies.
-        .insert_header(("Cache-Control", "no-store"))
-        .body(body))
-}
-
 /// `GET|HEAD /api/torrents/{hash}/files/{index}/stream` - the file's bytes,
 /// while it is still downloading.
 ///
@@ -1141,27 +1079,12 @@ async fn h_stream(
 
     let content_type = stream_content_type(&name);
 
-    // See `whole_file_range`: an empty file has no last byte, and answering
-    // with nothing is the honest reply rather than an underflow.
-    if whole_file_range(file_len).is_none() {
-        return Ok(HttpResponse::Ok()
-            .insert_header(("Accept-Ranges", "bytes"))
-            .insert_header((
-                "Content-Disposition",
-                format!("inline; filename=\"{}\"", safe_filename(&name)),
-            ))
-            .content_type(content_type)
-            .body(actix_web::body::SizedStream::new(
-                0,
-                futures::stream::empty::<Result<actix_web::web::Bytes, std::io::Error>>(),
-            )));
-    }
-
-    let (start, end) = match range.or_else(|| whole_file_range(file_len)) {
-        Some(r) => r,
-        None => return Ok(HttpResponse::NoContent().finish()),
-    };
-    let length = end - start + 1;
+    // An empty file has no last byte: `file_len - 1` would panic in a debug
+    // build and wrap to 18 exabytes in a release one, and a zero-length file is
+    // an ordinary thing for a torrent to contain. `parse_range` refused every
+    // range against one above, so here it is always the whole, empty, file.
+    let (start, end) = range.unwrap_or((0, file_len.saturating_sub(1)));
+    let length = if file_len == 0 { 0 } else { end - start + 1 };
 
     let mut res = if range.is_some() {
         let mut r = HttpResponse::PartialContent();
@@ -1181,11 +1104,12 @@ async fn h_stream(
         ))
         .content_type(content_type);
 
-    if req.method() == actix_web::http::Method::HEAD {
+    if req.method() == actix_web::http::Method::HEAD || length == 0 {
         // SizedStream, not finish(): actix derives Content-Length from the body,
         // so an empty HEAD body answers `content-length: 0` and a player that
         // probes with HEAD first reads that as an empty file. SizedStream
-        // declares the length the matching GET would send, and sends nothing.
+        // declares the length the matching GET would send, and sends nothing -
+        // which for an empty file is also the whole GET.
         return Ok(res.body(actix_web::body::SizedStream::new(
             length,
             futures::stream::empty::<Result<actix_web::web::Bytes, std::io::Error>>(),
@@ -1214,19 +1138,7 @@ async fn h_peers(
     state: web::Data<AppState>,
     hash: web::Path<String>,
 ) -> actix_web::Result<HttpResponse> {
-    torrent_json(&state, hash.into_inner(), |st, hash| {
-        st.session
-            .peers(hash)
-            .into_iter()
-            .map(|p| PeerRow {
-                addr: p.addr,
-                state: p.state,
-                fetched_bytes: p.fetched_bytes,
-                pieces: p.pieces,
-            })
-            .collect::<Vec<_>>()
-    })
-    .await
+    torrent_json(&state, hash.into_inner(), |st, hash| peer_rows(&st.session, hash)).await
 }
 
 /// `GET /api/torrents/{hash}/magnet` - a magnet link for a torrent already here.
@@ -1255,27 +1167,7 @@ async fn h_files(
     state: web::Data<AppState>,
     hash: web::Path<String>,
 ) -> actix_web::Result<HttpResponse> {
-    torrent_json(&state, hash.into_inner(), |st, hash| {
-        let stored = st.session.file_priorities(hash);
-        st.session
-            .files(hash)
-            .into_iter()
-            .enumerate()
-            .map(|(index, f)| FileRow {
-                index,
-                name: f.name,
-                length: f.length,
-                progress: f.progress,
-                // Absent means nobody has touched it, which is Normal - only
-                // rows that differ are stored.
-                priority: stored
-                    .get(&index)
-                    .copied()
-                    .unwrap_or(crate::bittorrent::session::PRIORITY_NORMAL),
-            })
-            .collect::<Vec<_>>()
-    })
-    .await
+    torrent_json(&state, hash.into_inner(), |st, hash| file_rows(&st.session, hash)).await
 }
 
 #[derive(Deserialize)]
@@ -1362,20 +1254,10 @@ async fn h_add_tracker(
     body: web::Json<TrackerRequest>,
 ) -> actix_web::Result<HttpResponse> {
     let req = body.into_inner();
-    let st = state.clone();
-    let hash = hash.into_inner();
-    let ok = web::block(move || {
-        st.session.exists(&hash) && st.session.add_tracker(&hash, req.url.trim(), req.tier)
+    tracker_op(&state, hash.into_inner(), move |s, h| {
+        s.add_tracker(h, req.url.trim(), req.tier)
     })
-    .await?;
-    if ok {
-        Ok(HttpResponse::NoContent().finish())
-    } else {
-        // One message for both causes: a URL that is not a tracker address,
-        // and a torrent that is no longer there. The caller can tell which by
-        // whether the torrent is still in its list.
-        Err(ErrorBadRequest("not a usable tracker URL for that torrent"))
-    }
+    .await
 }
 
 /// `POST /api/torrents/{hash}/trackers/edit` - replace one URL, keeping its
@@ -1389,15 +1271,28 @@ async fn h_edit_tracker(
     let Some(from) = req.from else {
         return Err(ErrorBadRequest("`from` is required when editing a tracker"));
     };
-    let st = state.clone();
-    let hash = hash.into_inner();
-    let ok = web::block(move || {
-        st.session.exists(&hash) && st.session.edit_tracker(&hash, &from, req.url.trim())
+    tracker_op(&state, hash.into_inner(), move |s, h| {
+        s.edit_tracker(h, &from, req.url.trim())
     })
-    .await?;
-    if ok {
+    .await
+}
+
+/// Run a tracker edit that reports whether it took, as a 204 or a 400.
+async fn tracker_op<F>(
+    state: &web::Data<AppState>,
+    hash: String,
+    op: F,
+) -> actix_web::Result<HttpResponse>
+where
+    F: FnOnce(&Session, &str) -> bool + Send + 'static,
+{
+    let st = state.clone();
+    if web::block(move || st.session.exists(&hash) && op(&st.session, &hash)).await? {
         Ok(HttpResponse::NoContent().finish())
     } else {
+        // One message for both causes: a URL that is not a tracker address,
+        // and a torrent that is no longer there. The caller can tell which by
+        // whether the torrent is still in its list.
         Err(ErrorBadRequest("not a usable tracker URL for that torrent"))
     }
 }
@@ -1702,57 +1597,8 @@ struct PluginListDto {
 #[derive(Serialize)]
 struct PluginSurfaceDto {
     name: String,
-    title: String,
-    status: String,
-    placeholder: String,
-    configurable: bool,
-    /// `[id, label]` pairs, drawn left to right.
-    buttons: Vec<[String; 2]>,
-    groups: Vec<crate::plugins::ui::Row>,
-    rows: Vec<crate::plugins::ui::Row>,
-    /// Non-empty while the plugin has a form up, in which case the browser
-    /// draws that instead of the lists - the same swap the window makes.
-    form_id: String,
-    form_title: String,
-    fields: Vec<crate::plugins::ui::Field>,
-}
-
-/// What the browser is allowed to send back. Named rather than free-form so a
-/// request cannot invent an event the desktop window could not raise.
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-enum PluginEventBody {
-    /// The plugin's chance to fill the surface before it is looked at - the
-    /// browser raises this when the panel is opened, as the window does.
-    Opened,
-    Row { id: String },
-    Group { id: String },
-    Button {
-        id: String,
-        #[serde(default)]
-        input: String,
-    },
-    Menu { id: String },
-    /// A form saved. `values` is field id to value, the same shape the window
-    /// reads back out of its own controls.
-    Form {
-        id: String,
-        #[serde(default)]
-        values: Vec<(String, String)>,
-    },
-    /// A form dismissed without saving.
-    FormCancel { id: String },
-    /// One of the plugin's items on a file's context menu. The file is named
-    /// in the request because the browser knows which row was clicked and the
-    /// host does not - there is no "current torrent" on this side.
-    FileMenu {
-        id: String,
-        hash: String,
-        index: i64,
-        #[serde(default)]
-        name: String,
-    },
-    Configure,
+    #[serde(flatten)]
+    ui: crate::plugins::ui::PluginUi,
 }
 
 /// Refuse anything the plugin host does not already know about.
@@ -1844,9 +1690,7 @@ async fn h_plugin_enabled(
     // the URL would be written straight into the disabled list, which would
     // then carry entries for files that never existed.
     if !crate::plugins::scan(&dir, &state.cfg).iter().any(|p| p.name == name) {
-        return Ok(HttpResponse::NotFound().json(serde_json::json!({
-            "error": "no such plugin"
-        })));
+        return Err(ErrorNotFound("no such plugin"));
     }
 
     crate::plugins::set_enabled(&state.cfg, &name, body.enabled);
@@ -1857,29 +1701,11 @@ async fn h_plugin_enabled(
 /// `GET /api/plugins/{name}` - one plugin's surface as it stands now.
 async fn h_plugin(name: web::Path<String>) -> actix_web::Result<HttpResponse> {
     let name = name.into_inner();
-    let Some(ui) = crate::plugins::ui::snapshot(&name).filter(|u| u.has_window()) else {
-        return Ok(HttpResponse::NotFound().json(serde_json::json!({
-            "error": "no such plugin, or it has no window"
-        })));
-    };
+    let ui = crate::plugins::ui::snapshot(&name)
+        .filter(|u| u.has_window())
+        .ok_or_else(|| ErrorNotFound("no such plugin, or it has no window"))?;
 
-    Ok(HttpResponse::Ok().json(PluginSurfaceDto {
-        name,
-        title: ui.title.clone(),
-        status: ui.status.clone(),
-        placeholder: ui.placeholder.clone(),
-        configurable: ui.configurable,
-        buttons: ui
-            .buttons
-            .iter()
-            .map(|(id, label)| [id.clone(), label.clone()])
-            .collect(),
-        groups: ui.groups.clone(),
-        rows: ui.rows.clone(),
-        form_id: ui.form_id.clone(),
-        form_title: ui.form_title.clone(),
-        fields: ui.fields.clone(),
-    }))
+    Ok(HttpResponse::Ok().json(PluginSurfaceDto { name, ui }))
 }
 
 /// `POST /api/plugins/{name}/event` - a click, in the plugin's own terms.
@@ -1890,42 +1716,24 @@ async fn h_plugin(name: web::Path<String>) -> actix_web::Result<HttpResponse> {
 /// someone's script decides to take.
 async fn h_plugin_event(
     name: web::Path<String>,
-    body: web::Json<PluginEventBody>,
+    body: web::Json<serde_json::Map<String, serde_json::Value>>,
 ) -> actix_web::Result<HttpResponse> {
-    use crate::plugins::ui::UiEvent;
-
+    // The plugin is the one in the URL, whatever the body says: it goes in
+    // over any `plugin` the request carried, and the rest of the body must
+    // then be one of the events the window itself could raise.
     let plugin = name.into_inner();
+    let mut body = body.into_inner();
+    body.insert(String::from("plugin"), serde_json::Value::from(plugin.clone()));
+    let event: crate::plugins::ui::UiEvent =
+        serde_json::from_value(serde_json::Value::Object(body)).map_err(ErrorBadRequest)?;
     if !known_plugin(&plugin) {
-        return Ok(HttpResponse::NotFound().json(serde_json::json!({
-            "error": "no such plugin, or it has no window"
-        })));
+        return Err(ErrorNotFound("no such plugin, or it has no window"));
     }
 
     // From a browser, so `ui_show()` inside the plugin's handler stays a
     // no-op: the browser opens its own panel, and nobody asked for a window on
     // the machine running the session.
-    crate::plugins::ui::post_from(crate::plugins::ui::Origin::Web, match body.into_inner() {
-        PluginEventBody::Opened => UiEvent::Opened { plugin },
-        PluginEventBody::Row { id } => UiEvent::Row { plugin, id },
-        PluginEventBody::Group { id } => UiEvent::Group { plugin, id },
-        PluginEventBody::Button { id, input } => UiEvent::Button { plugin, id, input },
-        PluginEventBody::Menu { id } => UiEvent::Menu { plugin, id },
-        PluginEventBody::Form { id, values } => UiEvent::Form { plugin, id, values },
-        PluginEventBody::FormCancel { id } => UiEvent::FormCancelled { plugin, id },
-        PluginEventBody::Configure => UiEvent::Configure { plugin },
-        PluginEventBody::FileMenu {
-            id,
-            hash,
-            index,
-            name,
-        } => UiEvent::FileMenu {
-            plugin,
-            id,
-            hash,
-            index,
-            name,
-        },
-    });
+    crate::plugins::ui::post_from(crate::plugins::ui::Origin::Web, event);
     Ok(HttpResponse::Accepted().finish())
 }
 
@@ -2042,8 +1850,8 @@ async fn h_label(
 
 // --- filesystem handlers ----------------------------------------------------
 
-/// `GET /api/fs/roots` - the drives (Windows) or mount points (Unix) the save
-/// path browser starts from.
+/// `GET /api/fs/roots` - where the save path browser starts: the default
+/// download directory.
 async fn h_fs_roots() -> actix_web::Result<impl Responder> {
     Ok(web::Json(web::block(fs::roots).await?))
 }
@@ -2066,11 +1874,6 @@ async fn h_fs_mkdir(body: web::Json<fs::PathRequest>) -> actix_web::Result<impl 
 
 // --- server -----------------------------------------------------------------
 
-/// Start the web interface if it is enabled and configured.
-///
-/// `Ok(None)` means "switched off", which is not an error. An `Err` means it
-/// was asked for and could not be started - the caller decides how loudly to
-/// say so, because that is fatal headless and merely bad on Windows.
 /// Stop a running web interface.
 ///
 /// `ServerHandle::stop` is async and the caller is the UI thread, which has no
@@ -2109,6 +1912,11 @@ pub fn restart(
     spawn(session, cfg, env)
 }
 
+/// Start the web interface if it is enabled and configured.
+///
+/// `Ok(None)` means "switched off", which is not an error. An `Err` means it
+/// was asked for and could not be started - the caller decides how loudly to
+/// say so, because that is fatal headless and merely bad on Windows.
 pub fn spawn(
     session: Arc<Session>,
     cfg: Arc<Configuration>,
@@ -2227,7 +2035,6 @@ fn build(
         env,
         errors,
         stream_tokens: stream_tokens.clone(),
-        https: tls_config.is_some(),
     });
     let creds = web::Data::new(creds);
     // Built out here, not in the factory closure: the closure runs once per
@@ -2276,10 +2083,6 @@ fn build(
                     .route("/torrents/{hash}/peers", web::get().to(h_peers))
                     .route("/torrents/{hash}/magnet", web::get().to(h_magnet))
                     .route("/torrents/{hash}/files", web::get().to(h_files))
-                    .route(
-                        "/torrents/{hash}/files/{index}/playlist.m3u",
-                        web::get().to(h_playlist),
-                    )
                     .route(
                         "/torrents/{hash}/files/{index}/stream",
                         web::get().to(h_stream),
@@ -2372,11 +2175,6 @@ const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 /// HTTP/1.1 costs nothing here. The interface is one person's remote; it
 /// makes a handful of requests and holds one event stream, which is what
 /// HTTP/1.1 keep-alive is for. Browsers pick it without being asked.
-///
-/// One thing the shortcut did that this does not: tell the request whether it
-/// arrived over TLS. `AppConfig` cannot be built outside actix-web, so the
-/// default (plain HTTP) is what handlers see - which is why the scheme they
-/// need comes from `AppState::https` instead.
 fn https_server<F, A>(
     addr: &str,
     config: rustls::ServerConfig,
@@ -2580,34 +2378,25 @@ mod tests {
 
     /// A zero-length file is legal in a torrent and used to underflow: the
     /// whole-file range was written `(0, file_len - 1)`, which panics on a
-    /// debug build and wraps to 18 exabytes on a release one.
+    /// debug build and wraps to 18 exabytes on a release one. `h_stream`
+    /// relies on every range against one being refused here.
     #[test]
     fn an_empty_file_has_no_range_rather_than_a_huge_one() {
-        use super::{parse_range, whole_file_range};
+        use super::parse_range;
 
-        assert_eq!(whole_file_range(0), None, "nothing to name");
-        assert_eq!(whole_file_range(1), Some((0, 0)), "one byte is byte zero");
-        assert_eq!(whole_file_range(4096), Some((0, 4095)));
-        assert_eq!(whole_file_range(u64::MAX), Some((0, u64::MAX - 1)));
-
-        // The header path already refused these; the point is that both paths
-        // now agree rather than one of them wrapping.
         for header in ["bytes=0-", "bytes=-1", "bytes=0-0"] {
             assert_eq!(parse_range(header, 0), None, "{header} against an empty file");
         }
     }
 
-    /// A torrent filename reaches a header AND the body of a playlist, and
-    /// both were wrong in different ways: the header turned a control
-    /// character into a 500, and the playlist let a newline append a line of
-    /// the torrent author's choosing - with a URL on it, which a media player
-    /// would then fetch.
+    /// A torrent filename reaches a header, where a control character
+    /// turned the response into a 500 and a newline would split the header.
     #[test]
-    fn a_filename_is_made_safe_for_a_header_and_for_a_playlist() {
+    fn a_filename_is_made_safe_for_a_header() {
         use super::safe_filename;
 
-        // The playlist injection. Without the newline gone, the m3u below
-        // gains an #EXTINF and a URL nobody here wrote.
+        // Header splitting. Without the newline gone, the value below would
+        // end the header and start lines nobody here wrote.
         let hostile = "ep01.mkv\n#EXTINF:-1,pwned\nhttp://attacker.example/x";
         let safe = safe_filename(hostile);
         assert!(!safe.contains('\n'), "no newline survives: {safe:?}");

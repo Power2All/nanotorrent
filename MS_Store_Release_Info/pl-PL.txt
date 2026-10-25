@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Polski (Polska) - Partner Center: Polish (Poland) (pl-PL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent to port PicoTorrenta autorstwa Viktora Elofssona na język Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Wersja 0.4.4
+Wersja 0.4.5
 
-- Bezpieczeństwo: interfejs WWW przez HTTPS nie jest już podatny na atak typu odmowa usługi w warstwie HTTP/2; korzysta teraz wyłącznie z HTTP/1.1. Nie musisz niczego zmieniać.
-- Limity udostępniania: limit współczynnika zatrzymuje teraz torrent przy współczynniku widocznym na liście. Wcześniej liczone były tylko dane wysłane od ostatniego uruchomienia NanoTorrenta, więc torrent mógł dalej udostępniać mimo przekroczenia limitu.
-- Poprawki: torrenty v1 tworzone przez „Stwórz torrent” są zawsze prawidłowe i na każdym komputerze wychodzą identyczne, a „Wymuś ponowne sprawdzenie” na wstrzymanym torrencie sprawdza go teraz od razu, zamiast pokazywać 0% aż do uruchomienia.
+- Nowość: NanoTorrent może działać bez okna. Uruchom „nanotorrent --headless” z terminala, a będzie dalej pobierać i udostępniać, z interfejsem WWW jako punktem dostępu. Ctrl-C zatrzymuje go czysto, a --log-level określa, ile trafia do dziennika.
+- Przy zamykaniu NanoTorrent zapisuje teraz stan każdego torrenta, więc przy następnym uruchomieniu nic nie trzeba sprawdzać ponownie.
+- Poprawki: okno nie wraca już częściowo narysowane po tym, jak było przez chwilę zminimalizowane, limity aktywnych torrentów obowiązują teraz także bez okna, a otwieranie pliku .torrent z terminala, gdy NanoTorrent jest już uruchomiony, działa ze ścieżką względną.
 - Pod maską: biblioteki, na których opiera się NanoTorrent, zostały zaktualizowane o najnowsze poprawki.
 
 

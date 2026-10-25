@@ -10,8 +10,8 @@ There are two:
 
 | Command | What you get |
 |---|---|
-| `cargo build --release` | The **GUI** - the same window on all three platforms. |
-| `cargo build --release --no-default-features` | **Headless** - no window, controlled through the web interface. |
+| `cargo build --release` | The **GUI** - the same window on all three platforms, or none with `--headless`. |
+| `cargo build --release --no-default-features` | **Headless** only - no window code at all, controlled through the web interface. |
 
 The original Win32 front end was removed in v0.2.0, once the Slint one reached
 parity; it is in the history if you need it.

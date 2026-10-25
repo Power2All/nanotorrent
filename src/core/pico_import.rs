@@ -132,8 +132,7 @@ pub fn read_torrents(db_path: &Path, cancel: &std::sync::atomic::AtomicBool) -> 
                 Some(info) => {
                     if save_path.as_deref().unwrap_or("").is_empty() {
                         save_path = crate::core::bencode::dict_get(blob, b"save_path")
-                            .and_then(crate::core::bencode::string)
-                            .map(|b| String::from_utf8_lossy(b).into_owned());
+                            .and_then(crate::core::bencode::text);
                     }
                     // A minimal but valid metainfo: d 4:info <info> e.
                     let mut bytes = Vec::with_capacity(info.len() + 8);
@@ -167,10 +166,6 @@ pub fn read_torrents(db_path: &Path, cancel: &std::sync::atomic::AtomicBool) -> 
         unreadable,
     })
 }
-
-// Minimal bencode scanning. We work on raw byte spans (rather than decoding and
-// re-encoding) so the extracted `info` dict is byte-identical and keeps its
-// original info-hash.
 
 #[cfg(test)]
 mod tests {
@@ -277,36 +272,5 @@ mod tests {
             ],
             "blank and NULL values are not settings"
         );
-    }
-
-    #[test]
-    fn skip_values() {
-        assert_eq!(crate::core::bencode::skip(b"i42e", 0), Some(4));
-        assert_eq!(crate::core::bencode::skip(b"3:abc", 0), Some(5));
-        assert_eq!(crate::core::bencode::skip(b"l3:abci7ee", 0), Some(10));
-        assert_eq!(crate::core::bencode::skip(b"d3:key5:valuee", 0), Some(14));
-    }
-
-    #[test]
-    fn dict_get_raw_span() {
-        // { "info": { "length": 100, "name": "abc" }, "save_path": "/tmp/x" }
-        let blob = b"d4:infod6:lengthi100e4:name3:abce9:save_path6:/tmp/xe";
-        let info = crate::core::bencode::dict_get(blob, b"info").unwrap();
-        assert_eq!(info, b"d6:lengthi100e4:name3:abce");
-        let sp = crate::core::bencode::dict_get(blob, b"save_path").unwrap();
-        assert_eq!(crate::core::bencode::string(sp).unwrap(), b"/tmp/x");
-        assert!(crate::core::bencode::dict_get(blob, b"missing").is_none());
-    }
-
-    #[test]
-    fn reconstructed_torrent_wraps_info() {
-        let blob = b"d4:infod6:lengthi5e4:name1:aee";
-        let info = crate::core::bencode::dict_get(blob, b"info").unwrap();
-        let mut torrent = Vec::new();
-        torrent.extend_from_slice(b"d4:info");
-        torrent.extend_from_slice(info);
-        torrent.push(b'e');
-        // A valid single-key metainfo dict.
-        assert_eq!(torrent, b"d4:infod6:lengthi5e4:name1:aee".to_vec());
     }
 }

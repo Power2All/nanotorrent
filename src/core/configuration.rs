@@ -6,27 +6,38 @@
 use std::sync::Arc;
 
 use rusqlite::OptionalExtension;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use super::database::Database;
 
-#[derive(Clone, Debug)]
+/// Serialized as the settings export writes it - see [`super::dbexport`].
+/// The row id is left out: it means nothing outside the database it came from.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Filter {
+    #[serde(skip)]
     pub id: i32,
     pub name: String,
     pub filter: String,
 }
 
-#[derive(Clone, Debug)]
+/// Serialized like [`Filter`]: no id, and only `name` required.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Label {
+    #[serde(skip)]
     pub id: i32,
     pub name: String,
+    #[serde(default)]
     pub color: String,
+    #[serde(default)]
     pub color_enabled: bool,
+    #[serde(default)]
     pub save_path: String,
+    #[serde(default)]
     pub save_path_enabled: bool,
+    #[serde(default)]
     pub apply_filter: String,
+    #[serde(default)]
     pub apply_filter_enabled: bool,
 }
 
@@ -331,19 +342,10 @@ impl Configuration {
             })
             .unwrap_or_default();
 
-        let mut tiers: Vec<Vec<String>> = Vec::new();
-        let mut seen: Option<i64> = None;
-        for (tier, url) in rows {
-            if seen != Some(tier) {
-                tiers.push(Vec::new());
-                seen = Some(tier);
-            }
-            // `rows` is ordered by tier, so the last group is always this one.
-            if let Some(last) = tiers.last_mut() {
-                last.push(url);
-            }
-        }
-        tiers
+        // `rows` is ordered by tier, so each run of one tier is that whole tier.
+        rows.chunk_by(|a, b| a.0 == b.0)
+            .map(|tier| tier.iter().map(|(_, url)| url.clone()).collect())
+            .collect()
     }
 
     /// The same list, flattened. What the announce machinery wants.
@@ -512,20 +514,18 @@ impl Configuration {
             .with(|conn| conn.execute("delete from filter where id = ?1", [id]));
     }
 
-    /// Insert (id < 0) or update a saved PQL filter.
+    /// Insert (id -1) or update a saved PQL filter.
+    ///
+    /// The upserts here are `ON CONFLICT DO UPDATE`, never `INSERT OR
+    /// REPLACE`: REPLACE deletes the old row first, and that delete is seen by
+    /// every foreign key pointing at it.
     pub fn upsert_filter(&self, filter: &Filter) {
         let _ = self.db.with(|conn| {
-            if filter.id < 0 {
-                conn.execute(
-                    "insert into filter (name, filter) values (?1, ?2);",
-                    rusqlite::params![filter.name, filter.filter],
-                )
-            } else {
-                conn.execute(
-                    "update filter set name = ?1, filter = ?2 where id = ?3",
-                    rusqlite::params![filter.name, filter.filter, filter.id],
-                )
-            }
+            conn.execute(
+                "insert into filter (id, name, filter) values (nullif(?1, -1), ?2, ?3) \
+                 on conflict(id) do update set name = ?2, filter = ?3",
+                rusqlite::params![filter.id, filter.name, filter.filter],
+            )
         });
     }
 
@@ -545,39 +545,26 @@ impl Configuration {
         });
     }
 
-    /// Insert a label, or update it when `label.id` names an existing one.
+    /// Insert a label (id -1), or update it when `label.id` names an existing one.
     pub fn upsert_label(&self, label: &Label) {
         let _ = self.db.with(|conn| {
-            if label.id < 0 {
-                conn.execute(
-                    "insert into label (name, color, color_enabled, save_path, save_path_enabled, \
-                     apply_filter, apply_filter_enabled) values (?1, ?2, ?3, ?4, ?5, ?6, ?7);",
-                    rusqlite::params![
-                        label.name,
-                        label.color,
-                        label.color_enabled,
-                        label.save_path,
-                        label.save_path_enabled,
-                        label.apply_filter,
-                        label.apply_filter_enabled
-                    ],
-                )
-            } else {
-                conn.execute(
-                    "update label set name = ?1, color = ?2, color_enabled = ?3, save_path = ?4, \
-                     save_path_enabled = ?5, apply_filter = ?6, apply_filter_enabled = ?7 where id = ?8",
-                    rusqlite::params![
-                        label.name,
-                        label.color,
-                        label.color_enabled,
-                        label.save_path,
-                        label.save_path_enabled,
-                        label.apply_filter,
-                        label.apply_filter_enabled,
-                        label.id
-                    ],
-                )
-            }
+            conn.execute(
+                "insert into label (id, name, color, color_enabled, save_path, save_path_enabled, \
+                 apply_filter, apply_filter_enabled) \
+                 values (nullif(?1, -1), ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+                 on conflict(id) do update set name = ?2, color = ?3, color_enabled = ?4, \
+                 save_path = ?5, save_path_enabled = ?6, apply_filter = ?7, apply_filter_enabled = ?8",
+                rusqlite::params![
+                    label.id,
+                    label.name,
+                    label.color,
+                    label.color_enabled,
+                    label.save_path,
+                    label.save_path_enabled,
+                    label.apply_filter,
+                    label.apply_filter_enabled
+                ],
+            )
         });
     }
 
@@ -601,20 +588,14 @@ impl Configuration {
             .unwrap_or_default()
     }
 
-    /// Insert or update one listen interface.
+    /// Insert (id -1) or update one listen interface.
     pub fn upsert_listen_interface(&self, iface: &ListenInterface) {
         let _ = self.db.with(|conn| {
-            if iface.id < 0 {
-                conn.execute(
-                    "insert into listen_interface (address, port) values (?1, ?2);",
-                    rusqlite::params![iface.address, iface.port.to_string()],
-                )
-            } else {
-                conn.execute(
-                    "update listen_interface set address = ?1, port = ?2 where id = ?3",
-                    rusqlite::params![iface.address, iface.port.to_string(), iface.id],
-                )
-            }
+            conn.execute(
+                "insert into listen_interface (id, address, port) values (nullif(?1, -1), ?2, ?3) \
+                 on conflict(id) do update set address = ?2, port = ?3",
+                rusqlite::params![iface.id, iface.address, iface.port.to_string()],
+            )
         });
     }
 }

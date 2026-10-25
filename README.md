@@ -115,6 +115,60 @@ installed one. A torrent or magnet opened through a copy goes to that copy's
 window, not the other one's. Two copies running at once each need their own
 listening port (Preferences ▸ Connection), since both default to 6881.
 
+### Headless mode
+
+The same program runs without a window:
+
+```
+nanotorrent --headless [FILE|MAGNET]...
+```
+
+Torrents download and seed as they would with the window open, from the same
+profile, and the web interface is the way in - turn it on first with
+`--set-web-password` and `--webui on`, or the run says that nothing can reach
+it. Settings can still be changed from the command line
+(`--set`, `--webui-set`); like any change made that way, they apply at the next
+start. The queue limits (active downloads, seeds and torrents) apply as they
+do with the window. Plugins run too; their windows appear in the web interface
+only.
+
+It stops cleanly - saving every torrent's state, so nothing is rechecked on the
+next start - on Ctrl-C, on SIGTERM or SIGHUP (so `systemctl stop` and closing
+the terminal both work), and on Windows on Ctrl-Break or the console window
+closing. Killing the process skips that.
+
+The log goes to the console (stderr) as well as to the log file, so a terminal
+shows what it is doing and a service manager such as journald collects it.
+What it prints on stdout is the short version: each torrent added, finished or
+refused. How much is logged is set per run with `--log-level`, in either mode:
+
+| `--log-level` | Logs |
+| --- | --- |
+| *(not given)* | NanoTorrent at debug, everything else at info |
+| `error`, `warn`, `info` | that level, for everything |
+| `debug`, `trace` | NanoTorrent at that level, everything else at info |
+| `info,librqbit=debug` | anything with `=` or `,` is a filter in `RUST_LOG`'s syntax |
+
+`RUST_LOG` still works as well; the flag wins when both are set. A misspelt
+level is refused rather than quietly logging nothing.
+
+- **Windows:** run it as `nanotorrent --headless` from a terminal. That is the
+  console launcher, which holds the prompt until NanoTorrent has stopped.
+  `nanotorrent-gui.exe --headless` works too, but started from a shortcut or a
+  scheduled task it has no console to send Ctrl-C to, and Task Manager is the
+  unclean exit.
+- **Linux:** the AppImage takes the flag as it is
+  (`./nanotorrent-<version>-x86_64.AppImage --headless`). It still needs the libraries the window would, so on a machine
+  with no desktop at all the [headless build](#building) is the smaller choice.
+- **macOS:** run the binary inside the bundle,
+  `/Applications/NanoTorrent.app/Contents/MacOS/nanotorrent --headless`.
+
+Only one NanoTorrent runs per profile. Started while one is already running,
+`--headless` says so and exits; a later launch of the window, or a torrent or
+magnet opened while a headless run is going, is handed to that run and added
+without a dialog. A file named with a relative path is handed over as a full
+one, so it is found whatever folder the running copy was started from.
+
 ### Rendering
 
 NanoTorrent draws on the CPU, on every platform, on purpose. It sets
@@ -151,8 +205,8 @@ There are two configurations:
 
 | Command | What you get |
 | --- | --- |
-| `cargo build --release` | The GUI — the same window on all three platforms. |
-| `cargo build --release --no-default-features` | Headless — no window, driven through the web interface. |
+| `cargo build --release` | The GUI — the same window on all three platforms, or none with `--headless`. |
+| `cargo build --release --no-default-features` | Headless only — no window code at all, driven through the web interface. |
 
 Linux additionally needs `libfontconfig1-dev`; see
 [docs/BUILDING.md](docs/BUILDING.md) for the full Linux/macOS notes.
@@ -190,8 +244,8 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
 - **libtorrent tuning knobs** — every setting PicoTorrent exposed that can
   function against librqbit: active-download/seed/overall limits, PeX toggle,
   anonymous mode, proxy scoping. Ones with no librqbit mechanism are documented
-  as no-ops. The active limits are enforced by the UI's refresh tick, so they
-  do not apply to a headless build yet.
+  as no-ops. The active limits are enforced on a one-second tick: the window's
+  refresh, or a timer of its own in a headless run.
 - **Plugins in the web interface** - a plugin's window is state held by the
   plugin host, not by the desktop window, so the browser renders the same
   surface from the same data: `GET /api/plugins`, `GET /api/plugins/{name}`,
@@ -732,6 +786,66 @@ one. Collected so nobody has to file them twice.
   yet.
 
 ## History
+
+**v0.4.5** adds `--headless`: the desktop build runs without a window on all
+three platforms, which until now took a separate `--no-default-features` build.
+
+- `--headless` is a runtime switch over the same loop the windowless build
+  always had (`run_headless` in `main.rs`), which now also does that build's
+  missing work: a one-second tick applies the queue limits - previously
+  enforced only by the window's refresh, so a headless build ignored them -
+  takes the arguments a later launch hands over through `ipc`, and prints
+  what the window would toast (added, finished, failed).
+- It stops on SIGTERM and SIGHUP as well as Ctrl-C, and on Windows on
+  Ctrl-Break and the console closing. The windowless build stopped on Ctrl-C
+  alone, so `systemctl stop` ended it uncleanly.
+- No message box in a headless run - a startup failure prints and exits 1 -
+  and no Start-menu shortcut for notifications it never shows. A second
+  `--headless` on a profile that is already running exits 1 instead of
+  handing itself over.
+- `nanotorrent-cli.exe` claims Ctrl-C for itself while it waits, so the prompt
+  comes back after the child has saved its state rather than before.
+- A headless run logs to stderr as well as the file - one `EnvFilter` over a
+  file layer and a console layer - and `--log-level` sets the filter for a
+  run in either mode: a level, or a `RUST_LOG`-style filter, checked before
+  anything starts.
+- The window repaints in full when it comes back from minimised or the
+  tray. Skia's software surface draws only what changed and presents only
+  those rectangles, and Windows discards a window's pixels after a long
+  minimise - so a restored window showed what was behind it wherever nothing
+  had changed. Slint has no public full-repaint call; the modal timer flips a
+  1/255-alpha overlay (`repaint-all`) that covers the window.
+- Closing the window now stops the session. `ui_slint::run`'s doc said the
+  caller would, and since v0.2.0 none did: the window exited with the engine's
+  resume state as of its last periodic save, and `session.running` was only
+  ever written by a headless build. `run_ui` stops it once the event loop
+  returns, which every way out of the window - X, File > Exit, the tray -
+  goes through.
+- A relative file name passed to a running copy (`nanotorrent a.torrent` from
+  a terminal) is made absolute before the hand-off (`ipc::forwardable`). The
+  running copy has a working directory of its own, so the file was looked up
+  there - not found, or a different file of the same name.
+- Dependencies updated to their latest releases, including rusqlite 0.41,
+  whose `serialize` and `commit_hook` now take `&mut Connection` - so
+  `Inner::flush` in `core/database.rs` takes `&mut self`. The libc 1.0 and
+  rustls 0.24 lines are pre-releases and were left alone. Three more
+  unmaintained-crate notices (zvariant, zvariant_derive, zbus_names, under
+  Slint and notify-rust) are listed in `.cargo/audit.toml`.
+- A second over-engineering pass: about 1,200 lines fewer across the GUI,
+  engine, web interface, plugins and core, no dependency added (Rhai's `serde`
+  feature replaces a hand-written JSON-to-`Dynamic` converter). v2 metadata is
+  now read with `core::bencode` - which gains an `int` reader and refuses a
+  dict whose key is not a string - so the file tree walk inherits its
+  nesting limit. The dialogs share a `Dialog` base and a `Screen` global, the
+  Preferences tabs a `Pane`, the menus a `MenuPanel`; menus tick their
+  current entry with `MenuRow`'s own `checked`.
+- Behaviour that changed with it: the Remove, migration and migration-progress
+  dialogs now block the main window like every other dialog; the GeoIP
+  download goes through the configured proxy (it used `reqwest::get`, which
+  ignored it); a qBittorrent import reads magnets the way the session does,
+  so base32 and v2-only links import instead of being reported unreadable;
+  the web interface's unused `playlist.m3u` route and the drive list in
+  `/api/fs/roots` are gone, and `/api/fs/list` returns folders only.
 
 **v0.4.4** closes a pre-login denial of service in the HTTPS web interface,
 makes a ratio limit stop torrents at the ratio it shows, gets the AppImage

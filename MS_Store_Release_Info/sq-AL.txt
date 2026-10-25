@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Shqip (Shqipëri) - Partner Center: Albanian (Albania) (sq-AL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent është një port në Rust i PicoTorrent nga Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioni 0.4.4
+Versioni 0.4.5
 
-- Siguria: ndërfaqja web përmes HTTPS nuk është më e ekspozuar ndaj një sulmi mohimi shërbimi në shtresën e saj HTTP/2; tani përdor vetëm HTTP/1.1. Nuk keni nevojë të ndryshoni asgjë.
-- Kufijtë e ndarjes: kufiri i raportit tani e ndalon torrentin te raporti i shfaqur në listë. Më parë numëroheshin vetëm ngarkimet që nga nisja e fundit e NanoTorrent, ndaj një torrent mund të vazhdonte të ndante përtej kufirit të tij.
-- Rregullime: torrentet v1 të krijuara me «Krijo torrent» janë gjithmonë të vlefshme dhe dalin njësoj në çdo kompjuter, ndërsa «Detyro rikontroll» te një torrent i ndalur përkohësisht tani e kontrollon menjëherë, në vend që të shfaqë 0% derisa të niset.
+- E re: NanoTorrent mund të punojë pa dritare. Nisni «nanotorrent --headless» nga një terminal dhe ai vazhdon të shkarkojë dhe të ndajë, me ndërfaqen web si mënyrë hyrjeje. Ctrl-C e ndal pastër, dhe --log-level përcakton sa regjistrohet.
+- Mbyllja e NanoTorrent tani ruan gjendjen e çdo torrenti gjatë daljes, ndaj në nisjen e radhës nuk ka nevojë të rikontrollohet asgjë.
+- Rregullime: dritarja nuk kthehet më e vizatuar pjesërisht pasi ka qenë e minimizuar për ca kohë, kufijtë e torrenteve aktive tani zbatohen edhe pa dritaren, dhe hapja e një skedari .torrent nga një terminal ndërkohë që NanoTorrent është tashmë në punë funksionon me shteg relativ.
 - Nën kapak: bibliotekat mbi të cilat është ndërtuar NanoTorrent janë përditësuar me ndreqjet e tyre më të fundit.
 
 

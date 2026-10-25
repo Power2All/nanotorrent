@@ -91,14 +91,8 @@ impl ShareLimits {
             // Two levels of Option, and they mean different things: the outer
             // one is "did this torrent say anything", the inner is "and was it
             // a limit or an explicit none".
-            ratio: match ratio {
-                Some(own) => positive(Some(own)),
-                None => self.ratio,
-            },
-            seed_minutes: match seed_minutes {
-                Some(own) => positive(Some(own)),
-                None => self.seed_minutes,
-            },
+            ratio: ratio.map_or(self.ratio, |own| positive(Some(own))),
+            seed_minutes: seed_minutes.map_or(self.seed_minutes, |own| positive(Some(own))),
             ..self
         }
     }

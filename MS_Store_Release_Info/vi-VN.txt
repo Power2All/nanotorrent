@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Tiếng Việt (Việt Nam) - Partner Center: Vietnamese (Vietnam) (vi-VN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent là bản chuyển sang Rust của PicoTorrent do Viktor Elofsson vi
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Phiên bản 0.4.4
+Phiên bản 0.4.5
 
-- Bảo mật: giao diện web qua HTTPS không còn bị tấn công từ chối dịch vụ ở lớp HTTP/2 nữa; giờ đây nó chỉ dùng HTTP/1.1. Bạn không cần thay đổi gì.
-- Giới hạn chia sẻ: giới hạn tỷ lệ giờ dừng torrent đúng ở tỷ lệ hiển thị trong danh sách. Trước đây chỉ tính lượng tải lên kể từ lần khởi động NanoTorrent gần nhất, nên torrent có thể tiếp tục chia sẻ vượt quá giới hạn.
-- Sửa lỗi: torrent v1 tạo bằng “Tạo torrent” luôn hợp lệ và giống hệt nhau trên mọi máy tính, còn “Buộc kiểm tra lại” trên torrent đang tạm dừng giờ kiểm tra ngay thay vì hiển thị 0% cho đến khi được khởi động.
+- Mới: NanoTorrent có thể chạy mà không cần cửa sổ. Khởi động “nanotorrent --headless” từ terminal và ứng dụng sẽ tiếp tục tải xuống và chia sẻ, truy cập qua giao diện web. Ctrl-C dừng ứng dụng gọn gàng, và --log-level đặt mức ghi nhật ký.
+- Khi đóng, NanoTorrent giờ lưu trạng thái của mọi torrent trước khi thoát, nên lần khởi động sau không cần kiểm tra lại gì.
+- Sửa lỗi: cửa sổ không còn hiện lại chỉ được vẽ một phần sau khi thu nhỏ một lúc, giới hạn torrent hoạt động giờ cũng áp dụng khi không có cửa sổ, và mở tệp .torrent từ terminal khi NanoTorrent đang chạy giờ hoạt động với đường dẫn tương đối.
 - Thay đổi bên trong: các thư viện mà NanoTorrent dựa trên đã được cập nhật cùng các bản sửa lỗi mới nhất.
 
 

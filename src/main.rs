@@ -7,7 +7,7 @@
 //   4. Open the SQLite database and run migrations
 //   5. Load configuration and translations
 //   6. Create the BitTorrent session
-//   7. Show the main window
+//   7. Show the main window - or, headless, wait for a signal to stop
 //
 // The UI is the cross-platform Slint one (ui_slint) - the same window on
 // Windows, Linux and macOS. The original Win32 front end it replaced is in the
@@ -38,11 +38,17 @@ mod ui_slint;
 mod updatechecker;
 mod webui;
 
-/// True when no native UI is compiled in. The web interface is then the only
-/// way to reach this process, which makes failing to start it fatal rather
-/// than a degraded-but-usable state.
-const HEADLESS: bool = !cfg!(feature = "ui-slint");
+/// Set by `--headless`, before anything reads [`headless`].
+static HEADLESS_FLAG: AtomicBool = AtomicBool::new(false);
 
+/// True when this run has no window: a build without one, or `--headless`.
+/// The web interface is then the only way to reach this process, which makes
+/// failing to start it fatal rather than a degraded-but-usable state.
+fn headless() -> bool {
+    !cfg!(feature = "ui-slint") || HEADLESS_FLAG.load(Ordering::Relaxed)
+}
+
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// The language a fresh install comes up in. The OS locale deliberately does
@@ -55,10 +61,6 @@ use crate::core::environment::Environment;
 use crate::ui::translator::Translator;
 
 /// Everything the UI layer needs, assembled during startup.
-// A headless build reads almost none of these yet - the HTTP API is what will
-// consume them. Keeping them assembled means that lands as an addition rather
-// than a rework of startup.
-#[cfg_attr(not(feature = "ui-slint"), allow(dead_code))]
 pub struct AppContext {
     pub env: Arc<Environment>,
     pub db: Arc<Database>,
@@ -119,6 +121,15 @@ pub fn help_text(tr: &Translator) -> String {
             "\n",
             "{}\n",
             "\n",
+            "  nanotorrent --headless            {}\n",
+            "  nanotorrent --log-level LEVEL     {}\n",
+            "\n",
+            "{}\n",
+            "\n",
+            "{}\n",
+            "\n",
+            "{}\n",
+            "\n",
             "{}\n",
             "{}",
             "\n{}",
@@ -130,11 +141,62 @@ pub fn help_text(tr: &Translator) -> String {
         tr.i18n("cli_portable_header"),
         tr.i18n("cli_flag_portable"),
         tr.i18n("cli_portable_note"),
+        tr.i18n("cli_headless_header"),
+        tr.i18n("cli_flag_headless"),
+        tr.i18n("cli_flag_log_level"),
+        tr.i18n("cli_headless_note"),
+        tr.i18n("cli_log_level_note"),
         cli::usage(tr),
         cli::settings_help(tr),
         webui::cli::usage(tr),
         core::dbcli::usage(tr)
     )
+}
+
+/// What is logged when neither `--log-level` nor RUST_LOG says otherwise.
+const DEFAULT_LOG_FILTER: &str = "info,nanotorrent=debug";
+
+/// Take `--log-level` and its value out of `args`, as a filter for
+/// tracing-subscriber's `EnvFilter`. `None` when the flag is not there.
+///
+/// A level - error, warn, info, debug, trace or off - is NanoTorrent's own
+/// level. Finer than info, dependencies stay at info, for the reason given
+/// where the default is used: `debug` for everything would be librqbit tracing
+/// every block of every piece. Anything with `=` or `,` in it is a filter in
+/// RUST_LOG's syntax, passed on as it is, for when a dependency is the thing
+/// to watch. A bare word that is neither is refused rather than read as a
+/// module name, which is what `EnvFilter` would make of a misspelt level.
+fn take_log_level(args: &mut Vec<String>) -> anyhow::Result<Option<String>> {
+    const LEVELS: [&str; 6] = ["off", "error", "warn", "info", "debug", "trace"];
+    let Some(at) = args
+        .iter()
+        .position(|a| a == "--log-level" || a.starts_with("--log-level="))
+    else {
+        return Ok(None);
+    };
+    let flag = args.remove(at);
+    let value = match flag.strip_prefix("--log-level=") {
+        Some(value) => value.to_owned(),
+        None if at < args.len() => args.remove(at),
+        None => String::new(),
+    };
+    let value = value.trim().to_ascii_lowercase();
+
+    let spec = match value.as_str() {
+        "debug" | "trace" => format!("info,nanotorrent={value}"),
+        level if LEVELS.contains(&level) => value.clone(),
+        filter if filter.contains(['=', ',']) => {
+            tracing_subscriber::EnvFilter::try_new(filter)
+                .map_err(|err| anyhow::anyhow!("--log-level {filter}: {err}"))?;
+            value.clone()
+        }
+        _ => anyhow::bail!(
+            "--log-level takes one of {}, or a filter such as info,librqbit=debug - not {:?}",
+            LEVELS.join(", "),
+            value
+        ),
+    };
+    Ok(Some(spec))
 }
 
 /// The translator for the configured language.
@@ -154,12 +216,10 @@ pub fn load_translator(env: &Environment, cfg: &Configuration) -> Translator {
 /// stopping the flag from printing.
 fn help_translator() -> Translator {
     let env = Environment::create();
-    let translator = Database::open(&env).ok().and_then(|db| {
-        let db = Arc::new(db);
-        db.migrate().ok()?;
-        Some(load_translator(&env, &Configuration::new(db)))
-    });
-    translator.unwrap_or_else(|| Translator::load(&env.get_lang_path(), DEFAULT_LOCALE))
+    match core::dbcli::open(&env) {
+        Ok(db) => load_translator(&env, &Configuration::new(db)),
+        Err(_) => Translator::load(&env.get_lang_path(), DEFAULT_LOCALE),
+    }
 }
 
 /// Thin wrapper around [`run`]: its job is to turn a startup failure into
@@ -190,7 +250,10 @@ fn fatal_error(msg: &str) {
     // before spawning us. The eprintln above has somewhere to go, so a modal
     // box would be pure obstruction - and worse than that in a script, where
     // it blocks until somebody clicks it.
-    if std::env::var_os("NANOTORRENT_CONSOLE").is_some() {
+    //
+    // A headless run is the same case without the shim: started from a
+    // service manager or a scheduled task, a box would wait forever.
+    if std::env::var_os("NANOTORRENT_CONSOLE").is_some() || headless() {
         return;
     }
 
@@ -206,13 +269,7 @@ fn fatal_error(msg: &str) {
     // compile-time test.
     #[cfg(all(not(debug_assertions), windows, feature = "ui-slint"))]
     unsafe {
-        use std::os::windows::ffi::OsStrExt;
-        let wide = |s: &str| -> Vec<u16> {
-            std::ffi::OsStr::new(s)
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect()
-        };
+        use crate::core::utils::wide;
         let text = wide(msg);
         let caption = wide("NanoTorrent could not start");
         winapi::um::winuser::MessageBoxW(
@@ -258,6 +315,25 @@ fn run() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // `--headless`: no window for this run. Taken out of the arguments like
+    // `--portable` below, and first, so that every failure from here on is
+    // printed rather than put in a box nobody is there to dismiss.
+    if let Some(at) = args.iter().position(|a| a == "--headless") {
+        args.remove(at);
+        HEADLESS_FLAG.store(true, Ordering::Relaxed);
+    }
+
+    // `--log-level LEVEL` or `--log-level=LEVEL`: for this run only, and
+    // taken out for the same reason. A bad value is a usage error, said
+    // before anything has started.
+    let log_spec = match take_log_level(&mut args) {
+        Ok(spec) => spec,
+        Err(err) => {
+            eprintln!("{err:#}");
+            std::process::exit(2);
+        }
+    };
+
     // `--portable`: switch this copy to portable mode for good, then carry on
     // starting - in portable mode, since the marker is now there. Taken out of
     // the arguments first, so it is neither forwarded to a running instance nor
@@ -293,29 +369,21 @@ fn run() -> anyhow::Result<()> {
     // not a failure to start: bubbling it up would print it under "NanoTorrent
     // could not start" and, in a release GUI build, put it in a modal box that
     // a script has nobody to dismiss.
-    // Sequential, not an array of both calls: each one may consume stdin or
-    // write a setting, so the second must not run when the first took the flag.
-    let usage_error = |err: anyhow::Error| -> ! {
-        eprintln!("{err:#}");
-        std::process::exit(2);
-    };
-    match webui::cli::handle(&args) {
-        Ok(true) => return Ok(()),
-        Ok(false) => {}
-        Err(err) => usage_error(err),
-    }
-
-    // Before the database is opened by anything else: these rewrite the file,
-    // and doing that under a live connection is the one thing they must not do.
-    match core::dbcli::handle(&args) {
-        Ok(true) => return Ok(()),
-        Ok(false) => {}
-        Err(err) => usage_error(err),
-    }
-    match cli::handle(&args) {
-        Ok(true) => return Ok(()),
-        Ok(false) => {}
-        Err(err) => usage_error(err),
+    //
+    // One at a time, stopping at the first that takes the flag: each may consume
+    // stdin or write a setting, so a later one must not run after an earlier
+    // one handled it. dbcli comes before anything else opens the database: its
+    // flags rewrite the file, and doing that under a live connection is the one
+    // thing they must not do.
+    for handle in [webui::cli::handle, core::dbcli::handle, cli::handle] {
+        match handle(&args) {
+            Ok(true) => return Ok(()),
+            Ok(false) => {}
+            Err(err) => {
+                eprintln!("{err:#}");
+                std::process::exit(2);
+            }
+        }
     }
 
     // Before the single-instance check: which instance to hand off to depends on
@@ -325,6 +393,15 @@ fn run() -> anyhow::Result<()> {
     // Port of the IPC single-instance handling in main.cpp.
     let server = match ipc::init(&args, &env)? {
         ipc::Instance::Primary(server) => Some(server),
+        // Asked for a headless run and got a hand-off instead: say so, or the
+        // command just ends as though it had started and stopped again. Any
+        // torrents named went to the running copy, as they would without
+        // the flag. The flag, not `headless()`: on a build without a window
+        // a plain launch is a hand-off like anywhere else.
+        ipc::Instance::Secondary if HEADLESS_FLAG.load(Ordering::Relaxed) => anyhow::bail!(
+            "NanoTorrent is already running with this profile, so a headless one was not \
+             started. Stop the running one first."
+        ),
         ipc::Instance::Secondary => {
             // Options were forwarded to the running instance.
             return Ok(());
@@ -348,24 +425,50 @@ fn run() -> anyhow::Result<()> {
     }
     let log_file = std::fs::File::create(&log_path).ok();
 
-    if let Some(file) = log_file {
+    {
+        use std::io::IsTerminal;
+        use tracing_subscriber::{EnvFilter, layer::SubscriberExt};
+
         // Everything NanoTorrent itself does is logged at debug; dependencies
         // stay at info, because librqbit traces every chunk of every piece and
         // one busy torrent would bury the app's own activity in minutes.
         //
-        // RUST_LOG overrides the lot when a specific dependency needs
-        // watching, e.g. RUST_LOG=info,librqbit=debug,nanotorrent=trace
-        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,nanotorrent=debug"));
+        // `--log-level` overrides that for one run, and RUST_LOG for any run
+        // it is set for, when a specific dependency needs watching, e.g.
+        // RUST_LOG=info,librqbit=debug,nanotorrent=trace. The flag wins: it is
+        // the more deliberate of the two.
+        let filter = match &log_spec {
+            // Checked when the flag was read, so this cannot fail.
+            Some(spec) => EnvFilter::new(spec),
+            None => EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER)),
+        };
 
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(Mutex::new(file))
-            .with_ansi(false)
-            .with_env_filter(filter)
-            // Which module a line came from - the whole point of a debug log
-            // is being able to follow one subsystem through it.
-            .with_target(true)
-            .finish();
+        // Which module a line came from - the whole point of a debug log is
+        // being able to follow one subsystem through it.
+        let file = log_file.map(|file| {
+            tracing_subscriber::fmt::layer()
+                .with_writer(Mutex::new(file))
+                .with_ansi(false)
+                .with_target(true)
+        });
+        // Headless, the console is where someone is watching - or where a
+        // service manager collects it, journald for one. Stderr, so it does
+        // not mix into what the run prints on stdout. Colour only on a Unix
+        // terminal: a Windows console reached by AttachConsole has no VT
+        // processing switched on, and shows the escapes as text.
+        let console = headless().then(|| {
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_ansi(cfg!(unix) && std::io::stderr().is_terminal())
+                .with_target(true)
+        });
+
+        // set_global_default rather than `init`: with tracing-subscriber's
+        // default features, `init` would also route the `log` crate into
+        // tracing, which this has never done and which several dependencies
+        // would have plenty to say through.
+        let subscriber = tracing_subscriber::registry().with(filter).with(file).with(console);
         let _ = tracing::subscriber::set_global_default(subscriber);
     }
 
@@ -399,8 +502,12 @@ fn run() -> anyhow::Result<()> {
     }
 
     // Claim the identity notifications are attributed to: an AppUserModelID on
-    // Windows, the bundle identifier on macOS. Nothing to do on Linux.
-    core::toast::register();
+    // Windows, the bundle identifier on macOS. Nothing to do on Linux. A
+    // headless run shows none, and on Windows this writes a Start menu
+    // shortcut, which is not something a background service should leave.
+    if !headless() {
+        core::toast::register();
+    }
 
     let db = Arc::new(Database::open(&env)?);
     db.migrate()?;
@@ -440,8 +547,8 @@ fn run() -> anyhow::Result<()> {
     // change. In-flight requests are still cut when the process exits.
     let web = match webui::spawn(session.clone(), cfg.clone(), env.clone()) {
         Ok(handle) => handle,
-        Err(err) if HEADLESS => {
-            return Err(err.context("the web interface is the only interface on this build"));
+        Err(err) if headless() => {
+            return Err(err.context("the web interface is the only way into a headless run"));
         }
         Err(err) => {
             tracing::error!("web interface did not start: {err:#}");
@@ -522,19 +629,18 @@ fn offer_profile_copy(env: &Environment, from: &std::path::Path) {
     }
 }
 
-#[cfg(feature = "ui-slint")]
+/// Headless, there is nobody to ask, and copying unasked would be the one
+/// thing worse than not copying. Says how to do it by hand instead.
+#[cfg_attr(not(feature = "ui-slint"), allow(unused_variables))]
 fn ask_profile_copy(tr: &Translator, env: &Environment, from: &std::path::Path) -> bool {
-    ui_slint::ask_profile_copy(tr, &env.get_application_data_path(), from)
-}
-
-/// Headless: nobody to ask, and copying unasked would be the one thing worse
-/// than not copying. Says how to do it by hand instead.
-#[cfg(not(feature = "ui-slint"))]
-fn ask_profile_copy(_tr: &Translator, env: &Environment, from: &std::path::Path) -> bool {
+    #[cfg(feature = "ui-slint")]
+    if !headless() {
+        return ui_slint::ask_profile_copy(tr, &env.get_application_data_path(), from);
+    }
     println!(
         "This portable copy starts with a new profile. To use the one in\n  {}\n\
          instead, stop NanoTorrent, delete NanoTorrent.sqlite in\n  {}\n\
-         and start it again with a desktop build, which offers to copy it.",
+         and start it again with its window, which offers to copy it.",
         from.display(),
         env.get_application_data_path().display()
     );
@@ -561,33 +667,239 @@ fn install_panic_hook(log_dir: std::path::PathBuf) {
     }));
 }
 
-/// Show the main window and run the UI event loop until it closes.
-#[cfg(feature = "ui-slint")]
+/// Show the main window and run the UI event loop until it closes - or, for a
+/// headless run, [`run_headless`].
 fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
-    ui_slint::run(ctx)
+    #[cfg(feature = "ui-slint")]
+    if !headless() {
+        // Every way out of the window - its X, File > Exit, the tray - ends
+        // the event loop and comes back here, so this is the one place to
+        // stop the session. It was not done at all: the window has exited
+        // without `stop` since v0.2.0, leaving the engine's resume state as
+        // of its last periodic save rather than as of the exit.
+        let session = ctx.session.clone();
+        let result = ui_slint::run(ctx);
+        tracing::info!("window closed, shutting down");
+        session.stop();
+        return result;
+    }
+    run_headless(ctx)
 }
 
-/// Headless: this target has no UI yet (Linux/macOS, or a Windows build with
-/// --no-default-features). Keep the session running until asked to stop, then
-/// shut it down cleanly so fastresume state is flushed - a torrent client that
-/// exits without that makes every torrent recheck on next start.
-///
-/// This is the loop the HTTP API will attach to, so it is deliberately a real
-/// run loop rather than a stub that returns.
-#[cfg(not(feature = "ui-slint"))]
-fn run_ui(ctx: AppContext) -> anyhow::Result<()> {
-    tracing::info!("no UI on this target - running headless, Ctrl-C to stop");
+/// How often a headless run does what the window's refresh tick does.
+const HEADLESS_TICK: std::time::Duration = std::time::Duration::from_secs(1);
 
-    // Handle::block_on, not a nested runtime: the session already owns one and
-    // main() is not itself a runtime thread.
-    ctx.session.handle().block_on(async {
-        if let Err(err) = tokio::signal::ctrl_c().await {
-            tracing::warn!("could not listen for Ctrl-C ({err}) - parking instead");
-            std::future::pending::<()>().await;
+/// No window: a build without one, or `--headless`. Keep the session running
+/// until asked to stop, then shut it down cleanly so fastresume state is
+/// flushed - a torrent client that exits without that makes every torrent
+/// recheck on next start.
+///
+/// The tick stands in for the window's refresh timer, for the two jobs on it
+/// that are not drawing: the queue limits, and the arguments a later launch
+/// hands over.
+fn run_headless(ctx: AppContext) -> anyhow::Result<()> {
+    let session = &ctx.session;
+    tracing::info!("running headless - Ctrl-C to stop");
+    println!("{}", ctx.translator.i18n("cli_headless_running"));
+    if ctx.web.is_none() {
+        println!("{}", ctx.translator.i18n("cli_headless_no_webui"));
+    }
+
+    // Before the first add, so that add is reported too.
+    let events = session.subscribe();
+    add_from_args(session, &ctx.args);
+
+    // The signals are awaited on the session's runtime and reported over a
+    // channel, so this thread stays outside it: the session's synchronous
+    // API, which the tick calls, cannot be called from inside its own runtime.
+    let (stop_tx, stop_rx) = std::sync::mpsc::channel();
+    spawn_stop_signals(&session.handle(), stop_tx);
+
+    // Ends on a signal, or with every listener gone - which would leave
+    // nothing able to stop this cleanly, so it stops while it still can.
+    use std::sync::mpsc::RecvTimeoutError;
+    while let Err(RecvTimeoutError::Timeout) = stop_rx.recv_timeout(HEADLESS_TICK) {
+        // A later launch hands over its arguments rather than starting a
+        // second session on the same profile - see ipc::init.
+        while let Some(forwarded) = ctx.ipc.as_ref().and_then(|s| s.try_recv().ok()) {
+            if forwarded.is_empty() {
+                tracing::info!("another launch asked for the window; this run has none");
+            }
+            add_from_args(session, &forwarded);
         }
-    });
+
+        // What the window says in a toast, said on the console: with no
+        // window, an add that failed would otherwise only be in the log.
+        while let Ok(event) = events.try_recv() {
+            use bittorrent::session::SessionEvent;
+            let tr = &ctx.translator;
+            match event {
+                SessionEvent::TorrentAdded { name, .. } => {
+                    println!("{}", tr.i18n1("torrent_added", &name))
+                }
+                SessionEvent::TorrentDuplicate { name, .. } => {
+                    println!("{}", tr.i18n1("torrents_duplicate", &name))
+                }
+                SessionEvent::TorrentCompleted { name, .. } => {
+                    println!("{}: {name}", tr.i18n("download_complete"))
+                }
+                SessionEvent::Error(err) => eprintln!("{}", err.text(tr)),
+                SessionEvent::TorrentRemoved { .. } => {}
+            }
+        }
+
+        // `torrents` is also what stamps a completion time, which the
+        // window's list does for it. And the queue limits run on what it
+        // returns - see the same call in ui_slint's refresh.
+        let rows = session.torrents(&session.label_names());
+        session.enforce_queue(
+            &rows,
+            ctx.cfg.get_int("libtorrent.active_limit").unwrap_or(0),
+            ctx.cfg.get_int("libtorrent.active_downloads").unwrap_or(0),
+            ctx.cfg.get_int("libtorrent.active_seeds").unwrap_or(0),
+        );
+    }
 
     tracing::info!("shutting down");
-    ctx.session.stop();
+    println!("{}", ctx.translator.i18n("cli_headless_stopping"));
+    session.stop();
     Ok(())
+}
+
+/// Add the `.torrent` files and magnet links in `args`, as the Add dialog
+/// would with "skip this dialog" ticked: the default save path, started.
+/// Anything else in `args` is ignored, as the window ignores it.
+fn add_from_args(session: &bittorrent::session::Session, args: &[String]) {
+    use bittorrent::session::{AddParams, AddTorrentSource};
+    for arg in args {
+        let source = if arg.starts_with("magnet:") {
+            AddTorrentSource::MagnetUri(arg.clone())
+        } else if arg.to_lowercase().ends_with(".torrent") {
+            match std::fs::read(arg) {
+                Ok(bytes) => AddTorrentSource::TorrentFileBytes(bytes),
+                Err(err) => {
+                    tracing::error!("cannot read {arg}: {err}");
+                    eprintln!("{arg}: {err}");
+                    continue;
+                }
+            }
+        } else {
+            continue;
+        };
+        let params = AddParams {
+            start_torrent: true,
+            ..AddParams::default()
+        };
+        session.add_torrent(source, params);
+    }
+}
+
+/// Send on `tx` when this process is asked to stop: Ctrl-C everywhere, and
+/// what a service manager or a closing terminal sends instead - SIGTERM and
+/// SIGHUP on Unix, Ctrl-Break and the console closing on Windows.
+///
+/// One task per signal rather than a `select!`, which would need tokio's
+/// macros for this one place. A listener that cannot be set up is logged and
+/// parks holding its sender, so a missing one never reads as a request to stop.
+fn spawn_stop_signals(rt: &tokio::runtime::Handle, tx: std::sync::mpsc::Sender<()>) {
+    fn on<F, E>(
+        rt: &tokio::runtime::Handle,
+        tx: &std::sync::mpsc::Sender<()>,
+        name: &'static str,
+        wait: F,
+    ) where
+        F: std::future::Future<Output = Result<(), E>> + Send + 'static,
+        E: std::fmt::Display + Send,
+    {
+        let tx = tx.clone();
+        rt.spawn(async move {
+            match wait.await {
+                Ok(()) => {
+                    tracing::info!("{name} received");
+                    let _ = tx.send(());
+                }
+                Err(err) => {
+                    tracing::warn!("could not listen for {name} ({err})");
+                    std::future::pending::<()>().await;
+                }
+            }
+        });
+    }
+
+    on(rt, &tx, "Ctrl-C", tokio::signal::ctrl_c());
+
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        // `signal` registers with the runtime, so it is called on it.
+        let kinds = [("SIGTERM", SignalKind::terminate()), ("SIGHUP", SignalKind::hangup())];
+        for (name, kind) in kinds {
+            on(rt, &tx, name, async move {
+                signal(kind)?.recv().await;
+                Ok::<(), std::io::Error>(())
+            });
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use tokio::signal::windows::{ctrl_break, ctrl_close};
+        on(rt, &tx, "Ctrl-Break", async {
+            ctrl_break()?.recv().await;
+            Ok::<(), std::io::Error>(())
+        });
+        // Windows ends the process a few seconds after this, whatever it is
+        // doing; started now, the shutdown at least gets those seconds.
+        on(rt, &tx, "console close", async {
+            ctrl_close()?.recv().await;
+            Ok::<(), std::io::Error>(())
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn take(args: &[&str]) -> (anyhow::Result<Option<String>>, Vec<String>) {
+        let mut args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+        let spec = take_log_level(&mut args);
+        (spec, args)
+    }
+
+    /// Both spellings are taken out with their value, and nothing else is.
+    #[test]
+    fn log_level_is_taken_out_of_the_arguments() {
+        let (spec, rest) = take(&["--headless", "--log-level", "warn", "a.torrent"]);
+        assert_eq!(spec.unwrap().as_deref(), Some("warn"));
+        assert_eq!(rest, ["--headless", "a.torrent"]);
+
+        let (spec, rest) = take(&["--log-level=ERROR", "a.torrent"]);
+        assert_eq!(spec.unwrap().as_deref(), Some("error"));
+        assert_eq!(rest, ["a.torrent"]);
+
+        let (spec, rest) = take(&["a.torrent"]);
+        assert!(spec.unwrap().is_none());
+        assert_eq!(rest, ["a.torrent"]);
+    }
+
+    /// debug and trace raise NanoTorrent alone: the engine at debug would
+    /// bury it.
+    #[test]
+    fn a_fine_level_is_for_nanotorrent_only() {
+        let (spec, _) = take(&["--log-level", "trace"]);
+        assert_eq!(spec.unwrap().as_deref(), Some("info,nanotorrent=trace"));
+    }
+
+    /// A filter goes through as written; a bad one, a misspelt level and a
+    /// missing value are refused rather than logging something unexpected.
+    #[test]
+    fn a_filter_passes_and_nonsense_does_not() {
+        let (spec, _) = take(&["--log-level", "info,librqbit=debug"]);
+        assert_eq!(spec.unwrap().as_deref(), Some("info,librqbit=debug"));
+
+        for bad in [&["--log-level", "loud"][..], &["--log-level", "librqbit=loud"], &["--log-level"]] {
+            assert!(take(bad).0.is_err(), "{bad:?} was accepted");
+        }
+    }
 }

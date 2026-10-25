@@ -126,7 +126,6 @@ fn looks_absolute(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::bencode::build;
 
     struct Profile(PathBuf);
 
@@ -138,18 +137,10 @@ mod tests {
             Profile(dir)
         }
         fn torrent(&self, stem: &str, name: &str) -> String {
-            let info = build::dict(&[
-                ("length", build::int(1234)),
-                ("name", build::str(name)),
-                ("piece length", build::int(16384)),
-                ("pieces", build::str("01234567890123456789")),
-            ]);
-            std::fs::write(
-                self.0.join("torrents").join(format!("{stem}.torrent")),
-                build::dict(&[("info", info.clone())]),
-            )
-            .unwrap();
-            crate::bittorrent::metainfo::info_hashes(&info).0.unwrap()
+            let (torrent, hash) = super::super::test_torrent(name);
+            std::fs::write(self.0.join("torrents").join(format!("{stem}.torrent")), torrent)
+                .unwrap();
+            hash
         }
         fn detail(&self, stem: &str, xml: &str) {
             std::fs::write(self.0.join("torrents").join(format!("{stem}.xml")), xml).unwrap();

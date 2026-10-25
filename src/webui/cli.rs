@@ -198,26 +198,21 @@ pub(crate) fn set_setting(
     tr: &Translator,
 ) -> Result<()> {
     match key {
-        "port" => {
-            let port: i64 = value
-                .parse()
-                .ok()
-                .filter(|p| (1..=65535).contains(p))
-                .context("port must be a number between 1 and 65535")?;
-            cfg.set("webui.port", &port);
-        }
-        "tls_mode" => {
-            anyhow::ensure!(
-                matches!(value, "self-signed" | "custom" | "off"),
-                "tls_mode must be one of: self-signed, custom, off"
-            );
-            if value == "off" {
+        // Ordinary settings, checked by `crate::cli` the same way `--set`
+        // checks them.
+        "port" | "tls_mode" | "tls_cert_path" | "tls_key_path" => {
+            let full = format!("webui.{key}");
+            let s = crate::cli::SETTINGS
+                .iter()
+                .find(|s| s.key == full)
+                .with_context(|| format!("{full} is missing from crate::cli::SETTINGS"))?;
+            crate::cli::set(cfg, s, value, tr)?;
+            if key == "tls_mode" && value == "off" {
                 // Not refused here - it is legitimate on loopback, and startup
                 // is where the bind address is known. Say so now rather than
                 // letting it fail confusingly later.
                 println!("{}", tr.i18n("cli_web_tls_off_warning"));
             }
-            cfg.set("webui.tls_mode", &value);
         }
         "bind_address" => {
             anyhow::ensure!(!value.trim().is_empty(), "bind_address must not be empty");
@@ -229,15 +224,6 @@ pub(crate) fn set_setting(
         "username" => {
             anyhow::ensure!(!value.trim().is_empty(), "username must not be empty");
             cfg.set("webui.username", &value);
-        }
-        "tls_cert_path" | "tls_key_path" => {
-            // Checked now rather than at startup, where a typo would only show
-            // up as the interface silently not coming back after a restart.
-            anyhow::ensure!(
-                std::path::Path::new(value).is_file(),
-                "{value} is not an existing file"
-            );
-            cfg.set(&format!("webui.{key}"), &value);
         }
         _ => anyhow::bail!("{}\n\n{}", tr.i18n1("cli_unknown_setting", key), usage(tr)),
     }

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Hrvatski (Hrvatska) - Partner Center: Croatian (Croatia) (hr-HR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent je prijenos PicoTorrenta Viktora Elofssona na Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzija 0.4.4
+Verzija 0.4.5
 
-- Sigurnost: web-sučelje preko HTTPS-a više nije izloženo napadu uskraćivanja usluge u svom HTTP/2 sloju; sada koristi samo HTTP/1.1. Ne morate ništa mijenjati.
-- Ograničenja dijeljenja: ograničenje omjera sada zaustavlja torrent na omjeru prikazanom na popisu. Prije se brojilo samo slanje od posljednjeg pokretanja NanoTorrenta, pa je torrent mogao nastaviti dijeliti i nakon svog ograničenja.
-- Ispravci: v1 torrenti napravljeni opcijom „Stvori torrent” uvijek su valjani i na svakom računalu ispadaju jednaki, a „Forsiraj provjeru” na pauziranom torrentu sada ga odmah provjerava umjesto da prikazuje 0% dok se ne pokrene.
+- Novo: NanoTorrent može raditi bez prozora. Pokrenite „nanotorrent --headless” iz terminala i on nastavlja preuzimati i dijeliti, a pristupa mu se preko web-sučelja. Ctrl-C ga uredno zaustavlja, a --log-level određuje koliko se bilježi.
+- Zatvaranje NanoTorrenta sada pri izlasku sprema stanje svakog torrenta, pa pri sljedećem pokretanju ništa ne treba ponovno provjeravati.
+- Ispravci: prozor se više ne vraća djelomično iscrtan nakon što je neko vrijeme bio minimiziran, ograničenja aktivnih torrenta sada vrijede i bez prozora, a otvaranje .torrent datoteke iz terminala dok NanoTorrent već radi funkcionira i s relativnom putanjom.
 - Ispod haube: biblioteke na kojima je NanoTorrent izgrađen ažurirane su s najnovijim ispravcima.
 
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Azərbaycan dili (Azərbaycan) - Partner Center: Azerbaijani (Azerbaijan) (az-Latn-AZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent, Viktor Elofsson-un PicoTorrent proqramının Rust versiyasıdır.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiya 0.4.4
+Versiya 0.4.5
 
-- Təhlükəsizlik: HTTPS üzərindən veb interfeys artıq HTTP/2 qatında xidmətdən imtina hücumuna açıq deyil; indi yalnız HTTP/1.1 istifadə edir. Sizin tərəfdən heç nəyi dəyişmək lazım deyil.
-- Paylaşma limitləri: nisbət limiti indi torrenti siyahıda göstərilən nisbətdə dayandırır. Əvvəllər yalnız NanoTorrent sonuncu dəfə işə salınandan bəri göndərilənlər sayılırdı, buna görə torrent limitini keçərək paylaşmağa davam edə bilirdi.
-- Düzəlişlər: «Torrent yarat» ilə hazırlanan v1 torrentləri həmişə etibarlıdır və hər kompüterdə eyni alınır, fasilə verilmiş torrentdə «Yenidən yoxlamanı məcbur et» isə indi onu başladılana qədər 0% göstərmək əvəzinə dərhal yoxlayır.
+- Yeni: NanoTorrent pəncərəsiz işləyə bilər. Terminaldan «nanotorrent --headless» başladın, o, endirməyə və paylaşmağa davam edəcək, giriş isə veb interfeys vasitəsilədir. Ctrl-C onu səliqəli dayandırır, --log-level isə nə qədər qeyd aparılacağını təyin edir.
+- NanoTorrent bağlanarkən indi hər torrentin vəziyyətini yadda saxlayır, buna görə növbəti başlanğıcda heç nəyi yenidən yoxlamaq lazım gəlmir.
+- Düzəlişlər: pəncərə bir müddət kiçildildikdən sonra artıq yarımçıq çəkilmiş halda qayıtmır, aktiv torrentlər üzrə limitlər indi pəncərəsiz də tətbiq olunur, NanoTorrent artıq işləyərkən terminaldan .torrent faylını açmaq isə nisbi yolla da işləyir.
 - Daxili dəyişikliklər: NanoTorrent-in üzərində qurulduğu kitabxanalar son düzəlişləri ilə yeniləndi.
 
 

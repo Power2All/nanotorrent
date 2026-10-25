@@ -40,6 +40,8 @@ fn main() -> ExitCode {
     //
     // `--portable` is the exception: it switches the mode and then opens the
     // window like a bare launch, so it must not hold the console either.
+    // `--headless` is a flag like the others here: no window, so the console
+    // is where it runs, and it is held until the child stops.
     let is_flag_run = args.iter().any(|a| a.starts_with('-') && a != "--portable");
 
     // Tell the child a console is attached. Reached this way, a startup
@@ -62,6 +64,14 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    // Ctrl-C reaches every process on the console, this one included, and
+    // by default ends it on the spot. For `--headless` that handed the prompt
+    // back while the child was still saving its torrents, and printing over
+    // whatever came next. The child decides when it is done; this waits.
+    // After the spawn, so the child does not inherit anything from it.
+    #[cfg(windows)]
+    swallow_ctrl_c();
+
     match child.wait() {
         // Anything that does not fit a u8 - which on Windows includes the
         // 0xC000_0000 exception codes - is reported as a plain failure.
@@ -70,5 +80,29 @@ fn main() -> ExitCode {
             eprintln!("cannot wait for nanotorrent-gui.exe: {err}");
             ExitCode::from(1)
         }
+    }
+}
+
+/// Let Ctrl-C and Ctrl-Break pass this process by.
+///
+/// A handler that claims the event, rather than `SetConsoleCtrlHandler(NULL,
+/// TRUE)`: that form is inherited by child processes started afterwards, and a
+/// handler is not. Declared here rather than through winapi to keep this
+/// binary std-only; kernel32 is linked by std already.
+#[cfg(windows)]
+fn swallow_ctrl_c() {
+    unsafe extern "system" {
+        fn SetConsoleCtrlHandler(
+            handler: Option<unsafe extern "system" fn(u32) -> i32>,
+            add: i32,
+        ) -> i32;
+    }
+    unsafe extern "system" fn handled(_event: u32) -> i32 {
+        1
+    }
+    // SAFETY: registers a handler that touches nothing; failure leaves the
+    // default behaviour, which is what there was before.
+    unsafe {
+        SetConsoleCtrlHandler(Some(handled), 1);
     }
 }

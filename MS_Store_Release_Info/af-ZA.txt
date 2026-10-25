@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Afrikaans (Suid-Afrika) - Partner Center: Afrikaans (South Africa) (af-ZA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent is 'n Rust-oordrag van PicoTorrent deur Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Weergawe 0.4.4
+Weergawe 0.4.5
 
-- Sekuriteit: die webkoppelvlak oor HTTPS is nie meer blootgestel aan ’n diensweieringsaanval in sy HTTP/2-laag nie; dit gebruik nou slegs HTTP/1.1. Jy hoef niks te verander nie.
-- Deelgrense: 'n verhoudingsgrens stop nou 'n torrent by die verhouding wat in die lys gewys word. Voorheen is net oplaaie getel sedert NanoTorrent laas begin is, sodat 'n torrent verby sy grens kon aanhou saai.
-- Regstellings: v1-torrents wat met “Skep torrent” gemaak word, is altyd geldig en kom op elke rekenaar dieselfde uit, en “Dwing hertoetsing” op 'n gepouseerde torrent toets dit nou dadelik in plaas daarvan om 0% te wys totdat dit begin word.
+- Nuut: NanoTorrent kan sonder 'n venster loop. Begin “nanotorrent --headless” vanuit 'n terminaal en dit hou aan met aflaai en saai, met die webkoppelvlak as toegang. Ctrl-C stop dit netjies, en --log-level bepaal hoeveel gelog word.
+- Wanneer NanoTorrent toegemaak word, stoor dit nou die toestand van elke torrent op pad uit, sodat niks met die volgende begin weer getoets hoef te word nie.
+- Regstellings: die venster kom nie meer gedeeltelik geteken terug nadat dit 'n ruk lank geminimaliseer was nie, die grense op aktiewe torrents geld nou ook sonder die venster, en om 'n .torrent-lêer vanuit 'n terminaal oop te maak terwyl NanoTorrent reeds loop, werk met 'n relatiewe pad.
 - Onder die enjinkap: die biblioteke waarop NanoTorrent gebou is, is bygewerk, met hul jongste regstellings.
 
 

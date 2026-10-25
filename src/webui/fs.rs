@@ -29,14 +29,11 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+/// A directory under the one listed.
 #[derive(Serialize)]
 pub struct Entry {
     pub name: String,
     pub path: String,
-    pub is_dir: bool,
-    /// `None` for directories and for anything whose metadata cannot be read -
-    /// a listing must not fail because one entry is unreadable.
-    pub size: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -52,66 +49,17 @@ pub struct PathRequest {
     pub path: String,
 }
 
-/// Top-level starting points: drive letters on Windows, `/` and `$HOME`
-/// elsewhere. Also carries the default download directory, since that is the
-/// entry a folder picker should open on.
+/// Where a folder picker should open: the default download directory.
 #[derive(Serialize)]
 pub struct Roots {
-    pub roots: Vec<Entry>,
     pub downloads: String,
-    pub separator: char,
 }
 
-/// The starting points for the save-path browser: drive letters on Windows,
-/// `/` plus the user's home elsewhere.
 pub fn roots() -> Roots {
-    let mut roots = Vec::new();
-
-    #[cfg(windows)]
-    {
-        // GetLogicalDrives returns a bitmask, bit 0 = A:. Probing with
-        // is_dir() instead would spin up empty removable drives.
-        let mask = unsafe { winapi::um::fileapi::GetLogicalDrives() };
-        for bit in 0..26u32 {
-            if mask & (1 << bit) != 0 {
-                let letter = (b'A' + bit as u8) as char;
-                roots.push(Entry {
-                    name: format!("{letter}:"),
-                    path: format!("{letter}:\\"),
-                    is_dir: true,
-                    size: None,
-                });
-            }
-        }
-    }
-
-    #[cfg(not(windows))]
-    {
-        roots.push(Entry {
-            name: String::from("/"),
-            path: String::from("/"),
-            is_dir: true,
-            size: None,
-        });
-        if let Some(home) = std::env::var_os("HOME") {
-            let home = PathBuf::from(home);
-            if home.is_dir() {
-                roots.push(Entry {
-                    name: String::from("Home"),
-                    path: home.to_string_lossy().into_owned(),
-                    is_dir: true,
-                    size: None,
-                });
-            }
-        }
-    }
-
     Roots {
-        roots,
         downloads: crate::core::environment::Environment::get_downloads_path()
             .to_string_lossy()
             .into_owned(),
-        separator: std::path::MAIN_SEPARATOR,
     }
 }
 
@@ -148,13 +96,12 @@ fn display_path(path: &Path) -> String {
     text.into_owned()
 }
 
-/// The entries directly under `path`, plus its parent so a caller can walk
-/// back up.
+/// The directories directly under `path`, plus its parent so a caller can
+/// walk back up.
 ///
-/// Directories first, then files case-insensitively by name - the order every
-/// file manager uses, so a picker does not have to re-sort. Files carry their
-/// size; directories do not. An entry whose metadata cannot be read is still
-/// listed rather than failing the whole listing.
+/// Sorted case-insensitively by name, so a picker does not have to re-sort.
+/// Files are left out: this picks somewhere to put them. An entry whose
+/// metadata cannot be read is skipped rather than failing the whole listing.
 pub fn list(path: &str) -> Result<Listing, String> {
     let dir = resolve(path)?;
     if !dir.is_dir() {
@@ -163,29 +110,17 @@ pub fn list(path: &str) -> Result<Listing, String> {
 
     let read = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", display_path(&dir)))?;
 
+    // Neither fallible read is worth failing the whole listing over: a
+    // locked file or a broken symlink is normal.
     let mut entries: Vec<Entry> = read
         .flatten()
-        .map(|e| {
-            // Two fallible reads per entry, and neither is worth failing the
-            // whole listing over: a locked file or a broken symlink is normal.
-            let meta = e.metadata().ok();
-            let is_dir = meta.as_ref().is_some_and(|m| m.is_dir());
-            Entry {
-                name: e.file_name().to_string_lossy().into_owned(),
-                path: display_path(&e.path()),
-                is_dir,
-                size: meta.filter(|m| m.is_file()).map(|m| m.len()),
-            }
+        .filter(|e| e.metadata().is_ok_and(|m| m.is_dir()))
+        .map(|e| Entry {
+            name: e.file_name().to_string_lossy().into_owned(),
+            path: display_path(&e.path()),
         })
         .collect();
-
-    // Directories first, then case-insensitively by name - the order every
-    // file manager uses, so a picker does not have to re-sort.
-    entries.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
+    entries.sort_by_key(|e| e.name.to_lowercase());
 
     Ok(Listing {
         path: display_path(&dir),
@@ -216,11 +151,10 @@ pub fn mkdir(path: &str) -> Result<Listing, String> {
     let parent = resolve(&parent.to_string_lossy())?;
     let target = parent.join(name);
 
-    if target.exists() {
-        return Err(format!("{} already exists", display_path(&target)));
-    }
-
-    std::fs::create_dir(&target).map_err(|e| format!("{}: {e}", display_path(&target)))?;
+    std::fs::create_dir(&target).map_err(|e| match e.kind() {
+        std::io::ErrorKind::AlreadyExists => format!("{} already exists", display_path(&target)),
+        _ => format!("{}: {e}", display_path(&target)),
+    })?;
     list(&display_path(&target))
 }
 
@@ -244,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn lists_directories_first_then_by_name() {
+    fn lists_only_directories_by_name() {
         let dir = temp("sort");
         std::fs::create_dir_all(dir.join("zebra")).unwrap();
         std::fs::create_dir_all(dir.join("Apple")).unwrap();
@@ -253,11 +187,7 @@ mod tests {
 
         let listing = list(&dir.to_string_lossy()).unwrap();
         let names: Vec<&str> = listing.entries.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, vec!["Apple", "zebra", "banana.txt", "Cherry.txt"]);
-
-        let cherry = listing.entries.iter().find(|e| e.name == "Cherry.txt").unwrap();
-        assert_eq!(cherry.size, Some(2));
-        assert!(listing.entries.iter().find(|e| e.name == "Apple").unwrap().size.is_none());
+        assert_eq!(names, vec!["Apple", "zebra"]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -306,17 +236,8 @@ mod tests {
     }
 
     #[test]
-    fn roots_are_absolute_and_listable() {
-        let r = roots();
-        assert!(!r.roots.is_empty(), "no filesystem roots reported");
-        for root in &r.roots {
-            assert!(
-                Path::new(&root.path).is_absolute(),
-                "root {} is not absolute",
-                root.path
-            );
-        }
-        assert!(Path::new(&r.downloads).is_absolute());
+    fn the_downloads_root_is_absolute() {
+        assert!(Path::new(&roots().downloads).is_absolute());
     }
 
     #[cfg(windows)]

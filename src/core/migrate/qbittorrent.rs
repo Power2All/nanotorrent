@@ -88,7 +88,10 @@ fn read_one(fastresume: &Path) -> Option<ImportEntry> {
     let magnet = bencode::dict_get(&resume, b"qBt-magnetUri")
         .or_else(|| bencode::dict_get(&resume, b"magnet-uri"))
         .and_then(bencode::text)?;
-    let info_hash = magnet_info_hash(&magnet)?;
+    // The identity the session itself gives a magnet (see
+    // `session::magnet_wire_hash`), so "do we already have this?" is asked in
+    // the same terms: v1 when the link names one, else the truncated v2.
+    let info_hash = crate::bittorrent::v2::magnet_hashes(&magnet).wire_id()?.as_string();
     Some(ImportEntry {
         info_hash,
         source: AddTorrentSource::MagnetUri(magnet),
@@ -96,21 +99,6 @@ fn read_one(fastresume: &Path) -> Option<ImportEntry> {
         label_id: None,
         label_name,
     })
-}
-
-/// The v1 info hash out of a magnet's `xt=urn:btih:` parameter, lowercased.
-///
-/// Hex only. A base32 `btih` is legal and rare, and the engine handles it when
-/// the link is added - but this value is only used to ask "do we already have
-/// this?", and answering that wrongly is worse than not answering: an entry
-/// with no usable hash is reported unreadable instead.
-fn magnet_info_hash(magnet: &str) -> Option<String> {
-    let xt = magnet
-        .split(['?', '&'])
-        .find_map(|p| p.strip_prefix("xt=urn:btih:"))?;
-    let hex = xt.split('&').next()?;
-    (hex.len() == 40 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
-        .then(|| hex.to_ascii_lowercase())
 }
 
 #[cfg(test)]
@@ -133,19 +121,10 @@ mod tests {
         fn backup(&self) -> PathBuf {
             self.0.join("BT_backup")
         }
-        /// A minimal but REAL torrent: `info_hashes` needs `pieces` present to
-        /// call it a v1 torrent at all.
         fn torrent(&self, stem: &str, name: &str) -> String {
-            let info = build::dict(&[
-                ("length", build::int(1234)),
-                ("name", build::str(name)),
-                ("piece length", build::int(16384)),
-                ("pieces", build::str("01234567890123456789")),
-            ]);
-            let torrent = build::dict(&[("info", info.clone())]);
-            std::fs::write(self.backup().join(format!("{stem}.torrent")), &torrent).unwrap();
-            let (v1, _) = crate::bittorrent::metainfo::info_hashes(&info);
-            v1.unwrap()
+            let (torrent, hash) = super::super::test_torrent(name);
+            std::fs::write(self.backup().join(format!("{stem}.torrent")), torrent).unwrap();
+            hash
         }
         fn fastresume(&self, stem: &str, pairs: &[(&str, Vec<u8>)]) {
             std::fs::write(self.backup().join(format!("{stem}.fastresume")), build::dict(pairs))

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Português (Brasil) - Partner Center: Portuguese (Brazil) (pt-BR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ O NanoTorrent é uma adaptação em Rust do PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versão 0.4.4
+Versão 0.4.5
 
-- Segurança: a interface web via HTTPS não está mais exposta a um ataque de negação de serviço em sua camada HTTP/2; agora ela usa apenas HTTP/1.1. Você não precisa mudar nada.
-- Limites de compartilhamento: um limite de proporção agora para o torrent na proporção mostrada na lista. Antes, só contava o envio desde a última vez que o NanoTorrent foi iniciado, então um torrent podia continuar semeando além do limite.
-- Correções: torrents v1 feitos com “Criar torrent” são sempre válidos e saem idênticos em qualquer computador, e “Forçar rechecagem” em um torrent pausado agora o verifica na hora, em vez de mostrar 0% até que ele seja iniciado.
+- Novidade: o NanoTorrent pode rodar sem janela. Inicie “nanotorrent --headless” em um terminal e ele continua baixando e semeando, com a interface web como forma de acesso. Ctrl-C o encerra de forma limpa, e --log-level define quanto é registrado.
+- Ao ser fechado, o NanoTorrent agora salva o estado de cada torrent, então nada precisa ser verificado de novo na próxima inicialização.
+- Correções: a janela não volta mais parcialmente desenhada depois de ficar minimizada por um tempo, os limites de torrents ativos agora valem também sem a janela, e abrir um arquivo .torrent pelo terminal com o NanoTorrent já em execução funciona com um caminho relativo.
 - Por dentro: as bibliotecas em que o NanoTorrent se baseia foram atualizadas, com as correções mais recentes.
 
 

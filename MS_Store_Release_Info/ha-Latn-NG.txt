@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Hausa (Najeriya) - Partner Center: Hausa (Nigeria) (ha-Latn-NG)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent shi ne sigar Rust na PicoTorrent na Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sigar 0.4.4
+Sigar 0.4.5
 
-- Tsaro: hanyar sadarwar yanar gizo ta HTTPS ba ta da rauni ga harin hana sabis a matakinta na HTTP/2 kuma; yanzu tana amfani da HTTP/1.1 kawai. Ba kwa buƙatar canza komai.
-- Iyakokin rabawa: iyakar rabo yanzu tana dakatar da torrent a rabon da aka nuna a jerin. A da ana ƙirga lodawa ne kawai tun lokacin da aka fara NanoTorrent na ƙarshe, don haka torrent na iya ci gaba da rabawa fiye da iyakarsa.
-- Gyare-gyare: torrent na v1 da aka yi da “Ƙirƙiri torrent” koyaushe suna da inganci kuma iri ɗaya ne a kowace kwamfuta, kuma “Tilasta sake dubawa” a kan torrent da aka dakatar na ɗan lokaci yanzu yana duba shi nan take maimakon nuna 0% har sai an fara shi.
+- Sabo: NanoTorrent na iya aiki ba tare da taga ba. Fara “nanotorrent --headless” daga layin umarni kuma zai ci gaba da saukewa da rabawa, ta hanyar sadarwar yanar gizo za ku shiga. Ctrl-C yana dakatar da shi cikin tsari, kuma --log-level yana saita yawan abin da ake rubutawa a rajista.
+- Rufe NanoTorrent yanzu yana adana yanayin kowane torrent kafin fita, don haka babu abin da za a sake dubawa a farawa na gaba.
+- Gyare-gyare: taga ba ta sake dawowa rabin zane bayan an rage ta na ɗan lokaci, iyakokin torrent masu aiki yanzu suna aiki ko da babu taga, kuma buɗe fayil ɗin .torrent daga layin umarni yayin da NanoTorrent ke aiki tuni yana aiki da hanya mai dangantaka.
 - A ciki: an sabunta laburaren da aka gina NanoTorrent a kansu, tare da sabbin gyare-gyarensu.
 
 

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.4 - Microsoft Store listing
+NanoTorrent 0.4.5 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,11 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versio 0.4.4
+Versio 0.4.5
 
-- Tietoturva: HTTPS:n kautta toimiva verkkokäyttöliittymä ei ole enää altis palvelunestohyökkäykselle HTTP/2-kerroksessaan; se käyttää nyt vain HTTP/1.1:tä. Sinun ei tarvitse muuttaa mitään.
-- Jakorajat: suhderaja pysäyttää nyt torrentin luettelossa näkyvään suhteeseen. Aiemmin laskettiin vain lähetykset NanoTorrentin edellisestä käynnistyksestä, joten torrent saattoi jatkaa jakamista rajansa yli.
-- Korjaukset: toiminnolla ”Luo torrent” tehdyt v1-torrentit ovat aina kelvollisia ja samanlaisia joka tietokoneella, ja ”Pakota uudelleentarkistus” tarkistaa keskeytetyn torrentin nyt heti sen sijaan, että näyttäisi 0% käynnistykseen asti.
+- Uutta: NanoTorrent voi toimia ilman ikkunaa. Käynnistä ”nanotorrent --headless” päätteestä, niin se jatkaa lataamista ja jakamista, ja sitä käytetään verkkokäyttöliittymän kautta. Ctrl-C pysäyttää sen siististi, ja --log-level määrää, kuinka paljon kirjataan lokiin.
+- NanoTorrentin sulkeminen tallentaa nyt jokaisen torrentin tilan, joten mitään ei tarvitse tarkistaa uudelleen seuraavalla käynnistyskerralla.
+- Korjaukset: ikkuna ei enää palaa osittain piirrettynä oltuaan jonkin aikaa pienennettynä, aktiivisten torrenttien rajat ovat nyt voimassa myös ilman ikkunaa, ja .torrent-tiedoston avaaminen päätteestä NanoTorrentin jo ollessa käynnissä toimii suhteellisella polulla.
 - Konepellin alla: kirjastot, joiden varaan NanoTorrent on rakennettu, on päivitetty uusimpine korjauksineen.
 
 

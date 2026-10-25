@@ -160,21 +160,34 @@ export component TabStrip inherits Rectangle {
 // polygons rather than strokes: a stroked path at this size renders a
 // different weight on each platform, and these sit next to text that does not.
 
-/// A filled glyph on a 20x20 viewbox, drawn at `size`: every icon below, and
-/// the status bar's. `d` is the path - straight-line polygons only, for the
-/// reason IconButton gives: no dependence on SVG arc support.
+/// A filled glyph on a square viewbox - 20 units unless it says otherwise -
+/// drawn at `size`: every icon below, the status bar's and most of the
+/// toolbar's. `d` is the path - straight-line polygons only, for the reason
+/// IconButton gives: no dependence on SVG arc support.
 export component PathIcon inherits Rectangle {
     in property <color> ink;
     in property <string> d;
     in property <length> size: 16px;
+    in property <float> viewbox: 20;
     width: root.size;
     height: root.size;
     Path {
         x: 0; y: 0; width: parent.width; height: parent.height;
-        viewbox-width: 20; viewbox-height: 20;
+        viewbox-width: root.viewbox; viewbox-height: root.viewbox;
         fill: root.ink;
         commands: root.d;
     }
+}
+
+// A cog, for the toolbar's Preferences and a plugin's Configure. A solid cog,
+// hub and all. The hub used to be punched out in the colour behind it, which
+// only works while that colour is known - the button is transparent until
+// hovered, so the punch did nothing and the deep teeth left it reading as an
+// asterisk. Shallower teeth and no hole is the shape that survives being 16px
+// tall.
+export component GearIcon inherits PathIcon {
+    viewbox: 24;
+    d: "M 22.67 9.34 L 22.67 14.66 L 20.18 14.66 L 19.66 15.90 L 21.43 17.67 L 17.67 21.43 L 15.90 19.66 L 14.66 20.18 L 14.66 22.67 L 9.34 22.67 L 9.34 20.18 L 8.10 19.66 L 6.33 21.43 L 2.57 17.67 L 4.34 15.90 L 3.82 14.66 L 1.33 14.66 L 1.33 9.34 L 3.82 9.34 L 4.34 8.10 L 2.57 6.33 L 6.33 2.57 L 8.10 4.34 L 9.34 3.82 L 9.34 1.33 L 14.66 1.33 L 14.66 3.82 L 15.90 4.34 L 17.67 2.57 L 21.43 6.33 L 19.66 8.10 L 20.18 9.34 Z";
 }
 
 // Sliders, for General.
