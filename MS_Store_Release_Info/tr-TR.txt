@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Türkçe (Türkiye) - Partner Center: Turkish (Turkey) (tr-TR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent, Viktor Elofsson'ın PicoTorrent uygulamasının Rust'a aktarımıd�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sürüm 0.4.5
+Sürüm 0.4.6
 
-- Yeni: NanoTorrent pencere olmadan çalışabiliyor. Bir terminalden “nanotorrent --headless” komutunu başlatın; indirmeye ve paylaşmaya devam eder, erişim ise web arayüzü üzerinden olur. Ctrl-C onu düzgünce durdurur, --log-level ise ne kadar günlük tutulacağını belirler.
-- NanoTorrent kapatılırken artık her torrentin durumunu kaydediyor, böylece bir sonraki başlatmada hiçbir şeyin yeniden denetlenmesi gerekmiyor.
-- Düzeltmeler: pencere bir süre simge durumunda kaldıktan sonra artık yarım çizilmiş olarak geri gelmiyor, etkin torrent sınırları artık pencere olmadan da uygulanıyor ve NanoTorrent zaten çalışırken terminalden bir .torrent dosyası açmak göreli yolla da çalışıyor.
+- Düzeltmeler: her torrent için gönderilen miktar artık NanoTorrent kapanırken korunuyor. Henüz kaydedilmemiş gönderimler her çıkışta kayboluyordu, bu yüzden bir torrent yeniden başlatmadan sonra çok daha az ya da sıfır gösterebiliyordu.
+- Düzeltmeler: NanoTorrent'e şifreleme olmadan bağlanan eşler yeniden kabul ediliyor. Hepsi geri çevriliyordu, bu da paylaşımı yavaşlatıyordu.
 - Arka planda: NanoTorrent'in üzerine kurulduğu kütüphaneler en son düzeltmeleriyle güncellendi.
 
 

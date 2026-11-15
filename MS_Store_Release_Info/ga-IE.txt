@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Gaeilge (Éire) - Partner Center: Irish (Ireland) (ga-IE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ Is leagan Rust de PicoTorrent le Viktor Elofsson é NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Leagan 0.4.5
+Leagan 0.4.6
 
-- Nua: is féidir le NanoTorrent rith gan fhuinneog. Tosaigh “nanotorrent --headless” ó theirminéal agus leanann sé ar aghaidh ag íoslódáil agus ag síolú, agus is tríd an gcomhéadan gréasáin a théann tú isteach. Stopann Ctrl-C é go glan, agus socraíonn --log-level an méid a logáiltear.
-- Nuair a dhúntar NanoTorrent, sábhálann sé staid gach torrent anois ar an mbealach amach, ionas nach gá aon rud a sheiceáil arís ag an gcéad tosú eile.
-- Ceartúcháin: ní thagann an fhuinneog ar ais agus í tarraingthe go páirteach a thuilleadh tar éis di a bheith íoslaghdaithe ar feadh tamaill, tá feidhm ag na teorainneacha ar thorrentanna gníomhacha gan an fhuinneog freisin anois, agus oibríonn comhad .torrent a oscailt ó theirminéal agus NanoTorrent ag rith cheana le conair choibhneasta.
+- Ceartúcháin: coinnítear an méid a uaslódáladh do gach torrent anois nuair a dhúntar NanoTorrent. Chailltí uaslódálacha nach raibh sábháilte fós gach uair a scoir sé, mar sin d'fhéadfadh torrent i bhfad níos lú, nó faic, a thaispeáint tar éis atosú.
+- Ceartúcháin: glactar arís le piaraí a cheanglaíonn le NanoTorrent gan chriptiú. Bhí siad go léir á ndiúltú, rud a chuir srian ar an síolú.
 - Faoin gcochall: nuashonraíodh na leabharlanna ar a bhfuil NanoTorrent tógtha, lena gceartúcháin is déanaí.
 
 

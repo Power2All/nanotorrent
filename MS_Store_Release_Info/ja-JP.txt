@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: 日本語 (日本) - Partner Center: Japanese (Japan) (ja-JP)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent は Viktor Elofsson 氏による PicoTorrent の Rust 移植版で�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-バージョン 0.4.5
+バージョン 0.4.6
 
-- 新機能: NanoTorrent をウィンドウなしで実行できるようになりました。ターミナルから「nanotorrent --headless」を起動すると、Web インターフェイスから操作しながらダウンロードとシードを続けます。Ctrl-C できれいに停止し、--log-level でログの量を設定できます。
-- NanoTorrent を閉じる際に、すべての torrent の状態を保存するようになったため、次回の起動時に再チェックが不要になりました。
-- 修正: しばらく最小化した後にウィンドウが一部だけ描画された状態で戻ることがなくなりました。アクティブな torrent の制限がウィンドウなしでも適用されるようになり、NanoTorrent の実行中にターミナルから .torrent ファイルを開く操作が相対パスでも機能するようになりました。
+- 修正: NanoTorrent を閉じても、各 torrent のアップロード量が保持されるようになりました。これまでは未保存のアップロード分が終了のたびに失われていたため、再起動後に torrent の表示が大幅に少なくなったり、ゼロになったりすることがありました。
+- 修正: 暗号化なしで NanoTorrent に接続してくるピアを再び受け入れるようになりました。これまではすべて拒否されていたため、シードが妨げられていました。
 - 内部の改善: NanoTorrent が使用しているライブラリを、最新の修正を含むバージョンに更新しました。
 
 

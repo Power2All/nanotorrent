@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Hausa (Najeriya) - Partner Center: Hausa (Nigeria) (ha-Latn-NG)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent shi ne sigar Rust na PicoTorrent na Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sigar 0.4.5
+Sigar 0.4.6
 
-- Sabo: NanoTorrent na iya aiki ba tare da taga ba. Fara “nanotorrent --headless” daga layin umarni kuma zai ci gaba da saukewa da rabawa, ta hanyar sadarwar yanar gizo za ku shiga. Ctrl-C yana dakatar da shi cikin tsari, kuma --log-level yana saita yawan abin da ake rubutawa a rajista.
-- Rufe NanoTorrent yanzu yana adana yanayin kowane torrent kafin fita, don haka babu abin da za a sake dubawa a farawa na gaba.
-- Gyare-gyare: taga ba ta sake dawowa rabin zane bayan an rage ta na ɗan lokaci, iyakokin torrent masu aiki yanzu suna aiki ko da babu taga, kuma buɗe fayil ɗin .torrent daga layin umarni yayin da NanoTorrent ke aiki tuni yana aiki da hanya mai dangantaka.
+- Gyare-gyare: yanzu ana adana yawan abin da aka aika na kowane torrent idan NanoTorrent ya rufe. Abubuwan da aka aika waɗanda ba a adana ba tukuna suna ɓacewa a kowace fita, don haka torrent zai iya nuna ƙasa sosai, ko babu komai, bayan sake farawa.
+- Gyare-gyare: an sake karɓar takwarorin da ke haɗawa da NanoTorrent ba tare da ɓoyewa ba. A da ana ƙin dukansu, wanda ya kawo cikas ga rabawa.
 - A ciki: an sabunta laburaren da aka gina NanoTorrent a kansu, tare da sabbin gyare-gyarensu.
 
 

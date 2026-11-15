@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: 繁體中文 (台灣) - app locale zh-TW - Partner Center: Chinese (Traditional) (zh-Hant)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-版本 0.4.5
+版本 0.4.6
 
-- 新功能：NanoTorrent 現在可以無視窗執行。在終端機中啟動「nanotorrent --headless」，它會繼續下載和做種，並透過網頁介面進行存取。按 Ctrl-C 可乾淨地停止它，--log-level 用於設定記錄的詳細程度。
-- 關閉 NanoTorrent 時，現在會在結束前儲存每個種子的狀態，因此下次啟動時無需重新檢查任何內容。
-- 修正：視窗最小化一段時間後再還原時不再只繪製一部分；作用中種子的限制現在在無視窗時同樣生效；在 NanoTorrent 已執行時從終端機開啟 .torrent 檔案，現在也支援相對路徑。
+- 修正：每個種子的上傳量現在會在 NanoTorrent 關閉時保留。先前尚未儲存的上傳量在每次結束時都會遺失，因此重新啟動後種子顯示的上傳量可能少得多，甚至為零。
+- 修正：以不加密方式連線到 NanoTorrent 的節點現在又能被接受了。先前它們全部遭到拒絕，影響了做種。
 - 內部改進：已將 NanoTorrent 所依賴的程式庫更新至包含最新修正的版本。
 
 

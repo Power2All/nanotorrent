@@ -14,6 +14,7 @@
 #   nanotorrent-<ver>.rpm         Fedora / RHEL / openSUSE
 #   nanotorrent-<ver>-x86_64.AppImage   any glibc 2.35+ distro, no install
 #   nanotorrent-<ver>.dmg         macOS (Apple Silicon)
+#   nanotorrent-<ver>-cargo-vendor.tar.xz   crates for an offline build (Flathub, AUR)
 #
 # Windows keeps its capitalised "-Setup" name; the Unix ones are lower case
 # without it, which is what those platforms expect.
@@ -356,7 +357,26 @@ jobs:
               <dict>
                 <key>CFBundleTypeName</key><string>BitTorrent Document</string>
                 <key>CFBundleTypeRole</key><string>Viewer</string>
+                <key>LSHandlerRank</key><string>Default</string>
                 <key>LSItemContentTypes</key><array><string>org.bittorrent.torrent</string></array>
+              </dict>
+            </array>
+            <!-- Nothing in macOS itself declares org.bittorrent.torrent: it
+                 exists only if some installed app says what it is. Without
+                 this, on a Mac with no other torrent client, a .torrent file
+                 is plain data and is never offered to NanoTorrent. Imported,
+                 not exported - the type is not ours to define. -->
+            <key>UTImportedTypeDeclarations</key>
+            <array>
+              <dict>
+                <key>UTTypeIdentifier</key><string>org.bittorrent.torrent</string>
+                <key>UTTypeDescription</key><string>BitTorrent Document</string>
+                <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+                <key>UTTypeTagSpecification</key>
+                <dict>
+                  <key>public.filename-extension</key><array><string>torrent</string></array>
+                  <key>public.mime-type</key><array><string>application/x-bittorrent</string></array>
+                </dict>
               </dict>
             </array>
             <key>CFBundleURLTypes</key>
@@ -389,9 +409,38 @@ jobs:
           path: nanotorrent-${{ needs.version.outputs.version }}.dmg
           if-no-files-found: error
 
+  # Every crates.io dependency, for building with no network: Flathub's
+  # builders have none, and neither should an AUR source build. Unpacked over
+  # the source tree it adds cargo-vendor/ and a .cargo/config.toml pointing
+  # cargo at it, so a plain `cargo build --offline` works with no other setup.
+  # A release asset rather than a file in the repo, so Flathub's update checker
+  # can pick up each new one by URL. (Skia is not in here: skia-bindings fetches
+  # it in its build script, so an offline build supplies Skia's source itself.)
+  vendor:
+    name: Vendored crates
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo vendor
+        env:
+          OUT: nanotorrent-${{ needs.version.outputs.version }}-cargo-vendor.tar.xz
+        run: |
+          set -euo pipefail
+          mkdir -p .cargo
+          cargo vendor --locked cargo-vendor > .cargo/config.toml
+          tar -cJf "$OUT" .cargo/config.toml cargo-vendor
+          ls -lh "$OUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nanotorrent-${{ needs.version.outputs.version }}-cargo-vendor.tar.xz
+          path: nanotorrent-${{ needs.version.outputs.version }}-cargo-vendor.tar.xz
+          if-no-files-found: error
+
   draft:
     name: Draft release
-    needs: [version, windows, linux, macos]
+    needs: [version, windows, linux, macos, vendor]
     if: inputs.draft
     runs-on: ubuntu-latest
     # Only this job writes anything back to the repo.
@@ -400,7 +449,7 @@ jobs:
       # Deleting this run's artifacts once they are attached to the release.
       actions: write
     steps:
-      # No name filter: takes all four artifacts. merge-multiple flattens them
+      # No name filter: takes every artifact. merge-multiple flattens them
       # into one directory instead of one subdirectory each.
       - uses: actions/download-artifact@v8
         with:

@@ -140,6 +140,62 @@ fn accumulate_uploaded(total: i64, seen: i64, live: i64) -> (i64, i64) {
     (total + delta, live)
 }
 
+/// Fold every torrent's live upload counter into its total, then write each
+/// total that changed.
+///
+/// Folding first is the point. A total only moves when something folds the
+/// engine's counter into it, and that used to happen only in `torrents()`, so
+/// writing "every total" before a rebuild or on exit wrote whatever the last
+/// list refresh had seen - and lost the rest when the engine went.
+fn flush_uploads(
+    rq: &RqbitSession,
+    meta: &Mutex<HashMap<String, TorrentMeta>>,
+    db: &Database,
+) {
+    let live: Vec<(String, i64)> = rq.with_torrents(|torrents| {
+        torrents
+            .map(|(_, h)| (h.info_hash().as_string(), h.stats().uploaded_bytes as i64))
+            .collect()
+    });
+    let pending: Vec<(String, i64)> = {
+        let mut meta = meta.lock().unwrap();
+        for (hash, live) in live {
+            if let Some(m) = meta.get_mut(&hash) {
+                (m.uploaded_total, m.seen_uploaded) =
+                    accumulate_uploaded(m.uploaded_total, m.seen_uploaded, live);
+            }
+        }
+        meta.iter_mut()
+            .filter(|(_, m)| m.uploaded_total != m.flushed_uploaded)
+            .map(|(hash, m)| {
+                m.flushed_uploaded = m.uploaded_total;
+                (hash.clone(), m.uploaded_total)
+            })
+            .collect()
+    };
+    write_uploads(db, &pending);
+}
+
+/// Write a batch of upload totals in one transaction.
+///
+/// `with` hands out a shared reference, hence `unchecked_transaction`
+/// (rolled back on drop if anything fails). The batch is what matters: one
+/// commit instead of an fsync per torrent.
+fn write_uploads(db: &Database, rows: &[(String, i64)]) {
+    if rows.is_empty() {
+        return;
+    }
+    let _ = db.with(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        let mut stmt = tx.prepare("update torrent set uploaded_bytes = ?1 where info_hash = ?2")?;
+        for (hash, uploaded) in rows {
+            stmt.execute(rusqlite::params![uploaded, hash])?;
+        }
+        drop(stmt);
+        tx.commit()
+    });
+}
+
 /// What the share-limit guard measures a torrent by: its ratio, and when it
 /// completed.
 ///
@@ -1448,45 +1504,14 @@ impl Session {
         Api::new(self.rq(), None)
     }
 
-    /// Write every in-memory upload total to the database.
-    ///
-    /// The tick only writes once a torrent has moved a megabyte, so there is
-    /// always a little unwritten. That is fine until the engine is about to be
-    /// thrown away, which is the one moment the unwritten part cannot be
-    /// recovered from anywhere.
+    /// Write every upload total to the database, the engine's latest counters
+    /// included. See `flush_uploads`.
     fn flush_uploaded_totals(&self) {
-        let pending: Vec<(String, i64)> = {
-            let mut meta = self.meta.lock().unwrap();
-            meta.iter_mut()
-                .filter(|(_, m)| m.uploaded_total != m.flushed_uploaded)
-                .map(|(hash, m)| {
-                    m.flushed_uploaded = m.uploaded_total;
-                    (hash.clone(), m.uploaded_total)
-                })
-                .collect()
-        };
-        self.write_uploaded_totals(&pending);
+        flush_uploads(&self.rq(), &self.meta, &self.db);
     }
 
-    /// Write a batch of upload totals in one transaction.
-    ///
-    /// `with` hands out a shared reference, hence `unchecked_transaction`
-    /// (rolled back on drop if anything fails). The batch is what matters: one
-    /// commit instead of an fsync per torrent.
     fn write_uploaded_totals(&self, rows: &[(String, i64)]) {
-        if rows.is_empty() {
-            return;
-        }
-        let _ = self.db.with(|conn| {
-            let tx = conn.unchecked_transaction()?;
-            let mut stmt =
-                tx.prepare("update torrent set uploaded_bytes = ?1 where info_hash = ?2")?;
-            for (hash, uploaded) in rows {
-                stmt.execute(rusqlite::params![uploaded, hash])?;
-            }
-            drop(stmt);
-            tx.commit()
-        });
+        write_uploads(&self.db, rows);
     }
 
     /// Tear the librqbit session down and rebuild it with options derived
@@ -3396,6 +3421,12 @@ fn on_torrent_added(
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
+                // Upload totals ride along on this wake-up. torrents() also
+                // writes them, but only when something asks for the list - a
+                // headless run, or a window hidden in the tray, may never - so
+                // without this a crash lost the whole session's uploads.
+                flush_uploads(&inner.read().unwrap().clone(), &meta, &db);
+
                 let global = crate::bittorrent::limits::ShareLimits::global(&cfg);
                 // Nothing configured globally is the common case, and reading
                 // every torrent's overrides to discover that would be waste -
@@ -4103,6 +4134,12 @@ fn on_torrent_added(
         // torrents were actually running so the next startup can resume them.
         let running = running_hashes(&self.rq());
         Configuration::new(self.db.clone()).set_persistent("session.running", &running.join(","));
+
+        // Before the engine stops, while its counters still hold this
+        // session's uploads. Nothing wrote them on the way out, so whatever
+        // the list had not yet flushed - all of it, for a torrent that moved
+        // under a megabyte, or for a headless run - was gone on every restart.
+        self.flush_uploaded_totals();
 
         self.rt.block_on(self.rq().stop());
     }

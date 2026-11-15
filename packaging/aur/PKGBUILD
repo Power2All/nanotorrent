@@ -1,0 +1,26 @@
+# Maintainer: Power2All <power2all@users.noreply.github.com>
+#
+# The AUR's nanotorrent-bin: the release .deb, unpacked. pkgver and the
+# checksum are rewritten by .github/workflows/publish.yml on every published
+# GitHub release, which also regenerates .SRCINFO and pushes to the AUR.
+pkgname=nanotorrent-bin
+pkgver=0.4.5
+pkgrel=1
+pkgdesc="Tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
+arch=('x86_64')
+url="https://www.nanotorrent.org"
+license=('MIT')
+# libxkbcommon-x11 is loaded at run time (dlopen), not linked, so it is listed
+# by hand: without it the window fails to open on X11.
+depends=('fontconfig' 'freetype2' 'gcc-libs' 'glibc' 'libxkbcommon' 'libxkbcommon-x11')
+provides=('nanotorrent')
+conflicts=('nanotorrent')
+source=("https://github.com/Power2All/nanotorrent/releases/download/v${pkgver}/nanotorrent-${pkgver}.deb"
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/Power2All/nanotorrent/v${pkgver}/LICENSE")
+sha256sums=('SKIP'
+            'SKIP')
+
+package() {
+    bsdtar -xf data.tar.* -C "$pkgdir"
+    install -Dm644 "LICENSE-${pkgver}" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

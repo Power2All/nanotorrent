@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versio 0.4.5
+Versio 0.4.6
 
-- Uutta: NanoTorrent voi toimia ilman ikkunaa. Käynnistä ”nanotorrent --headless” päätteestä, niin se jatkaa lataamista ja jakamista, ja sitä käytetään verkkokäyttöliittymän kautta. Ctrl-C pysäyttää sen siististi, ja --log-level määrää, kuinka paljon kirjataan lokiin.
-- NanoTorrentin sulkeminen tallentaa nyt jokaisen torrentin tilan, joten mitään ei tarvitse tarkistaa uudelleen seuraavalla käynnistyskerralla.
-- Korjaukset: ikkuna ei enää palaa osittain piirrettynä oltuaan jonkin aikaa pienennettynä, aktiivisten torrenttien rajat ovat nyt voimassa myös ilman ikkunaa, ja .torrent-tiedoston avaaminen päätteestä NanoTorrentin jo ollessa käynnissä toimii suhteellisella polulla.
+- Korjaukset: kunkin torrentin lähetetyn datan määrä säilyy nyt, kun NanoTorrent suljetaan. Vielä tallentamattomat lähetykset menetettiin jokaisella sulkemiskerralla, joten torrent saattoi uudelleenkäynnistyksen jälkeen näyttää paljon vähemmän tai ei mitään.
+- Korjaukset: vertaiset, jotka yhdistävät NanoTorrentiin ilman salausta, hyväksytään taas. Kaikki ne torjuttiin, mikä hidasti jakamista.
 - Konepellin alla: kirjastot, joiden varaan NanoTorrent on rakennettu, on päivitetty uusimpine korjauksineen.
 
 

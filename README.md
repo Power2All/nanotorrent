@@ -787,6 +787,50 @@ one. Collected so nobody has to file them twice.
 
 ## History
 
+**v0.4.6** fixes three things that were broken without saying so: opening a
+file from the macOS Finder, upload totals across a restart, and unencrypted
+incoming peers.
+
+- macOS opens a double-clicked file, or a clicked magnet link, by sending an
+  Apple event to the application delegate, not by putting it on the command
+  line - and winit's delegate does not implement `application:openURLs:`. AppKit
+  fell back to its document machinery, found no document class for a
+  .torrent and reported that it could not open files of that type.
+  `ui_slint/macos_open.rs` adds the method to winit's delegate class at run
+  time (then sets the delegate again, because AppKit records what a delegate
+  answers when it is set) and passes what arrives to `ipc::hand_over`: the
+  same queue a second launch forwards its argv into, so from there it is the
+  path every platform takes. The Info.plist also declares
+  `org.bittorrent.torrent` as an imported type, which nothing in macOS does,
+  so a Mac with no other torrent client still associates .torrent files.
+- Per-torrent upload totals are persisted on exit, before a settings change
+  rebuilds the engine, and every ten seconds. `stop()` never wrote them, and
+  the in-tick write waits for a megabyte of movement, so a torrent that moved
+  less came back short after every restart. A total also only advanced when
+  something folded the engine's session counter into it, which happened only
+  in `torrents()` - so a headless run, or a window in the tray, lost the lot.
+  `flush_uploads` folds every torrent's live counter first and then writes;
+  the share-limit guard's ten-second wake-up calls it too. Checked end to end:
+  two headless copies on loopback, one seeding 600 KB to the other, the
+  seeder stopped - 0 bytes stored before, 614,400 after.
+- `IncomingMseTransform` peeks 20 bytes to tell a plaintext handshake from an
+  MSE key, then replays them through a `Cursor` chained to the socket. A
+  chain's first read returns only the cursor's bytes, and librqbit reads the
+  handshake with a single read and fails on anything under 68 - so every
+  plaintext incoming peer was dropped with "expected at least 48 more bytes".
+  The replayed prefix is now topped up to a whole handshake first
+  (`whole_handshake`), in the encrypted path's initial payload as well.
+- Dependencies: `cargo update`, plus rusqlite 0.43, rfd 0.18 and maxminddb
+  0.33, none of which needed a code change. pin-utils (via Slint's `spin_on`)
+  joins the unmaintained-crate notices in `.cargo/audit.toml`.
+- Packaging: the metainfo's screenshots pointed at files that never existed
+  and its release list stopped at 0.3.4; both are fixed, the .deb and .rpm now
+  install it, and `metainfo_lists_this_version` fails `cargo test` when a
+  version bump forgets its entry. The Release workflow also attaches a
+  `cargo vendor` tarball for offline builds, and a new Publish workflow sends a
+  published release on to itch.io (and the AUR, switched off for now), as
+  `deploy.conf` says.
+
 **v0.4.5** adds `--headless`: the desktop build runs without a window on all
 three platforms, which until now took a separate `--no-default-features` build.
 

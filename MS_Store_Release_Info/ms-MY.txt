@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Bahasa Melayu (Malaysia) - Partner Center: Malay (Malaysia) (ms-MY)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent ialah versi Rust bagi PicoTorrent oleh Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.5
+Versi 0.4.6
 
-- Baharu: NanoTorrent boleh berjalan tanpa tetingkap. Mulakan “nanotorrent --headless” dari terminal dan ia terus memuat turun dan menyemai, dengan antara muka web sebagai pintu masuk. Ctrl-C menghentikannya dengan kemas, dan --log-level menetapkan berapa banyak yang dilog.
-- Apabila ditutup, NanoTorrent kini menyimpan keadaan setiap torrent, jadi tiada apa-apa perlu disemak semula pada permulaan seterusnya.
-- Pembaikan: tetingkap tidak lagi kembali dalam keadaan separa dilukis selepas diminimumkan seketika, had torrent aktif kini turut terpakai tanpa tetingkap, dan membuka fail .torrent dari terminal semasa NanoTorrent sudah berjalan kini berfungsi dengan laluan relatif.
+- Pembaikan: jumlah yang dimuat naik bagi setiap torrent kini dikekalkan apabila NanoTorrent ditutup. Muat naik yang belum disimpan hilang setiap kali keluar, jadi torrent boleh menunjukkan jauh lebih sedikit, atau tiada langsung, selepas dimulakan semula.
+- Pembaikan: rakan yang menyambung ke NanoTorrent tanpa penyulitan kini diterima semula. Kesemuanya telah ditolak sebelum ini, sekali gus menghambat penyemaian.
 - Di sebalik tabir: pustaka yang menjadi asas NanoTorrent telah dikemas kini dengan pembetulan terkininya.
 
 

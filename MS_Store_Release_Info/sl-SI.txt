@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Slovenščina (Slovenija) - Partner Center: Slovenian (Slovenia) (sl-SI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent je prenos PicoTorrenta avtorja Viktorja Elofssona v Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Različica 0.4.5
+Različica 0.4.6
 
-- Novo: NanoTorrent lahko deluje brez okna. Zaženite »nanotorrent --headless« iz terminala in bo še naprej prenašal in delil, dostop do njega pa je prek spletnega vmesnika. Ctrl-C ga čisto ustavi, --log-level pa določa, koliko se beleži.
-- Ob zapiranju NanoTorrent zdaj shrani stanje vsakega torrenta, zato ob naslednjem zagonu ni treba ničesar znova preverjati.
-- Popravki: okno se ne vrne več delno izrisano, potem ko je bilo nekaj časa pomanjšano, omejitve aktivnih torrentov zdaj veljajo tudi brez okna, odpiranje datoteke .torrent iz terminala, ko NanoTorrent že teče, pa deluje z relativno potjo.
+- Popravki: količina poslanih podatkov za vsak torrent se zdaj ohrani, ko se NanoTorrent zapre. Še neshranjeni poslani podatki so se ob vsakem izhodu izgubili, zato je lahko torrent po ponovnem zagonu kazal precej manj ali celo nič.
+- Popravki: soležniki, ki se z NanoTorrentom povezujejo brez šifriranja, so znova sprejeti. Doslej so bili vsi zavrnjeni, kar je zaviralo deljenje.
 - Pod pokrovom: knjižnice, na katerih temelji NanoTorrent, so posodobljene z najnovejšimi popravki.
 
 

@@ -1,0 +1,123 @@
+# Passes a published GitHub release on to the AUR and itch.io.
+#
+# Runs when a release is published (pressing Publish on the draft that
+# release.yml made), or by hand for a tag that already is. Which of the two it
+# sends to is switched in deploy.conf at the repo root; the keys are secrets:
+#
+#   AUR      AUR_SSH_PRIVATE_KEY (its public half is on your AUR account)
+#   itch.io  BUTLER_API_KEY (itch.io > Settings > API keys)
+#
+# Flathub is not here: its rules forbid automation opening its pull requests.
+# Once the app is accepted, Flathub's own checker (x-checker-data in the
+# manifest) opens the update pull request when a release appears.
+
+name: Publish to AUR and itch.io
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag to send, e.g. v0.4.6"
+        required: true
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  # deploy.conf from the default branch, not from the tag: switching a target
+  # off should work for the next run, including a re-run of an older release.
+  config:
+    name: Read deploy.conf
+    runs-on: ubuntu-latest
+    outputs:
+      aur: ${{ steps.read.outputs.aur }}
+      itch: ${{ steps.read.outputs.itch }}
+      itch_game: ${{ steps.read.outputs.itch_game }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: deploy.conf
+          sparse-checkout-cone-mode: false
+      - id: read
+        run: |
+          grep -E '^(aur|itch|itch_game)=' deploy.conf | tr -d ' \r' | tee -a "$GITHUB_OUTPUT"
+
+  aur:
+    name: AUR (nanotorrent-bin)
+    needs: config
+    if: needs.config.outputs.aur == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      # The PKGBUILD in the repo is the template; only the version changes.
+      # updpkgsums below downloads the release's .deb and writes its checksum.
+      - name: Set the version
+        run: |
+          ver="${TAG#v}"
+          sed -i -e "s/^pkgver=.*/pkgver=$ver/" -e "s/^pkgrel=.*/pkgrel=1/" packaging/aur/PKGBUILD
+          grep -E '^pkg(ver|rel)=' packaging/aur/PKGBUILD
+
+      # Runs in an Arch container: updates the checksums, builds the package to
+      # prove it installs, regenerates .SRCINFO and pushes both to the AUR.
+      - uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+        with:
+          pkgname: nanotorrent-bin
+          pkgbuild: packaging/aur/PKGBUILD
+          updpkgsums: true
+          test: true
+          commit_username: Power2All
+          commit_email: power2all@users.noreply.github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to ${{ env.TAG }}
+          ssh_keyscan_types: ed25519
+
+  itch:
+    name: itch.io
+    needs: config
+    if: needs.config.outputs.itch == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GAME: ${{ needs.config.outputs.itch_game }}
+    steps:
+      - name: Check deploy.conf
+        run: |
+          [ -n "$GAME" ] || { echo "::error::itch=true but itch_game is empty in deploy.conf"; exit 1; }
+
+      - name: Download the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download "$TAG" -D dist \
+            -p '*-Setup.exe' -p '*.AppImage' -p '*.deb' -p '*.rpm' -p '*.dmg'
+          ls -lh dist
+
+      - name: Install butler
+        run: |
+          curl -fsSL -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          unzip -q butler.zip -d butler
+          chmod +x butler/butler
+          butler/butler -V
+
+      # One channel per download. Pushing to a channel replaces the file in it,
+      # so the page always holds just the newest version - nothing to delete.
+      # A name containing windows/linux/mac tags the platform on first push.
+      # Single files are served as-is from the web page, not zipped.
+      - name: Push
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          push() { butler/butler push "$1" "$GAME:$2" --userversion "$ver" --if-changed; }
+          push dist/*-Setup.exe windows
+          push dist/*.AppImage  linux-appimage
+          push dist/*.deb       linux-deb
+          push dist/*.rpm       linux-rpm
+          push dist/*.dmg       mac

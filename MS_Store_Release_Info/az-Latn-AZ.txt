@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Azərbaycan dili (Azərbaycan) - Partner Center: Azerbaijani (Azerbaijan) (az-Latn-AZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent, Viktor Elofsson-un PicoTorrent proqramının Rust versiyasıdır.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiya 0.4.5
+Versiya 0.4.6
 
-- Yeni: NanoTorrent pəncərəsiz işləyə bilər. Terminaldan «nanotorrent --headless» başladın, o, endirməyə və paylaşmağa davam edəcək, giriş isə veb interfeys vasitəsilədir. Ctrl-C onu səliqəli dayandırır, --log-level isə nə qədər qeyd aparılacağını təyin edir.
-- NanoTorrent bağlanarkən indi hər torrentin vəziyyətini yadda saxlayır, buna görə növbəti başlanğıcda heç nəyi yenidən yoxlamaq lazım gəlmir.
-- Düzəlişlər: pəncərə bir müddət kiçildildikdən sonra artıq yarımçıq çəkilmiş halda qayıtmır, aktiv torrentlər üzrə limitlər indi pəncərəsiz də tətbiq olunur, NanoTorrent artıq işləyərkən terminaldan .torrent faylını açmaq isə nisbi yolla da işləyir.
+- Düzəlişlər: hər torrent üçün göndərilən həcm indi NanoTorrent bağlananda saxlanılır. Hələ yadda saxlanılmamış göndərmələr hər çıxışda itirilirdi, buna görə yenidən başladıqdan sonra torrent xeyli az və ya heç nə göstərə bilərdi.
+- Düzəlişlər: NanoTorrent-ə şifrələməsiz qoşulan tərəf-müqabillər yenidən qəbul edilir. Onların hamısı rədd edilirdi və bu, paylaşmanı ləngidirdi.
 - Daxili dəyişikliklər: NanoTorrent-in üzərində qurulduğu kitabxanalar son düzəlişləri ilə yeniləndi.
 
 

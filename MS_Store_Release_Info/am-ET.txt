@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: አማርኛ (ኢትዮጵያ) - Partner Center: Amharic (Ethiopia) (am-ET)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent የViktor Elofsson PicoTorrent የRust ዓይነት ነው።
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-ዓይነት 0.4.5
+ዓይነት 0.4.6
 
-- አዲስ፦ NanoTorrent ያለ መስኮት መሥራት ይችላል። ከተርሚናል «nanotorrent --headless»ን ያስጀምሩ፤ ማውረዱንና ማጋራቱን ይቀጥላል፣ መግቢያውም የድር በይነገጹ ነው። Ctrl-C በሥርዓት ያቆመዋል፤ --log-level ምን ያህል እንደሚመዘገብ ይወስናል።
-- NanoTorrentን መዝጋት አሁን በሚወጣበት ጊዜ የእያንዳንዱን torrent ሁኔታ ያስቀምጣል፤ ስለዚህ በሚቀጥለው ጅምር ምንም እንደገና መፈተሽ አያስፈልገውም።
-- ጥገናዎች፦ መስኮቱ ለተወሰነ ጊዜ ከተሳነሰ በኋላ በከፊል ተስሎ አይመለስም፤ በንቁ torrentዎች ላይ ያሉ ገደቦች አሁን ያለ መስኮትም ይሠራሉ፤ NanoTorrent አስቀድሞ እየሠራ ሳለ ከተርሚናል .torrent ፋይል መክፈት በአንጻራዊ ዱካም ይሠራል።
+- ጥገናዎች፦ ለእያንዳንዱ torrent የተሰቀለው መጠን አሁን NanoTorrent ሲዘጋ ይጠበቃል። ገና ያልተቀመጡ ስቀላዎች በእያንዳንዱ መውጫ ይጠፉ ነበር፤ ስለዚህ አንድ torrent እንደገና ከተጀመረ በኋላ በጣም ያነሰ ወይም ምንም ሊያሳይ ይችል ነበር።
+- ጥገናዎች፦ ያለ ምስጠራ ከNanoTorrent ጋር የሚገናኙ አቻዎች እንደገና ተቀባይነት ያገኛሉ። ሁሉም ይመለሱ ነበር፤ ይህም ማጋራቱን ይገታ ነበር።
 - ከውስጥ፦ NanoTorrent የተገነባባቸው ቤተ-መጻሕፍት ከቅርብ ጊዜ ማስተካከያዎቻቸው ጋር ተዘምነዋል።
 
 

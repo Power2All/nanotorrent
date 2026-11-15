@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Lietuvių (Lietuva) - Partner Center: Lithuanian (Lithuania) (lt-LT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent yra Viktoro Elofssono PicoTorrent perkėlimas į Rust kalbą.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.5
+Versija 0.4.6
 
-- Nauja: NanoTorrent gali veikti be lango. Paleiskite „nanotorrent --headless“ iš terminalo ir jis toliau atsisiųs ir dalysis, o prieiga – per žiniatinklio sąsają. Ctrl-C jį tvarkingai sustabdo, o --log-level nustato, kiek rašoma į žurnalą.
-- Uždaromas NanoTorrent dabar išsaugo kiekvieno torrento būseną, todėl kitą kartą paleidus nieko nereikia tikrinti iš naujo.
-- Pataisymai: langas nebegrįžta iš dalies nupieštas, kai kurį laiką buvo sumažintas, aktyvių torrentų ribos dabar galioja ir be lango, o .torrent failo atidarymas iš terminalo, kai NanoTorrent jau paleistas, veikia ir su santykiniu keliu.
+- Pataisymai: kiekvieno torrento išsiųstas kiekis dabar išsaugomas uždarant NanoTorrent. Dar neišsaugoti išsiuntimai būdavo prarandami kaskart išjungiant, todėl po paleidimo iš naujo torrentas galėjo rodyti daug mažiau arba visai nieko.
+- Pataisymai: dalyviai, kurie jungiasi prie NanoTorrent be šifravimo, vėl priimami. Visi jie buvo atmetami, o tai stabdė dalijimąsi.
 - Po gaubtu: bibliotekos, kuriomis remiasi NanoTorrent, atnaujintos su naujausiais pataisymais.
 
 

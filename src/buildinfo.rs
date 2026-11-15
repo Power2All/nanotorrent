@@ -93,4 +93,18 @@ mod tests {
             "{stamp:?}"
         );
     }
+
+    /// Flathub, GNOME Software and Discover show the metainfo's release list
+    /// as the version history, and Flathub's checker reads its newest entry.
+    /// A version bump that forgets it fails here, not in their review.
+    #[test]
+    fn metainfo_lists_this_version() {
+        let xml = include_str!("../packaging/linux/org.nanotorrent.NanoTorrent.metainfo.xml");
+        let newest = xml
+            .split("<release version=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .expect("a <release> in the metainfo");
+        assert_eq!(newest, super::version(), "add a <release> for this version at the top of the metainfo");
+    }
 }

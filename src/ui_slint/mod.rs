@@ -61,6 +61,8 @@ slint::include_modules!();
 const APP_ID: &str = "org.nanotorrent.NanoTorrent";
 
 mod flags;
+#[cfg(target_os = "macos")]
+mod macos_open;
 mod modal;
 mod pluginwindow;
 
@@ -355,6 +357,12 @@ pub fn run(ctx: AppContext) -> anyhow::Result<()> {
     if let Err(err) = slint::set_xdg_app_id(APP_ID) {
         tracing::warn!("could not set the xdg app id ({APP_ID}): {err}");
     }
+
+    // Also after MainWindow::new, which is what creates winit's application
+    // delegate, and before the event loop runs: a .torrent double-clicked in
+    // the Finder arrives as an event on that delegate, not as an argument.
+    #[cfg(target_os = "macos")]
+    macos_open::install();
 
     // Before the plugin host starts, so a plugin that draws its window from a
     // top-level statement finds somewhere to draw it.
