@@ -5,6 +5,6 @@ Comment=A tiny, hackable Rust BitTorrent client based on PicoTorrent
 Exec=nanotorrent %f
 Icon=org.nanotorrent.NanoTorrent
 Terminal=false
-Categories=Client;Torrent;Network;FileTransfer;P2P;
+Categories=Network;FileTransfer;P2P;
 MimeType=application/x-bittorrent;x-scheme-handler/magnet;
 StartupWMClass=org.nanotorrent.NanoTorrent
