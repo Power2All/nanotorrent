@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Cymraeg (Y Deyrnas Unedig) - Partner Center: Welsh (United Kingdom) (cy-GB)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ Trosiad Rust o PicoTorrent gan Viktor Elofsson yw NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Fersiwn 0.4.5
+Fersiwn 0.4.6
 
-- Newydd: gall NanoTorrent redeg heb ffenestr. Dechreuwch “nanotorrent --headless” o derfynell ac mae’n dal ati i lwytho i lawr a hadu, gyda’r rhyngwyneb gwe yn ffordd i mewn. Mae Ctrl-C yn ei atal yn lân, ac mae --log-level yn gosod faint sy’n cael ei gofnodi.
-- Mae cau NanoTorrent bellach yn cadw cyflwr pob torrent ar y ffordd allan, felly does dim angen ailwirio dim y tro nesaf y caiff ei gychwyn.
-- Atgyweiriadau: nid yw’r ffenestr bellach yn dod yn ôl wedi’i lluniadu’n rhannol ar ôl bod wedi’i lleihau am sbel, mae’r terfynau ar gyfer torrentiau gweithredol bellach yn berthnasol heb y ffenestr hefyd, ac mae agor ffeil .torrent o derfynell tra bo NanoTorrent eisoes yn rhedeg yn gweithio gyda llwybr cymharol.
+- Atgyweiriadau: mae’r swm a lanlwythwyd ar gyfer pob torrent bellach yn cael ei gadw pan fydd NanoTorrent yn cau. Roedd lanlwythiadau nad oedden nhw wedi’u cadw eto yn cael eu colli bob tro y byddai’n cau, felly gallai torrent ddangos llawer llai, neu ddim byd, ar ôl ailgychwyn.
+- Atgyweiriadau: mae cymheiriaid sy’n cysylltu â NanoTorrent heb amgryptio yn cael eu derbyn eto. Roedden nhw i gyd yn cael eu gwrthod, ac roedd hynny’n dal hadu yn ôl.
 - O dan y bonet: mae’r llyfrgelloedd y mae NanoTorrent wedi’i adeiladu arnynt wedi’u diweddaru gyda’u trwsiadau diweddaraf.
 
 

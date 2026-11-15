@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Nederlands (Nederland) - Partner Center: Dutch (Netherlands) (nl-NL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent is een Rust-port van PicoTorrent van Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versie 0.4.5
+Versie 0.4.6
 
-- Nieuw: NanoTorrent kan zonder venster draaien. Start ‘nanotorrent --headless’ vanuit een terminal en het blijft downloaden en seeden, met de webinterface als toegang. Ctrl-C stopt het netjes en --log-level bepaalt hoeveel er wordt gelogd.
-- Bij het afsluiten slaat NanoTorrent nu de status van elke torrent op, zodat er bij de volgende start niets opnieuw gecontroleerd hoeft te worden.
-- Opgelost: het venster komt niet langer half getekend terug nadat het een tijdje geminimaliseerd was, de limieten voor actieve torrents gelden nu ook zonder venster, en een .torrent-bestand openen vanuit een terminal terwijl NanoTorrent al draait, werkt met een relatief pad.
+- Opgelost: de hoeveelheid die per torrent is geüpload, blijft nu bewaard wanneer NanoTorrent wordt afgesloten. Uploads die nog niet waren opgeslagen, gingen bij elk afsluiten verloren, waardoor een torrent na een herstart veel minder of helemaal niets kon tonen.
+- Opgelost: peers die zonder versleuteling met NanoTorrent verbinden, worden weer geaccepteerd. Ze werden allemaal geweigerd, wat het seeden afremde.
 - Onder de motorkap: de bibliotheken waarop NanoTorrent is gebouwd, zijn bijgewerkt met hun nieuwste correcties.
 
 

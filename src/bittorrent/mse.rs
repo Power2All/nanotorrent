@@ -343,6 +343,27 @@ fn prefixed<R: AsyncRead + Unpin>(prefix: Vec<u8>, inner: R) -> impl AsyncRead +
     std::io::Cursor::new(prefix).chain(inner)
 }
 
+/// A BitTorrent handshake: pstrlen, pstr, 8 reserved, info hash, peer id.
+const HANDSHAKE_LEN: usize = 68;
+
+/// Read on until `prefix` holds a whole handshake, if it holds part of one.
+///
+/// librqbit reads the handshake with ONE read and fails on anything shorter,
+/// and a `prefixed` reader's first read returns only the prefix. So replaying
+/// the 20 bytes peeked to tell plaintext from MSE handed it 20 bytes, and every
+/// plaintext incoming peer was dropped with "expected at least 48 more bytes" -
+/// including another NanoTorrent with encryption off.
+async fn whole_handshake<R: AsyncRead + Unpin>(mut prefix: Vec<u8>, read: &mut R) -> Result<Vec<u8>> {
+    let have = prefix.len();
+    if have > 0 && have < HANDSHAKE_LEN {
+        prefix.resize(HANDSHAKE_LEN, 0);
+        read.read_exact(&mut prefix[have..])
+            .await
+            .context("reading the rest of the handshake")?;
+    }
+    Ok(prefix)
+}
+
 /// A read half that RC4-decrypts everything it reads.
 struct EncryptedRead<R> {
     inner: R,
@@ -570,7 +591,8 @@ impl IncomingStreamTransform for IncomingMseTransform {
                     bail!("plaintext incoming peer rejected (encryption required)");
                 }
                 // Plaintext: replay the peeked header, otherwise untouched.
-                let r: BoxAsyncRead = Box::new(prefixed(head.to_vec(), read));
+                let head = whole_handshake(head.to_vec(), &mut read).await?;
+                let r: BoxAsyncRead = Box::new(prefixed(head, read));
                 return Ok((r, write));
             }
 
@@ -585,8 +607,11 @@ impl IncomingStreamTransform for IncomingMseTransform {
             let (enc, dec, ia) =
                 server_handshake(&mut read, &mut write, ya, &candidates).await?;
 
-            let r: BoxAsyncRead =
-                Box::new(prefixed(ia, EncryptedRead { inner: read, rc4: dec }));
+            // The initial payload is usually the peer's whole handshake or
+            // nothing, but MSE does not promise that.
+            let mut read = EncryptedRead { inner: read, rc4: dec };
+            let ia = whole_handshake(ia, &mut read).await?;
+            let r: BoxAsyncRead = Box::new(prefixed(ia, read));
             let w: BoxAsyncWrite = Box::new(EncryptedWrite::new(write, enc));
             Ok((r, w))
         })
@@ -778,6 +803,32 @@ mod tests {
             let mut rest = [0u8; 2];
             cursor.read_exact(&mut rest).await.unwrap();
             assert_eq!(rest, [0x99, 0x98]);
+        });
+    }
+
+    /// librqbit takes the handshake from a single read, so the reader the
+    /// transform hands back must yield all 68 bytes at once - not just the 20
+    /// it peeked, which is what dropped every plaintext incoming peer.
+    #[test]
+    fn a_plaintext_peer_gets_its_whole_handshake_in_one_read() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let (a, b) = tokio::io::duplex(4096);
+            let (br, bw) = tokio::io::split(b);
+            let (_ar, mut aw) = tokio::io::split(a);
+
+            let mut handshake = BT_PSTR.to_vec();
+            handshake.extend_from_slice(&[7u8; HANDSHAKE_LEN - 20]);
+            aw.write_all(&handshake).await.unwrap();
+
+            let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
+            let (mut r, _w) = IncomingMseTransform { require: false }
+                .transform(addr, vec![], Box::new(br), Box::new(bw))
+                .await
+                .unwrap();
+            let mut buf = [0u8; 256];
+            let n = r.read(&mut buf).await.unwrap();
+            assert_eq!(&buf[..n], &handshake[..]);
         });
     }
 

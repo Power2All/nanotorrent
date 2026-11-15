@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Eesti (Eesti) - Partner Center: Estonian (Estonia) (et-EE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioon 0.4.5
+Versioon 0.4.6
 
-- Uus: NanoTorrent saab töötada ilma aknata. Käivitage terminalist „nanotorrent --headless“ ja see jätkab allalaadimist ja jagamist, ligipääs on veebiliidese kaudu. Ctrl-C peatab selle korrektselt ja --log-level määrab, kui palju logitakse.
-- NanoTorrenti sulgemisel salvestatakse nüüd iga torrenti olek, nii et järgmisel käivitamisel ei pea midagi uuesti kontrollima.
-- Parandused: aken ei tule enam pärast mõnda aega minimeerituna olemist tagasi osaliselt joonistatuna, aktiivsete torrentite piirangud kehtivad nüüd ka ilma aknata ning .torrent-faili avamine terminalist, kui NanoTorrent juba töötab, toimib ka suhtelise teega.
+- Parandused: iga torrenti üles laaditud andmemaht säilib nüüd NanoTorrenti sulgemisel. Veel salvestamata üleslaadimised läksid igal väljumisel kaduma, nii et pärast taaskäivitamist võis torrent näidata palju vähem või üldse mitte midagi.
+- Parandused: partnerid, kes ühenduvad NanoTorrentiga ilma krüptimiseta, võetakse taas vastu. Kõik nad lükati tagasi, mis pidurdas jagamist.
 - Kapoti all: teegid, millele NanoTorrent on ehitatud, on uuendatud koos nende viimaste parandustega.
 
 

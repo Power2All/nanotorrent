@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Latviešu (Latvija) - Partner Center: Latvian (Latvia) (lv-LV)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent ir Viktora Elofsona PicoTorrent pārnesums uz Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.5
+Versija 0.4.6
 
-- Jaunums: NanoTorrent var darboties bez loga. Palaidiet „nanotorrent --headless“ no termināļa, un tas turpina lejupielādēt un kopīgot, bet piekļuve ir caur tīmekļa saskarni. Ctrl-C to kārtīgi aptur, un --log-level nosaka, cik daudz tiek žurnalēts.
-- Aizverot NanoTorrent, tagad tiek saglabāts katra torrenta stāvoklis, tāpēc nākamajā palaišanā nekas nav jāpārbauda atkārtoti.
-- Labojumi: logs vairs neatgriežas daļēji uzzīmēts pēc tam, kad kādu laiku bijis minimizēts, aktīvo torrentu ierobežojumi tagad darbojas arī bez loga, un .torrent faila atvēršana no termināļa, kamēr NanoTorrent jau darbojas, strādā arī ar relatīvu ceļu.
+- Labojumi: katra torrenta augšupielādētais apjoms tagad tiek saglabāts, aizverot NanoTorrent. Vēl nesaglabātās augšupielādes tika zaudētas katrā izslēgšanas reizē, tāpēc pēc restartēšanas torrents varēja rādīt daudz mazāk vai neko.
+- Labojumi: dalībnieki, kas pieslēdzas NanoTorrent bez šifrēšanas, atkal tiek pieņemti. Visi tie tika noraidīti, un tas kavēja kopīgošanu.
 - Zem pārsega: bibliotēkas, uz kurām balstās NanoTorrent, ir atjauninātas ar jaunākajiem labojumiem.
 
 

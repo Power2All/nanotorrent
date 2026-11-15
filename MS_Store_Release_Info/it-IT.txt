@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Italiano (Italia) - Partner Center: Italian (Italy) (it-IT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent è un port in Rust di PicoTorrent, di Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versione 0.4.5
+Versione 0.4.6
 
-- Novità: NanoTorrent può funzionare senza finestra. Avvia «nanotorrent --headless» da un terminale e continua a scaricare e condividere, con l’interfaccia web come accesso. Ctrl-C lo arresta in modo pulito e --log-level imposta quanto viene registrato.
-- Alla chiusura, NanoTorrent ora salva lo stato di ogni torrent, così al successivo avvio non c’è nulla da ricontrollare.
-- Correzioni: la finestra non ritorna più disegnata a metà dopo essere rimasta ridotta a icona per un po’, i limiti sui torrent attivi ora valgono anche senza la finestra, e aprire un file .torrent da un terminale mentre NanoTorrent è già in esecuzione funziona con un percorso relativo.
+- Correzioni: la quantità inviata per ogni torrent ora viene conservata alla chiusura di NanoTorrent. Gli invii non ancora salvati andavano persi a ogni uscita, quindi dopo un riavvio un torrent poteva mostrare molto meno, o nulla.
+- Correzioni: i peer che si connettono a NanoTorrent senza cifratura vengono di nuovo accettati. Venivano tutti respinti, e questo frenava la condivisione.
 - Sotto il cofano: le librerie su cui si basa NanoTorrent sono state aggiornate con le loro ultime correzioni.
 
 

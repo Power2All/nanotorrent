@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: 한국어 (대한민국) - Partner Center: Korean (Korea) (ko-KR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent은 Viktor Elofsson의 PicoTorrent을 Rust로 이식한 것입니다.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-버전 0.4.5
+버전 0.4.6
 
-- 새 기능: 이제 NanoTorrent를 창 없이 실행할 수 있습니다. 터미널에서 'nanotorrent --headless'를 시작하면 다운로드와 시드를 계속하며, 웹 인터페이스로 접속해 사용합니다. Ctrl-C로 깔끔하게 종료하고, --log-level로 로그 양을 정합니다.
-- 이제 NanoTorrent를 닫을 때 모든 토렌트의 상태를 저장하므로, 다음에 시작할 때 다시 검사할 필요가 없습니다.
-- 수정: 창을 한동안 최소화한 뒤 일부만 그려진 채로 돌아오는 문제가 해결되었고, 활성 토렌트 제한이 이제 창 없이도 적용되며, NanoTorrent가 이미 실행 중일 때 터미널에서 .torrent 파일을 상대 경로로 열 수 있습니다.
+- 수정: 이제 NanoTorrent를 닫아도 토렌트별 업로드량이 그대로 유지됩니다. 저장되지 않은 업로드량은 종료할 때마다 사라졌기 때문에, 다시 시작하면 토렌트의 업로드량이 훨씬 적게 표시되거나 아예 표시되지 않을 수 있었습니다.
+- 수정: 암호화 없이 NanoTorrent에 연결하는 피어를 다시 받아들입니다. 그동안 이런 피어가 모두 거부되어 시드에 지장이 있었습니다.
 - 내부 개선: NanoTorrent의 기반이 되는 라이브러리를 최신 수정 사항이 반영된 버전으로 업데이트했습니다.
 
 

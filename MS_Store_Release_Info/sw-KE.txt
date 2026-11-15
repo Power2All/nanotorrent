@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Kiswahili (Kenya) - Partner Center: Swahili (Kenya) (sw-KE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent ni toleo la Rust la PicoTorrent ya Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Toleo 0.4.5
+Toleo 0.4.6
 
-- Mpya: NanoTorrent inaweza kufanya kazi bila dirisha. Anzisha “nanotorrent --headless” kutoka kwenye terminali nayo itaendelea kupakua na kushiriki, huku kiolesura cha wavuti kikiwa njia ya kuifikia. Ctrl-C huisimamisha kwa utaratibu, na --log-level huweka kiasi cha kinachorekodiwa.
-- Kufunga NanoTorrent sasa huhifadhi hali ya kila torrent wakati wa kutoka, kwa hivyo hakuna kinachohitaji kukaguliwa upya utakapoianzisha tena.
-- Marekebisho: dirisha halirudi tena likiwa limechorwa nusu baada ya kupunguzwa kwa muda, vikomo vya torrent amilifu sasa vinatumika hata bila dirisha, na kufungua faili ya .torrent kutoka kwenye terminali wakati NanoTorrent tayari inaendeshwa sasa hufanya kazi kwa njia linganishi.
+- Marekebisho: kiasi kilichopakiwa kwa kila torrent sasa huhifadhiwa NanoTorrent inapofungwa. Upakiaji ambao ulikuwa bado haujahifadhiwa ulipotea kila ilipofungwa, kwa hivyo baada ya kuianzisha upya torrent ingeweza kuonyesha kiasi kidogo sana, au sifuri.
+- Marekebisho: wenzi wanaounganishwa na NanoTorrent bila usimbaji fiche wanakubaliwa tena. Wote walikuwa wakikataliwa, jambo lililozuia kushiriki.
 - Ndani: maktaba ambazo NanoTorrent imejengwa juu yake zimesasishwa pamoja na marekebisho yao ya hivi karibuni.
 
 

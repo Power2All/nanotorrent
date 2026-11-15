@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Shqip (Shqipëri) - Partner Center: Albanian (Albania) (sq-AL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent është një port në Rust i PicoTorrent nga Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioni 0.4.5
+Versioni 0.4.6
 
-- E re: NanoTorrent mund të punojë pa dritare. Nisni «nanotorrent --headless» nga një terminal dhe ai vazhdon të shkarkojë dhe të ndajë, me ndërfaqen web si mënyrë hyrjeje. Ctrl-C e ndal pastër, dhe --log-level përcakton sa regjistrohet.
-- Mbyllja e NanoTorrent tani ruan gjendjen e çdo torrenti gjatë daljes, ndaj në nisjen e radhës nuk ka nevojë të rikontrollohet asgjë.
-- Rregullime: dritarja nuk kthehet më e vizatuar pjesërisht pasi ka qenë e minimizuar për ca kohë, kufijtë e torrenteve aktive tani zbatohen edhe pa dritaren, dhe hapja e një skedari .torrent nga një terminal ndërkohë që NanoTorrent është tashmë në punë funksionon me shteg relativ.
+- Rregullime: sasia e ngarkuar për çdo torrent tani ruhet kur NanoTorrent mbyllet. Ngarkimet ende të paruajtura humbisnin në çdo dalje, ndaj pas rinisjes një torrent mund të tregonte shumë më pak, ose zero.
+- Rregullime: bashkëmoshatarët që lidhen me NanoTorrent pa shifrim pranohen sërish. Të gjithë po refuzoheshin, gjë që frenonte ndarjen.
 - Nën kapak: bibliotekat mbi të cilat është ndërtuar NanoTorrent janë përditësuar me ndreqjet e tyre më të fundit.
 
 

@@ -11,6 +11,23 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use crate::core::environment::Environment;
 
+/// The sending end of this instance's own queue, for arguments that arrive
+/// in-process rather than over the socket - on macOS, files opened from the
+/// Finder come as an Apple event, not as argv. See `hand_over`.
+static LOCAL: std::sync::OnceLock<Sender<Vec<String>>> = std::sync::OnceLock::new();
+
+/// Queue `args` as if a second instance had forwarded them, so they reach the
+/// window the same way: raise it, then open the Add dialog.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn hand_over(args: Vec<String>) {
+    match LOCAL.get() {
+        Some(tx) => {
+            let _ = tx.send(args);
+        }
+        None => tracing::warn!("no instance queue yet; dropped {args:?}"),
+    }
+}
+
 /// The single-instance port of the ordinary, per-user profile. Unchanged since
 /// the first release, so an upgrade still finds the copy that is already open.
 const DEFAULT_PORT: u16 = 37549;
@@ -94,6 +111,7 @@ pub fn init(args: &[String], env: &Environment) -> anyhow::Result<Instance> {
     match TcpListener::bind(addr) {
         Ok(listener) => {
             let (tx, rx) = channel();
+            let _ = LOCAL.set(tx.clone());
             std::thread::Builder::new()
                 .name(String::from("pt-ipc"))
                 .spawn(move || accept_loop(listener, tx))
@@ -114,9 +132,10 @@ pub fn init(args: &[String], env: &Environment) -> anyhow::Result<Instance> {
             tracing::warn!(
                 "cannot use {addr} for single-instance detection ({bind_err}); carrying on as the only instance"
             );
-            // A receiver whose sender is already gone: it never yields, which
-            // is exactly right when nothing can send to it.
-            let (_tx, rx) = channel();
+            // Nothing can reach this receiver over the socket, but the
+            // in-process hand-off (`hand_over`) still can.
+            let (tx, rx) = channel();
+            let _ = LOCAL.set(tx);
             Ok(Instance::Primary(rx))
         }
         Err(bind_err) => {

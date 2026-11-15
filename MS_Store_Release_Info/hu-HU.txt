@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-0.4.5-s verzió
+0.4.6-s verzió
 
-- Újdonság: a NanoTorrent ablak nélkül is futhat. Indítsa el terminálból a „nanotorrent --headless” parancsot, és tovább tölt le és seedel, a webes felületen keresztül érhető el. A Ctrl-C tisztán leállítja, a --log-level pedig azt szabja meg, mennyi kerüljön a naplóba.
-- A NanoTorrent bezáráskor mostantól minden torrent állapotát elmenti, így a következő indításkor semmit sem kell újra ellenőrizni.
-- Javítások: az ablak már nem tér vissza részben kirajzolva, miután egy ideig kis méretre volt állítva, az aktív torrentekre vonatkozó korlátok most ablak nélkül is érvényesek, és egy .torrent fájl terminálból való megnyitása, miközben a NanoTorrent már fut, relatív elérési úttal is működik.
+- Javítások: a NanoTorrent bezárásakor mostantól megmarad az egyes torrentek feltöltött mennyisége. A még nem mentett feltöltés minden kilépéskor elveszett, így egy torrent újraindítás után jóval kevesebbet, vagy semmit sem mutathatott.
+- Javítások: a titkosítás nélkül kapcsolódó partnereket a NanoTorrent ismét elfogadja. Eddig mindegyiket elutasította, ami visszafogta a seedelést.
 - A motorháztető alatt: frissültek a könyvtárak, amelyekre a NanoTorrent épül, a legújabb javításaikkal együtt.
 
 

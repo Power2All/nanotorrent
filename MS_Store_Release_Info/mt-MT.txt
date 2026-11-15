@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Malti (Malta) - Partner Center: Maltese (Malta) (mt-MT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent huwa port bir-Rust ta' PicoTorrent ta' Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verżjoni 0.4.5
+Verżjoni 0.4.6
 
-- Ġdid: NanoTorrent jista’ jaħdem mingħajr tieqa. Ibda “nanotorrent --headless” minn terminal u jibqa’ jniżżel u jaqsam, bl-interfaċċja tal-web bħala l-mod kif tidħol. Ctrl-C iwaqqfu b’mod nadif, u --log-level jiddetermina kemm jiġi rreġistrat.
-- Meta jingħalaq, NanoTorrent issa jsalva l-istat ta’ kull torrent, għalhekk fil-bidu li jmiss m’hemm xejn x’jerġa’ jiġi ċċekkjat.
-- Tiswijiet: it-tieqa m’għadhiex terġa’ tidher imfassla biss parzjalment wara li tkun ilha minimizzata għal xi żmien, il-limiti fuq torrents attivi issa japplikaw ukoll mingħajr it-tieqa, u l-ftuħ ta’ fajl .torrent minn terminal waqt li NanoTorrent ikun diġà għaddej jaħdem b’mogħdija relattiva.
+- Tiswijiet: l-ammont imtella’ għal kull torrent issa jinżamm meta NanoTorrent jingħalaq. It-tlugħ li kien għadu ma ġiex salvat kien jintilef kull darba li toħroġ, għalhekk torrent seta’ juri ħafna inqas, jew xejn, wara li jerġa’ jibda.
+- Tiswijiet: il-peers li jikkonnettjaw ma’ NanoTorrent mingħajr kriptaġġ jerġgħu jiġu aċċettati. Kollha kienu qed jiġu miċħuda, u dan kien qed ixekkel il-qsim.
 - Taħt il-kappa: il-libreriji li fuqhom hu mibni NanoTorrent ġew aġġornati bl-aħħar korrezzjonijiet tagħhom.
 
 

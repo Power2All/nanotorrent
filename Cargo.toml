@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.4.5"
+version = "0.4.6"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -31,7 +31,7 @@ default = ["ui-slint"]
 # The UI: the same window on Windows, Linux and macOS. Turning it off
 # (--no-default-features) gives a headless daemon reachable over the web
 # interface, which is the only other supported configuration.
-ui-slint = ["dep:slint", "dep:slint-build", "dep:rfd", "dep:raw-window-handle", "dep:copypasta", "dep:png"]
+ui-slint = ["dep:slint", "dep:slint-build", "dep:rfd", "dep:raw-window-handle", "dep:copypasta", "dep:png", "dep:objc2", "dep:objc2-foundation", "dep:objc2-app-kit"]
 
 [dependencies]
 # Actix rather than axum for the web API, chosen for its connection layer, not
@@ -135,7 +135,7 @@ librqbit-peer-protocol = { version = "9.0.1", default-features = false }
 # VPN interface someone bound to is actually present. Already in the tree via
 # librqbit-dualstack-sockets, so naming it costs no new crate.
 network-interface = "2"
-maxminddb = "0.32"
+maxminddb = "0.33"
 open = "5.4.1"
 # Generates the self-signed certificate for the web API on first use, so HTTPS
 # works out of the box without asking anyone to run openssl.
@@ -155,7 +155,7 @@ rhai = { version = "1", features = ["serde"] }
 # No async-runtime feature: 0.15 needed one (`tokio`, routing ashpd's calls),
 # where 0.17's xdg-portal drives its own executor through pollster. That is why
 # the `tokio` feature no longer exists rather than having been dropped here.
-rfd = { version = "0.17", optional = true, default-features = false, features = ["xdg-portal"] }
+rfd = { version = "0.18", optional = true, default-features = false, features = ["xdg-portal"] }
 # "socks" so the one HTTP client factory in core::http can honour the SOCKS
 # proxy setting. tokio-socks is already in the tree - librqbit uses it for
 # peer and tracker connections - so this adds no crate, only the seam that
@@ -167,7 +167,7 @@ reqwest = { version = "0.13.4", features = ["json", "socks"] }
 # core::dbkey for why the whole file rather than page-by-page. Both are pure
 # rusqlite features - the alternative, bundled-sqlcipher, drags in OpenSSL and
 # with it a Perl build prerequisite, for one feature.
-rusqlite = { version = "0.41.0", features = ["bundled", "functions", "serialize", "hooks"] }
+rusqlite = { version = "0.43.0", features = ["bundled", "functions", "serialize", "hooks"] }
 # Default features deliberately: that selects aws-lc-rs, which the tree already
 # resolves rustls to. Picking `ring` here would compile a second crypto library.
 rustls = "0.23"
@@ -232,6 +232,15 @@ libc = "0.2"
 # name.
 notify-rust = "4"
 
+# Files and magnet links opened from the Finder arrive as an Apple event on
+# the application delegate, not on the command line - see
+# src/ui_slint/macos_open.rs. Already in the tree through Slint; named here
+# with only the classes that file uses.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true, default-features = false, features = ["std", "NSArray", "NSURL", "NSString"] }
+objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "NSApplication", "NSResponder"] }
+
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.8"
 # NOT tied to any UI feature: core/toast.rs, core/file_assoc.rs, the startup
@@ -267,6 +276,7 @@ assets = [
     ["target/release/nanotorrent-gui", "usr/bin/nanotorrent", "755"],
     ["packaging/linux/org.nanotorrent.NanoTorrent.desktop", "usr/share/applications/", "644"],
     ["res/app-256.png", "usr/share/icons/hicolor/256x256/apps/org.nanotorrent.NanoTorrent.png", "644"],
+    ["packaging/linux/org.nanotorrent.NanoTorrent.metainfo.xml", "usr/share/metainfo/", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -274,6 +284,7 @@ assets = [
     { source = "target/release/nanotorrent-gui", dest = "/usr/bin/nanotorrent", mode = "755" },
     { source = "packaging/linux/org.nanotorrent.NanoTorrent.desktop", dest = "/usr/share/applications/org.nanotorrent.NanoTorrent.desktop", mode = "644" },
     { source = "res/app-256.png", dest = "/usr/share/icons/hicolor/256x256/apps/org.nanotorrent.NanoTorrent.png", mode = "644" },
+    { source = "packaging/linux/org.nanotorrent.NanoTorrent.metainfo.xml", dest = "/usr/share/metainfo/org.nanotorrent.NanoTorrent.metainfo.xml", mode = "644" },
 ]
 
 [patch.crates-io]

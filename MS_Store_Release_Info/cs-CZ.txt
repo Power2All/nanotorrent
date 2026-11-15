@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Čeština (Česko) - Partner Center: Czech (Czechia) (cs-CZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verze 0.4.5
+Verze 0.4.6
 
-- Novinka: NanoTorrent může běžet bez okna. Spusťte „nanotorrent --headless“ z terminálu a bude dál stahovat a sdílet, přístup k němu máte přes webové rozhraní. Ctrl-C ho čistě ukončí a --log-level určuje, kolik se zaznamenává.
-- Při zavírání NanoTorrent nyní uloží stav každého torrentu, takže při dalším spuštění není nutné nic znovu kontrolovat.
-- Opravy: okno se už po delší minimalizaci nevrací jen částečně vykreslené, limity aktivních torrentů nyní platí i bez okna a otevření souboru .torrent z terminálu, když NanoTorrent už běží, funguje i s relativní cestou.
+- Opravy: množství odeslaných dat u každého torrentu se nyní při zavření aplikace NanoTorrent zachová. Dosud neuložená odeslaná data se při každém ukončení ztrácela, takže torrent mohl po restartu ukazovat mnohem méně, nebo vůbec nic.
+- Opravy: protějšky, které se k aplikaci NanoTorrent připojují bez šifrování, jsou opět přijímány. Všechny byly odmítány, což brzdilo sdílení.
 - Pod kapotou: knihovny, na kterých je NanoTorrent postaven, byly aktualizovány o nejnovější opravy.
 
 

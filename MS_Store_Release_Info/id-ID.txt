@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.5 - Microsoft Store listing
+NanoTorrent 0.4.6 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,10 @@ NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.5
+Versi 0.4.6
 
-- Baru: NanoTorrent bisa berjalan tanpa jendela. Jalankan “nanotorrent --headless” dari terminal dan aplikasi ini terus mengunduh dan melakukan seeding, dengan antarmuka web sebagai jalan masuknya. Ctrl-C menghentikannya dengan rapi, dan --log-level mengatur seberapa banyak yang dicatat.
-- Saat ditutup, NanoTorrent kini menyimpan status setiap torrent, jadi tidak ada yang perlu diperiksa ulang saat dijalankan berikutnya.
-- Perbaikan: jendela tidak lagi kembali dalam keadaan tergambar sebagian setelah diminimalkan beberapa saat, batas torrent aktif kini juga berlaku tanpa jendela, dan membuka file .torrent dari terminal saat NanoTorrent sudah berjalan kini bisa dengan jalur relatif.
+- Perbaikan: jumlah unggahan setiap torrent kini tetap tersimpan saat NanoTorrent ditutup. Unggahan yang belum disimpan hilang setiap kali keluar, sehingga torrent bisa menampilkan jauh lebih sedikit, atau nol, setelah dijalankan ulang.
+- Perbaikan: rekan yang terhubung ke NanoTorrent tanpa enkripsi kini diterima lagi. Sebelumnya semuanya ditolak, sehingga seeding terhambat.
 - Di balik layar: pustaka yang menjadi dasar NanoTorrent telah diperbarui dengan perbaikan terbarunya.
 
 
