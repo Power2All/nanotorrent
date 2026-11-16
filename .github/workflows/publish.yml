@@ -43,7 +43,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - id: read
         run: |
-          grep -E '^(aur|itch|itch_game)=' deploy.conf | tr -d ' \r' | tee -a "$GITHUB_OUTPUT"
+          grep -E '^(aur|itch|itch_game)=' deploy.conf | tr -d ' \r"' | tee -a "$GITHUB_OUTPUT"
 
   aur:
     name: AUR (nanotorrent-bin)
