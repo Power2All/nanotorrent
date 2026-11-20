@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Malti (Malta) - Partner Center: Maltese (Malta) (mt-MT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent huwa port bir-Rust ta' PicoTorrent ta' Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verżjoni 0.4.6
+Verżjoni 0.4.7
 
-- Tiswijiet: l-ammont imtella’ għal kull torrent issa jinżamm meta NanoTorrent jingħalaq. It-tlugħ li kien għadu ma ġiex salvat kien jintilef kull darba li toħroġ, għalhekk torrent seta’ juri ħafna inqas, jew xejn, wara li jerġa’ jibda.
-- Tiswijiet: il-peers li jikkonnettjaw ma’ NanoTorrent mingħajr kriptaġġ jerġgħu jiġu aċċettati. Kollha kienu qed jiġu miċħuda, u dan kien qed ixekkel il-qsim.
-- Taħt il-kappa: il-libreriji li fuqhom hu mibni NanoTorrent ġew aġġornati bl-aħħar korrezzjonijiet tagħhom.
+- Ġdid: fid-djalogu Żid, kull folder għandu l-kaxxa tal-għażla tiegħu li timmarka jew tneħħi l-marka minn kull ma fih, inklużi s-subfolders, u l-buttuni Kollox u Xejn jagħmlu l-istess għat-torrent kollu. Folder b’xi fajls biss immarkati juri kaxxa b’sing fiha.
+- Ġdid: API tal-web mhux obbligatorja u kompatibbli ma’ qBittorrent, biex Sonarr, Radarr u għodod oħra magħmula għal qBittorrent ikunu jistgħu jikkontrollaw NanoTorrent. Ixgħelha fil-Preferenzi, taħt Interfaċċa web.
+- Tiswijiet: il-kolonni Seeds u Peers issa juru d-daqs tas-swarm bejn parentesi, kif irrappurtat mit-trackers, l-ordni stabbilita bil-prijoritajiet tal-fajls tinżamm meta torrent jiġi ppawżjat u jerġa’ jinbeda, u l-ftuħ tal-Preferenzi għat-tieni darba waqt li jkunu diġà miftuħa ma jibqax jarmi l-bidliet mhux salvati.
+- Tiswijiet: il-bidla tal-lingwa issa terġa’ tpinġi kull djalogu miftuħ, u fajl tal-filtru IP li l-mogħdija tiegħu fiha spazju, # jew % issa jitgħabba.
+- Sigurtà: l-interfaċċja tal-web tuża librerija HTTP aġġornata, li tirranġa kif taqra talba mfassla ħażin.
+- Imneħħi: l-għażla tal-linja tal-kmand --webui-set. --set web-bind, web-port, web-username u l-issettjar l-ieħor web-* jagħmlu l-istess.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

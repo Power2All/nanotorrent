@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Published release tag to send, e.g. v0.4.6"
+        description: "Published release tag to send, e.g. v0.4.7"
         required: true
 
 env:

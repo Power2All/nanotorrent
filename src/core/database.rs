@@ -75,6 +75,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     migration!("20260916000000_persist_upload_total"),
     migration!("20260917000000_confirmation_prompts"),
     migration!("20261008000000_drop_webui_tuning_settings"),
+    migration!("20261120000000_qbittorrent_api"),
 ];
 
 /// The settings database, open.

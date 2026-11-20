@@ -1,0 +1,32 @@
+# Give the main thread a stack Windows does not, by default, give it.
+#
+# Linux and macOS start the main thread with 8 MB. Windows reserves 1 MB, which
+# is the smallest of the three by a factor of eight - and Slint lays a window
+# out by recursing over its element tree, so the deepest window here sits close
+# to that floor. Measured, on the Preferences dialog:
+#
+#   release   crashes at 0.25 MB, survives at 0.5 MB   (~50-75% headroom)
+#   debug     crashes at 1.0 MB,  survives at 1.125 MB (over the default)
+#
+# So a debug build could not open Preferences at all - `cargo run` died with
+# "thread 'main' has overflowed its stack" - while the release build merely had
+# less room than anyone would guess. Release was never the loud failure, which
+# is exactly why it was worth fixing before it became one: another nested tab
+# would have taken it there.
+#
+# 8 MB is not an allowance for this window, it is what the other two platforms
+# already give. Stack reserve is address space, not committed memory - the
+# pages are only backed when touched - so this costs nothing at run time.
+#
+# MSVC only: /STACK is a link.exe flag. A GNU-toolchain build would want
+# `-Wl,--stack,8388608` instead, and is not what this repository builds.
+# /Brepro: the linker otherwise writes the current time into the PE header's
+# TimeDateStamp, so two builds of identical source differ in their bytes even
+# once nothing in the source carries a date. This makes that field a fixed
+# value, which is what a deterministic MSVC build uses.
+#
+# It does not by itself make a build reproducible across machines: rustc still
+# embeds absolute paths from the build directory in debug info and panic
+# messages. `--remap-path-prefix` is the lever for that, and is not set here.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "link-arg=/STACK:8388608", "-C", "link-arg=/Brepro"]

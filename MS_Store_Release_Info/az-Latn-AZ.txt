@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Azərbaycan dili (Azərbaycan) - Partner Center: Azerbaijani (Azerbaijan) (az-Latn-AZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent, Viktor Elofsson-un PicoTorrent proqramının Rust versiyasıdır.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiya 0.4.6
+Versiya 0.4.7
 
-- Düzəlişlər: hər torrent üçün göndərilən həcm indi NanoTorrent bağlananda saxlanılır. Hələ yadda saxlanılmamış göndərmələr hər çıxışda itirilirdi, buna görə yenidən başladıqdan sonra torrent xeyli az və ya heç nə göstərə bilərdi.
-- Düzəlişlər: NanoTorrent-ə şifrələməsiz qoşulan tərəf-müqabillər yenidən qəbul edilir. Onların hamısı rədd edilirdi və bu, paylaşmanı ləngidirdi.
-- Daxili dəyişikliklər: NanoTorrent-in üzərində qurulduğu kitabxanalar son düzəlişləri ilə yeniləndi.
+- Yeni: «Torrent əlavə et» pəncərəsində hər qovluğun öz qeyd xanası var; o, alt qovluqlar da daxil olmaqla içindəki hər şeyi işarələyir və ya işarəni götürür, «Hamısı» və «Heç biri» düymələri isə bütün torrent üçün eyni işi görür. Fayllarının yalnız bir qismi işarələnmiş qovluq tireli xana ilə göstərilir.
+- Yeni: qBittorrent ilə uyğun gələn ixtiyari veb API; onun sayəsində Sonarr, Radarr və qBittorrent üçün hazırlanmış digər alətlər NanoTorrent-i idarə edə bilər. Onu «Nizamlamalar» bölməsində, «Veb interfeys» altında yandırın.
+- Düzəlişlər: «Paylaşanlar» və «Həmyaşıdlar» sütunları indi izləyicilərin bildirdiyi kimi sürünün ölçüsünü mötərizədə göstərir, fayl prioritetləri ilə təyin edilən sıra torrent fasilə verilib yenidən başladılanda qorunur, «Nizamlamalar» açıq ikən onu ikinci dəfə açmaq isə artıq yadda saxlanılmamış dəyişiklikləri itirmir.
+- Düzəlişlər: dili dəyişmək indi bütün açıq dialoq pəncərələrini yenidən çəkir, yolunda boşluq, # və ya % olan IP süzgəci faylı isə indi yüklənir.
+- Təhlükəsizlik: veb interfeys yenilənmiş HTTP kitabxanasından istifadə edir və bu, onun səhv formalaşmış sorğunu oxuma qaydasını düzəldir.
+- Silindi: --webui-set komanda sətri seçimi. --set web-bind, web-port, web-username və digər web-* ayarları eyni işi görür.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

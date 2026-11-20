@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Français (France) - Partner Center: French (France) (fr-FR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent est un portage en Rust de PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.6
+Version 0.4.7
 
-- Corrections : le volume envoyé pour chaque torrent est désormais conservé à la fermeture de NanoTorrent. Les envois pas encore enregistrés étaient perdus à chaque sortie, si bien qu’un torrent pouvait afficher beaucoup moins, voire rien, après un redémarrage.
-- Corrections : les pairs qui se connectent à NanoTorrent sans chiffrement sont de nouveau acceptés. Ils étaient tous refusés, ce qui freinait le partage.
-- Sous le capot : les bibliothèques sur lesquelles repose NanoTorrent ont été mises à jour, avec leurs derniers correctifs.
+- Nouveauté : dans la fenêtre d’ajout de torrents, chaque dossier a sa propre case qui coche ou décoche tout son contenu, sous-dossiers compris, et les boutons Tout et Aucun font de même pour l’ensemble du torrent. Un dossier dont seuls certains fichiers sont cochés affiche une case avec un tiret.
+- Nouveauté : une API web facultative compatible avec qBittorrent, pour que Sonarr, Radarr et les autres outils conçus pour qBittorrent puissent piloter NanoTorrent. Activez-la dans les Paramètres, sous Interface web.
+- Corrections : les colonnes Sources et Pairs indiquent désormais entre parenthèses la taille de l’essaim, telle que rapportée par les trackers ; l’ordre défini par les priorités de fichiers est conservé quand un torrent est mis en pause puis relancé ; et rouvrir les Paramètres alors qu’ils sont déjà ouverts ne fait plus perdre les modifications non enregistrées.
+- Corrections : changer de langue redessine désormais toutes les fenêtres ouvertes, et un fichier de filtre d’IP dont le chemin contient un espace, # ou % se charge désormais.
+- Sécurité : l’interface web utilise une bibliothèque HTTP mise à jour, qui corrige la lecture des requêtes malformées.
+- Supprimé : l’option de ligne de commande --webui-set. --set web-bind, web-port, web-username et les autres réglages web-* font la même chose.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

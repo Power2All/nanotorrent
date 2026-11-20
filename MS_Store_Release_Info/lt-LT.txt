@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Lietuvių (Lietuva) - Partner Center: Lithuanian (Lithuania) (lt-LT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent yra Viktoro Elofssono PicoTorrent perkėlimas į Rust kalbą.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.6
+Versija 0.4.7
 
-- Pataisymai: kiekvieno torrento išsiųstas kiekis dabar išsaugomas uždarant NanoTorrent. Dar neišsaugoti išsiuntimai būdavo prarandami kaskart išjungiant, todėl po paleidimo iš naujo torrentas galėjo rodyti daug mažiau arba visai nieko.
-- Pataisymai: dalyviai, kurie jungiasi prie NanoTorrent be šifravimo, vėl priimami. Visi jie buvo atmetami, o tai stabdė dalijimąsi.
-- Po gaubtu: bibliotekos, kuriomis remiasi NanoTorrent, atnaujintos su naujausiais pataisymais.
+- Nauja: torrento pridėjimo lange kiekvienas aplankas turi savo žymimąjį langelį, kuris pažymi arba atžymi viską, kas jame yra, įskaitant poaplankius, o mygtukai „Visi“ ir „Nėra“ tą patį daro visam torrentui. Aplankas, kuriame pažymėta tik dalis failų, rodo langelį su brūkšneliu.
+- Nauja: pasirenkama su qBittorrent suderinama saityno API, kad Sonarr, Radarr ir kiti qBittorrent skirti įrankiai galėtų valdyti NanoTorrent. Ją įjungsite „Parametrų“ skiltyje „Saityno sąsaja“.
+- Pataisymai: stulpeliai „Skleidėjai“ ir „Siuntėjai“ dabar skliaustuose rodo bendrą skaičių, kurį praneša sekikliai; failų prioritetais nustatyta tvarka išlieka, kai torrentas pristabdomas ir vėl paleidžiamas; o antrą kartą atidarius jau atidarytą „Parametrų“ langą, neišsaugoti pakeitimai nebeprarandami.
+- Pataisymai: pakeitus kalbą dabar perpiešiami visi atidaryti langai, o IP adresų filtro failas, kurio kelyje yra tarpas, # arba %, dabar įkeliamas.
+- Sauga: žiniatinklio sąsaja naudoja atnaujintą HTTP biblioteką, kuri ištaiso, kaip ji skaito netinkamai suformuotą užklausą.
+- Pašalinta: komandinės eilutės parinktis --webui-set. Tą patį daro --set web-bind, web-port, web-username ir kiti web-* nustatymai.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

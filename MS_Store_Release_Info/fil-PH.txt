@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Filipino (Pilipinas) - Partner Center: Filipino (Philippines) (fil-PH)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ Ang NanoTorrent ay bersyong Rust ng PicoTorrent ni Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Bersyon 0.4.6
+Bersyon 0.4.7
 
-- Mga ayos: naiingatan na ang dami ng na-upload ng bawat torrent kapag isinara ang NanoTorrent. Nawawala sa bawat paglabas ang mga upload na hindi pa nase-save, kaya maaaring mas kaunti nang malaki, o wala, ang ipinapakita ng isang torrent pagkatapos itong simulan muli.
-- Mga ayos: tinatanggap na muli ang mga peer na kumokonekta sa NanoTorrent nang walang encryption. Tinatanggihan silang lahat dati, kaya napipigilan ang pag-seed.
-- Sa loob: na-update ang mga library na pinagbatayan ng NanoTorrent, kasama ang pinakabago nilang mga ayos.
+- Bago: sa dialog na “Magdagdag ng torrent”, may sariling checkbox na ang bawat folder na nagta-tick o nag-a-untick sa lahat ng nasa loob nito, kasama ang mga subfolder, at ganoon din ang ginagawa ng mga button na “Lahat” at “Wala” para sa buong torrent. Ang folder na may ilang file lang na naka-tick ay nagpapakita ng kahong may gitling.
+- Bago: isang opsyonal na web API na tugma sa qBittorrent, para makontrol ng Sonarr, Radarr at iba pang tool na gawa para sa qBittorrent ang NanoTorrent. I-on ito sa “Mga kagustuhan”, sa ilalim ng “Web interface”.
+- Mga ayos: ipinapakita na ng mga column na “Mga seed” at “Mga peer” ang laki ng swarm sa loob ng panaklong, ayon sa ulat ng mga tracker; napapanatili na ang pagkakasunod na itinakda gamit ang priyoridad ng file kapag ipina-pause at sinimulan muli ang torrent; at hindi na nawawala ang mga hindi pa naka-save na pagbabago kapag binuksan muli ang “Mga kagustuhan” habang bukas pa ito.
+- Mga ayos: kapag pinalitan ang wika, muling iginuguhit na ang lahat ng bukas na dialog, at naglo-load na ang IP filter file na may espasyo, # o % sa path nito.
+- Seguridad: gumagamit na ang web interface ng na-update na HTTP library, na nag-aayos sa paraan ng pagbasa nito sa sirang request.
+- Tinanggal: ang command-line option na --webui-set. Ganoon din ang ginagawa ng --set web-bind, web-port, web-username at ng iba pang web-* na setting.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

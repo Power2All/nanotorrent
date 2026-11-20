@@ -70,31 +70,6 @@ pub struct ListenInterface {
     pub port: i32,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ConnectionProxyType {
-    None = 0,
-    Socks4 = 1,
-    Socks5 = 2,
-    Socks5Password = 3,
-    Http = 4,
-    HttpPassword = 5,
-}
-
-impl ConnectionProxyType {
-    /// Map the stored integer to a proxy type, defaulting to None for a value
-    /// this build does not know - the original stored these as raw ints.
-    pub fn from_i64(v: i64) -> ConnectionProxyType {
-        match v {
-            1 => ConnectionProxyType::Socks4,
-            2 => ConnectionProxyType::Socks5,
-            3 => ConnectionProxyType::Socks5Password,
-            4 => ConnectionProxyType::Http,
-            5 => ConnectionProxyType::HttpPassword,
-            _ => ConnectionProxyType::None,
-        }
-    }
-}
-
 /// Clone is a handle copy: this is one `Arc<Database>` and nothing else, so a
 /// clone reads and writes the same settings as the original.
 #[derive(Clone)]

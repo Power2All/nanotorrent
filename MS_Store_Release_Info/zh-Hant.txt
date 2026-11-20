@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: 繁體中文 (台灣) - app locale zh-TW - Partner Center: Chinese (Traditional) (zh-Hant)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-版本 0.4.6
+版本 0.4.7
 
-- 修正：每個種子的上傳量現在會在 NanoTorrent 關閉時保留。先前尚未儲存的上傳量在每次結束時都會遺失，因此重新啟動後種子顯示的上傳量可能少得多，甚至為零。
-- 修正：以不加密方式連線到 NanoTorrent 的節點現在又能被接受了。先前它們全部遭到拒絕，影響了做種。
-- 內部改進：已將 NanoTorrent 所依賴的程式庫更新至包含最新修正的版本。
+- 新功能：在「添加種子」對話方塊中，每個資料夾都有自己的核取方塊，可一次勾選或取消勾選其中的所有內容（包括子資料夾）；「全部」和「無」按鈕則對整個種子執行相同操作。只勾選了部分檔案的資料夾會顯示帶短橫線的核取方塊。
+- 新功能：可選的 qBittorrent 相容 Web API，讓 Sonarr、Radarr 等為 qBittorrent 打造的工具也能控制 NanoTorrent。可在「偏好設定」的「網頁介面」中開啟。
+- 修正：「種子」和「節點」欄位現在會在括號中顯示 Tracker 回報的整體群體規模；以檔案優先度設定的順序在種子暫停後重新開始時會保留；在「偏好設定」已開啟時再次開啟它，不再捨棄未儲存的變更。
+- 修正：切換語言後，所有已開啟的對話方塊現在都會重新繪製；路徑中含有空格、# 或 % 的 IP 篩選器檔案現在可以正常載入。
+- 安全性：網頁介面改用更新後的 HTTP 程式庫，修正了其讀取格式錯誤要求的方式。
+- 移除：命令列選項 --webui-set。--set web-bind、web-port、web-username 以及其他 web-* 設定可達成相同功能。
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

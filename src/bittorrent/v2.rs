@@ -59,10 +59,8 @@ impl V2File {
 /// One piece of the flattened torrent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct V2Piece {
-    /// Index into [`V2Meta::files`].
+    /// Index into [`V2Info::files`].
     pub file_index: usize,
-    /// Byte offset of this piece within its file.
-    pub file_offset: u64,
     /// Real bytes in this piece. Less than `piece_length` for a file's last
     /// piece; the remainder of the piece is alignment padding that is neither
     /// stored nor hashed.
@@ -79,37 +77,15 @@ pub struct V2Piece {
 /// The flattened piece list for a whole v2 torrent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct V2Layout {
-    pub piece_length: u32,
     pub pieces: Vec<V2Piece>,
 }
 
-/// A parsed v2 (or hybrid) torrent.
+/// A parsed v2 (or hybrid) torrent: its info dict, and the piece list the
+/// piece layers flatten it into.
 #[derive(Debug, Clone)]
 pub struct V2Meta {
-    pub name: String,
-    pub piece_length: u32,
-    pub files: Vec<V2File>,
+    pub info: V2Info,
     pub layout: V2Layout,
-    /// True when the same info dict also carries the v1 keys, i.e. a hybrid.
-    /// Hybrids can be downloaded either way; v2-only cannot.
-    pub has_v1: bool,
-    pub private: bool,
-    /// SHA-256 of the info dict - the v2 info hash.
-    pub info_hash_v2: [u8; 32],
-    /// The raw info dict, for BEP 9 metadata exchange.
-    pub info_bytes: Vec<u8>,
-}
-
-impl V2Meta {
-    /// The 20-byte info hash a v2-only torrent uses on the wire.
-    ///
-    /// BEP 52 truncates the SHA-256 info hash to 20 bytes for the BEP 3
-    /// handshake, the DHT and tracker announces, precisely so that the v1
-    /// transport keeps working unchanged. This is what makes a v2 swarm
-    /// reachable without any new peer messages.
-    pub fn truncated_info_hash(&self) -> [u8; 20] {
-        *self.info_hash_v2.first_chunk().unwrap()
-    }
 }
 
 // ---------------------------------------------------------------- merkle ---
@@ -288,9 +264,9 @@ impl V2Hashes {
     /// piece layer, because their `pieces root` IS their only piece hash and a
     /// peer needs no request to learn it.
     pub fn new(meta: &V2Meta) -> Self {
-        let blocks_per_piece = meta.piece_length as usize / BLOCK;
+        let blocks_per_piece = meta.info.piece_length as usize / BLOCK;
         let mut files = std::collections::HashMap::new();
-        for (index, file) in meta.files.iter().enumerate() {
+        for (index, file) in meta.info.files.iter().enumerate() {
             let Some(root) = file.pieces_root else { continue };
             let num_blocks = (file.length as usize).div_ceil(BLOCK);
             if num_blocks <= blocks_per_piece {
@@ -423,27 +399,32 @@ pub struct V2Info {
     pub name: String,
     pub piece_length: u32,
     pub files: Vec<V2File>,
+    /// True when the same info dict also carries the v1 keys, i.e. a hybrid.
+    /// Hybrids can be downloaded either way; v2-only cannot.
     pub has_v1: bool,
     pub private: bool,
+    /// SHA-256 of the info dict - the v2 info hash.
     pub info_hash_v2: [u8; 32],
+    /// The raw info dict, for BEP 9 metadata exchange.
     pub info_bytes: Vec<u8>,
 }
 
 impl V2Info {
+    /// The 20-byte info hash a v2-only torrent uses on the wire.
+    ///
+    /// BEP 52 truncates the SHA-256 info hash to 20 bytes for the BEP 3
+    /// handshake, the DHT and tracker announces, precisely so that the v1
+    /// transport keeps working unchanged. This is what makes a v2 swarm
+    /// reachable without any new peer messages.
+    pub fn truncated_info_hash(&self) -> [u8; 20] {
+        *self.info_hash_v2.first_chunk().unwrap()
+    }
+
     /// Combine with the piece layers, from wherever they came, into the full
     /// picture. Every layer is checked against its file's `pieces root` here.
     pub fn into_meta(self, layers: &HashMap<[u8; 32], Vec<[u8; 32]>>) -> Result<V2Meta, String> {
         let layout = build_layout(&self.files, self.piece_length, layers)?;
-        Ok(V2Meta {
-            name: self.name,
-            piece_length: self.piece_length,
-            files: self.files,
-            layout,
-            has_v1: self.has_v1,
-            private: self.private,
-            info_hash_v2: self.info_hash_v2,
-            info_bytes: self.info_bytes,
-        })
+        Ok(V2Meta { info: self, layout })
     }
 }
 
@@ -609,7 +590,6 @@ fn build_layout(
             let real_len = (f.length - file_offset).min(piece_length as u64) as u32;
             pieces.push(V2Piece {
                 file_index,
-                file_offset,
                 real_len,
                 hash,
                 pad_blocks,
@@ -617,10 +597,7 @@ fn build_layout(
         }
     }
 
-    Ok(V2Layout {
-        piece_length,
-        pieces,
-    })
+    Ok(V2Layout { pieces })
 }
 
 // -------------------------------------------------------------- verifier ---
@@ -890,7 +867,7 @@ impl librqbit::PieceVerifier for V2Magnet {
 /// piece count and index into something; every actual comparison goes through
 /// [`V2Layout`]'s verifier, which checks the real merkle roots. Nothing here is ever
 /// sent to a peer: it is a local driving model, and the genuine info dict is
-/// kept in [`V2Meta::info_bytes`] for metadata exchange.
+/// kept in [`V2Info::info_bytes`] for metadata exchange.
 pub fn synthetic_v1(meta: &V2Meta) -> Vec<u8> {
     use super::torrent_create::Ben;
     // A whole .torrent. `substitute_info` needs the INFO DICT ALONE - the two
@@ -908,15 +885,15 @@ pub fn synthetic_v1_info(meta: &V2Meta) -> Vec<u8> {
 fn synthetic_v1_info_ben(meta: &V2Meta) -> super::torrent_create::Ben {
     use super::torrent_create::Ben;
 
-    let piece_length = meta.piece_length as u64;
+    let piece_length = meta.info.piece_length as u64;
     let mut files: Vec<Ben> = Vec::new();
     let last_real = meta
-        .files
+        .info.files
         .iter()
         .rposition(|f| f.length > 0)
         .unwrap_or(usize::MAX);
 
-    for (i, f) in meta.files.iter().enumerate() {
+    for (i, f) in meta.info.files.iter().enumerate() {
         files.push(Ben::file_entry(f.length, &f.components));
         // Pad up to the next piece boundary, except after the final file with
         // data - the torrent legitimately ends mid-piece there, and padding it
@@ -932,10 +909,10 @@ fn synthetic_v1_info_ben(meta: &V2Meta) -> super::torrent_create::Ben {
 
     Ben::Dict(vec![
         (b"files".to_vec(), Ben::List(files)),
-        (b"name".to_vec(), Ben::s(&meta.name)),
+        (b"name".to_vec(), Ben::s(&meta.info.name)),
         (
             b"piece length".to_vec(),
-            Ben::Int(meta.piece_length as i64),
+            Ben::Int(meta.info.piece_length as i64),
         ),
         (
             b"pieces".to_vec(),
@@ -943,7 +920,7 @@ fn synthetic_v1_info_ben(meta: &V2Meta) -> super::torrent_create::Ben {
         ),
         (
             b"private".to_vec(),
-            Ben::Int(if meta.private { 1 } else { 0 }),
+            Ben::Int(if meta.info.private { 1 } else { 0 }),
         ),
     ])
 }
@@ -989,11 +966,11 @@ pub fn prepare(torrent_bytes: &[u8]) -> Result<V2Prep, String> {
     let Some(meta) = parse(torrent_bytes)? else {
         return Ok(V2Prep::V1Only);
     };
-    let truncated = librqbit::Id20::new(meta.truncated_info_hash());
+    let truncated = librqbit::Id20::new(meta.info.truncated_info_hash());
     let hashes = Some(V2Hashes::new(&meta))
         .filter(|h| !h.is_empty())
         .map(|h| std::sync::Arc::new(h) as std::sync::Arc<dyn librqbit::HashProvider>);
-    if meta.has_v1 {
+    if meta.info.has_v1 {
         return Ok(V2Prep::Hybrid {
             secondary: truncated,
             hashes,
@@ -1003,9 +980,9 @@ pub fn prepare(torrent_bytes: &[u8]) -> Result<V2Prep, String> {
     Ok(V2Prep::V2Only(Box::new(PreparedV2 {
         synthetic,
         wire_hash: truncated,
-        files: meta.files.len(),
+        files: meta.info.files.len(),
         pieces: meta.layout.pieces.len(),
-        info_bytes: meta.info_bytes,
+        info_bytes: meta.info.info_bytes,
         verifier: std::sync::Arc::new(meta.layout),
         hashes,
     })))
@@ -1137,14 +1114,25 @@ mod tests {
     use crate::bittorrent::torrent_create::{CreateInput, TorrentVersion, build};
 
     /// Build a torrent for `payload` with our own writer, then read it back.
+    /// Where piece `idx` starts within its own file. A file's pieces are
+    /// contiguous in the layout and start again at 0 for every file.
+    fn file_offset(meta: &V2Meta, idx: usize) -> usize {
+        let pieces = &meta.layout.pieces;
+        let first = pieces
+            .iter()
+            .position(|p| p.file_index == pieces[idx].file_index)
+            .unwrap();
+        (idx - first) * meta.info.piece_length as usize
+    }
+
     fn round_trip(name: &str, payload: &[u8], piece_length: u32, version: TorrentVersion) -> V2Meta {
         let dir = scratch_dir(&format!("v2-{name}"));
         let file = dir.join("payload.bin");
         std::fs::write(&file, payload).unwrap();
         let built = build(&CreateInput {
-            source: &file,
-            trackers: &[],
-            comment: "",
+            source: file.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "test".into(),
             private: false,
             piece_length: Some(piece_length),
@@ -1182,8 +1170,8 @@ mod tests {
             let payload: Vec<u8> = (0..len).map(|i| (i * 31 + 7) as u8).collect();
             let meta = round_trip(&format!("len{len}"), &payload, pl, TorrentVersion::V2);
 
-            assert_eq!(meta.files.len(), 1, "len={len}");
-            assert_eq!(meta.files[0].length, len as u64, "len={len}");
+            assert_eq!(meta.info.files.len(), 1, "len={len}");
+            assert_eq!(meta.info.files[0].length, len as u64, "len={len}");
             assert_eq!(
                 meta.layout.pieces.len(),
                 len.div_ceil(pl as usize),
@@ -1191,7 +1179,7 @@ mod tests {
             );
 
             for (i, piece) in meta.layout.pieces.iter().enumerate() {
-                let start = piece.file_offset as usize;
+                let start = file_offset(&meta, i);
                 let end = start + piece.real_len as usize;
                 let got = piece_merkle_root(&payload[start..end], piece.pad_blocks);
                 assert_eq!(
@@ -1211,7 +1199,7 @@ mod tests {
 
         payload[BLOCK * 5 + 3] ^= 0xff; // inside piece 1
         let p = &meta.layout.pieces[1];
-        let start = p.file_offset as usize;
+        let start = file_offset(&meta, 1);
         let got = piece_merkle_root(&payload[start..start + p.real_len as usize], p.pad_blocks);
         assert_ne!(got, p.hash, "a flipped bit still verified");
 
@@ -1240,9 +1228,9 @@ mod tests {
         std::fs::write(sub.join("b.bin"), &b).unwrap();
 
         let built = build(&CreateInput {
-            source: &sub,
-            trackers: &[],
-            comment: "",
+            source: sub.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "test".into(),
             private: false,
             piece_length: Some(pl),
@@ -1252,27 +1240,25 @@ mod tests {
         let meta = parse(&built).unwrap().unwrap();
         let _ = std::fs::remove_dir_all(&dir);
 
-        assert_eq!(meta.files.len(), 2);
+        assert_eq!(meta.info.files.len(), 2);
         let payloads = [&a, &b];
         // a: 5 blocks over a 4-block piece = 2 pieces. b: 3 blocks = 1 piece.
         assert_eq!(meta.layout.pieces.len(), 3);
         assert_eq!(meta.layout.pieces[0].file_index, 0);
         assert_eq!(meta.layout.pieces[1].file_index, 0);
         assert_eq!(meta.layout.pieces[2].file_index, 1);
-        assert_eq!(
-            meta.layout.pieces[2].file_offset, 0,
-            "the second file's first piece must start at its own offset 0"
-        );
 
-        for p in &meta.layout.pieces {
+        // Each piece hashed from its own file's offset - so the second file's
+        // first piece verifies only if it starts at that file's offset 0.
+        for (i, p) in meta.layout.pieces.iter().enumerate() {
             let data = payloads[p.file_index];
-            let start = p.file_offset as usize;
+            let start = file_offset(&meta, i);
             assert_eq!(
                 piece_merkle_root(&data[start..start + p.real_len as usize], p.pad_blocks),
                 p.hash,
                 "file {} piece at {} did not verify",
                 p.file_index,
-                p.file_offset
+                start
             );
         }
     }
@@ -1283,19 +1269,19 @@ mod tests {
     fn hybrid_is_flagged_and_v1_is_not_parsed() {
         let payload: Vec<u8> = (0..(5 * BLOCK)).map(|i| i as u8).collect();
         let hybrid = round_trip("hybrid", &payload, 4 * BLOCK as u32, TorrentVersion::Hybrid);
-        assert!(hybrid.has_v1, "hybrid did not report a v1 half");
+        assert!(hybrid.info.has_v1, "hybrid did not report a v1 half");
 
         let v2 = round_trip("v2only", &payload, 4 * BLOCK as u32, TorrentVersion::V2);
-        assert!(!v2.has_v1, "v2-only reported a v1 half");
+        assert!(!v2.info.has_v1, "v2-only reported a v1 half");
 
         // A plain v1 torrent is not this module's business.
         let dir = scratch_dir("v2-v1");
         let f = dir.join("payload.bin");
         std::fs::write(&f, &payload).unwrap();
         let built = build(&CreateInput {
-            source: &f,
-            trackers: &[],
-            comment: "",
+            source: f.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "test".into(),
             private: false,
             piece_length: Some(4 * BLOCK as u32),
@@ -1315,8 +1301,8 @@ mod tests {
     fn truncated_info_hash_is_the_first_20_bytes() {
         let payload: Vec<u8> = (0..(2 * BLOCK)).map(|i| i as u8).collect();
         let meta = round_trip("trunc", &payload, 4 * BLOCK as u32, TorrentVersion::V2);
-        assert_eq!(meta.truncated_info_hash()[..], meta.info_hash_v2[..20]);
-        assert_eq!(meta.info_hash_v2, sha256(&meta.info_bytes));
+        assert_eq!(meta.info.truncated_info_hash()[..], meta.info.info_hash_v2[..20]);
+        assert_eq!(meta.info.info_hash_v2, sha256(&meta.info.info_bytes));
     }
 
     /// Tampering with `piece layers` must be caught. It travels outside the
@@ -1330,9 +1316,9 @@ mod tests {
         let file = dir.join("payload.bin");
         std::fs::write(&file, &payload).unwrap();
         let built = build(&CreateInput {
-            source: &file,
-            trackers: &[],
-            comment: "",
+            source: file.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "test".into(),
             private: false,
             piece_length: Some(pl),
@@ -1385,9 +1371,9 @@ mod tests {
         }
 
         let built = build(&CreateInput {
-            source: &sub,
-            trackers: &[],
-            comment: "",
+            source: sub.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "test".into(),
             private: false,
             piece_length: Some(pl),
@@ -1458,7 +1444,7 @@ mod tests {
         assert_eq!(meta.layout.pieces.len(), 2);
 
         for (idx, piece) in meta.layout.pieces.iter().enumerate() {
-            let start = piece.file_offset as usize;
+            let start = file_offset(&meta, idx);
             let real = &payload[start..start + piece.real_len as usize];
 
             // The engine hands over a full piece: real bytes then padding.
@@ -1567,7 +1553,7 @@ mod tests {
         // break naive folding.
         let payload: Vec<u8> = (0..(33 * BLOCK)).map(|i| (i * 19) as u8).collect();
         let meta = round_trip("serve", &payload, pl, TorrentVersion::V2);
-        let root = meta.files[0].pieces_root.unwrap();
+        let root = meta.info.files[0].pieces_root.unwrap();
         let tree = full_tree(&payload);
 
         let provider = V2Hashes::new(&meta);
@@ -1607,7 +1593,7 @@ mod tests {
         let pl = BLOCK as u32; // one block per piece: many piece-layer nodes
         let payload: Vec<u8> = (0..(600 * BLOCK)).map(|i| (i * 7) as u8).collect();
         let meta = round_trip("serve-multi", &payload, pl, TorrentVersion::V2);
-        let root = meta.files[0].pieces_root.unwrap();
+        let root = meta.info.files[0].pieces_root.unwrap();
         let provider = V2Hashes::new(&meta);
 
         let plans = plan_piece_layer_requests(root, payload.len() as u64, pl);
@@ -1639,7 +1625,7 @@ mod tests {
         let pl = 4 * BLOCK as u32;
         let payload: Vec<u8> = (0..(33 * BLOCK)).map(|i| (i * 19) as u8).collect();
         let meta = round_trip("reject", &payload, pl, TorrentVersion::V2);
-        let root = meta.files[0].pieces_root.unwrap();
+        let root = meta.info.files[0].pieces_root.unwrap();
         let provider = V2Hashes::new(&meta);
 
         let good = librqbit_peer_protocol::HashRequest {
@@ -1711,7 +1697,7 @@ mod tests {
         // piece is short - both of the cases that break naive folding.
         let payload: Vec<u8> = (0..(33 * BLOCK)).map(|i| (i * 19) as u8).collect();
         let meta = round_trip("hashreq", &payload, pl, TorrentVersion::V2);
-        let root = meta.files[0].pieces_root.unwrap();
+        let root = meta.info.files[0].pieces_root.unwrap();
         let tree = full_tree(&payload);
         assert_eq!(*tree.last().unwrap(), vec![root], "test tree disagrees");
 
@@ -1804,9 +1790,9 @@ mod tests {
         std::fs::write(sub.join("small.bin"), &small).unwrap();
 
         let built = build(&CreateInput {
-            source: &sub,
-            trackers: &[],
-            comment: "",
+            source: sub.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "test".into(),
             private: false,
             piece_length: Some(pl),
@@ -1816,8 +1802,8 @@ mod tests {
 
         // All a magnet gives us: the info dict (over BEP 9) and the hash.
         let full = parse(&built).unwrap().unwrap();
-        let info_bytes = full.info_bytes.clone();
-        let info_hash = librqbit::Id20::new(full.truncated_info_hash());
+        let info_bytes = full.info.info_bytes.clone();
+        let info_hash = librqbit::Id20::new(full.info.truncated_info_hash());
 
         let magnet = V2Magnet::default();
 
@@ -1833,7 +1819,7 @@ mod tests {
         let requests = magnet.hash_requests(&info_bytes).unwrap();
         assert!(!requests.is_empty(), "no piece layers were requested");
         // Only the big file needs a layer; the small one fits in a piece.
-        let big_root = full.files.iter().find(|f| f.path() == "big.bin").unwrap();
+        let big_root = full.info.files.iter().find(|f| f.path() == "big.bin").unwrap();
         assert!(
             requests.iter().all(|r| r.pieces_root == big_root.pieces_root.unwrap()),
             "a layer was requested for a file that does not need one"
@@ -1873,7 +1859,7 @@ mod tests {
         let payloads = [&big, &small];
         for (idx, piece) in full.layout.pieces.iter().enumerate() {
             let data = payloads[piece.file_index];
-            let start = piece.file_offset as usize;
+            let start = file_offset(&full, idx);
             let real = &data[start..start + piece.real_len as usize];
             let mut h = magnet.hasher(idx as u32).expect("no hasher for a real piece");
             h.update(real);
@@ -1895,7 +1881,7 @@ mod tests {
         let meta = round_trip("magnetforge", &payload, pl, TorrentVersion::V2);
 
         let magnet = V2Magnet::default();
-        let requests = magnet.hash_requests(&meta.info_bytes).unwrap();
+        let requests = magnet.hash_requests(&meta.info.info_bytes).unwrap();
         assert!(!requests.is_empty());
 
         let tree = full_tree(&payload);
@@ -1932,9 +1918,9 @@ mod tests {
         std::fs::write(&file, &payload).unwrap();
 
         let built = build(&CreateInput {
-            source: &file,
-            trackers: &[],
-            comment: "",
+            source: file.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "test".into(),
             private: false,
             piece_length: Some(4 * BLOCK as u32),
@@ -2027,9 +2013,9 @@ mod tests {
         std::fs::write(src.join("sub").join("b.bin"), &b).unwrap();
 
         let built = build(&CreateInput {
-            source: &src,
-            trackers: &[],
-            comment: "",
+            source: src.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "test".into(),
             private: false,
             piece_length: Some(4 * BLOCK as u32),

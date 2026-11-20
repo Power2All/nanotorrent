@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Svenska (Sverige) - Partner Center: Swedish (Sweden) (sv-SE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent är en Rust-portning av PicoTorrent av Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.6
+Version 0.4.7
 
-- Korrigeringar: mängden uppladdad data för varje torrent sparas nu när NanoTorrent stängs. Uppladdning som ännu inte sparats gick förlorad vid varje avslut, så en torrent kunde visa mycket mindre, eller noll, efter en omstart.
-- Korrigeringar: noder som ansluter till NanoTorrent utan kryptering godtas igen. Alla avvisades, vilket höll tillbaka seedningen.
-- Under huven: biblioteken som NanoTorrent bygger på har uppdaterats med sina senaste rättelser.
+- Nytt: i dialogrutan ”Lägg till torrent(er)” har varje mapp en egen kryssruta som markerar eller avmarkerar allt i den, även undermappar, och knapparna ”Alla” och ”Ingen” gör samma sak för hela torrenten. En mapp där bara några av filerna är markerade visar en ruta med ett streck.
+- Nytt: ett valfritt qBittorrent-kompatibelt webb-API, så att Sonarr, Radarr och andra verktyg gjorda för qBittorrent kan styra NanoTorrent. Slå på det i ”Inställningar”, under ”Webbgränssnitt”.
+- Korrigeringar: kolumnerna ”Uppladdare” och ”Jämlikar” visar nu svärmens storlek inom parentes, så som trackerna rapporterar den, ordningen som ställts in med filprioriteter behålls när en torrent pausas och startas igen, och att öppna ”Inställningar” en andra gång medan fönstret redan är öppet slänger inte längre osparade ändringar.
+- Korrigeringar: byte av språk ritar nu om alla öppna dialogrutor, och en IP-filterfil vars sökväg innehåller ett mellanslag, # eller % läses nu in.
+- Säkerhet: webbgränssnittet använder ett uppdaterat HTTP-bibliotek, som rättar hur det läser en felformad begäran.
+- Borttaget: kommandoradsalternativet --webui-set. --set web-bind, web-port, web-username och de andra web-*-inställningarna gör samma sak.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Suomi (Suomi) - Partner Center: Finnish (Finland) (fi-FI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent on Rust-käännös Viktor Elofssonin PicoTorrentista.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versio 0.4.6
+Versio 0.4.7
 
-- Korjaukset: kunkin torrentin lähetetyn datan määrä säilyy nyt, kun NanoTorrent suljetaan. Vielä tallentamattomat lähetykset menetettiin jokaisella sulkemiskerralla, joten torrent saattoi uudelleenkäynnistyksen jälkeen näyttää paljon vähemmän tai ei mitään.
-- Korjaukset: vertaiset, jotka yhdistävät NanoTorrentiin ilman salausta, hyväksytään taas. Kaikki ne torjuttiin, mikä hidasti jakamista.
-- Konepellin alla: kirjastot, joiden varaan NanoTorrent on rakennettu, on päivitetty uusimpine korjauksineen.
+- Uutta: lisäysikkunassa jokaisella kansiolla on oma valintaruutu, joka valitsee kaiken kansion sisällön alikansioineen tai poistaa valinnan, ja Kaikki- ja Ei mitään -painikkeet tekevät saman koko torrentille. Kansio, jonka tiedostoista vain osa on valittu, näyttää ruudun, jossa on viiva.
+- Uutta: valinnainen qBittorrent-yhteensopiva verkko-API, jonka avulla Sonarr, Radarr ja muut qBittorrentille tehdyt työkalut voivat ohjata NanoTorrentia. Ota se käyttöön Lisäasetusten kohdassa Verkkokäyttöliittymä.
+- Korjaukset: Jakajat- ja Lataajat-sarakkeet näyttävät nyt sulkeissa parven koon seurantapalvelinten ilmoittamana, tiedostojen prioriteeteilla asetettu järjestys säilyy, kun torrent keskeytetään ja käynnistetään uudelleen, ja Lisäasetusten avaaminen toiseen kertaan niiden ollessa jo auki ei enää hävitä tallentamattomia muutoksia.
+- Korjaukset: kielen vaihtaminen piirtää nyt kaikki avoimet ikkunat uudelleen, ja IP-suodatintiedosto, jonka polussa on välilyönti, # tai %, latautuu nyt.
+- Tietoturva: verkkokäyttöliittymä käyttää päivitettyä HTTP-kirjastoa, joka korjaa virheellisen pyynnön lukemisen.
+- Poistettu: komentorivivalitsin --webui-set. Saman tekevät --set web-bind, web-port, web-username ja muut web-*-asetukset.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

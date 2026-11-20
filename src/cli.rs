@@ -84,7 +84,9 @@ const TLS_MODES: &[&str] = &["self-signed", "custom", "off"];
 /// What happens to a torrent that has met its share limit. Pause is first
 /// because it is the default, and the only one that destroys nothing.
 const SHARE_ACTIONS: &[&str] = &["pause", "remove", "remove_with_data"];
-/// Index order is the stored value - see `ConnectionProxyType::from_i64`.
+/// Index order is the stored value - see `core::http::proxy_url`. Reordering
+/// this would silently repoint every existing configuration at another
+/// protocol.
 const PROXY_TYPES: &[&str] = &[
     "none",
     "socks4",
@@ -196,8 +198,6 @@ pub const SETTINGS: &[Setting] = &[
     Setting { name: "proxy-trackers", key: "libtorrent.proxy_trackers", section: "proxy", kind: Kind::Bool },
 
     // --- Web interface ---------------------------------------------------
-    // The first six delegate, so `--set web-port` and `--webui-set port` are
-    // the same code and cannot validate differently.
     Setting { name: "web-enabled", key: "webui.enabled", section: "web_interface", kind: Kind::Bool },
     Setting { name: "web-bind", key: "webui.bind_address", section: "web_interface", kind: Kind::Web("bind_address") },
     Setting { name: "web-port", key: "webui.port", section: "web_interface", kind: Kind::Int { lo: 1, hi: 65535, unit: "" } },
@@ -205,6 +205,7 @@ pub const SETTINGS: &[Setting] = &[
     Setting { name: "web-tls-mode", key: "webui.tls_mode", section: "web_interface", kind: Kind::Choice(TLS_MODES) },
     Setting { name: "web-cert", key: "webui.tls_cert_path", section: "web_interface", kind: Kind::File },
     Setting { name: "web-key", key: "webui.tls_key_path", section: "web_interface", kind: Kind::File },
+    Setting { name: "web-qbittorrent-api", key: "webui.qbittorrent_api", section: "web_interface", kind: Kind::Bool },
     Setting { name: "web-auth-max-failures", key: "webui.auth_max_failures", section: "web_interface", kind: Kind::Int { lo: 0, hi: 1000, unit: "attempts" } },
     Setting { name: "web-auth-window", key: "webui.auth_window", section: "web_interface", kind: Kind::Int { lo: 1, hi: 86400, unit: "seconds" } },
     Setting { name: "web-auth-block", key: "webui.auth_block", section: "web_interface", kind: Kind::Int { lo: 1, hi: 604800, unit: "seconds" } },
@@ -666,25 +667,6 @@ mod tests {
                 "{} has the wrong key/kind pairing",
                 s.name
             );
-        }
-    }
-
-    #[test]
-    fn the_proxy_names_are_in_the_stored_order() {
-        // The stored value is the index, so reordering PROXY_TYPES would
-        // silently repoint every existing configuration at another protocol.
-        use crate::core::configuration::ConnectionProxyType as P;
-        for (i, _) in PROXY_TYPES.iter().enumerate() {
-            let expected = match i {
-                0 => P::None,
-                1 => P::Socks4,
-                2 => P::Socks5,
-                3 => P::Socks5Password,
-                4 => P::Http,
-                5 => P::HttpPassword,
-                _ => unreachable!(),
-            };
-            assert_eq!(P::from_i64(i as i64), expected);
         }
     }
 }

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Bahasa Melayu (Malaysia) - Partner Center: Malay (Malaysia) (ms-MY)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent ialah versi Rust bagi PicoTorrent oleh Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.6
+Versi 0.4.7
 
-- Pembaikan: jumlah yang dimuat naik bagi setiap torrent kini dikekalkan apabila NanoTorrent ditutup. Muat naik yang belum disimpan hilang setiap kali keluar, jadi torrent boleh menunjukkan jauh lebih sedikit, atau tiada langsung, selepas dimulakan semula.
-- Pembaikan: rakan yang menyambung ke NanoTorrent tanpa penyulitan kini diterima semula. Kesemuanya telah ditolak sebelum ini, sekali gus menghambat penyemaian.
-- Di sebalik tabir: pustaka yang menjadi asas NanoTorrent telah dikemas kini dengan pembetulan terkininya.
+- Baharu: dalam dialog Tambah, setiap folder mempunyai kotak semak sendiri yang menanda atau menyahtanda semua kandungannya, termasuk subfolder, dan butang Semua dan Tiada melakukan perkara yang sama untuk seluruh torrent. Folder yang hanya sebahagian failnya ditanda menunjukkan kotak dengan sengkang.
+- Baharu: API web pilihan yang serasi dengan qBittorrent, supaya Sonarr, Radarr dan alat lain yang dibuat untuk qBittorrent boleh mengawal NanoTorrent. Hidupkannya dalam Keutamaan, di bawah Antara muka web.
+- Pembaikan: lajur Penyemai dan Rakan kini menunjukkan saiz kawanan dalam kurungan, seperti yang dilaporkan oleh penjejak, susunan yang ditetapkan dengan keutamaan fail dikekalkan apabila torrent dijeda dan dimulakan semula, dan membuka Keutamaan kali kedua semasa ia masih terbuka tidak lagi membuang perubahan yang belum disimpan.
+- Pembaikan: menukar bahasa kini melukis semula setiap dialog yang terbuka, dan fail penapis IP yang laluannya mengandungi ruang, # atau % kini dapat dimuatkan.
+- Keselamatan: antara muka web menggunakan pustaka HTTP yang dikemas kini, yang membetulkan cara ia membaca permintaan yang cacat.
+- Dibuang: pilihan baris perintah --webui-set. --set web-bind, web-port, web-username dan tetapan web-* yang lain melakukan perkara yang sama.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

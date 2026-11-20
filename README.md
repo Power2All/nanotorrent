@@ -127,7 +127,7 @@ Torrents download and seed as they would with the window open, from the same
 profile, and the web interface is the way in - turn it on first with
 `--set-web-password` and `--webui on`, or the run says that nothing can reach
 it. Settings can still be changed from the command line
-(`--set`, `--webui-set`); like any change made that way, they apply at the next
+(`--set`, including the `web-*` ones); like any change made that way, they apply at the next
 start. The queue limits (active downloads, seeds and torrents) apply as they
 do with the window. Plugins run too; their windows appear in the web interface
 only.
@@ -483,9 +483,10 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   where there is no dialog at all. Values are validated and refused rather than
   clamped silently, and the names are the CLI's own: nothing there exposes the
   `libtorrent.` prefix half the stored keys still carry from PicoTorrent. The
-  web-specific `--webui`, `--set-web-password`, `--webui-status` and
-  `--webui-set` remain, sharing one validation path with `--set`, as does
-  `--plugins on|off`. **Help ▸
+  web-specific `--webui`, `--set-web-password` and `--webui-status` remain,
+  as does `--plugins on|off`; every other web setting is a `--set web-*` name
+  (`web-bind`, `web-port`, `web-username`, `web-tls-mode`, `web-cert`,
+  `web-key`). **Help ▸
   Command line** shows the same text in a window for when there is no terminal
   at hand.
 
@@ -654,6 +655,100 @@ fails with instructions if a re-vendor dropped one. Re-vendor with
   [docs/PLUGINS.md](docs/PLUGINS.md) — the rule being that anything the web
   interface can do with its password, a plugin can do with a granted permission.
 
+- **qBittorrent-compatible API** (optional, off by default) — a second API,
+  under `/api/v2`, shaped like qBittorrent 5.0's Web API (version 2.11.2), so
+  tools written for qBittorrent can drive NanoTorrent without knowing it is
+  not one: Sonarr, Radarr, Lidarr, Readarr, Prowlarr, autobrr, and qBittorrent
+  phone remotes. NanoTorrent's own `/api` routes are not changed by it — the
+  two sit side by side, and the browser interface keeps using its own.
+
+  **Switching it on.** It rides on the web interface, so that has to be on
+  first, with a password. Then any one of:
+
+  - Preferences ▸ Web interface ▸ *qBittorrent-compatible API*, then OK;
+  - `nanotorrent --set web-qbittorrent-api true`, which takes effect the next
+    time the web interface starts;
+  - the settings drawer in the browser interface (also from the next start,
+    like every `web-*` setting changed there).
+
+  **Connecting Sonarr or Radarr.** Add a download client of type
+  *qBittorrent* and give it the web interface's address, port, username and
+  password. Tick *Use SSL* unless TLS is off (`web-tls-mode off` is only
+  allowed on 127.0.0.1). With the default self-signed certificate, set
+  Sonarr's *Settings ▸ General ▸ Certificate Validation* to *Disabled for
+  Local Addresses* (or give NanoTorrent a real certificate with
+  `web-tls-mode custom`). The *Category* you give it becomes a NanoTorrent
+  label; it is created on first use.
+
+  **Logging in** works as in qBittorrent: `POST /api/v2/auth/login` with a
+  form of `username` and `password` answers `Ok.` and sets an `SID` cookie,
+  or answers `Fails.`; a request without a session gets `403`, which these
+  clients read as "log in again". It is the web interface's own account and
+  password, under the same brute-force lockout (a locked-out address gets
+  qBittorrent's `403` *banned* reply). Basic auth is accepted too. Sessions
+  last an hour from their last use and do not survive the web interface
+  restarting. The cookie opens `/api/v2` only, never NanoTorrent's own
+  `/api`.
+
+  ```sh
+  curl -c jar -d 'username=nanotorrent&password=...' http://127.0.0.1:8443/api/v2/auth/login
+  curl -b jar http://127.0.0.1:8443/api/v2/torrents/info?filter=downloading
+  ```
+
+  **What answers:**
+
+  | Scope | Actions |
+  | --- | --- |
+  | `auth` | `login`, `logout` |
+  | `app` | `version`, `webapiVersion`, `buildInfo`, `preferences`, `setPreferences`, `defaultSavePath` |
+  | `transfer` | `info`, `speedLimitsMode`, `toggleSpeedLimitsMode`, `setSpeedLimitsMode`, `downloadLimit`, `uploadLimit` |
+  | `torrents` | `info` (with `filter`, `category`, `tag`, `sort`, `reverse`, `limit`, `offset`, `hashes`), `properties`, `files`, `trackers`, `add`, `delete`, `stop`/`start` (and the pre-5.0 `pause`/`resume`), `setForceStart`, `recheck`, `reannounce`, `setLocation`, `topPrio`, `bottomPrio`, `increasePrio`, `decreasePrio`, `setShareLimits`, `filePrio`, `categories`, `createCategory`, `editCategory`, `removeCategories`, `setCategory`, `tags`, `createTags`, `deleteTags`, `addTags`, `removeTags`, `addTrackers`, `editTracker`, `removeTrackers` |
+  | `sync` | `maindata` |
+
+  Reads take GET or POST; anything that changes something takes POST only
+  (`405` otherwise), which keeps it behind the same cross-site check as the
+  rest of the interface. Anything else is `404`.
+
+  **How NanoTorrent's terms map:**
+
+  - **Categories are labels.** A category's save path is the label's save
+    path, and adding with a category that does not exist creates it.
+  - **Tags are tags** — the same ones Preferences and the browser show.
+  - **States** use qBittorrent 5.0's names: `downloading`/`stalledDL`,
+    `uploading`/`stalledUP`, `stoppedDL`/`stoppedUP`, `checkingDL`/
+    `checkingUP`, `metaDL`, `error`. The `queued*` and `forced*` states are
+    never reported.
+  - **Paths:** `save_path` is the folder a torrent is in and `content_path`
+    is the torrent's own folder (or its one file), as qBittorrent reports
+    them. File names in `torrents/files` are relative to `save_path`.
+  - **File priorities:** qBittorrent's 0 / 1 / 6 / 7 are NanoTorrent's
+    skip / normal / high / maximum.
+  - **Share limits:** `-2` follows the global limit and `-1` means none, both
+    ways.
+  - **`setLocation` moves the data**, as in qBittorrent.
+
+  **What it does not do:**
+
+  - **No fetching URLs.** `torrents/add` takes magnet links from `urls` and
+    `.torrent` files as uploads; an `http(s)` URL is logged and skipped. The
+    server fetching any address it is handed is a way to make it reach hosts
+    only it can see. Sonarr and Radarr upload the file themselves, so this
+    does not affect them.
+  - **No changing preferences.** `app/preferences` reports the settings that
+    have a counterpart; `app/setPreferences` answers `200` and changes
+    nothing. Settings are changed in Preferences, the browser's drawer or
+    with `--set`, which validate them.
+  - **`sync/maindata` is always a full update.** Every client has to handle
+    one, since it is what the first request gets.
+  - **Not offered:** per-torrent speed limits, renaming torrents or files,
+    sequential download, super-seeding, RSS, search, the log, and the peer
+    list (`sync/torrentPeers`). A field qBittorrent has and NanoTorrent does
+    not is still sent, with the value qBittorrent itself uses for "unknown" or
+    "off" (`-1`, `0`, `""`), so a client reading it does not trip on a
+    missing key.
+  - `app/version` says `v5.0.2`, because some clients check it.
+    `app/buildInfo` says what is really answering.
+
 - **Update check** — asks GitHub for this repo's latest release
   (`/releases/latest`, so never a draft or prerelease) and opens a window when
   its tag beats the running version, offering the release page or **Ignore this
@@ -786,6 +881,51 @@ one. Collected so nobody has to file them twice.
   yet.
 
 ## History
+
+**v0.4.7** gives the Add dialog's folders a checkbox (issue #31), adds an
+optional qBittorrent-compatible API, fixes five quiet bugs and removes about
+1,000 lines found by an over-engineering audit.
+
+- The qBittorrent API (`src/webui/qbt.rs`, described under *What's included*)
+  is one module mounted at `/api/v2` ahead of the `/api` scope, and only when
+  `webui.qbittorrent_api` is on. Its session table doubles as the switch:
+  `require_auth` looks for it in the app data, and without it there is no
+  cookie door and no unauthenticated login path at all. One handler takes
+  `{scope}/{action}` and runs the whole call on the blocking pool; GET reaches
+  only the reads. Bodies are read whole (8 MB cap) and parsed as
+  form-urlencoded or multipart by hand - the multipart case is one shape,
+  already in memory, which did not justify `actix-multipart`.
+- File rows used their place in the list as the file's index. The list leaves
+  padding files out unless they are shown, and priorities and "open file" use
+  the torrent's own numbering, so on any torrent with padding files - every
+  hybrid - a priority set from the Files tab, the browser or a plugin could
+  land on the wrong file. `FileEntry` now carries the torrent index.
+
+- Folder checkboxes set every file under that folder, at any depth; All and
+  None do the same for the whole torrent. Both go through one callback,
+  `include-files(folder, on)`, with an empty folder meaning the whole torrent.
+  A folder's state - ticked, unticked, or partly ticked with a dash - is
+  worked out in `AddBatch::redraw` from the unticked set, which stays the only
+  state, so nothing new can disagree with what Add reads. Slint's CheckBox has
+  no third state, so the dash is drawn over it.
+- `seeds_total` was a copy of `seeds_current`, and `peers_total` counted every
+  address ever seen. Both now take the highest seeders/leechers figure any
+  tracker reported (`tracker_stats_snapshot`), falling back to the connected
+  count.
+- File ordering lives in a torrent's running state, which every start
+  recreates, so it was lost on pause and resume. The 1 s scan task now
+  re-applies stored priorities whenever a torrent goes live (`LiveStarts`).
+- Preferences reloaded its fields when opened again while still open, which a
+  quick second click does; `apply_language` skipped three dialogs because the
+  dialog slots were listed twice and had drifted (now one `for_each_dialog!`).
+- actix-http 3.22.0 for RUSTSEC-2026-0553. `--webui-set` and four web API
+  routes nothing called are gone; `--set web-*` covers every web setting.
+- The audit's cuts: one forget-and-re-add helper in place of four copies, one
+  `ConfirmDialog` for the database and portable prompts, `FileEntryRow` for
+  the Add dialog too, one column table, serde on the session's peer and
+  tracker rows instead of copies for the web API, `percent-encoding` and
+  `quick_xml::escape` in place of hand-written encoders, and the pass-through
+  wrappers inlined.
 
 **v0.4.6** fixes three things that were broken without saying so: opening a
 file from the macOS Finder, upload totals across a restart, and unencrypted

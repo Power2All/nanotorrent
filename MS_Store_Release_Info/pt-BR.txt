@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Português (Brasil) - Partner Center: Portuguese (Brazil) (pt-BR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ O NanoTorrent é uma adaptação em Rust do PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versão 0.4.6
+Versão 0.4.7
 
-- Correções: o total enviado de cada torrent agora é mantido quando o NanoTorrent fecha. Envios ainda não salvos se perdiam a cada saída, então um torrent podia mostrar bem menos, ou nada, depois de reiniciar.
-- Correções: pares que se conectam ao NanoTorrent sem criptografia voltam a ser aceitos. Todos estavam sendo recusados, o que atrapalhava a semeadura.
-- Por dentro: as bibliotecas em que o NanoTorrent se baseia foram atualizadas, com as correções mais recentes.
+- Novidade: na janela Adicionar, cada pasta tem sua própria caixa de seleção, que marca ou desmarca tudo o que há dentro dela, incluindo subpastas, e os botões Todos e Nenhum fazem o mesmo para o torrent inteiro. Uma pasta com apenas alguns arquivos marcados mostra uma caixa com um traço.
+- Novidade: uma API web opcional compatível com o qBittorrent, para que Sonarr, Radarr e outras ferramentas feitas para o qBittorrent possam controlar o NanoTorrent. Ative-a em Preferências, na seção Interface web.
+- Correções: as colunas Sementes e Pares agora mostram entre parênteses o tamanho do enxame, conforme informado pelos rastreadores, a ordem definida com as prioridades de arquivo é mantida quando um torrent é pausado e iniciado de novo, e abrir as Preferências uma segunda vez enquanto já estão abertas não descarta mais alterações não salvas.
+- Correções: mudar o idioma agora redesenha todas as janelas abertas, e um arquivo de filtro de IP cujo caminho contém um espaço, # ou % agora é carregado.
+- Segurança: a interface web usa uma biblioteca HTTP atualizada, que corrige a forma como ela lê uma requisição malformada.
+- Removido: a opção de linha de comando --webui-set. --set web-bind, web-port, web-username e as demais configurações web-* fazem o mesmo.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

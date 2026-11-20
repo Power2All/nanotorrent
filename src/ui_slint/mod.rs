@@ -111,6 +111,10 @@ fn select_default_renderer() {
     }
 }
 
+/// A finished create-torrent run: the .torrent's bytes or why it failed, the
+/// source it hashed, and whether to add it to the session.
+type CreateRun = (Result<Vec<u8>, String>, std::path::PathBuf, bool);
+
 /// Everything the callbacks need, kept in one `Rc` so each closure clones a
 /// single handle rather than five.
 struct Ui {
@@ -179,12 +183,12 @@ struct Ui {
     update_slot: crate::updatechecker::Slot,
     create_dialog: RefCell<Option<CreateTorrentDialog>>,
     /// Where a background create-torrent run leaves its result.
-    create_slot: Arc<std::sync::Mutex<Option<crate::bittorrent::session::CreateTorrentOutcome>>>,
+    create_slot: Arc<std::sync::Mutex<Option<CreateRun>>>,
     env: Arc<crate::core::environment::Environment>,
     torrent_dialog: RefCell<Option<AddTorrentDialog>>,
     close_prompt: RefCell<Option<ClosePromptDialog>>,
     /// The one-time "shall I encrypt the database?" question.
-    db_prompt: RefCell<Option<DbPromptDialog>>,
+    db_prompt: RefCell<Option<ConfirmDialog>>,
     remove_dialog: RefCell<Option<RemoveDialog>>,
     pico_dialog: RefCell<Option<PicoImportDialog>>,
     migrate_dialog: RefCell<Option<MigrateProgressDialog>>,
@@ -774,13 +778,34 @@ fn caption_width(text: &str) -> f32 {
         .sum()
 }
 
-/// The details tabs' columns: caption key and designed width, in the order
-/// they are drawn. The tab order matches `RESIZABLE_LISTS[1..]`.
+/// Every sizeable list's columns: caption key and designed width, in the order
+/// they are drawn. Indexed like `RESIZABLE_LISTS`.
 ///
-/// Widths that used to be `horizontal-stretch: 1` get a real number here -
-/// a column that can be dragged has to be a number the header and the rows
-/// both read, and "whatever is left" is not one.
-const DETAIL_COLUMNS: [&[(&str, f32)]; 3] = [
+/// "#", "DL" and "UL" are not keys but the captions themselves: they are the
+/// same symbols in every locale the original ships.
+///
+/// Detail widths that used to be `horizontal-stretch: 1` get a real number
+/// here - a column that can be dragged has to be a number the header and the
+/// rows both read, and "whatever is left" is not one.
+const COLUMNS: [&[(&str, f32)]; 4] = [
+    &[
+        ("name", 260.0),
+        ("#", 44.0),
+        ("size", 90.0),
+        ("size_remaining", 120.0),
+        ("status", 110.0),
+        ("progress", 80.0),
+        ("eta", 70.0),
+        ("DL", 90.0),
+        ("UL", 90.0),
+        ("availability", 90.0),
+        ("ratio", 60.0),
+        ("seeds", 80.0),
+        ("peers", 80.0),
+        ("added_on", 130.0),
+        ("completed_on", 130.0),
+        ("label", 100.0),
+    ],
     &[
         ("name", 260.0),
         ("size", 110.0),
@@ -867,15 +892,20 @@ fn sized_columns(
     (widths, titles, total)
 }
 
-/// Push the torrent list's columns into `Cols`, and the details tabs' with them.
+/// Push every list's columns into `Cols` and `DCols`.
 fn apply_columns(window: &MainWindow, ui: &Rc<Ui>) {
-    let saved = ui.cfg.get_column_widths(RESIZABLE_LISTS[0]);
-    let (widths, titles, total) = columns(&ui.tr.borrow(), &saved);
-    apply_detail_columns(window, ui);
-    let cols = window.global::<Cols>();
-    cols.set_w(ModelRc::new(VecModel::from(widths)));
-    cols.set_titles(ModelRc::new(VecModel::from(titles)));
-    cols.set_total(total);
+    let d = window.global::<DCols>();
+    for (list, name) in RESIZABLE_LISTS.iter().enumerate() {
+        let (widths, titles, _) = columns(&ui.tr.borrow(), list, &ui.cfg.get_column_widths(name));
+        put_widths(window, list, &widths);
+        let titles = ModelRc::new(VecModel::from(titles));
+        match list {
+            0 => window.global::<Cols>().set_titles(titles),
+            1 => d.set_files_titles(titles),
+            2 => d.set_peers_titles(titles),
+            _ => d.set_trackers_titles(titles),
+        }
+    }
 }
 
 /// The strings each list is currently showing, one Vec per row.
@@ -1036,71 +1066,21 @@ fn fit_overview(window: &MainWindow) {
     window.set_details_split(split);
 }
 
-/// Push all three tabs' columns into the window.
-fn apply_detail_columns(window: &MainWindow, ui: &Rc<Ui>) {
-    let d = window.global::<DCols>();
-    let tr = ui.tr.borrow();
-    for (tab, (list, columns)) in RESIZABLE_LISTS[1..].iter().zip(DETAIL_COLUMNS).enumerate() {
-        let saved = ui.cfg.get_column_widths(list);
-        // 12px of cell padding. No sort arrow here - the detail lists do not sort.
-        let captions = columns.iter().map(|(key, base)| (ui_string(&tr, key), *base));
-        let (w, titles, total) = sized_columns(captions, 12.0, &saved);
-        let w = ModelRc::new(VecModel::from(w));
-        let titles = ModelRc::new(VecModel::from(titles));
-        match tab {
-            0 => {
-                d.set_files(w);
-                d.set_files_titles(titles);
-                d.set_files_total(total);
-            }
-            1 => {
-                d.set_peers(w);
-                d.set_peers_titles(titles);
-                d.set_peers_total(total);
-            }
-            _ => {
-                d.set_trackers(w);
-                d.set_trackers_titles(titles);
-                d.set_trackers_total(total);
-            }
-        }
-    }
-}
-
-/// The torrent list's column captions and widths.
+/// One list's column captions and widths.
 ///
 /// Each column is the wider of its designed width and what its caption needs,
 /// so switching language cannot clip a header. Returns the widths, the
 /// captions and their total.
-fn columns(tr: &Translator, saved: &std::collections::HashMap<i64, f32>)
+fn columns(tr: &Translator, list: usize, saved: &std::collections::HashMap<i64, f32>)
 -> (Vec<f32>, Vec<SharedString>, f32) {
-    // key, designed width. "#", "DL" and "UL" are not keys but the captions
-    // themselves: they are the same symbols in every locale the original ships.
-    const COLUMNS: [(&str, f32); 16] = [
-        ("name", 260.0),
-        ("#", 44.0),
-        ("size", 90.0),
-        ("size_remaining", 120.0),
-        ("status", 110.0),
-        ("progress", 80.0),
-        ("eta", 70.0),
-        ("DL", 90.0),
-        ("UL", 90.0),
-        ("availability", 90.0),
-        ("ratio", 60.0),
-        ("seeds", 80.0),
-        ("peers", 80.0),
-        ("added_on", 130.0),
-        ("completed_on", 130.0),
-        ("label", 100.0),
-    ];
-    let captions = COLUMNS.iter().map(|&(key, base)| {
+    let captions = COLUMNS[list].iter().map(|&(key, base)| {
         let caption = if matches!(key, "#" | "DL" | "UL") { key.into() } else { ui_string(tr, key) };
         (caption, base)
     });
-    // 12px of cell padding, plus room for the "  ^" sort arrow the caption
-    // grows by when the column is the active sort.
-    sized_columns(captions, 12.0 + 18.0, saved)
+    // 12px of cell padding. The torrent list adds room for the "  ^" sort
+    // arrow the caption grows by when the column is the active sort; the
+    // detail lists do not sort.
+    sized_columns(captions, if list == 0 { 12.0 + 18.0 } else { 12.0 }, saved)
 }
 
 /// Wire the translation lookup on a top-level component.
@@ -1261,26 +1241,33 @@ fn dialog_visible<T: slint::ComponentHandle>(
     false
 }
 
+/// Run `$body` once per dialog slot on `Ui`, with `$slot` bound to it.
+///
+/// A macro because every slot holds a different component type. The one list
+/// of them: a dialog missing from a hand-kept copy was never redrawn on a
+/// language change.
+macro_rules! for_each_dialog {
+    ($ui:ident, |$slot:ident| $body:expr) => {
+        for_each_dialog!(@ $ui, $slot, $body; magnet_dialog, prefs_dialog, about_dialog,
+            cli_help_dialog, update_dialog, create_dialog, torrent_dialog, close_prompt,
+            db_prompt, remove_dialog, pico_dialog, migrate_dialog)
+    };
+    (@ $ui:ident, $slot:ident, $body:expr; $($field:ident),*) => {
+        $({
+            let $slot = &$ui.$field;
+            $body;
+        })*
+    };
+}
+
 /// True while any dialog is up, which is when the main window is blocked.
 ///
 /// Every slot is checked rather than short-circuiting on the first hit: the
 /// ownership side effect above has to reach all of them.
 fn any_dialog_open(ui: &Rc<Ui>, owner: &MainWindow) -> bool {
-    let open = [
-        dialog_visible(&ui.magnet_dialog, owner),
-        dialog_visible(&ui.prefs_dialog, owner),
-        dialog_visible(&ui.about_dialog, owner),
-        dialog_visible(&ui.cli_help_dialog, owner),
-        dialog_visible(&ui.update_dialog, owner),
-        dialog_visible(&ui.create_dialog, owner),
-        dialog_visible(&ui.torrent_dialog, owner),
-        dialog_visible(&ui.close_prompt, owner),
-        dialog_visible(&ui.db_prompt, owner),
-        dialog_visible(&ui.remove_dialog, owner),
-        dialog_visible(&ui.pico_dialog, owner),
-        dialog_visible(&ui.migrate_dialog, owner),
-    ];
-    open.iter().any(|open| *open)
+    let mut open = false;
+    for_each_dialog!(ui, |slot| open |= dialog_visible(slot, owner));
+    open
 }
 
 /// What closing the main window means: quit, hide into the tray, or ask.
@@ -1329,17 +1316,6 @@ fn restore(window: &MainWindow) {
     modal::raise(window);
 }
 
-/// Defaults for a torrent added without a dialog: the session's own save path,
-/// started, no label.
-fn default_add_params() -> AddParams {
-    AddParams {
-        save_path: None,
-        start_torrent: true,
-        only_files: None,
-        label_id: None,
-    }
-}
-
 /// Handle `.torrent` paths and `magnet:` links from argv, or forwarded by a
 /// second instance.
 ///
@@ -1379,8 +1355,10 @@ fn add_magnets(ui: &Rc<Ui>, links: Vec<String>) {
 
     if ui.cfg.get_bool("skip_add_torrent_dialog") {
         for magnet in links {
-            ui.session
-                .add_torrent(AddTorrentSource::MagnetUri(magnet), default_add_params());
+            ui.session.add_torrent(
+                AddTorrentSource::MagnetUri(magnet),
+                AddParams { start_torrent: true, ..Default::default() },
+            );
         }
         return;
     }
@@ -1688,23 +1666,35 @@ fn refresh(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
     );
     window.set_selected_count(selected.len() as i32);
 
-    // Details follow the first selected row, matching the Win32 panel.
-    if let Some(first) = rows.iter().find(|r| selected.contains(&r.info_hash)) {
-        set_details(window, first, &ui.tr.borrow());
-        set_pieces(window, ui, &first.info_hash);
-
-        // A click has usually switched the panel already; this catches the
-        // cases that do not go through one, such as the selected torrent
-        // being replaced by a filter change.
-        if switch_details(window, ui, &first.info_hash) {
-            refresh_detail_tab(window, ui, &first.info_hash);
-        }
-    } else if selected.is_empty() {
-        clear_details(window, &ui.tr.borrow());
-        forget_details(window, ui);
+    // Details follow the first selected row, matching the Win32 panel. A
+    // selection the current filter hides leaves them as they are.
+    //
+    // A click has usually switched the panel already; this catches the cases
+    // that do not go through one, such as the selected torrent being replaced
+    // by a filter change. The tab itself is re-read only once it is settled.
+    let first = rows.iter().find(|r| selected.contains(&r.info_hash));
+    if (first.is_some() || selected.is_empty())
+        && show_selection_details(window, ui, first)
+        && let Some(first) = first
+    {
+        refresh_detail_tab(window, ui, &first.info_hash);
     }
 
     *ui.rows.borrow_mut() = rows;
+}
+
+/// Fill the details panel from `first`, the first selected torrent, or clear
+/// it when there is none. Returns what `switch_details` does: whether the panel
+/// was already on that torrent.
+fn show_selection_details(window: &MainWindow, ui: &Rc<Ui>, first: Option<&TorrentStatus>) -> bool {
+    let Some(first) = first else {
+        clear_details(window, &ui.tr.borrow());
+        forget_details(window, ui);
+        return false;
+    };
+    set_details(window, first, &ui.tr.borrow());
+    set_pieces(window, ui, &first.info_hash);
+    switch_details(window, ui, &first.info_hash)
 }
 
 /// Point the details panel at `hash`, and say whether it was already there.
@@ -2087,6 +2077,16 @@ fn prune<'a>(rows: Vec<TreeRow<'a>>, collapsed: &HashSet<String>) -> Vec<TreeRow
     out
 }
 
+/// Is this file somewhere under `folder` - a [`TreeRow`] path, `/`-joined -
+/// at any depth? An empty folder is the whole torrent.
+fn in_folder(path: &str, folder: &str) -> bool {
+    folder.is_empty()
+        || path
+            .replace('\\', "/")
+            .strip_prefix(folder)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
 /// Take `item` out of `set` if it is there, put it in if it is not.
 fn toggle<T: Eq + std::hash::Hash>(set: &mut HashSet<T>, item: T) {
     if !set.remove(&item) {
@@ -2143,14 +2143,17 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                         // priority are two views of one setting.
                         let level = if files[index].included {
                             stored
-                                .get(&index)
+                                .get(&files[index].index)
                                 .copied()
                                 .unwrap_or(session::PRIORITY_NORMAL)
                         } else {
                             session::PRIORITY_SKIP
                         };
                         FileEntryRow {
-                            index: index as i32,
+                            // The torrent's index, which the priority callback
+                            // stores by - `index` is the row's place in a list
+                            // that hidden padding files are missing from.
+                            index: files[index].index as i32,
                             depth: depth as i32,
                             name: name.into(),
                             size: utils::to_human_file_size(files[index].length as i64).into(),
@@ -2163,6 +2166,7 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                             guides: guides as i32,
                             last,
                             kind: file_kind(name) as i32,
+                            partial: false,
                         }
                     }
                     None => FileEntryRow {
@@ -2179,6 +2183,7 @@ fn refresh_detail_tab(window: &MainWindow, ui: &Rc<Ui>, hash: &str) {
                         guides: guides as i32,
                         last,
                         kind: 0,
+                        partial: false,
                     },
                 }
             })
@@ -2691,11 +2696,10 @@ fn wire_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>) {
         // Labels are read here rather than cached: Preferences can add one
         // while the window is open, and the menu is about to be shown.
         if let Some(window) = w.upgrade() {
-            let names = std::iter::once(u.tr.borrow().i18n("none"))
-                .chain(u.cfg.get_labels().into_iter().map(|l| l.name))
-                .map(SharedString::from)
-                .collect::<Vec<_>>();
-            window.set_ctx_label_names(ModelRc::new(VecModel::from(names)));
+            window.set_ctx_label_names(menu_model(
+                u.cfg.get_labels().into_iter().map(|l| l.name),
+                &u.tr.borrow().i18n("none"),
+            ));
 
             // Tags, and which of them the selection already carries. Ticked
             // only when EVERY selected torrent has it: a mixed selection reads
@@ -2765,19 +2769,11 @@ fn repaint_selection(window: &MainWindow, ui: &Rc<Ui>, model: &Rc<VecModel<Row>>
     }
     window.set_selected_count(selected.len() as i32);
 
-    if let Some(first) = ui
-        .rows
-        .borrow()
-        .iter()
-        .find(|r| selected.contains(&r.info_hash))
-    {
-        set_details(window, first, &ui.tr.borrow());
-        set_pieces(window, ui, &first.info_hash);
-        switch_details(window, ui, &first.info_hash);
-    } else {
-        clear_details(window, &ui.tr.borrow());
-        forget_details(window, ui);
-    }
+    show_selection_details(
+        window,
+        ui,
+        ui.rows.borrow().iter().find(|r| selected.contains(&r.info_hash)),
+    );
 
     // Ask for a frame explicitly. Mutating the model marks it dirty, but the
     // context-menu path then hands control to a NATIVE menu (muda ->
@@ -3121,19 +3117,17 @@ fn wire_actions(window: &MainWindow, ui: &Rc<Ui>) {
     let (w, u) = (window.as_weak(), ui.clone());
     window.on_sort(move |column| {
         let column = column.max(0) as usize;
-        let next = match *u.sort.borrow() {
+        let ascending = match *u.sort.borrow() {
             // Clicking the sorted column flips it; a third click would
             // conventionally clear the sort, but the Win32 list does not do
             // that either, so it just toggles.
-            Some((c, ascending)) if c == column => Some((column, !ascending)),
-            _ => Some((column, true)),
+            Some((c, ascending)) if c == column => !ascending,
+            _ => true,
         };
-        *u.sort.borrow_mut() = next;
+        *u.sort.borrow_mut() = Some((column, ascending));
 
-        if let Some(window) = w.upgrade()
-            && let Some((c, ascending)) = next
-        {
-            window.set_sort_column(c as i32);
+        if let Some(window) = w.upgrade() {
+            window.set_sort_column(column as i32);
             window.set_sort_ascending(ascending);
         }
     });
@@ -3310,7 +3304,7 @@ struct AddBatch {
     /// One file model per torrent, kept for the life of the dialog so ticking
     /// files in one, looking at another and coming back keeps the first one's
     /// choices.
-    file_models: Vec<Rc<VecModel<FileRow>>>,
+    file_models: Vec<Rc<VecModel<FileEntryRow>>>,
     queue: Rc<VecModel<QueueRow>>,
 }
 
@@ -3335,32 +3329,45 @@ impl AddBatch {
             t.files.iter().filter(|f| !f.padding).collect();
         let out = self.excluded[i].borrow();
         let folded = self.shut[i].borrow();
-        let rows: Vec<FileRow> = prune(file_tree(shown.iter().map(|f| f.path.as_str())), &folded)
+        // Every folder holding an unticked file, and every folder holding a
+        // ticked one, at any depth. In the first only: unticked. In the second
+        // only: ticked. In both: partly, drawn as a box with a dash - and
+        // ticking it takes the whole folder back.
+        let (mut off, mut on) = (HashSet::new(), HashSet::new());
+        for f in &shown {
+            let set = if out.contains(&f.index) { &mut off } else { &mut on };
+            let parts: Vec<&str> = f.path.split(['/', '\\']).collect();
+            for d in 1..parts.len() {
+                set.insert(parts[..d].join("/"));
+            }
+        }
+        // The details tab's row type; progress and priority stay at their
+        // defaults, which this dialog never draws.
+        let rows: Vec<FileEntryRow> = prune(file_tree(shown.iter().map(|f| f.path.as_str())), &folded)
             .into_iter()
             .map(|row| match row.index {
-                Some(at) => FileRow {
+                Some(at) => FileEntryRow {
                     index: shown[at].index as i32,
                     depth: row.depth as i32,
                     name: row.name.into(),
                     size: utils::to_human_file_size(shown[at].size as i64).into(),
                     included: !out.contains(&shown[at].index),
-                    path: SharedString::new(),
-                    expanded: false,
                     guides: row.guides as i32,
                     last: row.last,
                     kind: file_kind(row.name) as i32,
+                    ..Default::default()
                 },
-                None => FileRow {
+                None => FileEntryRow {
                     index: -1,
                     depth: row.depth as i32,
                     name: row.name.into(),
-                    size: SharedString::new(),
-                    included: true,
+                    included: !off.contains(&row.path),
+                    partial: off.contains(&row.path) && on.contains(&row.path),
                     expanded: !folded.contains(&row.path),
                     guides: row.guides as i32,
                     last: row.last,
-                    kind: 0,
                     path: row.path.into(),
+                    ..Default::default()
                 },
             })
             .collect();
@@ -3507,7 +3514,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
     if ui.cfg.get_bool("skip_add_torrent_dialog") {
         tracing::info!("adding {} torrent(s) without the dialog", entries.len());
         for entry in &entries {
-            entry.add(ui, default_add_params());
+            entry.add(ui, AddParams { start_torrent: true, ..Default::default() });
         }
         return;
     }
@@ -3611,6 +3618,34 @@ fn show_next_pending(ui: &Rc<Ui>) {
         });
     }
 
+    {
+        let (weak, b) = (dialog.as_weak(), batch.clone());
+        dialog.on_include_files(move |folder, on| {
+            let Some(d) = weak.upgrade() else { return };
+            let Ok(sel) = usize::try_from(d.get_selected_torrent()) else {
+                return;
+            };
+            {
+                let entries = b.entries.borrow();
+                let (Some(AddEntry { source: AddSource::Torrent(_, t), .. }), Some(out)) =
+                    (entries.get(sel), b.excluded.get(sel))
+                else {
+                    return;
+                };
+                let mut out = out.borrow_mut();
+                // Padding files never get a row, so they stay out of `excluded`.
+                for f in t.files.iter().filter(|f| !f.padding && in_folder(&f.path, &folder)) {
+                    if on {
+                        out.remove(&f.index);
+                    } else {
+                        out.insert(f.index);
+                    }
+                }
+            }
+            b.redraw(sel);
+        });
+    }
+
     dialog.on_browse(browse(&dialog, ui, "save_torrent_to", AddTorrentDialog::set_save_path));
 
     {
@@ -3658,7 +3693,7 @@ fn show_next_pending(ui: &Rc<Ui>) {
                         save_path: save_path.clone(),
                         start_torrent: start,
                         only_files,
-                        ..default_add_params()
+                        ..Default::default()
                     },
                 );
             }
@@ -3757,11 +3792,10 @@ fn apply_language(window: &MainWindow, ui: &Rc<Ui>) {
     // A dialog is dropped once closed, so the next open is already in the new
     // language; this is for the ones still on screen when the change lands,
     // and for the tray menu, which lives as long as the app does.
-    macro_rules! bump_open {
-        ($($slot:expr),* $(,)?) => {
-            $(if let Some(c) = $slot.borrow().as_ref() { bump_translations(c); })*
-        };
-    }
+    for_each_dialog!(ui, |slot| if let Some(c) = slot.borrow().as_ref() {
+        bump_translations(c);
+    });
+
     // The tray is not a ComponentHandle - it reaches its global directly.
     if let Some(tray) = ui.tray.borrow().as_ref() {
         let l = tray.global::<L>();
@@ -3769,23 +3803,11 @@ fn apply_language(window: &MainWindow, ui: &Rc<Ui>) {
     }
 
     // Plugin windows are held by their own module, keyed by plugin name, so
-    // they are not in the list below. Re-handing it the lookup bumps them.
+    // they are not in the dialog list. Re-handing it the lookup bumps them.
     pluginwindow::set_translator({
         let u = ui.clone();
         Rc::new(move |key: &str| ui_string(&u.tr.borrow(), key))
     });
-
-    bump_open!(
-        ui.prefs_dialog,
-        ui.magnet_dialog,
-        ui.about_dialog,
-        ui.cli_help_dialog,
-        ui.update_dialog,
-        ui.create_dialog,
-        ui.torrent_dialog,
-        ui.close_prompt,
-        ui.remove_dialog,
-    );
 
     // Preferences also holds lists whose labels are built in Rust rather than
     // bound through `L` - the theme, close-action, proxy-type and TLS-mode
@@ -3827,7 +3849,7 @@ fn web_warning(d: &PreferencesDialog, tr: &Translator, password_set: bool) -> St
     String::new()
 }
 
-/// The Web interface tab: the same settings `--webui-set` exposes, plus the
+/// The Web interface tab: the same settings `--set web-*` exposes, plus the
 /// password, which the CLI can only take through a prompt.
 /// Show lockout `Limits` in the three Advanced fields.
 ///
@@ -3841,35 +3863,29 @@ fn put_advanced(dialog: &PreferencesDialog, adv: &crate::webui::Limits) {
 
 fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
     let cfg = &ui.cfg;
+    // The server's defaults for anything not stored. What IS stored is shown
+    // as it is, even where the server would not take it - an empty address
+    // stays empty here rather than turning into the loopback it means.
+    let web = crate::webui::WebConfig::load(cfg);
 
-    dialog.set_web_enabled(cfg.get_bool("webui.enabled"));
-    dialog.set_web_bind(
-        cfg.get_string("webui.bind_address")
-            .unwrap_or_else(|| String::from("127.0.0.1"))
-            .into(),
-    );
-    dialog.set_web_port(cfg.get_int("webui.port").unwrap_or(8443).to_string().into());
-    dialog.set_web_username(
-        cfg.get_string("webui.username")
-            .unwrap_or_else(|| String::from("nanotorrent"))
-            .into(),
-    );
+    dialog.set_web_enabled(web.enabled);
+    dialog.set_web_bind(cfg.get_string("webui.bind_address").unwrap_or(web.bind_address).into());
+    dialog.set_web_port(cfg.get_int("webui.port").unwrap_or(web.port.into()).to_string().into());
+    dialog.set_web_username(cfg.get_string("webui.username").unwrap_or(web.username).into());
     // The stored value is an Argon2 hash and cannot be shown; the field starts
     // empty and only says whether one exists.
-    let password_set = !cfg
-        .get_string("webui.password_hash")
-        .unwrap_or_default()
-        .is_empty();
-    dialog.set_web_password_set(password_set);
+    dialog.set_web_password_set(!web.password_hash.is_empty());
     dialog.set_web_password(SharedString::new());
 
     dialog.set_web_tls_modes(strings(ui, &["tls_self_signed", "tls_custom", "tls_off"]));
-    let mode = cfg
-        .get_string("webui.tls_mode")
-        .unwrap_or_else(|| String::from("self-signed"));
-    dialog.set_web_tls_index(TLS_MODES.iter().position(|m| *m == mode).unwrap_or(0) as i32);
+    dialog.set_web_tls_index(match web.tls {
+        crate::webui::TlsMode::SelfSigned => 0,
+        crate::webui::TlsMode::Custom { .. } => 1,
+        crate::webui::TlsMode::Off => 2,
+    });
     dialog.set_web_cert_path(cfg.get_string("webui.tls_cert_path").unwrap_or_default().into());
     dialog.set_web_key_path(cfg.get_string("webui.tls_key_path").unwrap_or_default().into());
+    dialog.set_web_qbittorrent_api(web.qbittorrent_api);
 
     // Shown through Limits::load rather than read raw, so the fields display
     // the value the server will actually use - a clamped or missing setting
@@ -3905,32 +3921,20 @@ fn wire_web(dialog: &PreferencesDialog, ui: &Rc<Ui>) {
         dialog.set_web_status_ok(ok);
     }
 
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_browse_web_cert(move || {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter(u.tr.borrow().i18n("pem_certificate"), &["pem", "crt", "cer"])
-                .pick_file()
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_web_cert_path(path.to_string_lossy().as_ref().into());
-                d.invoke_web_changed();
-            }
-        });
-    }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_browse_web_key(move || {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter(u.tr.borrow().i18n("pem_private_key"), &["pem", "key"])
-                .pick_file()
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_web_key_path(path.to_string_lossy().as_ref().into());
-                d.invoke_web_changed();
-            }
-        });
-    }
+    dialog.on_browse_web_cert(browse_file(
+        dialog,
+        ui,
+        "pem_certificate",
+        &["pem", "crt", "cer"],
+        |d, path| {
+            d.set_web_cert_path(path);
+            d.invoke_web_changed();
+        },
+    ));
+    dialog.on_browse_web_key(browse_file(dialog, ui, "pem_private_key", &["pem", "key"], |d, path| {
+        d.set_web_key_path(path);
+        d.invoke_web_changed();
+    }));
 }
 
 /// Describe what the web interface is currently doing, for the status line.
@@ -3938,22 +3942,9 @@ fn web_status(ui: &Rc<Ui>) -> (String, bool) {
     if ui.web.borrow().is_none() {
         return (ui.tr.borrow().i18n("web_not_running"), false);
     }
-    let scheme = match ui
-        .cfg
-        .get_string("webui.tls_mode")
-        .unwrap_or_default()
-        .as_str()
-    {
-        "off" => "http",
-        _ => "https",
-    };
-    let url = format!(
-        "{scheme}://{}:{}",
-        ui.cfg
-            .get_string("webui.bind_address")
-            .unwrap_or_else(|| String::from("127.0.0.1")),
-        ui.cfg.get_int("webui.port").unwrap_or(8443)
-    );
+    let web = crate::webui::WebConfig::load(&ui.cfg);
+    let scheme = if web.tls == crate::webui::TlsMode::Off { "http" } else { "https" };
+    let url = format!("{scheme}://{}:{}", web.bind_address, web.port);
     (
         ui.tr.borrow().i18n1("web_listening_on", &url),
         true,
@@ -4019,6 +4010,7 @@ fn save_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
     );
     cfg.set("webui.tls_cert_path", &d.get_web_cert_path().to_string());
     cfg.set("webui.tls_key_path", &d.get_web_key_path().to_string());
+    cfg.set("webui.qbittorrent_api", &d.get_web_qbittorrent_api());
 
     // Advanced tab. Only well-formed numbers are stored; a blank or garbled
     // field leaves the existing setting alone rather than resetting it. The
@@ -4042,31 +4034,12 @@ fn save_web(d: &PreferencesDialog, ui: &Rc<Ui>) {
 /// Refill the Labels & filters lists from the database.
 ///
 /// Called after every save and delete rather than mutating the models: the
-/// database assigns ids on insert, so the in-memory row would otherwise keep
-/// id -1 and the next save would insert a duplicate.
+/// list shows names, and every edit reads the row back from the database by
+/// its index, so the two must not drift apart.
 fn reload_rules(d: &PreferencesDialog, ui: &Rc<Ui>) {
-    let labels: Vec<NamedRule> = ui
-        .cfg
-        .get_labels()
-        .into_iter()
-        .map(|l| NamedRule {
-            id: l.id,
-            name: l.name.into(),
-            rule: l.save_path.into(),
-        })
-        .collect();
-    let filters: Vec<NamedRule> = ui
-        .cfg
-        .get_filters()
-        .into_iter()
-        .map(|f| NamedRule {
-            id: f.id,
-            name: f.name.into(),
-            rule: f.filter.into(),
-        })
-        .collect();
-    d.set_labels(ModelRc::new(VecModel::from(labels)));
-    d.set_filters(ModelRc::new(VecModel::from(filters)));
+    let names = |names: Vec<SharedString>| ModelRc::new(VecModel::from(names));
+    d.set_labels(names(ui.cfg.get_labels().into_iter().map(|l| l.name.into()).collect()));
+    d.set_filters(names(ui.cfg.get_filters().into_iter().map(|f| f.name.into()).collect()));
 }
 
 /// Clear the label editor back to "new label".
@@ -4380,7 +4353,9 @@ fn wire_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
             // Asks the plugin rather than opening its window: what
             // "configure" means is the plugin's decision, and one without a
             // window might do something else entirely.
-            pluginwindow::configure(row.name.as_ref());
+            crate::plugins::ui::post(crate::plugins::ui::UiEvent::Configure {
+                plugin: row.name.to_string(),
+            });
         });
     }
 
@@ -4404,9 +4379,7 @@ fn wire_plugins(d: &PreferencesDialog, ui: &Rc<Ui>) {
                 tracing::error!("cannot create {}: {err}", dir.display());
                 return;
             }
-            if let Err(err) = open::that_detached(&dir) {
-                tracing::error!("cannot open {}: {err}", dir.display());
-            }
+            utils::open_target(&dir.to_string_lossy());
         });
     }
 }
@@ -4435,8 +4408,13 @@ fn open_preferences(ui: &Rc<Ui>) {
         // Reload rather than just re-showing: the dialog is kept alive between
         // opens, so without this it comes back holding whatever was last typed
         // - including a password still sitting in the field, and settings that
-        // may have changed underneath it since.
-        fill_preferences(existing, ui);
+        // may have changed underneath it since. Not while it is still on
+        // screen, though: a quick second click on the toolbar button lands
+        // here before the main window is blocked, and reloading then threw
+        // away whatever was being edited.
+        if !existing.window().is_visible() {
+            fill_preferences(existing, ui);
+        }
         let _ = existing.show();
         // Re-clamped on every open, not just the first: the dialog is kept
         // alive between opens, so if it was last used on another monitor it
@@ -4509,18 +4487,7 @@ fn open_preferences(ui: &Rc<Ui>) {
             }
         });
     }
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_browse_ipfilter(move || {
-            if let Some(file) = rfd::FileDialog::new()
-                .set_title(u.tr.borrow().i18n("ip_filter"))
-                .pick_file()
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_ipfilter_path(file.to_string_lossy().as_ref().into());
-            }
-        });
-    }
+    dialog.on_browse_ipfilter(browse_file(&dialog, ui, "ip_filter", &[], PreferencesDialog::set_ipfilter_path));
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
         dialog.on_set_db_encryption(move |on| {
@@ -4627,6 +4594,8 @@ fn strings(ui: &Ui, keys: &[&str]) -> ModelRc<SharedString> {
 /// showings, so without this it would still hold whatever was typed last time.
 fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     let cfg = &ui.cfg;
+    // A stored string, or "" when there is none.
+    let text = |key: &str| -> SharedString { cfg.get_string(key).unwrap_or_default().into() };
 
     // Translator::languages(), not EMBEDDED_LANGS: that is raw alphabetical
     // (build.rs sorts the filenames), whereas this puts English first and
@@ -4683,11 +4652,7 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     // packaged install anyway.
     d.set_can_associate(cfg!(windows) && crate::core::environment::needs_own_windows_identity());
 
-    d.set_save_path(
-        cfg.get_string("default_save_path")
-            .unwrap_or_default()
-            .into(),
-    );
+    d.set_save_path(text("default_save_path"));
     d.set_pause_on_low_disk(cfg.get_bool("pause_on_low_disk_space"));
     d.set_low_disk_limit(num(cfg.get_int("pause_on_low_disk_space_limit")));
     d.set_active_limit(num(cfg.get_int("libtorrent.active_limit")));
@@ -4716,11 +4681,7 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
     d.set_enable_pex(cfg.get_bool("libtorrent.enable_pex"));
     d.set_enable_geoip(cfg.get_bool("geoip.enabled"));
     d.set_enable_ipfilter(cfg.get_bool("ipfilter.enabled"));
-    d.set_ipfilter_path(
-        cfg.get_string("ipfilter.file_path")
-            .unwrap_or_default()
-            .into(),
-    );
+    d.set_ipfilter_path(text("ipfilter.file_path"));
     d.set_require_outgoing_encryption(cfg.get_bool("libtorrent.require_outgoing_encryption"));
     d.set_require_incoming_encryption(cfg.get_bool("libtorrent.require_incoming_encryption"));
     d.set_anonymous_mode(cfg.get_bool("libtorrent.anonymous_mode"));
@@ -4737,27 +4698,11 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
         ],
     ));
     d.set_proxy_type_index(cfg.get_int("libtorrent.proxy_type").unwrap_or(0) as i32);
-    d.set_proxy_host(
-        cfg.get_string("libtorrent.proxy_host")
-            .unwrap_or_default()
-            .into(),
-    );
+    d.set_proxy_host(text("libtorrent.proxy_host"));
     d.set_proxy_port(num(cfg.get_int("libtorrent.proxy_port")));
-    d.set_proxy_username(
-        cfg.get_string("libtorrent.proxy_username")
-            .unwrap_or_default()
-            .into(),
-    );
-    d.set_proxy_password(
-        cfg.get_string("libtorrent.proxy_password")
-            .unwrap_or_default()
-            .into(),
-    );
-    d.set_bind_interface(
-        cfg.get_string("network.bind_interface")
-            .unwrap_or_default()
-            .into(),
-    );
+    d.set_proxy_username(text("libtorrent.proxy_username"));
+    d.set_proxy_password(text("libtorrent.proxy_password"));
+    d.set_bind_interface(text("network.bind_interface"));
     d.set_strict_network(cfg.get_bool("network.strict"));
     d.set_proxy_hostnames(cfg.get_bool("libtorrent.proxy_hostnames"));
     d.set_proxy_peers(cfg.get_bool("libtorrent.proxy_peers"));
@@ -4765,22 +4710,19 @@ fn load_preferences(d: &PreferencesDialog, ui: &Rc<Ui>) {
 
     // Downloads: the two staging folders and the watched one.
     d.set_incomplete_enabled(cfg.get_bool("downloads.incomplete_enabled"));
-    d.set_incomplete_path(cfg.get_string("downloads.incomplete_path").unwrap_or_default().into());
+    d.set_incomplete_path(text("downloads.incomplete_path"));
     d.set_move_completed(cfg.get_bool("move_completed_downloads"));
-    d.set_move_completed_path(
-        cfg.get_string("move_completed_downloads_path").unwrap_or_default().into(),
-    );
+    d.set_move_completed_path(text("move_completed_downloads_path"));
     d.set_watch_enabled(cfg.get_bool("watch.enabled"));
-    d.set_watch_path(cfg.get_string("watch.path").unwrap_or_default().into());
+    d.set_watch_path(text("watch.path"));
     d.set_watch_start(cfg.get_bool("watch.start"));
     // "None" first, so index 0 is always the no-label choice and the rest line
     // up with `get_labels()`.
     let labels = cfg.get_labels();
-    d.set_watch_label_names(ModelRc::new(VecModel::from(
-        std::iter::once(ui_string(&ui.tr.borrow(), "none"))
-            .chain(labels.iter().map(|l| SharedString::from(l.name.clone())))
-            .collect::<Vec<_>>(),
-    )));
+    d.set_watch_label_names(menu_model(
+        labels.iter().map(|l| l.name.clone()),
+        &ui_string(&ui.tr.borrow(), "none"),
+    ));
     let want = cfg.get_int("watch.label_id").unwrap_or(-1);
     d.set_watch_label_index(
         labels
@@ -4963,6 +4905,32 @@ fn browse<T: slint::ComponentHandle + 'static>(
             && let Some(d) = weak.upgrade()
         {
             set(&d, dir.into());
+        }
+    }
+}
+
+/// `browse` for a file. With `extensions`, `key` names the filter they make
+/// up; without, it is the picker's title.
+fn browse_file<T: slint::ComponentHandle + 'static>(
+    dialog: &T,
+    ui: &Rc<Ui>,
+    key: &'static str,
+    extensions: &'static [&'static str],
+    set: fn(&T, SharedString),
+) -> impl Fn() + 'static {
+    let (weak, u) = (dialog.as_weak(), ui.clone());
+    move || {
+        let name = u.tr.borrow().i18n(key);
+        let picker = rfd::FileDialog::new();
+        let picker = if extensions.is_empty() {
+            picker.set_title(name)
+        } else {
+            picker.add_filter(name, extensions)
+        };
+        if let Some(path) = picker.pick_file()
+            && let Some(d) = weak.upgrade()
+        {
+            set(&d, path.to_string_lossy().as_ref().into());
         }
     }
 }
@@ -5276,6 +5244,19 @@ mod tests {
         }
     }
 
+    /// A folder's checkbox reaches every file below it, and only those: not a
+    /// sibling whose name merely starts the same way.
+    #[test]
+    fn a_folder_holds_what_is_under_it_at_any_depth() {
+        assert!(in_folder("Show/S01/e01.mkv", "Show"));
+        assert!(in_folder("Show/S01/e01.mkv", "Show/S01"));
+        assert!(in_folder("Show\\S01\\e01.mkv", "Show/S01"));
+        assert!(in_folder("top.txt", ""));
+        assert!(!in_folder("Show/S010/e01.mkv", "Show/S01"));
+        assert!(!in_folder("Show/S01", "Show/S01"));
+        assert!(!in_folder("Other/e01.mkv", "Show"));
+    }
+
     /// The bug this exists to prevent: sorting the rendered text puts
     /// "99.00 MB" above "500.00 MB" because it compares "9" with "5".
     #[test]
@@ -5446,7 +5427,7 @@ pub fn ask_profile_copy(tr: &Translator, here: &std::path::Path, from: &std::pat
     // the question - and every window after it, which inherits the choice -
     // came up on the GPU renderer the rest of the app deliberately avoids.
     select_default_renderer();
-    let dialog = match PortablePromptDialog::new() {
+    let dialog = match ConfirmDialog::new() {
         Ok(d) => d,
         Err(err) => {
             tracing::error!("cannot show the profile question ({err}); starting with a new profile");
@@ -5454,21 +5435,28 @@ pub fn ask_profile_copy(tr: &Translator, here: &std::path::Path, from: &std::pat
         }
     };
 
-    let strings: HashMap<&'static str, SharedString> =
+    let mut strings: HashMap<&'static str, SharedString> =
         ["portable_copy_title", "portable_copy_yes", "portable_copy_no"]
             .into_iter()
             .map(|key| (key, ui_string(tr, key)))
             .collect();
-    dialog
-        .global::<L>()
-        .on_s(move |_revision, key| strings.get(key.as_str()).cloned().unwrap_or_default());
-    dialog.set_body_text(
+    strings.insert(
+        "portable_copy_body",
         tr.i18n_args(
             "portable_copy_body",
             &[&here.display().to_string(), &from.display().to_string()],
         )
         .into(),
     );
+    dialog
+        .global::<L>()
+        .on_s(move |_revision, key| strings.get(key.as_str()).cloned().unwrap_or_default());
+    dialog.set_title_key("portable_copy_title".into());
+    dialog.set_heading("portable_copy_title".into());
+    dialog.set_body("portable_copy_body".into());
+    dialog.set_no_text("portable_copy_no".into());
+    dialog.set_yes_text("portable_copy_yes".into());
+    dialog.set_fixed_width(520.0);
 
     let answer = Rc::new(std::cell::Cell::new(false));
     {
@@ -5489,11 +5477,16 @@ pub fn ask_profile_copy(tr: &Translator, here: &std::path::Path, from: &std::pat
 }
 
 fn open_db_prompt(ui: &Rc<Ui>) {
-    let Ok(dialog) = DbPromptDialog::new()
+    let Ok(dialog) = ConfirmDialog::new()
         .inspect_err(|err| tracing::error!("cannot create the database prompt: {err}"))
     else {
         return;
     };
+    dialog.set_title_key("database_encryption".into());
+    dialog.set_heading("database_prompt_title".into());
+    dialog.set_body("database_prompt_body".into());
+    dialog.set_no_text("database_not_now".into());
+    dialog.set_yes_text("database_encrypt".into());
 
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
@@ -5602,18 +5595,7 @@ fn open_create_torrent(ui: &Rc<Ui>) {
             .collect::<Vec<_>>(),
     )));
 
-    {
-        let (weak, u) = (dialog.as_weak(), ui.clone());
-        dialog.on_pick_file(move || {
-            if let Some(path) = rfd::FileDialog::new()
-                .set_title(u.tr.borrow().i18n("source_file"))
-                .pick_file()
-                && let Some(d) = weak.upgrade()
-            {
-                d.set_source(path.to_string_lossy().as_ref().into());
-            }
-        });
-    }
+    dialog.on_pick_file(browse_file(&dialog, ui, "source_file", &[], CreateTorrentDialog::set_source));
     dialog.on_pick_folder(browse(&dialog, ui, "source_folder", CreateTorrentDialog::set_source));
     {
         let (weak, u) = (dialog.as_weak(), ui.clone());
@@ -5647,8 +5629,8 @@ fn open_create_torrent(ui: &Rc<Ui>) {
                 return; // cancelled at the save prompt
             };
 
-            let params = crate::bittorrent::session::CreateTorrentParams {
-                source,
+            let input = crate::bittorrent::torrent_create::CreateInput {
+                source: source.clone(),
                 trackers: d
                     .get_trackers()
                     .lines()
@@ -5664,16 +5646,19 @@ fn open_create_torrent(ui: &Rc<Ui>) {
                 version: crate::bittorrent::torrent_create::TorrentVersion::from_index(
                     d.get_version_index().max(0) as usize,
                 ),
-                output,
-                add_to_session: d.get_add_to_session(),
+                created_by: crate::buildinfo::user_agent(),
             };
+            let add_to_session = d.get_add_to_session();
 
             d.set_busy(true);
             d.set_status(u.tr.borrow().i18n("status_hashing").into());
             // Runs on the session runtime and reports back through the slot,
             // which the refresh tick drains - hashing a large folder takes far
             // too long to block the UI thread on.
-            u.session.create_torrent(params, u.create_slot.clone());
+            let slot = u.create_slot.clone();
+            u.session.create_torrent(input, output, move |result| {
+                *slot.lock().unwrap() = Some((result, source, add_to_session));
+            });
         });
     }
     dialog.on_cancelled(closer(&dialog, ui));
@@ -5684,31 +5669,30 @@ fn open_create_torrent(ui: &Rc<Ui>) {
 /// Drain a finished create-torrent run. Called from the refresh tick.
 fn poll_create_torrent(ui: &Rc<Ui>) {
     let outcome = ui.create_slot.lock().ok().and_then(|mut slot| slot.take());
-    let Some(outcome) = outcome else { return };
+    let Some((outcome, source, add_to_session)) = outcome else { return };
 
     match outcome {
-        crate::bittorrent::session::CreateTorrentOutcome::Created {
-            name,
-            bytes,
-            save_path,
-            add_to_session,
-        } => {
+        Ok(bytes) => {
             if add_to_session {
-                // save_path is the folder the source data already lives in, so
-                // the new torrent seeds in place instead of re-downloading it.
+                // The folder the source data already lives in, so the new
+                // torrent seeds in place instead of re-downloading it.
+                let save_path = source.parent().map(|p| p.to_string_lossy().into_owned());
                 ui.session.add_torrent(
                     AddTorrentSource::TorrentFileBytes(bytes),
-                    AddParams { save_path, ..default_add_params() },
+                    AddParams { save_path, start_torrent: true, ..Default::default() },
                 );
             }
-            tracing::info!("created torrent: {name}");
+            tracing::info!(
+                "created torrent: {}",
+                source.file_name().unwrap_or_default().to_string_lossy()
+            );
             if let Some(d) = ui.create_dialog.borrow().as_ref() {
                 d.set_busy(false);
                 d.set_status(SharedString::new());
                 dismiss(ui, d);
             }
         }
-        crate::bittorrent::session::CreateTorrentOutcome::Failed(err) => {
+        Err(err) => {
             tracing::error!("create torrent failed: {err}");
             // Left open with the error showing, so the settings that produced
             // it are still there to correct.
@@ -6611,7 +6595,7 @@ mod column_tests {
     #[test]
     fn total_is_the_sum_of_the_widths() {
         for locale in ["en-US", "nl-NL", "ja-JP", "ru-RU"] {
-            let (widths, titles, total) = columns(&tr(locale), &Default::default());
+            let (widths, titles, total) = columns(&tr(locale), 0, &Default::default());
             assert_eq!(widths.len(), 16, "{locale}");
             assert_eq!(titles.len(), 16, "{locale}");
             let sum: f32 = widths.iter().sum();
@@ -6623,7 +6607,7 @@ mod column_tests {
     /// translated caption is.
     #[test]
     fn columns_never_go_below_their_designed_width() {
-        let (widths, _, _) = columns(&tr("en-US"), &Default::default());
+        let (widths, _, _) = columns(&tr("en-US"), 0, &Default::default());
         assert!(widths[0] >= 260.0, "Name column: {}", widths[0]);
         assert!(widths[1] >= 44.0, "# column: {}", widths[1]);
     }
@@ -6633,7 +6617,7 @@ mod column_tests {
     #[test]
     fn a_long_caption_widens_its_column() {
         // "Availability" is 90px by design and needs more than that at 13px.
-        let (widths, titles, _) = columns(&tr("en-US"), &Default::default());
+        let (widths, titles, _) = columns(&tr("en-US"), 0, &Default::default());
         let i = titles.iter().position(|t| t == "Availability").unwrap();
         assert!(
             widths[i] > 90.0,

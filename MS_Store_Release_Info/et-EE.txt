@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Eesti (Eesti) - Partner Center: Estonian (Estonia) (et-EE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent on Viktor Elofssoni PicoTorrenti Rust-teisendus.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioon 0.4.6
+Versioon 0.4.7
 
-- Parandused: iga torrenti üles laaditud andmemaht säilib nüüd NanoTorrenti sulgemisel. Veel salvestamata üleslaadimised läksid igal väljumisel kaduma, nii et pärast taaskäivitamist võis torrent näidata palju vähem või üldse mitte midagi.
-- Parandused: partnerid, kes ühenduvad NanoTorrentiga ilma krüptimiseta, võetakse taas vastu. Kõik nad lükati tagasi, mis pidurdas jagamist.
-- Kapoti all: teegid, millele NanoTorrent on ehitatud, on uuendatud koos nende viimaste parandustega.
+- Uus: lisamisaknas „Lisa torrent(id)“ on igal kaustal oma märkeruut, mis märgib või tühjendab kogu selle sisu koos alamkaustadega, ning nupud „Kõik“ ja „Puudub“ teevad sama kogu torrenti jaoks. Kaust, mille failidest on märgitud vaid osa, näitab kriipsuga ruutu.
+- Uus: valikuline qBittorrentiga ühilduv veebi-API, mille kaudu saavad Sonarr, Radarr ja teised qBittorrenti jaoks tehtud tööriistad NanoTorrenti juhtida. Lülita see sisse „Eelistustes“ jaotises „Veebiliides“.
+- Parandused: veerud „Seemneid“ ja „Partnerid“ näitavad nüüd sulgudes parve suurust, nagu jälgijad sellest teatavad; failide prioriteetidega määratud järjekord säilib, kui torrent peatatakse ja uuesti käivitatakse; ning „Eelistuste“ teistkordne avamine, kui need on juba lahti, ei kaota enam salvestamata muudatusi.
+- Parandused: keele vahetamine joonistab nüüd kõik avatud dialoogid uuesti ning IP-filtri fail, mille tees on tühik, # või %, laaditakse nüüd korrektselt.
+- Turvalisus: veebiliides kasutab uuendatud HTTP-teeki, mis parandab vigaselt vormistatud päringu lugemise.
+- Eemaldatud: käsurea suvand --webui-set. Sama teevad --set web-bind, web-port, web-username ja teised web-* sätted.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

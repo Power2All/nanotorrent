@@ -30,6 +30,7 @@
 mod auth;
 pub mod cli;
 mod fs;
+mod qbt;
 pub mod streamtoken;
 pub mod tls;
 
@@ -70,6 +71,8 @@ pub struct WebConfig {
     pub password_hash: String,
     pub tls: TlsMode,
     pub advanced: Limits,
+    /// Also answer qBittorrent's Web API under `/api/v2` - see [`qbt`].
+    pub qbittorrent_api: bool,
 }
 
 /// Request body ceiling, in megabytes.
@@ -146,6 +149,7 @@ impl WebConfig {
             password_hash: cfg.get_string("webui.password_hash").unwrap_or_default(),
             tls,
             advanced: Limits::load(cfg),
+            qbittorrent_api: cfg.get_bool("webui.qbittorrent_api"),
         }
     }
 
@@ -280,14 +284,6 @@ impl From<TorrentStatus> for TorrentDto {
 
 // --- handlers ---------------------------------------------------------------
 
-/// `GET /api/health` - a liveness probe that touches nothing.
-///
-/// Deliberately does not consult the session: this answers "is the HTTP layer
-/// up", and a probe that blocks on a busy session would report the wrong thing.
-async fn h_health() -> impl Responder {
-    HttpResponse::Ok().json(serde_json::json!({ "status": "ok" }))
-}
-
 /// Every string key the page asks for, through either channel.
 ///
 /// Shared with the test that checks they all resolve: if the test scanned
@@ -354,16 +350,10 @@ fn render_page(tr: &crate::ui::translator::Translator) -> String {
             out.push_str(&json);
         } else {
             // Escaped: a translation is data, and one containing < or & would
-            // otherwise change the shape of the page.
-            for c in tr.i18n(key).chars() {
-                match c {
-                    '&' => out.push_str("&amp;"),
-                    '<' => out.push_str("&lt;"),
-                    '>' => out.push_str("&gt;"),
-                    '"' => out.push_str("&quot;"),
-                    _ => out.push(c),
-                }
-            }
+            // otherwise change the shape of the page. Also turns ' into
+            // &apos;, which HTML5 decodes like any other entity; no
+            // placeholder sits inside the script, where it would not be.
+            out.push_str(&quick_xml::escape::escape(tr.i18n(key)));
         }
         rest = &rest[start + end + 2..];
     }
@@ -878,28 +868,6 @@ async fn h_reannounce(
     with_torrent(&state, hash.into_inner(), |s, h| s.reannounce(h)).await
 }
 
-/// One peer, for `GET /api/torrents/{hash}/peers` and the plugin `peers()`.
-#[derive(Serialize)]
-pub(crate) struct PeerRow {
-    addr: String,
-    state: String,
-    fetched_bytes: u64,
-    pieces: u32,
-}
-
-pub(crate) fn peer_rows(session: &Session, hash: &str) -> Vec<PeerRow> {
-    session
-        .peers(hash)
-        .into_iter()
-        .map(|p| PeerRow {
-            addr: p.addr,
-            state: p.state,
-            fetched_bytes: p.fetched_bytes,
-            pieces: p.pieces,
-        })
-        .collect()
-}
-
 /// One file, for `GET /api/torrents/{hash}/files` and the plugin `files()`.
 #[derive(Serialize)]
 pub(crate) struct FileRow {
@@ -917,16 +885,17 @@ pub(crate) fn file_rows(session: &Session, hash: &str) -> Vec<FileRow> {
     session
         .files(hash)
         .into_iter()
-        .enumerate()
-        .map(|(index, f)| FileRow {
-            index,
+        .map(|f| FileRow {
+            // The torrent's index, not the row's: hidden padding files would
+            // shift every row after them onto the wrong file's priority.
+            index: f.index,
             name: f.name,
             length: f.length,
             progress: f.progress,
             // Absent means nobody has touched it, which is Normal - only
             // rows that differ are stored.
             priority: stored
-                .get(&index)
+                .get(&f.index)
                 .copied()
                 .unwrap_or(crate::bittorrent::session::PRIORITY_NORMAL),
         })
@@ -1138,7 +1107,7 @@ async fn h_peers(
     state: web::Data<AppState>,
     hash: web::Path<String>,
 ) -> actix_web::Result<HttpResponse> {
-    torrent_json(&state, hash.into_inner(), |st, hash| peer_rows(&st.session, hash)).await
+    torrent_json(&state, hash.into_inner(), |st, hash| st.session.peers(hash)).await
 }
 
 /// `GET /api/torrents/{hash}/magnet` - a magnet link for a torrent already here.
@@ -1195,41 +1164,13 @@ async fn h_set_file_priority(
     .await
 }
 
-#[derive(Serialize)]
-struct TrackerRowJson {
-    /// "source" (DHT/LSD/PeX), "tier" (a group heading) or "tracker".
-    kind: &'static str,
-    label: String,
-    status: String,
-    seeders: Option<u32>,
-    leechers: Option<u32>,
-    fails: u32,
-}
-
 /// `GET /api/torrents/{hash}/trackers` - the Trackers tab, as data.
 async fn h_trackers(
     state: web::Data<AppState>,
     hash: web::Path<String>,
 ) -> actix_web::Result<HttpResponse> {
-    use crate::bittorrent::session::TrackerRowKind;
     torrent_json(&state, hash.into_inner(), |st, hash| {
-        let tr = st.translator();
-        st.session
-            .tracker_rows(hash, &tr)
-            .into_iter()
-            .map(|r| TrackerRowJson {
-                kind: match r.kind {
-                    TrackerRowKind::Source => "source",
-                    TrackerRowKind::Tier => "tier",
-                    TrackerRowKind::Tracker => "tracker",
-                },
-                label: r.label,
-                status: r.status,
-                seeders: r.seeders,
-                leechers: r.leechers,
-                fails: r.fails,
-            })
-            .collect::<Vec<_>>()
+        st.session.tracker_rows(hash, &st.translator())
     })
     .await
 }
@@ -1459,14 +1400,6 @@ async fn h_resume(
     with_torrent(&state, hash.into_inner(), |s, h| s.resume(h)).await
 }
 
-/// `POST /api/torrents/{hash}/recheck` - re-hash what is on disk.
-async fn h_recheck(
-    state: web::Data<AppState>,
-    hash: web::Path<String>,
-) -> actix_web::Result<HttpResponse> {
-    with_torrent(&state, hash.into_inner(), |s, h| s.recheck(h)).await
-}
-
 #[derive(Deserialize)]
 struct RemoveQuery {
     /// Defaults to false. Deleting data is the destructive option, so it has
@@ -1490,48 +1423,26 @@ async fn h_remove(
 }
 
 #[derive(Deserialize)]
-struct MoveRequest {
+struct LocationRequest {
     path: String,
 }
 
-/// `POST /api/torrents/{hash}/move` - move a torrent's storage.
+/// `POST /api/torrents/{hash}/location` - point a torrent at data that has
+/// already been moved, leaving the data alone.
 ///
 /// The path must be absolute: a relative one would resolve against whatever
 /// directory the process happens to be running in, which is not something the
 /// caller can see.
-async fn h_move(
-    state: web::Data<AppState>,
-    hash: web::Path<String>,
-    body: web::Json<MoveRequest>,
-) -> actix_web::Result<HttpResponse> {
-    relocate(state, hash, body, Session::move_storage).await
-}
-
-/// `POST /api/torrents/{hash}/location` - point a torrent at data that has
-/// already been moved.
-///
-/// The counterpart to `/move`: that one relocates the files, this one relocates
-/// the torrent and leaves the data alone. Same absolute-path rule.
 async fn h_set_location(
     state: web::Data<AppState>,
     hash: web::Path<String>,
-    body: web::Json<MoveRequest>,
-) -> actix_web::Result<HttpResponse> {
-    relocate(state, hash, body, Session::set_location).await
-}
-
-/// The body both of those share: check the path, then hand it to `op`.
-async fn relocate(
-    state: web::Data<AppState>,
-    hash: web::Path<String>,
-    body: web::Json<MoveRequest>,
-    op: fn(&Session, &str, &str),
+    body: web::Json<LocationRequest>,
 ) -> actix_web::Result<HttpResponse> {
     let path = body.into_inner().path;
     if !std::path::Path::new(&path).is_absolute() {
         return Err(ErrorBadRequest("path must be absolute"));
     }
-    with_torrent(&state, hash.into_inner(), move |s, h| op(s, h, &path)).await
+    with_torrent(&state, hash.into_inner(), move |s, h| s.set_location(h, &path)).await
 }
 
 // --- settings ---------------------------------------------------------------
@@ -1831,23 +1742,6 @@ async fn h_apply_settings(state: web::Data<AppState>) -> actix_web::Result<HttpR
     Ok(HttpResponse::Ok().json(serde_json::json!({ "applied": true })))
 }
 
-#[derive(Deserialize)]
-struct LabelRequest {
-    /// null clears the label.
-    label_id: Option<i32>,
-}
-
-/// `POST /api/torrents/{hash}/label` - assign a label, or clear it with a
-/// null `label_id`.
-async fn h_label(
-    state: web::Data<AppState>,
-    hash: web::Path<String>,
-    body: web::Json<LabelRequest>,
-) -> actix_web::Result<HttpResponse> {
-    let label_id = body.into_inner().label_id;
-    with_torrent(&state, hash.into_inner(), move |s, h| s.set_label(h, label_id)).await
-}
-
 // --- filesystem handlers ----------------------------------------------------
 
 /// `GET /api/fs/roots` - where the save path browser starts: the default
@@ -1876,25 +1770,17 @@ async fn h_fs_mkdir(body: web::Json<fs::PathRequest>) -> actix_web::Result<impl 
 
 /// Stop a running web interface.
 ///
-/// `ServerHandle::stop` is async and the caller is the UI thread, which has no
-/// runtime - so this drives the future on a throwaway one. Graceful, so a
-/// request in flight when someone presses Ok in Preferences finishes rather
-/// than being cut.
-pub fn stop(handle: ServerHandle) {
+/// `ServerHandle::stop` is async, but all it awaits is a tokio oneshot the
+/// server's own thread completes, which needs no runtime - so a plain
+/// `block_on` drives it from the UI thread. Waited for so the port is free
+/// before the caller rebinds it; respawning on the same port otherwise races
+/// the old listener. Graceful, so a request in flight when someone presses Ok
+/// in Preferences finishes rather than being cut.
+fn stop(handle: ServerHandle) {
     // No server, no tokens: a plugin asking for a stream URL after this gets
     // "" back rather than a URL into a closed port.
     streamtoken::unpublish();
-    std::thread::Builder::new()
-        .name(String::from("nt-webui-stop"))
-        .spawn(move || {
-            actix_web::rt::System::new().block_on(handle.stop(true));
-        })
-        .map(|t| {
-            // Joined so the port is free before the caller rebinds it -
-            // respawning on the same port otherwise races the old listener.
-            let _ = t.join();
-        })
-        .unwrap_or_else(|err| tracing::error!("could not stop the web interface: {err}"));
+    futures::executor::block_on(handle.stop(true));
 }
 
 /// Stop whatever is running and start again from the current settings.
@@ -1966,15 +1852,15 @@ pub fn spawn(
     let (tx, rx) = std::sync::mpsc::channel::<Result<ServerHandle>>();
     let addr = wc.socket_addr();
     let scheme = if tls_config.is_some() { "https" } else { "http" };
-    // Cloned out of `wc` because the thread below outlives this scope.
-    let advanced = wc.advanced;
+    // Cloned because the thread below outlives this scope.
+    let server_wc = wc.clone();
 
     std::thread::Builder::new()
         .name(String::from("nt-webui"))
         .spawn(move || {
             let system = actix_web::rt::System::new();
             system.block_on(async move {
-                match build(&addr, session, cfg, env, creds, tls_config, advanced) {
+                match build(&addr, session, cfg, env, creds, tls_config, &server_wc) {
                     Ok(server) => {
                         let _ = tx.send(Ok(server.handle()));
                         if let Err(err) = server.await {
@@ -2016,7 +1902,7 @@ fn build(
     env: Arc<Environment>,
     creds: Credentials,
     tls_config: Option<rustls::ServerConfig>,
-    advanced: Limits,
+    wc: &WebConfig,
 ) -> Result<actix_web::dev::Server> {
     // Subscribed once for the lifetime of the server, not per request: a
     // per-request subscription would only ever see events raised while that
@@ -2040,9 +1926,12 @@ fn build(
     // Built out here, not in the factory closure: the closure runs once per
     // worker, so constructing it there would give each worker its own counter
     // and multiply the real attempt limit by the worker count.
-    let attempts = web::Data::new(auth::Attempts::new(advanced));
+    let attempts = web::Data::new(auth::Attempts::new(wc.advanced));
 
     let body_limit = MAX_BODY_MB * 1024 * 1024;
+    // Present only when the qBittorrent API is on: the auth middleware takes
+    // its presence as the switch, so the cookie door does not exist otherwise.
+    let sids = wc.qbittorrent_api.then(|| web::Data::new(qbt::Sids::default()));
 
     // A factory rather than an App: each worker builds its own from it, and the
     // HTTPS listener below needs one too.
@@ -2063,11 +1952,17 @@ fn build(
             // because an unbounded body is free memory for anyone with the
             // password.
             .app_data(web::JsonConfig::default().limit(body_limit))
+            // Before the `/api` scope, which would otherwise claim `/api/v2`
+            // by prefix and answer every call there with a 404.
+            .configure(|c| {
+                if let Some(sids) = sids.clone() {
+                    qbt::configure(c, sids, body_limit);
+                }
+            })
             .route("/", web::get().to(h_index))
             .route("/favicon.ico", web::get().to(h_favicon))
             .service(
                 web::scope("/api")
-                    .route("/health", web::get().to(h_health))
                     .route("/events", web::get().to(h_events))
                     .route("/session", web::get().to(h_session))
                     .route("/errors", web::get().to(h_errors))
@@ -2077,7 +1972,6 @@ fn build(
                     .route("/torrents/{hash}", web::delete().to(h_remove))
                     .route("/torrents/{hash}/pause", web::post().to(h_pause))
                     .route("/torrents/{hash}/resume", web::post().to(h_resume))
-                    .route("/torrents/{hash}/recheck", web::post().to(h_recheck))
                     .route("/torrents/{hash}/queue", web::post().to(h_queue))
                     .route("/torrents/{hash}/reannounce", web::post().to(h_reannounce))
                     .route("/torrents/{hash}/peers", web::get().to(h_peers))
@@ -2107,12 +2001,10 @@ fn build(
                     .route("/plugins/{name}/enabled", web::post().to(h_plugin_enabled))
                     .route("/plugins/{name}", web::get().to(h_plugin))
                     .route("/plugins/{name}/event", web::post().to(h_plugin_event))
-                    .route("/torrents/{hash}/move", web::post().to(h_move))
                     .route("/torrents/{hash}/location", web::post().to(h_set_location))
                     .route("/settings", web::get().to(h_settings))
                     .route("/settings", web::post().to(h_set_setting))
                     .route("/settings/apply", web::post().to(h_apply_settings))
-                    .route("/torrents/{hash}/label", web::post().to(h_label))
                     .route("/fs/roots", web::get().to(h_fs_roots))
                     .route("/fs/list", web::get().to(h_fs_list))
                     .route("/fs/mkdir", web::post().to(h_fs_mkdir)),
@@ -2354,6 +2246,7 @@ mod tests {
             password_hash: String::new(),
             tls: TlsMode::Off,
             advanced: Limits::default(),
+            qbittorrent_api: false,
         };
         assert!(!wc.is_exposed());
         wc.bind_address = String::from("::1");
@@ -2434,7 +2327,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .wrap(DefaultHeaders::new().add(("X-Content-Type-Options", "nosniff")))
-                .route("/api/health", web::get().to(|| async { HttpResponse::Ok().finish() }))
+                .route("/api/plain", web::get().to(|| async { HttpResponse::Ok().finish() }))
                 // Stands in for the stream: a handler that sets its own content
                 // type and its own headers, which is where a DefaultHeaders
                 // that only applied "if absent" could have been fooled.
@@ -2450,12 +2343,52 @@ mod tests {
         )
         .await;
 
-        for path in ["/api/health", "/api/stream"] {
+        for path in ["/api/plain", "/api/stream"] {
             let res = test::call_service(&app, test::TestRequest::get().uri(path).to_request()).await;
             assert_eq!(
                 res.headers().get("X-Content-Type-Options").map(|v| v.to_str().unwrap()),
                 Some("nosniff"),
                 "{path} must carry it"
+            );
+        }
+    }
+
+    /// The peers and trackers endpoints serialise the session's own rows. Pin
+    /// the JSON the page and plugins read, so a field added to the session
+    /// type for the desktop UI cannot leak into it or rename it unnoticed.
+    #[test]
+    fn peer_and_tracker_rows_keep_their_json_shape() {
+        use crate::bittorrent::session::{PeerEntry, TrackerRow, TrackerRowKind};
+        let peer = PeerEntry {
+            addr: String::from("1.2.3.4:6881"),
+            state: String::from("live"),
+            fetched_bytes: 5,
+            pieces: 2,
+        };
+        assert_eq!(
+            serde_json::to_string(&peer).unwrap(),
+            r#"{"addr":"1.2.3.4:6881","state":"live","fetched_bytes":5,"pieces":2}"#
+        );
+
+        let row = |kind| TrackerRow {
+            kind,
+            label: String::from("l"),
+            status: String::from("s"),
+            seeders: Some(3),
+            leechers: None,
+            fails: 1,
+            next_announce: Some(std::time::SystemTime::now()),
+        };
+        for (kind, name) in [
+            (TrackerRowKind::Source, "source"),
+            (TrackerRowKind::Tier, "tier"),
+            (TrackerRowKind::Tracker, "tracker"),
+        ] {
+            assert_eq!(
+                serde_json::to_string(&row(kind)).unwrap(),
+                format!(
+                    r#"{{"kind":"{name}","label":"l","status":"s","seeders":3,"leechers":null,"fails":1}}"#
+                )
             );
         }
     }

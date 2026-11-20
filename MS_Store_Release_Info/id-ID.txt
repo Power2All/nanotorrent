@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Bahasa Indonesia (Indonesia) - Partner Center: Indonesian (Indonesia) (id-ID)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent adalah alih bahasa PicoTorrent karya Viktor Elofsson ke Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versi 0.4.6
+Versi 0.4.7
 
-- Perbaikan: jumlah unggahan setiap torrent kini tetap tersimpan saat NanoTorrent ditutup. Unggahan yang belum disimpan hilang setiap kali keluar, sehingga torrent bisa menampilkan jauh lebih sedikit, atau nol, setelah dijalankan ulang.
-- Perbaikan: rekan yang terhubung ke NanoTorrent tanpa enkripsi kini diterima lagi. Sebelumnya semuanya ditolak, sehingga seeding terhambat.
-- Di balik layar: pustaka yang menjadi dasar NanoTorrent telah diperbarui dengan perbaikan terbarunya.
+- Baru: di dialog “Tambah torrent”, setiap folder kini punya kotak centang sendiri untuk mencentang atau menghapus centang semua isinya, termasuk subfolder, dan tombol “Semua” dan “Tidak ada” melakukan hal yang sama untuk seluruh torrent. Folder yang hanya sebagian filenya dicentang menampilkan kotak bertanda strip.
+- Baru: API web opsional yang kompatibel dengan qBittorrent, sehingga Sonarr, Radarr, dan alat lain yang dibuat untuk qBittorrent dapat mengendalikan NanoTorrent. Aktifkan di “Preferensi”, pada bagian “Antarmuka web”.
+- Perbaikan: kolom “Seed” dan “Rekan” kini menampilkan jumlah total dalam tanda kurung, sesuai laporan pelacak; urutan yang diatur dengan prioritas file tetap terjaga saat torrent dijeda lalu dimulai lagi; dan membuka “Preferensi” untuk kedua kalinya saat masih terbuka tidak lagi membuang perubahan yang belum disimpan.
+- Perbaikan: mengganti bahasa kini menggambar ulang semua dialog yang terbuka, dan file filter IP yang jalurnya mengandung spasi, # atau % kini bisa dimuat.
+- Keamanan: antarmuka web menggunakan pustaka HTTP yang diperbarui, yang memperbaiki cara membaca permintaan yang salah bentuk.
+- Dihapus: opsi baris perintah --webui-set. --set web-bind, web-port, web-username, dan pengaturan web-* lainnya melakukan hal yang sama.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Latviešu (Latvija) - Partner Center: Latvian (Latvia) (lv-LV)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent ir Viktora Elofsona PicoTorrent pārnesums uz Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versija 0.4.6
+Versija 0.4.7
 
-- Labojumi: katra torrenta augšupielādētais apjoms tagad tiek saglabāts, aizverot NanoTorrent. Vēl nesaglabātās augšupielādes tika zaudētas katrā izslēgšanas reizē, tāpēc pēc restartēšanas torrents varēja rādīt daudz mazāk vai neko.
-- Labojumi: dalībnieki, kas pieslēdzas NanoTorrent bez šifrēšanas, atkal tiek pieņemti. Visi tie tika noraidīti, un tas kavēja kopīgošanu.
-- Zem pārsega: bibliotēkas, uz kurām balstās NanoTorrent, ir atjauninātas ar jaunākajiem labojumiem.
+- Jaunums: logā „Pievienot torrentu“ katrai mapei ir sava izvēles rūtiņa, kas atzīmē vai noņem atzīmi visam tās saturam, ieskaitot apakšmapes, un pogas „Visi“ un „Nav“ to pašu dara visam torrentam. Mape, kurā atzīmēti tikai daži faili, rāda rūtiņu ar svītriņu.
+- Jaunums: neobligāta ar qBittorrent saderīga tīmekļa API, lai Sonarr, Radarr un citi qBittorrent paredzēti rīki varētu vadīt NanoTorrent. To ieslēdz logā „Konfigurācija“, sadaļā „Tīmekļa saskarne“.
+- Labojumi: kolonnas „Devēji“ un „Iesaistītie“ tagad iekavās rāda kopējo skaitu, ko ziņo izsekotāji; ar failu prioritātēm iestatītā secība saglabājas, kad torrents tiek pauzēts un atkal palaists; un, atverot „Konfigurācija“ otrreiz, kamēr tā jau ir atvērta, nesaglabātās izmaiņas vairs netiek zaudētas.
+- Labojumi: mainot valodu, tagad tiek pārzīmēti visi atvērtie logi, un IP filtra fails, kura ceļā ir atstarpe, # vai %, tagad tiek ielādēts.
+- Drošība: tīmekļa saskarne izmanto atjauninātu HTTP bibliotēku, kas labo to, kā tā nolasa nepareizi veidotu pieprasījumu.
+- Noņemts: komandrindas opcija --webui-set. To pašu dara --set web-bind, web-port, web-username un citi web-* iestatījumi.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

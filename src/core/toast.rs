@@ -42,20 +42,15 @@ const TOAST_ICON_PNG: &[u8] = include_bytes!("../../res/app-256.png");
 /// the popup, which can be after this process has gone, so it has to outlive
 /// us.
 ///
-/// Windows keeps resolving `%LOCALAPPDATA%` by hand rather than going through
-/// `Environment`, which would answer differently for a portable install and
-/// move a file that the Start Menu shortcut and the `.shortcut_target` marker
-/// beside it are already pointing at.
+/// Windows uses the per-user `%LOCALAPPDATA%\NanoTorrent` even for a portable
+/// install, not the profile `get_application_data_path` would pick: the Start
+/// Menu shortcut and the `.shortcut_target` marker beside it already point at
+/// this file.
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 fn icon_path() -> Option<std::path::PathBuf> {
     #[cfg(windows)]
     {
-        let base = std::env::var_os("LOCALAPPDATA")?;
-        Some(
-            std::path::Path::new(&base)
-                .join("NanoTorrent")
-                .join("toast_icon.png"),
-        )
+        Some(crate::core::environment::Environment::user_data_dir()?.join("toast_icon.png"))
     }
     #[cfg(not(windows))]
     {

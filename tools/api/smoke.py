@@ -65,10 +65,8 @@ if hashes:
     print("--- torrents: mutate ---")
     check("pause",   call("POST", f"/api/torrents/{h}/pause")[0], 204)
     check("resume",  call("POST", f"/api/torrents/{h}/resume")[0], 204)
-    check("recheck", call("POST", f"/api/torrents/{h}/recheck")[0], 204)
-    check("label",   call("POST", f"/api/torrents/{h}/label", {"label_id": None})[0], 204)
-    check("move rejects relative path",
-          call("POST", f"/api/torrents/{h}/move", {"path": "not/absolute"})[0], 400)
+    check("location rejects relative path",
+          call("POST", f"/api/torrents/{h}/location", {"path": "not/absolute"})[0], 400)
     bogus = "0" * 40
     check("unknown hash -> 404", call("POST", f"/api/torrents/{bogus}/pause")[0], 404)
     check("delete unknown hash -> 404", call("DELETE", f"/api/torrents/{bogus}")[0], 404)

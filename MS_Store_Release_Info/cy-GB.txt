@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Cymraeg (Y Deyrnas Unedig) - Partner Center: Welsh (United Kingdom) (cy-GB)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ Trosiad Rust o PicoTorrent gan Viktor Elofsson yw NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Fersiwn 0.4.6
+Fersiwn 0.4.7
 
-- Atgyweiriadau: mae’r swm a lanlwythwyd ar gyfer pob torrent bellach yn cael ei gadw pan fydd NanoTorrent yn cau. Roedd lanlwythiadau nad oedden nhw wedi’u cadw eto yn cael eu colli bob tro y byddai’n cau, felly gallai torrent ddangos llawer llai, neu ddim byd, ar ôl ailgychwyn.
-- Atgyweiriadau: mae cymheiriaid sy’n cysylltu â NanoTorrent heb amgryptio yn cael eu derbyn eto. Roedden nhw i gyd yn cael eu gwrthod, ac roedd hynny’n dal hadu yn ôl.
-- O dan y bonet: mae’r llyfrgelloedd y mae NanoTorrent wedi’i adeiladu arnynt wedi’u diweddaru gyda’u trwsiadau diweddaraf.
+- Newydd: yn y deialog “Ychwanegu torrentau”, mae gan bob ffolder ei flwch ticio ei hun sy’n ticio neu’n dad-dicio popeth ynddo, gan gynnwys is-ffolderi, ac mae’r botymau “Popeth” a “Dim” yn gwneud yr un peth i’r torrent cyfan. Mae ffolder lle mai dim ond rhai o’i ffeiliau sydd wedi’u ticio yn dangos blwch gyda llinell doriad.
+- Newydd: API gwe dewisol sy’n gydnaws â qBittorrent, fel y gall Sonarr, Radarr ac offer eraill a wnaed ar gyfer qBittorrent reoli NanoTorrent. Trowch ef ymlaen yn “Dewisiadau”, o dan “Rhyngwyneb gwe”.
+- Atgyweiriadau: mae’r colofnau “Hadwyr” a “Cymheiriaid” bellach yn dangos maint yr haid mewn cromfachau, fel y’i hadroddir gan y tracwyr, mae’r drefn a osodwyd gyda blaenoriaethau ffeiliau yn cael ei chadw pan fydd torrent yn cael ei oedi a’i ailgychwyn, ac nid yw agor “Dewisiadau” am yr eildro tra’i fod ar agor bellach yn taflu newidiadau heb eu cadw.
+- Atgyweiriadau: mae newid yr iaith bellach yn ail-lunio pob deialog agored, ac mae ffeil hidlydd IP y mae ei llwybr yn cynnwys bwlch, # neu % bellach yn llwytho.
+- Diogelwch: mae’r rhyngwyneb gwe yn defnyddio llyfrgell HTTP wedi’i diweddaru, sy’n trwsio sut mae’n darllen cais camffurfiedig.
+- Wedi’i ddileu: yr opsiwn llinell orchymyn --webui-set. Mae --set web-bind, web-port, web-username a’r gosodiadau web-* eraill yn gwneud yr un peth.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

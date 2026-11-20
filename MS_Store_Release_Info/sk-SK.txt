@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Slovenčina (Slovensko) - Partner Center: Slovak (Slovakia) (sk-SK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzia 0.4.6
+Verzia 0.4.7
 
-- Opravy: množstvo odoslaných dát pri každom torrente sa teraz pri zatvorení programu NanoTorrent zachová. Ešte neuložené odoslané dáta sa pri každom ukončení stratili, takže torrent mohol po reštarte ukazovať oveľa menej, alebo aj nulu.
-- Opravy: partneri, ktorí sa k programu NanoTorrent pripájajú bez šifrovania, sú opäť prijímaní. Doteraz boli všetci odmietaní, čo brzdilo zdieľanie.
-- Pod kapotou: knižnice, na ktorých je NanoTorrent postavený, boli aktualizované o najnovšie opravy.
+- Novinka: v okne Pridať má každý priečinok vlastné začiarkavacie políčko, ktoré označí alebo zruší označenie všetkého v ňom vrátane podpriečinkov, a tlačidlá Všetko a Žiadne robia to isté pre celý torrent. Priečinok, v ktorom sú označené len niektoré súbory, zobrazuje políčko s pomlčkou.
+- Novinka: voliteľné webové API kompatibilné s qBittorrentom, vďaka ktorému môžu Sonarr, Radarr a ďalšie nástroje pre qBittorrent ovládať NanoTorrent. Zapína sa v Nastaveniach, v časti Webové rozhranie.
+- Opravy: stĺpce „Seedy“ a „Peery“ teraz v zátvorke ukazujú veľkosť roja podľa údajov z trackerov, poradie nastavené prioritami súborov sa zachová, keď sa torrent pozastaví a znova spustí, a opätovné otvorenie Nastavení, keď sú už otvorené, už nezahodí neuložené zmeny.
+- Opravy: zmena jazyka teraz prekreslí všetky otvorené dialógové okná a súbor IP filtra, ktorého cesta obsahuje medzeru, # alebo %, sa teraz načíta.
+- Zabezpečenie: webové rozhranie používa aktualizovanú knižnicu HTTP, ktorá opravuje spôsob, akým číta chybne vytvorenú požiadavku.
+- Odstránené: voľba príkazového riadka --webui-set. To isté robia --set web-bind, web-port, web-username a ostatné nastavenia web-*.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

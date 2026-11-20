@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Deutsch (Deutschland) - Partner Center: German (Germany) (de-DE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent ist eine Rust-Portierung von PicoTorrent von Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.6
+Version 0.4.7
 
-- Fehlerbehebungen: Die für jeden Torrent hochgeladene Datenmenge bleibt jetzt erhalten, wenn NanoTorrent geschlossen wird. Noch nicht gespeicherte Uploads gingen bei jedem Beenden verloren, sodass ein Torrent nach einem Neustart deutlich weniger oder gar nichts anzeigen konnte.
-- Fehlerbehebungen: Peers, die sich ohne Verschlüsselung mit NanoTorrent verbinden, werden wieder angenommen. Sie wurden alle abgewiesen, was das Seeden ausbremste.
-- Unter der Haube: Die Bibliotheken, auf denen NanoTorrent aufbaut, wurden mit ihren neuesten Korrekturen aktualisiert.
+- Neu: Im Dialog „Torrent(s) hinzufügen“ hat jeder Ordner ein eigenes Kontrollkästchen, das alles darin samt Unterordnern an- oder abhakt, und die Schaltflächen „Alle“ und „Keine“ tun dasselbe für den ganzen Torrent. Ein Ordner, in dem nur ein Teil der Dateien angehakt ist, zeigt ein Kästchen mit einem Strich.
+- Neu: Eine optionale, qBittorrent-kompatible Web-API, über die Sonarr, Radarr und andere für qBittorrent gemachte Werkzeuge NanoTorrent steuern können. Sie lässt sich in den „Einstellungen“ unter „Weboberfläche“ einschalten.
+- Fehlerbehebungen: Die Spalten „Seeder“ und „Peers“ zeigen jetzt in Klammern die Größe des Schwarms, wie von den Trackern gemeldet, die mit Dateiprioritäten festgelegte Reihenfolge bleibt erhalten, wenn ein Torrent pausiert und wieder gestartet wird, und ein zweites Öffnen der „Einstellungen“, während sie schon offen sind, verwirft keine ungespeicherten Änderungen mehr.
+- Fehlerbehebungen: Ein Wechsel der Sprache zeichnet jetzt jeden offenen Dialog neu, und eine IP-Filterdatei, deren Pfad ein Leerzeichen, # oder % enthält, wird jetzt geladen.
+- Sicherheit: Die Weboberfläche nutzt eine aktualisierte HTTP-Bibliothek, die korrigiert, wie sie eine fehlerhafte Anfrage liest.
+- Entfernt: die Befehlszeilenoption --webui-set. --set web-bind, web-port, web-username und die übrigen web-*-Einstellungen leisten dasselbe.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

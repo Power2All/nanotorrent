@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Oʻzbekcha (Oʻzbekiston) - Partner Center: Uzbek (Uzbekistan) (uz-Latn-UZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent — Viktor Elofsson yozgan PicoTorrent dasturining Rust versiyasi.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiya 0.4.6
+Versiya 0.4.7
 
-- Tuzatishlar: har bir torrent uchun yuborilgan hajm endi NanoTorrent yopilganda saqlanib qoladi. Hali saqlanmagan yuborishlar har safar chiqishda yoʻqolardi, shuning uchun qayta ishga tushirilgandan keyin torrent ancha kam yoki umuman nol koʻrsatishi mumkin edi.
-- Tuzatishlar: NanoTorrent-ga shifrlashsiz ulanadigan tengdoshlar yana qabul qilinadi. Ularning barchasi rad etilayotgan edi, bu esa ulashishni sekinlashtirardi.
-- Ichki o‘zgarishlar: NanoTorrent asoslangan kutubxonalar so‘nggi tuzatishlari bilan yangilandi.
+- Yangi: “Torrent qoʻshish” oynasida har bir jildning oʻz belgilash katakchasi bor: u ichidagi hamma narsani, ichki jildlar bilan birga, belgilaydi yoki belgisini olib tashlaydi, “Hammasi” va “Yoʻq” tugmalari esa butun torrent uchun xuddi shunday qiladi. Fayllarining faqat bir qismi belgilangan jild chiziqchali katakchani koʻrsatadi.
+- Yangi: qBittorrent bilan mos keladigan ixtiyoriy veb-API, uning yordamida Sonarr, Radarr va qBittorrent uchun yaratilgan boshqa vositalar NanoTorrent dasturini boshqara oladi. Uni “Afzalliklar” ichidagi “Veb-interfeys” boʻlimida yoqing.
+- Tuzatishlar: “Tarqatuvchilar” va “Tengdoshlar” ustunlari endi trekerlar xabar bergan umumiy toʻda hajmini qavs ichida koʻrsatadi, fayl ustuvorliklari bilan belgilangan tartib torrent pauza qilinib, qayta ishga tushirilganda saqlanib qoladi, “Afzalliklar” ochiq turganida uni ikkinchi marta ochish esa endi saqlanmagan oʻzgarishlarni yoʻqotmaydi.
+- Tuzatishlar: til almashtirilganda endi barcha ochiq muloqot oynalari qayta chiziladi, yoʻlida boʻsh joy, # yoki % boʻlgan IP filtr fayli esa endi yuklanadi.
+- Xavfsizlik: veb-interfeys yangilangan HTTP kutubxonasidan foydalanadi, bu notoʻgʻri tuzilgan soʻrovni oʻqish usulini tuzatadi.
+- Olib tashlandi: --webui-set buyruq qatori parametri. Xuddi shu ishni --set web-bind, web-port, web-username va boshqa web-* sozlamalari bajaradi.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

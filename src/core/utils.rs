@@ -2,27 +2,20 @@
 
 use std::path::Path;
 
-/// Percent-encode for a URL: everything outside the unreserved set becomes
-/// `%XX`.
+/// Percent-encode for a URL: everything outside the RFC 3986 unreserved set
+/// becomes `%XX`.
 ///
-/// `also_safe` names bytes to leave alone on top of the unreserved set - a
-/// path wants `/` kept, a query parameter does not. Empty is the strict form.
-///
-/// Hand-rolled rather than pulled in: this escapes tracker parameters, magnet
-/// fields, web-seed paths and BEP 17 info hashes, which is a handful of call
-/// sites and no edge cases beyond "escape everything that is not unreserved".
-pub fn percent_encode(bytes: &[u8], also_safe: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len());
-    for b in bytes {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(*b as char)
-            }
-            _ if also_safe.contains(b) => out.push(*b as char),
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
+/// `keep_slash` leaves `/` alone too - a path wants it kept, a query parameter
+/// does not.
+pub fn percent_encode(bytes: &[u8], keep_slash: bool) -> String {
+    use percent_encoding::{AsciiSet, NON_ALPHANUMERIC};
+    const UNRESERVED: &AsciiSet = &NON_ALPHANUMERIC
+        .remove(b'-')
+        .remove(b'.')
+        .remove(b'_')
+        .remove(b'~');
+    const PATH: &AsciiSet = &UNRESERVED.remove(b'/');
+    percent_encoding::percent_encode(bytes, if keep_slash { PATH } else { UNRESERVED }).to_string()
 }
 
 /// Mimics Win32 StrFormatByteSize64 which PicoTorrent used via
@@ -263,6 +256,30 @@ mod tests {
         // the guard must never read a failure as a full disk.
         let missing = std::path::Path::new("nanotorrent-no-such-dir-9f3a2b");
         assert!(super::disk_space(missing).is_none());
+    }
+
+    /// Every byte value, against the rule the hand-written encoder this
+    /// replaced spelled out: unreserved stays, `/` stays only when asked,
+    /// everything else is `%XX` in upper case.
+    #[test]
+    fn percent_encoding_keeps_exactly_the_unreserved_set() {
+        let all: Vec<u8> = (0..=255).collect();
+        for keep_slash in [false, true] {
+            let mut want = String::new();
+            for &b in &all {
+                if b.is_ascii_alphanumeric()
+                    || matches!(b, b'-' | b'_' | b'.' | b'~')
+                    || (keep_slash && b == b'/')
+                {
+                    want.push(b as char);
+                } else {
+                    want.push_str(&format!("%{b:02X}"));
+                }
+            }
+            assert_eq!(super::percent_encode(&all, keep_slash), want);
+        }
+        assert_eq!(super::percent_encode(b"a b/c", true), "a%20b/c");
+        assert_eq!(super::percent_encode(b"a b/c", false), "a%20b%2Fc");
     }
 
     use super::*;

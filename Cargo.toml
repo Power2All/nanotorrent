@@ -1,6 +1,6 @@
 [package]
 name = "nanotorrent"
-version = "0.4.6"
+version = "0.4.7"
 edition = "2024"
 default-run = "nanotorrent-gui"
 description = "NanoTorrent - a tiny, hackable BitTorrent client (Rust port of PicoTorrent)"
@@ -97,6 +97,9 @@ rand = "0.10"
 # check on a string the announce machinery is about to use would be the wrong
 # place to be clever.
 url = "2.5"
+# Escaping web-seed paths, BEP 17 info hashes and magnet names. Already in the
+# tree as url's own encoder, so naming it compiles nothing new.
+percent-encoding = "2.3"
 # Regular expressions for plugin scripts. Already in the tree transitively, so
 # naming it here costs nothing to build - and it is the crate whose automaton
 # has no backtracking, which is what makes it safe to hand a pattern written by

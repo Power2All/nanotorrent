@@ -21,8 +21,7 @@ import { UpdateDialog } from "update.slint";
 import { AboutDialog } from "about.slint";
 import { CreateTorrentDialog } from "create.slint";
 import { ClosePromptDialog } from "closeprompt.slint";
-import { DbPromptDialog } from "dbprompt.slint";
-import { PortablePromptDialog } from "portableprompt.slint";
+import { ConfirmDialog } from "confirm.slint";
 import { PicoImportDialog } from "picoimport.slint";
 import { MigrateProgressDialog } from "migrateprogress.slint";
 import { RemoveDialog } from "remove.slint";
@@ -30,8 +29,7 @@ import { PluginWindow, PluginRowItem, PluginButton } from "plugin.slint";
 export { PreferencesDialog, AboutDialog, CliHelpDialog, UpdateDialog, CreateTorrentDialog, ClosePromptDialog, RemoveDialog }
 export { PicoImportDialog }
 export { MigrateProgressDialog }
-export { DbPromptDialog }
-export { PortablePromptDialog }
+export { ConfirmDialog }
 export { PluginWindow, PluginRowItem, PluginButton }
 
 import { ScrollView, ListView, Button, ComboBox, HorizontalBox, VerticalBox, TabWidget, TextEdit, LineEdit, CheckBox, Palette, Spinner } from "std-widgets.slint";
@@ -85,6 +83,9 @@ export struct FileEntryRow {
     /// Which icon to draw, from the file's extension - see FileKind in
     /// mod.rs, which owns the numbering. 0 on a folder row.
     kind: int,
+    /// Add dialog only: a folder with some of its files ticked and some not,
+    /// drawn as a box with a dash. `included` is false then.
+    partial: bool,
 }
 
 export struct PeerEntryRow {
@@ -1818,7 +1819,6 @@ export component MainWindow inherits Window {
     // The PQL console. `console-valid` drives the border colour, so a
     // half-typed expression looks unfinished rather than broken.
     in-out property <bool> show-console;
-    in-out property <string> console-text;
     in property <bool> console-valid: true;
     callback console-changed(string);
     /// Persist a View toggle. Key is the configuration key, so one callback
@@ -1955,7 +1955,6 @@ export component MainWindow inherits Window {
                 LineEdit {
                     horizontal-stretch: 1;
                     placeholder-text: L.s(L.revision, "console_placeholder");
-                    text <=> root.console-text;
                     edited => { root.console-changed(self.text); }
                 }
             }
@@ -3378,28 +3377,6 @@ export struct QueueRow {
     size: string,
 }
 
-export struct FileRow {
-    /// Index into the torrent's file list, or -1 for a folder row.
-    index: int,
-    depth: int,
-    name: string,
-    size: string,
-    included: bool,
-    /// A folder row's full path, handed back when it is clicked. Empty on a
-    /// file row, which does not fold.
-    path: string,
-    /// Whether this folder is showing its contents. Always false on a file row.
-    expanded: bool,
-    /// See FileEntryRow: which ancestor columns carry a guide line through this
-    /// row, one bit per level.
-    guides: int,
-    /// Last entry in its folder, so its connector is an elbow, not a tee.
-    last: bool,
-    /// Which icon to draw, from the file's extension - see FileKind in
-    /// mod.rs, which owns the numbering. 0 on a folder row.
-    kind: int,
-}
-
 // Add-torrent dialog: parsed file list, save path, label and start toggle.
 export component AddTorrentDialog inherits Dialog {
     title: L.s(L.revision, "add_torrent_s");
@@ -3411,7 +3388,9 @@ export component AddTorrentDialog inherits Dialog {
     in property <string> torrent-size;
     in-out property <string> save-path;
     in-out property <bool> start-torrent: true;
-    in property <[FileRow]> files;
+    /// The details tab's row type. A folder's `included` is true when every
+    /// file under it is; progress and priority are unused here.
+    in property <[FileEntryRow]> files;
     /// Shown in place of the file list when there is none to show yet - a
     /// magnet still waiting for its metadata. Empty otherwise.
     in property <string> files-note;
@@ -3429,6 +3408,9 @@ export component AddTorrentDialog inherits Dialog {
     callback toggle-file(int);
     /// A folder row was clicked; fold or unfold it.
     callback toggle-folder(string);
+    /// Tick (true) or untick every file under a folder's path - "" for the
+    /// whole torrent, which is what the All / None buttons send.
+    callback include-files(string, bool);
     callback select-torrent(int);
 
     /// Width of the queue column. Rust seeds it from the last time and stores
@@ -3550,6 +3532,25 @@ export component AddTorrentDialog inherits Dialog {
                 Text { text: L.s(L.revision, "size"); font-weight: 700; font-size: 13px; width: 90px; vertical-alignment: center; }
                 Text { text: root.torrent-size; font-size: 13px; vertical-alignment: center; }
             }
+            // For the torrent on screen only: in a batch, each keeps its own
+            // choice, like its single ticks.
+            Row {
+                Text { text: L.s(L.revision, "include"); font-weight: 700; font-size: 13px; width: 90px; vertical-alignment: center; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    Button {
+                        text: L.s(L.revision, "all");
+                        enabled: root.files.length > 0;
+                        clicked => { root.include-files("", true); }
+                    }
+                    Button {
+                        text: L.s(L.revision, "none");
+                        enabled: root.files.length > 0;
+                        clicked => { root.include-files("", false); }
+                    }
+                }
+            }
         }
 
         Rectangle {
@@ -3576,9 +3577,8 @@ export component AddTorrentDialog inherits Dialog {
                     for f[i] in root.files: Rectangle {
                         height: 24px;
                         background: mod(i, 2) == 0 ? transparent : Palette.alternate-background;
-                        // Folder rows only: a file row's one control is its
-                        // checkbox, and a TouchArea under it would swallow
-                        // nothing but still be there to reason about.
+                        // Folder rows only: they fold when clicked anywhere
+                        // but their checkbox, which sits above this.
                         if f.index < 0: TouchArea {
                             mouse-cursor: pointer;
                             clicked => { root.toggle-folder(f.path); }
@@ -3591,16 +3591,46 @@ export component AddTorrentDialog inherits Dialog {
                             padding-left: 8px;
                             padding-right: 8px;
                             spacing: 12px;
-                            // Folder rows have nothing to include: their
-                            // files each carry their own checkbox.
-                            if f.index >= 0: CheckBox {
+                            // A folder's box is ticked when every file under
+                            // it is, and sets them all, at any depth.
+                            Rectangle {
                                 width: 70px;
-                                checked: f.included;
-                                // The file's index, not the row number: folding
-                                // a folder moves every row below it.
-                                toggled => { root.toggle-file(f.index); }
+                                // Sized to the cell, or it is centred in it and
+                                // the column of boxes moves right.
+                                CheckBox {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    checked: f.included;
+                                    // The file's index, not the row number:
+                                    // folding a folder moves every row below it.
+                                    toggled => {
+                                        if f.index >= 0 {
+                                            root.toggle-file(f.index);
+                                        } else {
+                                            root.include-files(f.path, self.checked);
+                                        }
+                                    }
+                                }
+                                // Slint's CheckBox has no third state, so a
+                                // partly ticked folder gets one drawn over its
+                                // box - the 18px, 2px-rounded box of the
+                                // Fluent style, at the same spot. It takes no
+                                // input: a click goes through to the box below,
+                                // which is unticked and so ticks everything.
+                                if f.partial: Rectangle {
+                                    x: 0;
+                                    y: (parent.height - self.height) / 2;
+                                    width: 18px;
+                                    height: 18px;
+                                    border-radius: 2px;
+                                    background: Palette.accent-background;
+                                    Rectangle {
+                                        width: 8px;
+                                        height: 2px;
+                                        background: Palette.accent-foreground;
+                                    }
+                                }
                             }
-                            if f.index < 0: Rectangle { width: 70px; }
                             TreeNameCell {
                                 horizontal-stretch: 1;
                                 depth: f.depth;

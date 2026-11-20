@@ -14,17 +14,6 @@ import { DetailTab, TabStrip, GearIcon, GeneralIcon, DownloadsIcon, ConnectionIc
          ProxyTabIcon, WebTabIcon, PluginsIcon, LabelsIcon,
          DatabaseIcon, SpeedIcon, QueueIcon } from "tabs.slint";
 
-// A left-aligned bold caption with its control beside it, which is the shape
-// almost every row in this dialog takes.
-/// A label or a saved filter, as the list edits it. `id` is -1 for a row that
-/// has not been saved yet, which is what the upsert calls treat as an insert.
-export struct NamedRule {
-    id: int,
-    name: string,
-    /// The PQL expression for a filter, or a label's save path.
-    rule: string,
-}
-
 // A cog, for the Configure button on a plugin's row.
 //
 // Local rather than the toolbar's IconButton: that one lives in app.slint,
@@ -391,8 +380,9 @@ export component PreferencesDialog inherits Dialog {
     callback add-tag();
     callback delete-tag();
 
-    in property <[NamedRule]> labels;
-    in property <[NamedRule]> filters;
+    /// Names only: the rest of a row is read from the database by index.
+    in property <[string]> labels;
+    in property <[string]> filters;
     in-out property <int> label-index: -1;
     in-out property <int> filter-index: -1;
     // Edited in place by the fields below and committed by save-label /
@@ -434,6 +424,8 @@ export component PreferencesDialog inherits Dialog {
     in-out property <int> web-tls-index;
     in-out property <string> web-cert-path;
     in-out property <string> web-key-path;
+    /// Also answer qBittorrent's Web API under /api/v2.
+    in-out property <bool> web-qbittorrent-api;
     /// Filled in by Rust: why the current combination would be refused at
     /// startup, or empty when it is fine.
     in property <string> web-warning;
@@ -887,6 +879,11 @@ export component PreferencesDialog inherits Dialog {
                         clicked => { root.browse-web-key(); }
                     }
                 }
+                CheckBox {
+                    text: L.s(L.revision, "web_qbittorrent_api");
+                    checked <=> root.web-qbittorrent-api;
+                    enabled: root.web-enabled;
+                }
 
                 // The server refuses these combinations at startup rather
                 // than warning, so say so here instead of letting someone
@@ -1150,7 +1147,7 @@ export component PreferencesDialog inherits Dialog {
                                         : transparent;
                                     TouchArea { clicked => { root.pick-label(i); } }
                                     Text {
-                                        text: l.name;
+                                        text: l;
                                         x: 8px;
                                         height: parent.height;
                                         vertical-alignment: center;
@@ -1212,7 +1209,7 @@ export component PreferencesDialog inherits Dialog {
                                         : transparent;
                                     TouchArea { clicked => { root.pick-filter(i); } }
                                     Text {
-                                        text: f.name;
+                                        text: f;
                                         x: 8px;
                                         height: parent.height;
                                         vertical-alignment: center;

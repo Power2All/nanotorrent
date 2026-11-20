@@ -52,7 +52,7 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedTorrent, String> {
     // this way keeps the error message for a genuinely broken file coming from
     // the v1 parser, which has more to say about one.
     match crate::bittorrent::v2::parse(bytes) {
-        Ok(Some(meta)) if !meta.has_v1 => return Ok(parsed_from_v2(&meta)),
+        Ok(Some(meta)) if !meta.info.has_v1 => return Ok(parsed_from_v2(&meta)),
         // A hybrid is read through its v1 half below, the same way it is
         // downloaded. Err means the v2 half is malformed; fall through and let
         // the v1 parser have its say, since a hybrid may still be usable.
@@ -112,7 +112,7 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedTorrent, String> {
 /// engine's own.
 fn parsed_from_v2(meta: &crate::bittorrent::v2::V2Meta) -> ParsedTorrent {
     let files: Vec<ParsedFile> = meta
-        .files
+        .info.files
         .iter()
         .enumerate()
         .map(|(index, f)| ParsedFile {
@@ -124,7 +124,7 @@ fn parsed_from_v2(meta: &crate::bittorrent::v2::V2Meta) -> ParsedTorrent {
         .collect();
     ParsedTorrent {
         total_size: files.iter().map(|f| f.size as i64).sum(),
-        name: meta.name.clone(),
+        name: meta.info.name.clone(),
         files,
     }
 }
@@ -233,9 +233,9 @@ mod tests {
         std::fs::write(sub.join("b.bin"), vec![2u8; 8_000]).unwrap();
 
         let bytes = build(&CreateInput {
-            source: &sub,
-            trackers: &[],
-            comment: "",
+            source: sub.clone(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "test".into(),
             private: false,
             piece_length: Some(16384),

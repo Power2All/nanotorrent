@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Català (Espanya) - Partner Center: Catalan (Spain) (ca-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ El NanoTorrent és una adaptació en Rust del PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versió 0.4.6
+Versió 0.4.7
 
-- Correccions: la quantitat carregada de cada torrent ara es conserva quan es tanca NanoTorrent. Les càrregues encara no desades es perdien a cada sortida, de manera que un torrent podia mostrar molt menys, o res, després de reiniciar.
-- Correccions: els parells que es connecten a NanoTorrent sense xifratge tornen a ser acceptats. Tots eren rebutjats, de manera que es compartia molt menys.
-- Canvis interns: s’han actualitzat les biblioteques sobre les quals es construeix NanoTorrent, amb les seves últimes correccions.
+- Novetat: al diàleg «Afegeix torrent(s)», cada carpeta té la seva pròpia casella que marca o desmarca tot el que conté, subcarpetes incloses, i els botons «Tot» i «Cap» fan el mateix per a tot el torrent. Una carpeta amb només alguns fitxers marcats mostra una casella amb un guionet.
+- Novetat: una API web opcional compatible amb qBittorrent, perquè Sonarr, Radarr i altres eines fetes per a qBittorrent puguin controlar NanoTorrent. Activeu-la a «Preferències», a l'apartat «Interfície web».
+- Correccions: les columnes «Llavors» i «Parells» ara mostren entre parèntesis la mida de l'eixam segons els rastrejadors, l'ordre establert amb les prioritats dels fitxers es conserva quan un torrent es posa en pausa i es torna a iniciar, i obrir «Preferències» una segona vegada mentre ja és obert ja no descarta els canvis no desats.
+- Correccions: canviar l'idioma ara redibuixa tots els diàlegs oberts, i un fitxer de filtre d'IP amb un camí que conté un espai, # o % ara es carrega.
+- Seguretat: la interfície web fa servir una biblioteca HTTP actualitzada, que corregeix com llegeix una petició mal formada.
+- Eliminat: l'opció de línia d'ordres --webui-set. --set web-bind, web-port, web-username i la resta de paràmetres web-* fan el mateix.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

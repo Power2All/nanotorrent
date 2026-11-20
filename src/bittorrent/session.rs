@@ -244,6 +244,41 @@ fn priority_order(count: usize, stored: &HashMap<usize, i64>) -> Vec<usize> {
     order
 }
 
+/// Which torrents have just gone live, so the file ordering can follow them.
+///
+/// The engine builds a fresh live state every time a torrent starts - resumed
+/// by hand or by the queue, re-added, restored at startup, carried into a
+/// rebuilt session - and whatever was handed to the old state is gone with it.
+/// Keyed on that state's identity rather than on "paused last tick", so a
+/// pause and resume between two ticks, which is what a reannounce is, still
+/// counts as a start.
+///
+/// Generic only so the test can stand in a plain `Arc` for the engine's state.
+struct LiveStarts<T>(HashMap<String, std::sync::Weak<T>>);
+
+impl<T> Default for LiveStarts<T> {
+    fn default() -> Self {
+        LiveStarts(HashMap::new())
+    }
+}
+
+impl<T> LiveStarts<T> {
+    /// True the first time this live state is seen for `hash`; `None` is a
+    /// torrent that is not live. The `Weak` held for the last one keeps its
+    /// allocation, so a new state can never reuse the address and pass for it.
+    fn started(&mut self, hash: &str, live: Option<&Arc<T>>) -> bool {
+        let Some(live) = live else {
+            self.0.remove(hash);
+            return false;
+        };
+        if self.0.get(hash).is_some_and(|last| std::ptr::eq(last.as_ptr(), Arc::as_ptr(live))) {
+            return false;
+        }
+        self.0.insert(hash.to_string(), Arc::downgrade(live));
+        true
+    }
+}
+
 /// Where row `at` ends up, in a queue of `len` rows.
 ///
 /// Split out because this is the arithmetic worth checking: every one of these
@@ -287,6 +322,10 @@ pub struct FileStreamOpen {
 }
 
 pub struct FileEntry {
+    /// The file's index in the torrent - what priorities and `only_files` key
+    /// by. Not its position in [`Session::files`], which leaves padding files
+    /// out unless they are shown.
+    pub index: usize,
     pub name: String,
     pub length: u64,
     pub included: bool,
@@ -554,7 +593,10 @@ impl MagnetFetch {
     }
 }
 
-#[derive(PartialEq, Default)]
+/// Serialised for `GET /api/torrents/{hash}/trackers` as "source", "tier" or
+/// "tracker".
+#[derive(PartialEq, Default, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum TrackerRowKind {
     /// A peer-discovery source pseudo-row (DHT / LSD / PeX).
     Source,
@@ -579,7 +621,8 @@ pub struct PieceMap {
     pub inflight: Vec<u8>,
 }
 
-#[derive(Default)]
+/// One row of the Trackers tab, and of `GET /api/torrents/{hash}/trackers`.
+#[derive(Default, serde::Serialize)]
 pub struct TrackerRow {
     pub kind: TrackerRowKind,
     /// Text for the URL column (tracker rows are indented).
@@ -588,6 +631,7 @@ pub struct TrackerRow {
     pub seeders: Option<u32>,
     pub leechers: Option<u32>,
     pub fails: u32,
+    #[serde(skip)]
     pub next_announce: Option<std::time::SystemTime>,
 }
 
@@ -620,6 +664,9 @@ impl TrackerRow {
     }
 }
 
+/// One peer, for the Peers tab, `GET /api/torrents/{hash}/peers` and the
+/// plugin `peers()`.
+#[derive(serde::Serialize)]
 pub struct PeerEntry {
     pub addr: String,
     pub state: String,
@@ -763,16 +810,6 @@ fn readd_options(paused: bool, output_folder: String) -> AddTorrentOptions {
     }
 }
 
-/// Add back a torrent that was just forgotten, from its own metadata bytes.
-///
-/// The second half of every "forget and re-add" in this file - recheck, move,
-/// set location, tracker edits - which differ in what they do in between.
-async fn readd(rq: &Arc<RqbitSession>, events: &EventBus, bytes: Vec<u8>, opts: AddTorrentOptions) {
-    if let Err(err) = rq.add_torrent(AddTorrent::from_bytes(bytes), Some(opts)).await {
-        report_error(events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
-    }
-}
-
 /// Carry out what a share limit decided.
 ///
 /// Pausing is recorded in the database as well as done to the engine: a torrent
@@ -812,11 +849,7 @@ async fn apply_share_action(
                 report_error(events, SessionError::new("error_remove_named", [name.clone(), format!("{err:#}")]));
                 return;
             }
-            meta.lock().unwrap().remove(hash);
-            let _ = db.with(|conn| {
-                conn.execute("delete from torrent_magnet_uri where info_hash = ?1", [hash])?;
-                conn.execute("delete from torrent where info_hash = ?1", [hash])
-            });
+            forget_rows(db, meta, hash);
             tracing::info!("{name} reached its share limit and was removed");
             events.emit(SessionEvent::TorrentRemoved {
                 hash: hash.to_string(),
@@ -824,6 +857,17 @@ async fn apply_share_action(
             });
         }
     }
+}
+
+/// Drop this app's own record of a torrent: its metadata, its `torrent` row -
+/// whose ON DELETE CASCADE takes its trackers, tags and file priorities - and
+/// its stored magnet link, which has no foreign key for the cascade to follow.
+fn forget_rows(db: &Database, meta: &Mutex<HashMap<String, TorrentMeta>>, hash: &str) {
+    meta.lock().unwrap().remove(hash);
+    let _ = db.with(|conn| {
+        conn.execute("delete from torrent_magnet_uri where info_hash = ?1", [hash])?;
+        conn.execute("delete from torrent where info_hash = ?1", [hash])
+    });
 }
 
 /// Report a background failure: logged once, then handed to every subscriber.
@@ -942,7 +986,7 @@ fn bound_interface(cfg: &Configuration) -> Option<String> {
 }
 
 /// Where torrents are saved unless the add says otherwise.
-fn default_save_path(cfg: &Configuration) -> PathBuf {
+pub(crate) fn default_save_path(cfg: &Configuration) -> PathBuf {
     cfg.get_string("default_save_path")
         .map(PathBuf::from)
         .unwrap_or_else(Environment::get_downloads_path)
@@ -1010,10 +1054,6 @@ fn build_session_options(
     // included - so a rebuild with them on does not start at the main limits
     // and stay there, the scheduler believing its last answer still applies.
     let (download_bps, upload_bps) = crate::bittorrent::limits::current_rates(cfg, Local::now());
-    let (download_bps, upload_bps) = (
-        download_bps.and_then(NonZeroU32::new),
-        upload_bps.and_then(NonZeroU32::new),
-    );
 
     // SOCKS proxy: the same URL the HTTP client uses, so the two cannot
     // disagree about whether a proxy is in play. librqbit only parses
@@ -1286,35 +1326,12 @@ fn ipfilter_url(cfg: &Configuration) -> Option<String> {
         tracing::warn!("IP filter file does not exist: {path}");
         return None;
     }
-    Some(format!("file:///{}", path.replace('\\', "/")))
+    // Absolute first: `from_file_path` refuses a relative path, and the
+    // `exists` above resolved this one against the working directory.
+    url::Url::from_file_path(std::path::absolute(&path).ok()?).ok().map(String::from)
 }
 
-/// Parameters collected by the create-torrent dialog.
-pub struct CreateTorrentParams {
-    pub source: PathBuf,
-    pub trackers: Vec<String>,
-    pub comment: String,
-    pub private: bool,
-    pub piece_length: Option<u32>,
-    pub version: crate::bittorrent::torrent_create::TorrentVersion,
-    pub output: PathBuf,
-    pub add_to_session: bool,
-}
-
-/// Outcome of a background create-torrent run, polled by the UI tick.
-pub enum CreateTorrentOutcome {
-    Created {
-        name: String,
-        bytes: Vec<u8>,
-        /// Folder containing the source data - used as the save path when
-        /// adding the new torrent to the session so it seeds in place.
-        save_path: Option<String>,
-        add_to_session: bool,
-    },
-    Failed(String),
-}
-
-/// Hash a folder or file into a finished .torrent.
+/// Hash a folder or file into a finished .torrent, written to `output`.
 ///
 /// Async and off the UI thread: hashing is bounded by disk speed and a large
 /// folder takes minutes.
@@ -1327,47 +1344,16 @@ pub enum CreateTorrentOutcome {
 /// piece size - a torrent strict clients refuse. Where its output was right,
 /// `build` produces the same info dict byte for byte; the tests in
 /// `torrent_create` hold it to that.
-async fn build_torrent(params: CreateTorrentParams) -> Result<CreateTorrentOutcome> {
-    use crate::bittorrent::torrent_create;
-
-    let CreateTorrentParams {
-        source,
-        trackers,
-        comment,
-        private,
-        piece_length,
-        version,
-        output,
-        add_to_session,
-    } = params;
-    let name = source
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let save_path = source.parent().map(|p| p.to_string_lossy().into_owned());
-
+async fn build_torrent(
+    input: crate::bittorrent::torrent_create::CreateInput,
+    output: PathBuf,
+) -> Result<Vec<u8>> {
     // Hashing is blocking file I/O, so run it off the async worker.
-    let bytes = tokio::task::spawn_blocking(move || {
-        torrent_create::build(&torrent_create::CreateInput {
-            source: &source,
-            version,
-            piece_length,
-            trackers: &trackers,
-            comment: &comment,
-            private,
-            created_by: crate::buildinfo::user_agent(),
-        })
-    })
-    .await??;
-
+    let bytes =
+        tokio::task::spawn_blocking(move || crate::bittorrent::torrent_create::build(&input))
+            .await??;
     tokio::fs::write(&output, &bytes).await?;
-
-    Ok(CreateTorrentOutcome::Created {
-        name,
-        bytes,
-        save_path,
-        add_to_session,
-    })
+    Ok(bytes)
 }
 
 impl Session {
@@ -1497,23 +1483,6 @@ impl Session {
         self.inner.read().unwrap().clone()
     }
 
-    /// The API facade over the current librqbit session. Built on demand: it
-    /// is only a wrapper around the session handle, so keeping one in step
-    /// with `inner` across rebuilds would be bookkeeping for nothing.
-    fn rq_api(&self) -> Api {
-        Api::new(self.rq(), None)
-    }
-
-    /// Write every upload total to the database, the engine's latest counters
-    /// included. See `flush_uploads`.
-    fn flush_uploaded_totals(&self) {
-        flush_uploads(&self.rq(), &self.meta, &self.db);
-    }
-
-    fn write_uploaded_totals(&self, rows: &[(String, i64)]) {
-        write_uploads(&self.db, rows);
-    }
-
     /// Tear the librqbit session down and rebuild it with options derived
     /// from the (changed) configuration - "apply preferences without
     /// restart". Torrent state comes back through the JSON persistence.
@@ -1521,7 +1490,7 @@ impl Session {
         // Before anything else: the rebuild below resets every engine counter,
         // and the ratio is only right afterwards if what they held is already
         // on disk.
-        self.flush_uploaded_totals();
+        flush_uploads(&self.rq(), &self.meta, &self.db);
 
         // A refusal here keeps the session that is already running rather than
         // rebuilding into one that would leak. The settings are saved either
@@ -1604,19 +1573,9 @@ impl Session {
             "forgetting {} torrent(s) the engine no longer has",
             stale.len()
         );
-        let _ = self.db.with(|conn| {
-            for hash in &stale {
-                // The magnet table has no foreign key to `torrent`, so it is
-                // the one thing the cascade does not reach.
-                conn.execute(
-                    "delete from torrent_magnet_uri where info_hash = ?1",
-                    [hash],
-                )?;
-                conn.execute("delete from torrent where info_hash = ?1", [hash])?;
-            }
-            Ok::<_, rusqlite::Error>(())
-        });
-        self.meta.lock().unwrap().retain(|hash, _| !stale.contains(hash));
+        for hash in &stale {
+            forget_rows(&self.db, &self.meta, hash);
+        }
     }
 
     /// Load per-torrent metadata from the `torrent` table for torrents
@@ -1702,13 +1661,8 @@ impl Session {
         }
 
         tracing::error!("network interface \"{name}\" is gone - pausing everything");
-        self.push_error(SessionError::new("error_interface_gone", [name.clone()]));
-        let handles: Vec<Arc<ManagedTorrent>> = self
-            .rq()
-            .with_torrents(|torrents| torrents.map(|(_, h)| h.clone()).collect());
-        for handle in handles {
-            let _ = self.rt.block_on(self.rq().pause(&handle));
-        }
+        report_error(&self.events, SessionError::new("error_interface_gone", [name.clone()]));
+        self.rt.block_on(pause_running(&self.rq()));
         false
     }
 
@@ -1716,16 +1670,9 @@ impl Session {
     /// direct API, so forget the torrent (keep files) and re-add it from its
     /// own metadata bytes - the fresh add hash-checks the existing data.
     pub fn recheck(&self, hash: &str) {
-        let Some((bytes, output_folder, paused)) = self.torrent_readd_info(hash) else {
+        let Some((handle, bytes, output_folder, paused)) = self.torrent_readd_info(hash) else {
             return;
         };
-        let Some(handle) = self.find(hash) else {
-            return;
-        };
-
-        let rq = self.rq();
-        let events = self.events.clone();
-        let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
         // librqbit's fastresume file. After deleting the torrent we remove it
         // ourselves so the re-add does a FULL re-hash: librqbit only spot-checks
         // the saved bitfield, and on Windows it can fail to delete this file
@@ -1733,27 +1680,18 @@ impl Session {
         // otherwise survive and the torrent would wrongly seed missing data.
         let bitv = self.session_path.join(format!("{hash}.bitv"));
 
-        self.rt.spawn(async move {
-            if let Err(err) = rq.delete(id, false).await {
-                report_error(&events, SessionError::new("error_recheck_failed", [format!("{err:#}")]));
-                return;
-            }
-
-            // delete().await has returned, so librqbit has dropped the mmap;
-            // the file can now be removed even on Windows.
-            let _ = tokio::fs::remove_file(&bitv).await;
-
-            readd(&rq, &events, bytes, readd_options(paused, output_folder)).await;
+        self.forget_and_readd(&handle, bytes, "error_recheck_failed", move || {
+            // The forget has finished, so librqbit has dropped the mmap; the
+            // file can now be removed even on Windows.
+            let _ = std::fs::remove_file(&bitv);
+            readd_options(paused, output_folder)
         });
     }
 
     /// Move storage (port of libtorrent move_storage): forget the torrent
     /// (keep files), move the data, re-add pointing at the new folder.
     pub fn move_storage(&self, hash: &str, new_folder: &str) {
-        let Some((bytes, old_folder, paused)) = self.torrent_readd_info(hash) else {
-            return;
-        };
-        let Some(handle) = self.find(hash) else {
+        let Some((handle, bytes, old_folder, paused)) = self.torrent_readd_info(hash) else {
             return;
         };
 
@@ -1772,17 +1710,10 @@ impl Session {
             return;
         }
 
-        let rq = self.rq();
         let events = self.events.clone();
-        let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
         let new_folder = new_folder.to_string();
 
-        self.rt.spawn(async move {
-            if let Err(err) = rq.delete(id, false).await {
-                report_error(&events, SessionError::new("error_move_failed", [format!("{err:#}")]));
-                return;
-            }
-
+        self.forget_and_readd(&handle, bytes, "error_move_failed", move || {
             if let Err(err) = move_files(&old_folder, &new_folder, &files) {
                 report_error(&events, SessionError::new("error_move_data_failed", [format!("{err:#}")]));
                 // Fall through and re-add at the OLD location so the torrent
@@ -1794,8 +1725,7 @@ impl Session {
             } else {
                 old_folder
             };
-
-            readd(&rq, &events, bytes, readd_options(paused, target)).await;
+            readd_options(paused, target)
         });
     }
 
@@ -1813,10 +1743,7 @@ impl Session {
     /// whatever pieces check out. Nothing is deleted either way: the worst case
     /// for a wrong folder is a recheck that finds nothing.
     pub fn set_location(&self, hash: &str, new_folder: &str) {
-        let Some((bytes, _old_folder, paused)) = self.torrent_readd_info(hash) else {
-            return;
-        };
-        let Some(handle) = self.find(hash) else {
+        let Some((handle, bytes, _old_folder, paused)) = self.torrent_readd_info(hash) else {
             return;
         };
 
@@ -1855,35 +1782,20 @@ impl Session {
             }
         }
 
-        let rq = self.rq();
-        let events = self.events.clone();
-        let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
+        if first_missing {
+            report_error(&self.events, SessionError::new("error_no_data_at", [new_folder.clone()]));
+        }
 
-        self.rt.spawn(async move {
-            if first_missing {
-                report_error(
-                    &events,
-                    SessionError::new("error_no_data_at", [new_folder.clone()]),
-                );
-            }
-
-            // `false`: the files stay exactly where they are. This forgets the
-            // torrent, not the data.
-            if let Err(err) = rq.delete(id, false).await {
-                report_error(&events, SessionError::new("error_set_location_failed", [format!("{err:#}")]));
-                return;
-            }
-
-            // The files are expected to be there already - that is the whole
-            // point - so the re-add's `overwrite` is a verify, not a clobber.
-            // Unless they were not found: checking a paused torrent opens its
-            // files, which creates them, and a folder picked by mistake should
-            // not fill up with empty ones. It is checked when it is started.
-            let opts = AddTorrentOptions {
+        // The files are expected to be there already - that is the whole
+        // point - so the re-add's `overwrite` is a verify, not a clobber.
+        // Unless they were not found: checking a paused torrent opens its
+        // files, which creates them, and a folder picked by mistake should
+        // not fill up with empty ones. It is checked when it is started.
+        self.forget_and_readd(&handle, bytes, "error_set_location_failed", move || {
+            AddTorrentOptions {
                 verify_paused: !first_missing,
                 ..readd_options(paused, new_folder)
-            };
-            readd(&rq, &events, bytes, opts).await;
+            }
         });
     }
 
@@ -1942,32 +1854,56 @@ impl Session {
         }
     }
 
-    /// Everything needed to forget + re-add a torrent: its metadata bytes,
-    /// output folder and paused state.
-    fn torrent_readd_info(&self, hash: &str) -> Option<(Vec<u8>, String, bool)> {
+    /// Everything needed to forget + re-add a torrent: its handle, metadata
+    /// bytes, output folder and paused state.
+    fn torrent_readd_info(&self, hash: &str) -> Option<(Arc<ManagedTorrent>, Vec<u8>, String, bool)> {
         let handle = self.find(hash)?;
-        let metadata = handle.metadata.load_full()?;
-        let bytes = metadata.torrent_bytes.to_vec();
-
+        let bytes = handle.metadata.load_full()?.torrent_bytes.to_vec();
         let folder = handle.output_folder().to_string_lossy().into_owned();
         let paused = matches!(handle.stats().state, TorrentStatsState::Paused);
-
-        Some((bytes, folder, paused))
+        Some((handle, bytes, folder, paused))
     }
 
-    /// Build a .torrent file in the background (hashing can take a while);
-    /// the result lands in `slot`, which the UI polls on its tick.
+    /// Forget a torrent - the files stay exactly where they are - and add it
+    /// back from its own metadata bytes, with the options `then` returns.
+    ///
+    /// Every "forget and re-add" in this file goes through here - recheck,
+    /// move, set location, tracker edits - and they differ only in what
+    /// `then` does in between. `error_key` names the step if the forget fails.
+    fn forget_and_readd(
+        &self,
+        handle: &ManagedTorrent,
+        bytes: Vec<u8>,
+        error_key: &'static str,
+        then: impl FnOnce() -> AddTorrentOptions + Send + 'static,
+    ) {
+        let rq = self.rq();
+        let events = self.events.clone();
+        let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
+
+        self.rt.spawn(async move {
+            if let Err(err) = rq.delete(id, false).await {
+                report_error(&events, SessionError::new(error_key, [format!("{err:#}")]));
+                return;
+            }
+            let opts = then();
+            if let Err(err) = rq.add_torrent(AddTorrent::from_bytes(bytes), Some(opts)).await {
+                report_error(&events, SessionError::new("error_readd_failed", [format!("{err:#}")]));
+            }
+        });
+    }
+
+    /// Build a .torrent file in the background (hashing can take a while) and
+    /// write it to `output`; `done` gets its bytes, or why it failed, from the
+    /// session runtime.
     pub fn create_torrent(
         &self,
-        params: CreateTorrentParams,
-        slot: Arc<Mutex<Option<CreateTorrentOutcome>>>,
+        input: crate::bittorrent::torrent_create::CreateInput,
+        output: PathBuf,
+        done: impl FnOnce(Result<Vec<u8>, String>) + Send + 'static,
     ) {
         self.rt.spawn(async move {
-            let outcome = match build_torrent(params).await {
-                Ok(outcome) => outcome,
-                Err(err) => CreateTorrentOutcome::Failed(format!("{err:#}")),
-            };
-            *slot.lock().unwrap() = Some(outcome);
+            done(build_torrent(input, output).await.map_err(|err| format!("{err:#}")));
         });
     }
 
@@ -1977,12 +1913,6 @@ impl Session {
     /// showing: with UPnP it is the one that has to be reachable.
     pub fn listen_port(&self) -> Option<u16> {
         self.rq().announce_port()
-    }
-
-    /// Record an error from background work, where there is no caller to
-    /// return it to.
-    fn push_error(&self, err: SessionError) {
-        report_error(&self.events, err);
     }
 
     /// Add a torrent from a .torrent file's contents or a magnet link.
@@ -2059,11 +1989,9 @@ impl Session {
             }
             // Only a link naming no hash this can read gets here - the rest go
             // through `add_magnet`. Handed to the engine as it is, which
-            // parses more spellings of a magnet than this does.
-            AddTorrentSource::MagnetUri(uri) => {
-                opts = magnet_add_options(&self.db, uri, &params);
-                AddTorrent::from_url(crate::bittorrent::v2::normalise_magnet(uri))
-            }
+            // parses more spellings of a magnet than this does; with no v1 or
+            // v2 hash there is nothing for the magnet options to add either.
+            AddTorrentSource::MagnetUri(uri) => AddTorrent::from_url(uri.clone()),
         };
 
         let inner = self.rq();
@@ -2544,7 +2472,7 @@ fn on_torrent_added(
         if let Some(handle) = self.find(hash)
             && let Err(err) = self.rt.block_on(self.rq().pause(&handle))
         {
-            self.push_error(SessionError::new("error_pause_failed", [format!("{err:#}")]));
+            report_error(&self.events, SessionError::new("error_pause_failed", [format!("{err:#}")]));
         }
     }
 
@@ -2566,7 +2494,7 @@ fn on_torrent_added(
         if let Some(handle) = self.find(hash)
             && let Err(err) = self.rt.block_on(self.rq().unpause(&handle))
         {
-            self.push_error(SessionError::new("error_resume_failed", [format!("{err:#}")]));
+            report_error(&self.events, SessionError::new("error_resume_failed", [format!("{err:#}")]));
         }
     }
 
@@ -2673,27 +2601,14 @@ fn on_torrent_added(
 
     /// Re-add a torrent so its stored extra trackers take effect.
     fn readd_with_trackers(&self, hash: &str, cfg: &Configuration) {
-        let Some((bytes, folder, paused)) = self.torrent_readd_info(hash) else {
-            return;
-        };
-        let Some(handle) = self.find(hash) else {
+        let Some((handle, bytes, folder, paused)) = self.torrent_readd_info(hash) else {
             return;
         };
         let tiers = cfg.tracker_tiers(hash);
         let trackers = cfg.extra_trackers(hash);
 
-        let rq = self.rq();
-        let events = self.events.clone();
-        let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
-
-        self.rt.spawn(async move {
-            // false: the files stay exactly where they are. This is a
-            // re-registration, not a removal.
-            if let Err(err) = rq.delete(id, false).await {
-                report_error(&events, SessionError::new("error_update_trackers_failed", [format!("{err:#}")]));
-                return;
-            }
-            let opts = AddTorrentOptions {
+        self.forget_and_readd(&handle, bytes, "error_update_trackers_failed", move || {
+            AddTorrentOptions {
                 trackers: Some(trackers),
                 // The stored list is the whole announce list, not additions to
                 // the file's - which is what lets a tracker be removed at all.
@@ -2702,8 +2617,7 @@ fn on_torrent_added(
                 // arranged is the one the engine uses.
                 tracker_tiers: Some(tiers),
                 ..readd_options(paused, folder)
-            };
-            readd(&rq, &events, bytes, opts).await;
+            }
         });
     }
 
@@ -2731,7 +2645,7 @@ fn on_torrent_added(
             self.rq().pause(&handle).await?;
             self.rq().unpause(&handle).await
         }) {
-            self.push_error(SessionError::new("error_reannounce_failed", [format!("{err:#}")]));
+            report_error(&self.events, SessionError::new("error_reannounce_failed", [format!("{err:#}")]));
             return;
         }
         tracing::info!("reannounced {hash}");
@@ -2781,20 +2695,12 @@ fn on_torrent_added(
         if let Some(handle) = self.find(hash) {
             let id = librqbit::api::TorrentIdOrHash::Id(handle.id());
             if let Err(err) = self.rt.block_on(self.rq().delete(id, delete_files)) {
-                self.push_error(SessionError::new("error_remove_failed", [format!("{err:#}")]));
+                report_error(&self.events, SessionError::new("error_remove_failed", [format!("{err:#}")]));
                 return;
             }
         }
 
-        self.meta.lock().unwrap().remove(hash);
-
-        let _ = self.db.with(|conn| {
-            conn.execute(
-                "delete from torrent_magnet_uri where info_hash = ?1",
-                [hash],
-            )?;
-            conn.execute("delete from torrent where info_hash = ?1", [hash])
-        });
+        forget_rows(&self.db, &self.meta, hash);
     }
 
     /// Move a torrent within the queue.
@@ -2892,7 +2798,13 @@ fn on_torrent_added(
     /// Read the stored priorities for one torrent, as a map of file index to
     /// level. Files nobody has touched are absent and count as Normal.
     pub fn file_priorities(&self, hash: &str) -> HashMap<usize, i64> {
-        self.db
+        Self::stored_priorities(&self.db, hash)
+    }
+
+    /// [`Self::file_priorities`], for the scan task, which has the database
+    /// but no session.
+    fn stored_priorities(db: &Database, hash: &str) -> HashMap<usize, i64> {
+        db
             .with(|conn| {
                 let mut stmt = conn.prepare(
                     "select file_index, priority from torrent_file_priority \
@@ -2937,10 +2849,12 @@ fn on_torrent_added(
         self.apply_file_priorities(hash);
     }
 
-    /// Push the stored priorities into the engine.
+    /// Push the stored priorities into the engine, after a change.
     ///
-    /// Called after a change and again when a torrent starts, because the
-    /// ordering lives in the live state and a torrent that was paused has none.
+    /// The skipped files stick - the engine keeps `only_files` across a pause
+    /// and persists it. The ordering does not: it lives in the live state, so
+    /// a torrent that was paused has none, and the scan task hands it over
+    /// again each time a torrent goes live (see [`LiveStarts`]).
     pub fn apply_file_priorities(&self, hash: &str) {
         let Some(handle) = self.find(hash) else {
             return;
@@ -2962,7 +2876,7 @@ fn on_torrent_added(
                 .rt
                 .block_on(self.rq().update_only_files(&handle, &wanted))
         {
-            self.push_error(SessionError::new("error_file_selection_failed", [format!("{err:#}")]));
+            report_error(&self.events, SessionError::new("error_file_selection_failed", [format!("{err:#}")]));
             return;
         }
 
@@ -3070,9 +2984,9 @@ fn on_torrent_added(
 
     /// Build status snapshots for every torrent in the session.
     pub fn torrents(&self, labels: &HashMap<i32, String>) -> Vec<TorrentStatus> {
-        let handles: Vec<Arc<ManagedTorrent>> = self
-            .rq()
-            .with_torrents(|torrents| torrents.map(|(_, h)| h.clone()).collect());
+        let rq = self.rq();
+        let handles: Vec<Arc<ManagedTorrent>> =
+            rq.with_torrents(|torrents| torrents.map(|(_, h)| h.clone()).collect());
 
         let mut result = Vec::with_capacity(handles.len());
         let mut completed_now: Vec<String> = Vec::new();
@@ -3171,7 +3085,7 @@ fn on_torrent_added(
                     }
                 };
 
-                let (down_rate, up_rate, peers_current, peers_total, eta) = stats
+                let (down_rate, up_rate, peers_current, eta) = stats
                     .live
                     .as_ref()
                     .map(|live| {
@@ -3187,11 +3101,10 @@ fn on_torrent_added(
                             down as i64,
                             up as i64,
                             live.snapshot.peer_stats.live as i64,
-                            live.snapshot.peer_stats.seen as i64,
                             eta,
                         )
                     })
-                    .unwrap_or((0, 0, 0, 0, None));
+                    .unwrap_or((0, 0, 0, None));
 
                 // Computed on the first tick that has metadata, then reused.
                 // A magnet has no info dict until it resolves, so this stays
@@ -3237,6 +3150,28 @@ fn on_torrent_added(
                 // shows the non-seed peers, like the original.
                 let peers_current = (peers_current - seeds_current).max(0);
 
+                // The swarm, as the "(N)" half of each column: the most seeds
+                // and leechers any tracker reported in its last announce or
+                // scrape (`complete` / `incomplete`, kept per tracker by the
+                // vendored tracker-comms). The largest rather than a sum,
+                // because trackers overlap and summing counts a peer once per
+                // tracker it announces to. Never below what is connected -
+                // a tracker's figure lags, and a torrent with no tracker or
+                // no answer yet has only its connections to go on. A paused
+                // torrent's figures are stale, as on the Trackers tab.
+                let (swarm_seeds, swarm_leechers) = if paused {
+                    (0, 0)
+                } else {
+                    rq.tracker_stats_snapshot(handle.info_hash()).iter().fold(
+                        (0, 0),
+                        |(s, l), (_, stat)| {
+                            (s.max(stat.seeders.unwrap_or(0)), l.max(stat.leechers.unwrap_or(0)))
+                        },
+                    )
+                };
+                let seeds_total = seeds_current.max(swarm_seeds.into());
+                let peers_total = peers_current.max(swarm_leechers.into());
+
                 result.push(TorrentStatus {
                     added_on: meta.added_on,
                     all_time_download: stats.progress_bytes as i64,
@@ -3263,9 +3198,7 @@ fn on_torrent_added(
                     ratio: ratio as f32,
                     save_path: output_folder,
                     seeds_current,
-                    // Swarm-wide totals need a tracker scrape, which librqbit
-                    // doesn't do - show the connected count.
-                    seeds_total: seeds_current,
+                    seeds_total,
                     state,
                     total_wanted: stats.total_bytes as i64,
                     total_wanted_remaining: stats.total_bytes.saturating_sub(stats.progress_bytes)
@@ -3329,7 +3262,7 @@ fn on_torrent_added(
 
         // After the lock is back, not during: the write is one transaction for
         // the whole tick.
-        self.write_uploaded_totals(&to_flush);
+        write_uploads(&self.db, &to_flush);
 
         result
     }
@@ -3375,7 +3308,7 @@ fn on_torrent_added(
             let cfg = Configuration::new(db);
             // What was last pushed into the session, so an unchanged answer
             // costs one comparison instead of a write per second.
-            let mut applied: Option<(Option<u32>, Option<u32>)> = None;
+            let mut applied: Option<(Option<NonZeroU32>, Option<NonZeroU32>)> = None;
 
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -3388,8 +3321,8 @@ fn on_torrent_added(
 
                 let (down, up) = wanted;
                 let rq = inner.read().unwrap().clone();
-                rq.ratelimits.set_download_bps(down.and_then(NonZeroU32::new));
-                rq.ratelimits.set_upload_bps(up.and_then(NonZeroU32::new));
+                rq.ratelimits.set_download_bps(down);
+                rq.ratelimits.set_upload_bps(up);
                 tracing::info!(
                     "rate limits now {} down / {} up",
                     down.map_or(String::from("unlimited"), |b| format!("{} B/s", b)),
@@ -3528,17 +3461,9 @@ fn on_torrent_added(
                 tripped = true;
 
                 let rq = inner.read().unwrap().clone();
-                let running = running_hashes(&rq);
-                if running.is_empty() {
+                let paused = pause_running(&rq).await;
+                if paused == 0 {
                     continue;
-                }
-
-                for hash in &running {
-                    if let Ok(id) = librqbit::api::TorrentIdOrHash::parse(hash)
-                        && let Some(handle) = rq.get(id)
-                    {
-                        let _ = rq.pause(&handle).await;
-                    }
                 }
 
                 // Same channel as every other background failure, so it
@@ -3551,7 +3476,7 @@ fn on_torrent_added(
                             format!("{free:.1}"),
                             path.display().to_string(),
                             format!("{limit:.0}"),
-                            running.len().to_string(),
+                            paused.to_string(),
                         ],
                     ),
                 );
@@ -3573,6 +3498,7 @@ fn on_torrent_added(
         let inner = self.inner.clone();
         let events = self.events.clone();
         let meta = self.meta.clone();
+        let db = self.db.clone();
 
         // What the engine restored, taken now rather than on the first tick.
         // The restore has already happened - it is synchronous inside
@@ -3624,6 +3550,7 @@ fn on_torrent_added(
                 .map(|(hash, _)| hash.clone())
                 .collect();
             let mut primed = false;
+            let mut starts = LiveStarts::default();
 
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -3631,18 +3558,34 @@ fn on_torrent_added(
                 // Re-read every tick: applying preferences swaps the whole
                 // librqbit session out from under us.
                 let rq = inner.read().unwrap().clone();
-                let snapshot: Vec<(String, String, bool)> = rq.with_torrents(|torrents| {
-                    torrents
-                        .map(|(_, handle)| {
-                            let hash = handle.info_hash().as_string();
-                            let name = handle.name().unwrap_or_else(|| hash.clone());
-                            (hash, name, handle.stats().finished)
-                        })
-                        .collect()
-                });
+                let snapshot: Vec<(String, String, bool, Arc<ManagedTorrent>)> =
+                    rq.with_torrents(|torrents| {
+                        torrents
+                            .map(|(_, handle)| {
+                                let hash = handle.info_hash().as_string();
+                                let name = handle.name().unwrap_or_else(|| hash.clone());
+                                (hash, name, handle.stats().finished, handle.clone())
+                            })
+                            .collect()
+                    });
 
                 let mut seen: HashMap<String, String> = HashMap::new();
-                for (hash, name, is_finished) in snapshot {
+                for (hash, name, is_finished, handle) in snapshot {
+                    // Just started, so its file ordering went with the old
+                    // live state. Skipped files need nothing: the engine keeps
+                    // those across a pause.
+                    if starts.started(&hash, handle.live().as_ref()) {
+                        let stored = Self::stored_priorities(&db, &hash);
+                        if !stored.is_empty()
+                            && let Some(metadata) = handle.metadata.load_full()
+                        {
+                            handle.set_file_priorities(priority_order(
+                                metadata.file_infos.len(),
+                                &stored,
+                            ));
+                        }
+                    }
+
                     if !live.contains_key(&hash) {
                         events.emit(SessionEvent::TorrentAdded {
                             hash: hash.clone(),
@@ -3689,6 +3632,7 @@ fn on_torrent_added(
                     }
                 }
 
+                starts.0.retain(|hash, _| seen.contains_key(hash));
                 live = seen;
                 primed = true;
             }
@@ -3852,6 +3796,7 @@ fn on_torrent_added(
             .map(|(idx, fi)| {
                 let progress_bytes = stats.file_progress.get(idx).copied().unwrap_or(0);
                 FileEntry {
+                    index: idx,
                     name: fi.relative_filename.to_string_lossy().into_owned(),
                     length: fi.len,
                     included: only_files
@@ -3874,7 +3819,7 @@ fn on_torrent_added(
             return Vec::new();
         };
 
-        let Ok(snapshot) = self.rq_api().api_peer_stats(id, Default::default()) else {
+        let Ok(snapshot) = Api::new(self.rq(), None).api_peer_stats(id, Default::default()) else {
             return Vec::new();
         };
 
@@ -4120,7 +4065,7 @@ fn on_torrent_added(
     pub fn magnet_uri(&self, hash: &str, name: &str) -> String {
         format!(
             "magnet:?xt=urn:btih:{hash}&dn={}",
-            crate::core::utils::percent_encode(name.as_bytes(), b"")
+            crate::core::utils::percent_encode(name.as_bytes(), false)
         )
     }
 
@@ -4139,7 +4084,7 @@ fn on_torrent_added(
         // session's uploads. Nothing wrote them on the way out, so whatever
         // the list had not yet flushed - all of it, for a torrent that moved
         // under a megabyte, or for a headless run - was gone on every restart.
-        self.flush_uploaded_totals();
+        flush_uploads(&self.rq(), &self.meta, &self.db);
 
         self.rt.block_on(self.rq().stop());
     }
@@ -4153,6 +4098,21 @@ fn running_hashes(rq: &RqbitSession) -> Vec<String> {
             .map(|(_, h)| h.info_hash().as_string())
             .collect()
     })
+}
+
+/// Pause every torrent that is not already paused, and say how many that was.
+/// A failure to pause one is not worth stopping the rest for.
+async fn pause_running(rq: &Arc<RqbitSession>) -> usize {
+    let running: Vec<Arc<ManagedTorrent>> = rq.with_torrents(|torrents| {
+        torrents
+            .filter(|(_, h)| !matches!(h.stats().state, TorrentStatsState::Paused))
+            .map(|(_, h)| h.clone())
+            .collect()
+    });
+    for handle in &running {
+        let _ = rq.pause(handle).await;
+    }
+    running.len()
 }
 
 /// Unpause the given torrents once they reappear from session persistence
@@ -4211,9 +4171,9 @@ mod layout_tests {
 
     fn torrent_of(source: &Path) -> Vec<u8> {
         build(&CreateInput {
-            source,
-            trackers: &[],
-            comment: "",
+            source: source.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "test".into(),
             private: false,
             piece_length: Some(65_536),
@@ -4466,6 +4426,29 @@ mod tests {
         let order = priority_order(3, &stored);
         assert_eq!(order, vec![2, 1, 0]);
         assert_eq!(order.len(), 3, "a file went missing from the ordering");
+    }
+
+    /// A torrent gets its file ordering back every time it goes live.
+    #[test]
+    fn a_torrent_counts_as_started_each_time_it_goes_live() {
+        let mut starts = super::LiveStarts::default();
+        let first = std::sync::Arc::new(0u8);
+        assert!(starts.started("a", Some(&first)), "the first sight of a live torrent");
+        assert!(!starts.started("a", Some(&first)), "the same live state, a tick later");
+
+        // Paused, then resumed: a new state.
+        assert!(!starts.started("a", None), "a paused torrent has not started");
+        let resumed = std::sync::Arc::new(0u8);
+        assert!(starts.started("a", Some(&resumed)), "resumed after a pause");
+
+        // Paused and resumed between two ticks - a reannounce - is never seen
+        // paused, and is still a start.
+        let reannounced = std::sync::Arc::new(0u8);
+        assert!(starts.started("a", Some(&reannounced)), "restarted between ticks");
+
+        // Each torrent is its own.
+        assert!(starts.started("b", Some(&reannounced)), "another torrent");
+        assert!(!starts.started("a", Some(&reannounced)));
     }
 
     /// Every file appears exactly once, whatever the levels - the picker walks
@@ -5264,23 +5247,16 @@ mod tests {
         use crate::bittorrent::torrent_create::TorrentVersion as V;
 
         let build = |v| {
-            let out = dir.join("t.torrent");
-            let outcome = rt
-                .block_on(super::build_torrent(super::CreateTorrentParams {
-                    source: payload.clone(),
-                    trackers: vec![],
-                    comment: String::new(),
-                    private: false,
-                    piece_length: Some(256 * 1024),
-                    version: v,
-                    output: out,
-                    add_to_session: false,
-                }))
-                .unwrap();
-            let super::CreateTorrentOutcome::Created { bytes, .. } = outcome else {
-                panic!("expected Created")
+            let input = crate::bittorrent::torrent_create::CreateInput {
+                source: payload.clone(),
+                trackers: vec![],
+                comment: String::new(),
+                private: false,
+                piece_length: Some(256 * 1024),
+                version: v,
+                created_by: crate::buildinfo::user_agent(),
             };
-            bytes
+            rt.block_on(super::build_torrent(input, dir.join("t.torrent"))).unwrap()
         };
 
         // All three read, and all three agree on what is in the torrent -
@@ -5314,7 +5290,7 @@ mod tests {
                     .unwrap();
                 assert_eq!(
                     secondary.0,
-                    meta.truncated_info_hash(),
+                    meta.info.truncated_info_hash(),
                     "the secondary hash is not the truncated v2 one"
                 );
             }
@@ -5346,26 +5322,19 @@ mod tests {
             .build()
             .unwrap();
 
-        let outcome = rt
-            .block_on(super::build_torrent(super::CreateTorrentParams {
-                source: payload,
-                trackers: vec![
-                    String::from("http://tracker.example.com/announce"),
-                    String::from("udp://tracker2.example.com:6969"),
-                ],
-                comment: String::from("test comment"),
-                private: true,
-                piece_length: Some(256 * 1024),
-                version: crate::bittorrent::torrent_create::TorrentVersion::V1,
-                output: output.clone(),
-                add_to_session: false,
-            }))
-            .unwrap();
-
-        let super::CreateTorrentOutcome::Created { name, bytes, .. } = outcome else {
-            panic!("expected Created");
+        let input = crate::bittorrent::torrent_create::CreateInput {
+            source: payload,
+            trackers: vec![
+                String::from("http://tracker.example.com/announce"),
+                String::from("udp://tracker2.example.com:6969"),
+            ],
+            comment: String::from("test comment"),
+            private: true,
+            piece_length: Some(256 * 1024),
+            version: crate::bittorrent::torrent_create::TorrentVersion::V1,
+            created_by: crate::buildinfo::user_agent(),
         };
-        assert_eq!(name, "payload.bin");
+        let bytes = rt.block_on(super::build_torrent(input, output.clone())).unwrap();
 
         let written = std::fs::read(&output).unwrap();
         assert_eq!(written, bytes);
@@ -5398,11 +5367,11 @@ mod tests {
 
         let torrent = crate::bittorrent::torrent_create::build(
             &crate::bittorrent::torrent_create::CreateInput {
-                source: &payload,
+                source: payload.to_path_buf(),
                 version: crate::bittorrent::torrent_create::TorrentVersion::V1,
                 piece_length: None,
-                trackers: &[],
-                comment: "",
+                trackers: vec![],
+                comment: String::new(),
                 private: false,
                 created_by: crate::buildinfo::user_agent(),
             },

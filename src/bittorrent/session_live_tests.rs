@@ -241,11 +241,11 @@ fn folder(at: &Path) -> PathBuf {
 
 fn make(source: &Path, version: TorrentVersion) -> Vec<u8> {
     build(&CreateInput {
-        source,
+        source: source.to_path_buf(),
         version,
         piece_length: Some(16_384),
-        trackers: &[],
-        comment: "",
+        trackers: vec![],
+        comment: String::new(),
         private: false,
         created_by: crate::buildinfo::user_agent(),
     })
@@ -483,8 +483,13 @@ fn set_location_finds_data_moved_by_hand() {
     // The parent, not the torrent's folder. Still paused, and still found:
     // the data is checked where it now is without starting the torrent.
     live.s().set_location(&hash, &elsewhere.to_string_lossy());
+    // Waiting on the new path as well, not only on "complete and not
+    // checking": the torrent was both of those BEFORE the call, and the
+    // forget-and-re-add runs on the session's runtime, so on a busy machine
+    // the old row was read back and the path assert below failed on it.
+    let moved = elsewhere.join("wandered");
     let t = live.wait(&hash, "the moved data to verify", |t| {
-        t.progress >= 1.0 && t.state != State::CheckingFiles
+        Path::new(&t.save_path) == moved && t.progress >= 1.0 && t.state != State::CheckingFiles
     });
     assert!(t.paused, "set location started a paused torrent");
     assert_eq!(Path::new(&t.save_path), elsewhere.join("wandered"));

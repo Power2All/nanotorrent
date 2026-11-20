@@ -16,18 +16,19 @@
 //! module hands out is "the application talking to the internet", and a user
 //! who proxies their torrents did not mean to exempt the update check.
 
-use crate::core::configuration::{Configuration, ConnectionProxyType};
+use crate::core::configuration::Configuration;
 
 /// The SOCKS URL to route through, or `None` for a direct connection.
 ///
 /// Shared with the session so the engine and this module cannot disagree about
 /// whether a proxy is in play - they read the same keys and build the same URL.
 pub fn proxy_url(cfg: &Configuration) -> Option<String> {
-    let kind = ConnectionProxyType::from_i64(cfg.get_int("libtorrent.proxy_type").unwrap_or(0));
-    if !matches!(
-        kind,
-        ConnectionProxyType::Socks4 | ConnectionProxyType::Socks5 | ConnectionProxyType::Socks5Password
-    ) {
+    // The stored integer is the index into `crate::cli::PROXY_TYPES`, as the
+    // original wrote it: 0 none, 1 socks4, 2 socks5, 3 socks5 with password,
+    // 4 and 5 HTTP. Only the SOCKS ones are routed through; anything else,
+    // including a value this build does not know, is a direct connection.
+    let kind = cfg.get_int("libtorrent.proxy_type").unwrap_or(0);
+    if !(1..=3).contains(&kind) {
         return None;
     }
 
@@ -40,7 +41,7 @@ pub fn proxy_url(cfg: &Configuration) -> Option<String> {
     // socks5h, not socks5, so names are resolved AT the proxy. Resolving here
     // would send a DNS query for every tracker and web seed straight out of
     // this machine, which is the leak the proxy was turned on to prevent.
-    if kind == ConnectionProxyType::Socks5Password {
+    if kind == 3 {
         let user = cfg
             .get_string("libtorrent.proxy_username")
             .unwrap_or_default();
@@ -96,7 +97,7 @@ mod tests {
     #[test]
     fn a_half_configured_proxy_is_not_used() {
         let cfg = cfg();
-        cfg.set("libtorrent.proxy_type", &(ConnectionProxyType::Socks5 as i64));
+        cfg.set("libtorrent.proxy_type", &2_i64);
         assert_eq!(proxy_url(&cfg), None, "no host yet");
 
         cfg.set("libtorrent.proxy_host", &"127.0.0.1");
@@ -111,7 +112,7 @@ mod tests {
     #[test]
     fn hostnames_are_resolved_at_the_proxy() {
         let cfg = cfg();
-        cfg.set("libtorrent.proxy_type", &(ConnectionProxyType::Socks5 as i64));
+        cfg.set("libtorrent.proxy_type", &2_i64);
         cfg.set("libtorrent.proxy_host", &"127.0.0.1");
         cfg.set("libtorrent.proxy_port", &1080_i64);
 
@@ -123,7 +124,7 @@ mod tests {
     #[test]
     fn credentials_are_carried_when_the_type_asks_for_them() {
         let cfg = cfg();
-        cfg.set("libtorrent.proxy_type", &(ConnectionProxyType::Socks5Password as i64));
+        cfg.set("libtorrent.proxy_type", &3_i64);
         cfg.set("libtorrent.proxy_host", &"proxy.invalid");
         cfg.set("libtorrent.proxy_port", &9050_i64);
         cfg.set("libtorrent.proxy_username", &"someone");
@@ -141,7 +142,7 @@ mod tests {
     #[test]
     fn a_configured_proxy_produces_a_client() {
         let cfg = cfg();
-        cfg.set("libtorrent.proxy_type", &(ConnectionProxyType::Socks5 as i64));
+        cfg.set("libtorrent.proxy_type", &2_i64);
         cfg.set("libtorrent.proxy_host", &"127.0.0.1");
         cfg.set("libtorrent.proxy_port", &1080_i64);
         assert!(client(&cfg).is_ok());
