@@ -1,0 +1,57 @@
+# cargo-audit configuration.
+#
+# Run with `cargo audit` from the repository root; this file is picked up
+# automatically. Everything ignored below is ignored WITH A REASON and a way
+# out, because an ignore list nobody revisits is how a real advisory gets
+# waved through six months later.
+#
+# Not here any more, and must not come back: RUSTSEC-2026-0258, the h2 0.3
+# "unbounded empty DATA frames" denial of service. It was ignored until 0.4.4
+# because actix-http pins h2 ^0.3 and there was nowhere to go. Since 0.4.4 the
+# web interface no longer enables actix's `http2` feature and serves HTTPS as
+# HTTP/1.1, so h2 0.3 is not in the build at all - see the actix-web entry in
+# Cargo.toml and `https_server` in src/webui/mod.rs. If this advisory ever
+# shows up again, something has switched `http2` back on: find it with
+# `cargo tree -e features -i h2@0.3.27` rather than ignoring it.
+
+[advisories]
+ignore = [
+    # ringbuf "double free / use-after-free in `Consumer::skip` and
+    # `Consumer::clear` when an element's `Drop` panics".
+    #
+    # Ignored because the precondition cannot occur here. The only path to
+    # ringbuf is librqbit-utp, whose ring is `type RingBuf = SharedRb<Heap<u8>>`
+    # (stream_tx.rs), and it is `skip` that it calls. `u8` is `Copy` and has no
+    # `Drop`, so there is no destructor to panic and the unsoundness is
+    # unreachable - not merely unlikely. uTP itself is off by default, too.
+    #
+    # There is also nowhere to go: the fix is ringbuf >= 0.5.2, a semver break
+    # that librqbit-utp does not take, and utp is a crates.io dependency of the
+    # vendored engine rather than vendored itself. Last checked 2026-10-06:
+    # librqbit-utp 0.7.0 is still the newest release, on ringbuf ^0.4.7.
+    #
+    # REVISIT when librqbit-utp ships a release on ringbuf 0.5 - or if its ring
+    # ever holds anything but bytes, which is what makes this safe. Drop the
+    # entry and re-run `cargo audit` then.
+    "RUSTSEC-2026-0293",
+]
+
+# Unmaintained crates are reported but do not fail the run. None carries a
+# known vulnerability, and none is a dependency of this crate's own choosing:
+#
+#   bincode     - build time only, inside Slint's UI compiler (via
+#                 typed-index-collections); it is not in the binary.
+#   smartstring - Rhai, the plugin language.
+#   ttf-parser  - Slint's font handling.
+#   zvariant, zvariant_derive, zbus_names - the D-Bus stack (zbus) under
+#                 Slint's Linux accessibility and notify-rust's notifications.
+#                 Flagged 2026-10-16; zbus itself is not.
+#   pin-utils   - Slint (spin_on, under the Skia renderer and slint-macros).
+#                 Flagged 2026-11; its macro is in std as `core::pin::pin!`.
+#   chrono      - the one exception: also ours (dates in the UI and the
+#                 database), as well as Slint's and librqbit-dht's. Flagged
+#                 2026-11; replacing it here would leave it in the build anyway.
+#
+# Failing on them would mean this audit is red for reasons no change here can
+# make green, which is the fastest way to teach everybody to ignore it.
+informational_warnings = ["unmaintained", "unsound", "notice"]

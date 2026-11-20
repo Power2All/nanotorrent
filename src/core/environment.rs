@@ -183,14 +183,18 @@ impl Environment {
     /// Translations are compiled in, so this need not exist - a file dropped
     /// here overrides the built-in copy for that locale, which is the quickest
     /// way to edit one without rebuilding.
+    ///
+    /// A debug build falls back to the source tree's `lang/`, so editing a
+    /// translation there shows up without a rebuild. A release build does not:
+    /// that would bake the build machine's path into the binary, and a folder
+    /// that does not exist simply leaves the compiled-in copies in charge.
     pub fn get_lang_path(&self) -> PathBuf {
-        // Look next to the executable first, then in the dev tree.
         let next_to_exe = Self::application_dir().join("lang");
-        if next_to_exe.exists() {
-            return next_to_exe;
+        #[cfg(debug_assertions)]
+        if !next_to_exe.exists() {
+            return PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang");
         }
-
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("lang")
+        next_to_exe
     }
 
     /// Port of Environment::GetKnownFolderPath(KnownFolder::UserDownloads).

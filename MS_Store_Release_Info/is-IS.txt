@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Íslenska (Ísland) - Partner Center: Icelandic (Iceland) (is-IS)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent er Rust-útfærsla af PicoTorrent eftir Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Útgáfa 0.4.6
+Útgáfa 0.4.7
 
-- Lagfæringar: magnið sem hlaðið hefur verið upp fyrir hvern torrent varðveitist nú þegar NanoTorrent er lokað. Upphal sem ekki var búið að vista tapaðist við hverja lokun, svo torrent gat sýnt mun minna, eða ekkert, eftir endurræsingu.
-- Lagfæringar: jafningjar sem tengjast NanoTorrent án dulkóðunar eru aftur samþykktir. Öllum var hafnað, sem hélt aftur af deilingu.
-- Undir húddinu: söfnin sem NanoTorrent er byggt á hafa verið uppfærð með nýjustu lagfæringum sínum.
+- Nýtt: í glugganum „Bæta við torrent“ hefur hver mappa sinn eigin gátreit sem hakar við eða tekur hak af öllu sem í henni er, undirmöppum meðtöldum, og hnapparnir „Allt“ og „Ekkert“ gera það sama fyrir allan torrentinn. Mappa þar sem aðeins sumar skrár eru hakaðar sýnir reit með striki.
+- Nýtt: valfrjálst vef-API sem er samhæft qBittorrent, svo Sonarr, Radarr og önnur verkfæri gerð fyrir qBittorrent geti stjórnað NanoTorrent. Kveiktu á því í „Kjörstillingum“, undir „Vefviðmót“.
+- Lagfæringar: dálkarnir „Sáendur“ og „Jafningjar“ sýna nú heildarfjöldann innan sviga, eins og rekjararnir gefa hann upp, röðin sem stillt er með forgangi skráa helst þegar torrent er settur í bið og ræstur aftur, og þegar „Kjörstillingar“ eru opnaðar öðru sinni meðan þær eru þegar opnar glatast óvistaðar breytingar ekki lengur.
+- Lagfæringar: þegar skipt er um tungumál eru allir opnir gluggar nú teiknaðir upp á nýtt, og IP-síuskrá með bili, # eða % í slóðinni hleðst nú inn.
+- Öryggi: vefviðmótið notar uppfært HTTP-safn, sem lagar hvernig það les gallaða beiðni.
+- Fjarlægt: skipanalínuvalkosturinn --webui-set. --set web-bind, web-port, web-username og hinar web-* stillingarnar gera það sama.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Slovenščina (Slovenija) - Partner Center: Slovenian (Slovenia) (sl-SI)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent je prenos PicoTorrenta avtorja Viktorja Elofssona v Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Različica 0.4.6
+Različica 0.4.7
 
-- Popravki: količina poslanih podatkov za vsak torrent se zdaj ohrani, ko se NanoTorrent zapre. Še neshranjeni poslani podatki so se ob vsakem izhodu izgubili, zato je lahko torrent po ponovnem zagonu kazal precej manj ali celo nič.
-- Popravki: soležniki, ki se z NanoTorrentom povezujejo brez šifriranja, so znova sprejeti. Doslej so bili vsi zavrnjeni, kar je zaviralo deljenje.
-- Pod pokrovom: knjižnice, na katerih temelji NanoTorrent, so posodobljene z najnovejšimi popravki.
+- Novo: v oknu »Dodaj torrente« ima vsaka mapa svoje potrditveno polje, ki obkljuka ali odkljuka vse v njej, tudi podmape, gumba »Vse« in »Brez« pa naredita isto za celoten torrent. Mapa, v kateri so obkljukane le nekatere datoteke, prikaže polje s črtico.
+- Novo: izbirni spletni API, združljiv s qBittorrentom, s katerim lahko Sonarr, Radarr in druga orodja za qBittorrent upravljajo NanoTorrent. Vklopite ga v »Nastavitvah«, v razdelku »Spletni vmesnik«.
+- Popravki: stolpca »Sejalci« in »Soležniki« zdaj v oklepaju prikazujeta velikost roja, kot jo sporočajo sledilniki, vrstni red, določen s prednostmi datotek, se ohrani, ko torrent začasno ustavite in znova zaženete, ponovno odpiranje »Nastavitev«, medtem ko so že odprte, pa ne zavrže več neshranjenih sprememb.
+- Popravki: sprememba jezika zdaj na novo izriše vsa odprta pogovorna okna, datoteka filtra IP, katere pot vsebuje presledek, # ali %, pa se zdaj naloži.
+- Varnost: spletni vmesnik uporablja posodobljeno knjižnico HTTP, ki popravlja branje nepravilno oblikovane zahteve.
+- Odstranjeno: možnost ukazne vrstice --webui-set. Enako opravijo --set web-bind, web-port, web-username in druge nastavitve web-*.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

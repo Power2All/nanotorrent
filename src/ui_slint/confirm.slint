@@ -1,0 +1,73 @@
+// A yes/no question asked once, in a window of its own: whether to encrypt the
+// settings database (the first time a plain one meets a version that can), and
+// whether a new portable copy should start from the ordinary profile already on
+// the machine (see core::portable).
+//
+// Every caption is a translation key, looked up through `L` like the rest of
+// the UI, so a language change redraws an open question too. The portable
+// question is shown before any `Ui` exists, so its `L` is a fixed table the
+// caller fills in - the body with the two folders already formatted into it.
+
+import { ScrollView, Button, Palette } from "std-widgets.slint";
+import { L, Dialog, Screen } from "globals.slint";
+
+export component ConfirmDialog inherits Dialog {
+    /// Translation keys: the window title, the heading above the question, the
+    /// question itself, and the two buttons.
+    in property <string> title-key;
+    in property <string> heading;
+    in property <string> body;
+    in property <string> no-text;
+    in property <string> yes-text;
+    /// The window's width. Pinned - nothing here reflows horizontally.
+    in property <length> fixed-width: 470px;
+
+    title: L.s(L.revision, root.title-key);
+    // Height follows the content, so the window opens exactly fitting whatever
+    // the translation came out as, and only scrolls on a screen too short for
+    // it.
+    min-width: root.fixed-width;
+    max-width: root.fixed-width;
+    min-height: min(content.preferred-height, Screen.limit);
+    max-height: min(content.preferred-height, Screen.limit);
+
+    /// True for yes. Closing the window without choosing answers nothing.
+    callback chosen(bool);
+
+    ScrollView {
+        vertical-scrollbar-policy: as-needed;
+        content := VerticalLayout {
+            padding: 18px;
+            spacing: 14px;
+
+            Text {
+                text: L.s(L.revision, root.heading);
+                font-size: 16px;
+                font-weight: 700;
+                color: Palette.foreground;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: L.s(L.revision, root.body);
+                wrap: word-wrap;
+                vertical-stretch: 1;
+                color: Palette.foreground;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: L.s(L.revision, root.no-text);
+                    clicked => { root.chosen(false); }
+                }
+                Button {
+                    text: L.s(L.revision, root.yes-text);
+                    primary: true;
+                    clicked => { root.chosen(true); }
+                }
+            }
+        }
+    }
+}

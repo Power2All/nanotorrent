@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Türkçe (Türkiye) - Partner Center: Turkish (Turkey) (tr-TR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent, Viktor Elofsson'ın PicoTorrent uygulamasının Rust'a aktarımıd�
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sürüm 0.4.6
+Sürüm 0.4.7
 
-- Düzeltmeler: her torrent için gönderilen miktar artık NanoTorrent kapanırken korunuyor. Henüz kaydedilmemiş gönderimler her çıkışta kayboluyordu, bu yüzden bir torrent yeniden başlatmadan sonra çok daha az ya da sıfır gösterebiliyordu.
-- Düzeltmeler: NanoTorrent'e şifreleme olmadan bağlanan eşler yeniden kabul ediliyor. Hepsi geri çevriliyordu, bu da paylaşımı yavaşlatıyordu.
-- Arka planda: NanoTorrent'in üzerine kurulduğu kütüphaneler en son düzeltmeleriyle güncellendi.
+- Yeni: “Torrent(ler) ekle” penceresinde her klasörün, alt klasörler dahil içindeki her şeyi işaretleyen ya da işaretini kaldıran kendi onay kutusu var; “Tümü” ve “Hiçbiri” düğmeleri de aynısını torrentin tamamı için yapıyor. Dosyalarından yalnızca bazıları işaretli olan bir klasör, içinde çizgi olan bir kutu gösteriyor.
+- Yeni: qBittorrent uyumlu, isteğe bağlı bir web API; böylece Sonarr, Radarr ve qBittorrent için yapılmış diğer araçlar NanoTorrent'i yönetebilir. “Tercihler” içinde “Web arayüzü” altından açabilirsiniz.
+- Düzeltmeler: “Seed” ve “Eşler” sütunları artık izleyicilerin bildirdiği toplam sürü boyutunu parantez içinde gösteriyor, dosya öncelikleriyle belirlenen sıra bir torrent duraklatılıp yeniden başlatıldığında korunuyor ve “Tercihler” zaten açıkken ikinci kez açılması artık kaydedilmemiş değişiklikleri silmiyor.
+- Düzeltmeler: dili değiştirmek artık açık olan her iletişim kutusunu yeniden çiziyor ve yolunda boşluk, # ya da % bulunan bir IP filtresi dosyası artık yükleniyor.
+- Güvenlik: web arayüzü güncellenmiş bir HTTP kütüphanesi kullanıyor; bu, hatalı biçimlendirilmiş bir isteğin okunma şeklini düzeltiyor.
+- Kaldırıldı: --webui-set komut satırı seçeneği. Aynı işi --set web-bind, web-port, web-username ve diğer web-* ayarları yapıyor.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

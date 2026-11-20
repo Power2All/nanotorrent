@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Čeština (Česko) - Partner Center: Czech (Czechia) (cs-CZ)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent je port PicoTorrentu od Viktora Elofssona do jazyka Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verze 0.4.6
+Verze 0.4.7
 
-- Opravy: množství odeslaných dat u každého torrentu se nyní při zavření aplikace NanoTorrent zachová. Dosud neuložená odeslaná data se při každém ukončení ztrácela, takže torrent mohl po restartu ukazovat mnohem méně, nebo vůbec nic.
-- Opravy: protějšky, které se k aplikaci NanoTorrent připojují bez šifrování, jsou opět přijímány. Všechny byly odmítány, což brzdilo sdílení.
-- Pod kapotou: knihovny, na kterých je NanoTorrent postaven, byly aktualizovány o nejnovější opravy.
+- Novinka: v dialogu „Přidat torrent(y)“ má každá složka vlastní zaškrtávací políčko, které zaškrtne nebo odškrtne vše, co obsahuje, včetně podsložek, a tlačítka „Vše“ a „Žádné“ dělají totéž pro celý torrent. Složka, ve které jsou zaškrtnuté jen některé soubory, ukazuje políčko s pomlčkou.
+- Novinka: volitelné webové API kompatibilní s qBittorrentem, takže Sonarr, Radarr a další nástroje určené pro qBittorrent mohou ovládat NanoTorrent. Zapnete ho v „Nastavení“ v části „Webové rozhraní“.
+- Opravy: sloupce „Odesílající“ a „Peeři“ nyní v závorkách ukazují velikost roje podle trackerů, pořadí nastavené prioritami souborů zůstane zachováno, když se torrent pozastaví a znovu spustí, a opětovné otevření „Nastavení“, když už je otevřené, už nezahodí neuložené změny.
+- Opravy: změna jazyka nyní překreslí všechna otevřená dialogová okna a soubor filtru IP, jehož cesta obsahuje mezeru, # nebo %, se nyní načte.
+- Zabezpečení: webové rozhraní používá aktualizovanou knihovnu HTTP, která opravuje čtení chybně utvořeného požadavku.
+- Odebráno: možnost příkazového řádku --webui-set. Totéž zajistí --set web-bind, web-port, web-username a ostatní nastavení web-*.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

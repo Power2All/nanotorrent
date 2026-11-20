@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Afrikaans (Suid-Afrika) - Partner Center: Afrikaans (South Africa) (af-ZA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent is 'n Rust-oordrag van PicoTorrent deur Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Weergawe 0.4.6
+Weergawe 0.4.7
 
-- Regstellings: die hoeveelheid wat vir elke torrent opgelaai is, word nou behou wanneer NanoTorrent toegemaak word. Oplaaie wat nog nie gestoor was nie, het by elke afsluiting verlore gegaan, sodat 'n torrent ná 'n herbegin baie minder, of niks, kon wys.
-- Regstellings: eweknieë wat sonder enkripsie aan NanoTorrent koppel, word weer aanvaar. Almal is weggewys, wat saai teruggehou het.
-- Onder die enjinkap: die biblioteke waarop NanoTorrent gebou is, is bygewerk, met hul jongste regstellings.
+- Nuut: in die dialoogvenster “Voeg torrent(s) by” het elke vouer sy eie merkblokkie wat alles daarin, subvouers ingesluit, merk of ontmerk, en die knoppies “Alles” en “Geen” doen dieselfde vir die hele torrent. 'n Vouer waarvan net sommige lêers gemerk is, wys 'n blokkie met 'n strepie.
+- Nuut: 'n opsionele qBittorrent-versoenbare web-API, sodat Sonarr, Radarr en ander gereedskap wat vir qBittorrent gemaak is, NanoTorrent kan beheer. Skakel dit aan in “Voorkeure”, onder “Webkoppelvlak”.
+- Regstellings: die kolomme “Saaiers” en “Eweknieë” wys nou die grootte van die swerm tussen hakies, soos die spoorders dit rapporteer; die volgorde wat met lêerprioriteite gestel is, bly behoue wanneer 'n torrent gepouseer en weer begin word; en om “Voorkeure” 'n tweede keer oop te maak terwyl dit reeds oop is, gooi nie meer ongestoorde veranderinge weg nie.
+- Regstellings: om die taal te verander, teken nou elke oop dialoogvenster oor, en 'n IP-filterlêer waarvan die pad 'n spasie, # of % bevat, laai nou.
+- Sekuriteit: die webkoppelvlak gebruik 'n bygewerkte HTTP-biblioteek, wat regstel hoe dit 'n misvormde versoek lees.
+- Verwyder: die opdragreëlopsie --webui-set. --set web-bind, web-port, web-username en die ander web-*-instellings doen dieselfde.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

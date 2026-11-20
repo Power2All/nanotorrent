@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Nederlands (Nederland) - Partner Center: Dutch (Netherlands) (nl-NL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent is een Rust-port van PicoTorrent van Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versie 0.4.6
+Versie 0.4.7
 
-- Opgelost: de hoeveelheid die per torrent is geüpload, blijft nu bewaard wanneer NanoTorrent wordt afgesloten. Uploads die nog niet waren opgeslagen, gingen bij elk afsluiten verloren, waardoor een torrent na een herstart veel minder of helemaal niets kon tonen.
-- Opgelost: peers die zonder versleuteling met NanoTorrent verbinden, worden weer geaccepteerd. Ze werden allemaal geweigerd, wat het seeden afremde.
-- Onder de motorkap: de bibliotheken waarop NanoTorrent is gebouwd, zijn bijgewerkt met hun nieuwste correcties.
+- Nieuw: in het venster Toevoegen heeft elke map een eigen selectievakje dat alles erin aan- of uitvinkt, submappen inbegrepen, en de knoppen Alles en Geen doen hetzelfde voor de hele torrent. Een map waarvan maar een deel van de bestanden is aangevinkt, toont een vakje met een streepje.
+- Nieuw: een optionele, met qBittorrent compatibele web-API, zodat Sonarr, Radarr en andere tools voor qBittorrent NanoTorrent kunnen bedienen. Zet deze aan in Voorkeuren, onder Webinterface.
+- Opgelost: de kolommen Seeds en Peers tonen nu tussen haakjes de grootte van de swarm, zoals de trackers die melden, de volgorde die met bestandsprioriteiten is ingesteld, blijft behouden als een torrent wordt gepauzeerd en weer gestart, en Voorkeuren een tweede keer openen terwijl het al open is, gooit niet langer niet-opgeslagen wijzigingen weg.
+- Opgelost: bij het wijzigen van de taal worden nu alle open vensters opnieuw getekend, en een IP-filterbestand met een spatie, # of % in het pad wordt nu geladen.
+- Beveiliging: de webinterface gebruikt een bijgewerkte HTTP-bibliotheek, die verbetert hoe een misvormd verzoek wordt gelezen.
+- Verwijderd: de opdrachtregeloptie --webui-set. --set web-bind, web-port, web-username en de andere web-*-instellingen doen hetzelfde.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

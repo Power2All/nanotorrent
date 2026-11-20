@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: 简体中文 (中国) - app locale zh-CN - Partner Center: Chinese (Simplified) (zh-Hans)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent 是 Viktor Elofsson 所作 PicoTorrent 的 Rust 移植版。
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-版本 0.4.6
+版本 0.4.7
 
-- 修复：每个种子的上传量现在会在 NanoTorrent 关闭时保留。此前尚未保存的上传量在每次退出时都会丢失，因此重启后种子显示的上传量可能少得多，甚至为零。
-- 修复：以不加密方式连接 NanoTorrent 的节点现在又能被接受了。此前它们全部遭到拒绝，影响了做种。
-- 内部改进：已将 NanoTorrent 所依赖的库更新到包含最新修复的版本。
+- 新功能：在“添加种子”对话框中，每个文件夹都有自己的复选框，可一次勾选或取消勾选其中的全部内容（包括子文件夹）；“全部”和“无”按钮则对整个种子执行相同操作。只勾选了部分文件的文件夹会显示带短横线的复选框。
+- 新功能：可选的 qBittorrent 兼容 Web API，让 Sonarr、Radarr 等为 qBittorrent 打造的工具也能控制 NanoTorrent。可在“设置”的“网页界面”中开启。
+- 修复：“种子”和“用户”列现在会在括号中显示 Tracker 报告的整个群体规模；用文件优先级设定的顺序在种子暂停后重新开始时会保留；在“设置”已打开时再次打开它，不再丢弃未保存的更改。
+- 修复：切换语言后，所有已打开的对话框现在都会重新绘制；路径中含有空格、# 或 % 的 IP 过滤器文件现在可以正常加载。
+- 安全：Web 界面使用了更新后的 HTTP 库，修正了其读取格式错误请求的方式。
+- 移除：命令行选项 --webui-set。--set web-bind、web-port、web-username 以及其他 web-* 设置可实现相同功能。
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

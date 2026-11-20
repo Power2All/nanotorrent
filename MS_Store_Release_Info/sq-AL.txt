@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Shqip (Shqipëri) - Partner Center: Albanian (Albania) (sq-AL)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent është një port në Rust i PicoTorrent nga Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versioni 0.4.6
+Versioni 0.4.7
 
-- Rregullime: sasia e ngarkuar për çdo torrent tani ruhet kur NanoTorrent mbyllet. Ngarkimet ende të paruajtura humbisnin në çdo dalje, ndaj pas rinisjes një torrent mund të tregonte shumë më pak, ose zero.
-- Rregullime: bashkëmoshatarët që lidhen me NanoTorrent pa shifrim pranohen sërish. Të gjithë po refuzoheshin, gjë që frenonte ndarjen.
-- Nën kapak: bibliotekat mbi të cilat është ndërtuar NanoTorrent janë përditësuar me ndreqjet e tyre më të fundit.
+- E re: në dritaren «Shto torrente», çdo dosje ka kutinë e vet të përzgjedhjes, që shënon ose heq shenjën nga gjithçka brenda saj, përfshirë nëndosjet, ndërsa butonat «Të gjitha» dhe «Asnjë» bëjnë të njëjtën gjë për gjithë torrentin. Një dosje me vetëm disa skedarë të shënuar shfaq një kuti me vizë.
+- E re: një API web opsionale, e përputhshme me qBittorrent, që Sonarr, Radarr dhe mjete të tjera të bëra për qBittorrent të mund të kontrollojnë NanoTorrent. Aktivizojeni te «Parapëlqime», nën «Ndërfaqja web».
+- Rregullime: kolonat «Mbjellës» dhe «Bashkëmoshatarë» tani tregojnë në kllapa madhësinë e tufës, siç e raportojnë gjurmuesit, radha e caktuar me përparësitë e skedarëve ruhet kur një torrent ndalet përkohësisht dhe niset sërish, dhe hapja e «Parapëlqimeve» për herë të dytë, ndërkohë që janë të hapura, nuk i hedh më poshtë ndryshimet e paruajtura.
+- Rregullime: ndryshimi i gjuhës tani rivizaton çdo dritare dialogu të hapur, dhe një skedar i filtrit IP, shtegu i të cilit përmban hapësirë, # ose %, tani ngarkohet.
+- Siguria: ndërfaqja web përdor një bibliotekë HTTP të përditësuar, e cila ndreq mënyrën si lexohet një kërkesë e keqformuar.
+- U hoq: opsioni i rreshtit të komandave --webui-set. Të njëjtën gjë bëjnë --set web-bind, web-port, web-username dhe cilësimet e tjera web-*.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

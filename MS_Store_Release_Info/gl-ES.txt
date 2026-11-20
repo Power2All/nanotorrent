@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Galego (España) - Partner Center: Galician (Spain) (gl-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent é un porte a Rust de PicoTorrent de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versión 0.4.6
+Versión 0.4.7
 
-- Correccións: a cantidade enviada de cada torrent agora consérvase ao pechar NanoTorrent. Os envíos aínda sen gardar perdíanse en cada saída, así que un torrent podía mostrar moito menos, ou nada, tras reiniciar.
-- Correccións: os pares que se conectan a NanoTorrent sen cifrado volven ser aceptados. Rexeitábanse todos, o que frenaba a compartición.
-- Por dentro: actualizáronse as bibliotecas sobre as que se constrúe NanoTorrent, coas súas últimas correccións.
+- Novidade: no diálogo «Engadir torrents», cada cartafol ten a súa propia caixa que marca ou desmarca todo o que contén, subcartafoles incluídos, e os botóns «Todo» e «Ningún» fan o mesmo con todo o torrent. Un cartafol con só algúns dos seus ficheiros marcados mostra unha caixa cun guión.
+- Novidade: unha API web opcional compatible con qBittorrent, para que Sonarr, Radarr e outras ferramentas feitas para qBittorrent poidan controlar NanoTorrent. Actívaa en «Preferencias», no apartado «Interface web».
+- Correccións: as columnas «Sementadores» e «Pares» mostran agora entre parénteses o tamaño do enxame, segundo o informan os rastrexadores; a orde fixada coas prioridades dos ficheiros mantense cando un torrent se pausa e se inicia de novo; e abrir «Preferencias» por segunda vez mentres xa están abertas xa non descarta os cambios sen gardar.
+- Correccións: cambiar o idioma agora volve debuxar todos os diálogos abertos, e un ficheiro de filtro de IP cunha ruta que contén un espazo, # ou % agora cárgase.
+- Seguridade: a interface web usa unha biblioteca HTTP actualizada, que corrixe como le unha solicitude mal formada.
+- Eliminado: a opción de liña de ordes --webui-set. --set web-bind, web-port, web-username e os demais axustes web-* fan o mesmo.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

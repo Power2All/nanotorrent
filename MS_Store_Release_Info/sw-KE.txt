@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Kiswahili (Kenya) - Partner Center: Swahili (Kenya) (sw-KE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent ni toleo la Rust la PicoTorrent ya Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Toleo 0.4.6
+Toleo 0.4.7
 
-- Marekebisho: kiasi kilichopakiwa kwa kila torrent sasa huhifadhiwa NanoTorrent inapofungwa. Upakiaji ambao ulikuwa bado haujahifadhiwa ulipotea kila ilipofungwa, kwa hivyo baada ya kuianzisha upya torrent ingeweza kuonyesha kiasi kidogo sana, au sifuri.
-- Marekebisho: wenzi wanaounganishwa na NanoTorrent bila usimbaji fiche wanakubaliwa tena. Wote walikuwa wakikataliwa, jambo lililozuia kushiriki.
-- Ndani: maktaba ambazo NanoTorrent imejengwa juu yake zimesasishwa pamoja na marekebisho yao ya hivi karibuni.
+- Mpya: katika kidirisha cha “Ongeza torrent”, kila folda ina kisanduku chake cha kuteua kinachoteua au kuondoa uteuzi wa kila kitu ndani yake, pamoja na folda ndogo, na vitufe vya “Yote” na “Hakuna” hufanya vivyo hivyo kwa torrent nzima. Folda ambayo ni baadhi tu ya faili zake zimeteuliwa huonyesha kisanduku chenye kistari.
+- Mpya: API ya wavuti ya hiari inayooana na qBittorrent, ili Sonarr, Radarr na zana nyingine zilizoundwa kwa qBittorrent ziweze kudhibiti NanoTorrent. Iwashe katika “Mapendeleo”, chini ya “Kiolesura cha wavuti”.
+- Marekebisho: safu wima za “Wapandaji” na “Wenzako” sasa zinaonyesha ukubwa wa kundi zima kwenye mabano, kama unavyoripotiwa na vifuatiliaji, mpangilio uliowekwa kwa vipaumbele vya faili hubaki torrent inaposimamishwa kwa muda na kuanzishwa tena, na kufungua “Mapendeleo” mara ya pili yakiwa tayari yamefunguliwa hakutupi tena mabadiliko ambayo hayajahifadhiwa.
+- Marekebisho: kubadilisha lugha sasa huchora upya kila kidirisha kilicho wazi, na faili ya chujio cha IP ambayo njia yake ina nafasi, # au % sasa hupakiwa.
+- Usalama: kiolesura cha wavuti kinatumia maktaba ya HTTP iliyosasishwa, inayorekebisha jinsi kinavyosoma ombi lenye muundo mbovu.
+- Imeondolewa: chaguo la mstari wa amri --webui-set. --set web-bind, web-port, web-username na mipangilio mingine ya web-* hufanya kazi hiyo hiyo.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

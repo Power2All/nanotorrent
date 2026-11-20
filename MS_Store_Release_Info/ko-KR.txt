@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: 한국어 (대한민국) - Partner Center: Korean (Korea) (ko-KR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent은 Viktor Elofsson의 PicoTorrent을 Rust로 이식한 것입니다.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-버전 0.4.6
+버전 0.4.7
 
-- 수정: 이제 NanoTorrent를 닫아도 토렌트별 업로드량이 그대로 유지됩니다. 저장되지 않은 업로드량은 종료할 때마다 사라졌기 때문에, 다시 시작하면 토렌트의 업로드량이 훨씬 적게 표시되거나 아예 표시되지 않을 수 있었습니다.
-- 수정: 암호화 없이 NanoTorrent에 연결하는 피어를 다시 받아들입니다. 그동안 이런 피어가 모두 거부되어 시드에 지장이 있었습니다.
-- 내부 개선: NanoTorrent의 기반이 되는 라이브러리를 최신 수정 사항이 반영된 버전으로 업데이트했습니다.
+- 새 기능: '토렌트 추가' 대화 상자에서 폴더마다 자체 확인란이 생겨, 하위 폴더를 포함한 폴더 안의 모든 항목을 한 번에 선택하거나 해제할 수 있습니다. '모두'와 '없음' 버튼은 토렌트 전체에 같은 동작을 합니다. 일부 파일만 선택된 폴더에는 가로줄이 표시된 확인란이 나타납니다.
+- 새 기능: qBittorrent 호환 웹 API(선택 사항)가 추가되어 Sonarr, Radarr 등 qBittorrent용 도구로 NanoTorrent를 제어할 수 있습니다. '설정'의 '웹 인터페이스'에서 켤 수 있습니다.
+- 수정: '시드'와 '피어' 열에 트래커가 보고한 전체 수가 괄호 안에 표시됩니다. 파일 우선도로 정한 순서가 토렌트를 일시 중지했다가 다시 시작해도 유지되며, '설정'이 열려 있을 때 한 번 더 열어도 저장하지 않은 변경 사항이 사라지지 않습니다.
+- 수정: 언어를 바꾸면 열려 있는 모든 대화 상자가 다시 그려지고, 경로에 공백, # 또는 %가 들어간 IP 필터 파일도 이제 불러옵니다.
+- 보안: 웹 인터페이스가 업데이트된 HTTP 라이브러리를 사용하여, 형식이 잘못된 요청을 읽는 방식이 수정되었습니다.
+- 제거: --webui-set 명령줄 옵션을 제거했습니다. --set web-bind, web-port, web-username 및 기타 web-* 설정으로 같은 작업을 할 수 있습니다.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

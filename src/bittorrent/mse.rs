@@ -336,20 +336,14 @@ where
     Ok((enc, dec, ia))
 }
 
-/// A read half that first replays a buffered prefix, then reads from `inner`.
-/// Used to hand back bytes read during detection/handshake (the peeked
-/// plaintext header, or the decrypted IA payload).
-fn prefixed<R: AsyncRead + Unpin>(prefix: Vec<u8>, inner: R) -> impl AsyncRead + Unpin {
-    std::io::Cursor::new(prefix).chain(inner)
-}
-
 /// A BitTorrent handshake: pstrlen, pstr, 8 reserved, info hash, peer id.
 const HANDSHAKE_LEN: usize = 68;
 
 /// Read on until `prefix` holds a whole handshake, if it holds part of one.
 ///
 /// librqbit reads the handshake with ONE read and fails on anything shorter,
-/// and a `prefixed` reader's first read returns only the prefix. So replaying
+/// and a reader replaying a prefix (`Cursor::new(prefix).chain(..)`) returns
+/// only the prefix on its first read. So replaying
 /// the 20 bytes peeked to tell plaintext from MSE handed it 20 bytes, and every
 /// plaintext incoming peer was dropped with "expected at least 48 more bytes" -
 /// including another NanoTorrent with encryption off.
@@ -592,7 +586,7 @@ impl IncomingStreamTransform for IncomingMseTransform {
                 }
                 // Plaintext: replay the peeked header, otherwise untouched.
                 let head = whole_handshake(head.to_vec(), &mut read).await?;
-                let r: BoxAsyncRead = Box::new(prefixed(head, read));
+                let r: BoxAsyncRead = Box::new(std::io::Cursor::new(head).chain(read));
                 return Ok((r, write));
             }
 
@@ -611,7 +605,7 @@ impl IncomingStreamTransform for IncomingMseTransform {
             // nothing, but MSE does not promise that.
             let mut read = EncryptedRead { inner: read, rc4: dec };
             let ia = whole_handshake(ia, &mut read).await?;
-            let r: BoxAsyncRead = Box::new(prefixed(ia, read));
+            let r: BoxAsyncRead = Box::new(std::io::Cursor::new(ia).chain(read));
             let w: BoxAsyncWrite = Box::new(EncryptedWrite::new(write, enc));
             Ok((r, w))
         })
@@ -767,7 +761,7 @@ mod tests {
                 let (enc, dec, ia) =
                     server_handshake(&mut br, &mut bw, ya, &candidates).await.unwrap();
                 assert!(ia.is_empty()); // our initiator sends len(IA)=0
-                let mut r = prefixed(ia, EncryptedRead { inner: br, rc4: dec });
+                let mut r = std::io::Cursor::new(ia).chain(EncryptedRead { inner: br, rc4: dec });
                 let mut w = EncryptedWrite::new(bw, enc);
                 let mut byte = [0u8; 1];
                 r.read_exact(&mut byte).await.unwrap();

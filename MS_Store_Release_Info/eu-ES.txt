@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Euskara (Espainia) - Partner Center: Basque (Spain) (eu-ES)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent Viktor Elofsson-en PicoTorrent-en Rust portua da.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-0.4.6 bertsioa
+0.4.7 bertsioa
 
-- Zuzenketak: torrent bakoitzeko igotako kopurua gorde egiten da orain NanoTorrent ixtean. Oraindik gorde gabeko igoerak irteera bakoitzean galtzen ziren, eta, beraz, torrent batek askoz gutxiago, edo ezer ez, erakuts zezakeen berrabiarazi ondoren.
-- Zuzenketak: NanoTorrent-era zifratu gabe konektatzen diren kideak onartzen dira berriro. Guztiak baztertzen ziren, eta horrek partekatzea oztopatzen zuen.
-- Barnean: NanoTorrent eraikitzeko erabiltzen diren liburutegiak eguneratu dira, azken zuzenketekin.
+- Berria: «Gehitu torrentak» leihoan, karpeta bakoitzak bere kontrol-laukia du, barruan duen guztia markatu edo desmarkatzen duena, azpikarpetak barne, eta «Denak» eta «Bat ere ez» botoiek gauza bera egiten dute torrent osoarekin. Fitxategien zati bat soilik markatuta duen karpetak marratxo bat duen laukia erakusten du.
+- Berria: qBittorrent-ekin bateragarria den aukerako web API bat; horri esker, Sonarr, Radarr eta qBittorrent-erako egindako beste tresna batzuek NanoTorrent kontrola dezakete. Aktibatu «Hobespenak» atalean, «Web interfazea» azpian.
+- Zuzenketak: «Ereileak» eta «Kideak» zutabeek kide-multzo osoaren tamaina erakusten dute orain parentesi artean, aztarnariek jakinarazi bezala; fitxategien lehentasunekin ezarritako ordena mantendu egiten da torrent bat pausatu eta berriro abiarazten denean; eta «Hobespenak» bigarren aldiz irekitzeak, dagoeneko irekita dagoenean, ez ditu jada gorde gabeko aldaketak galtzen.
+- Zuzenketak: hizkuntza aldatzean, irekita dauden elkarrizketa-koadro guztiak berriro marrazten dira orain, eta bidean zuriunea, # edo % duen IP iragazkiaren fitxategia ondo kargatzen da orain.
+- Segurtasuna: web-interfazeak HTTP liburutegi eguneratu bat erabiltzen du, eta horrek gaizki osatutako eskaerak irakurtzeko modua zuzentzen du.
+- Kenduta: --webui-set komando-lerroko aukera. --set web-bind, web-port, web-username eta gainerako web-* ezarpenek gauza bera egiten dute.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

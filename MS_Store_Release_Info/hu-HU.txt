@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Magyar (Magyarország) - Partner Center: Hungarian (Hungary) (hu-HU)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ A NanoTorrent Viktor Elofsson PicoTorrentjének Rust nyelvű átirata.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-0.4.6-s verzió
+0.4.7-s verzió
 
-- Javítások: a NanoTorrent bezárásakor mostantól megmarad az egyes torrentek feltöltött mennyisége. A még nem mentett feltöltés minden kilépéskor elveszett, így egy torrent újraindítás után jóval kevesebbet, vagy semmit sem mutathatott.
-- Javítások: a titkosítás nélkül kapcsolódó partnereket a NanoTorrent ismét elfogadja. Eddig mindegyiket elutasította, ami visszafogta a seedelést.
-- A motorháztető alatt: frissültek a könyvtárak, amelyekre a NanoTorrent épül, a legújabb javításaikkal együtt.
+- Újdonság: a Hozzáadás ablakban minden mappának saját jelölőnégyzete van, amely a mappa teljes tartalmát – az almappákat is – be- vagy kijelöli, a Mind és a Nincs gomb pedig ugyanezt teszi az egész torrenttel. Az a mappa, amelynek csak néhány fájlja van bejelölve, kötőjeles négyzetet mutat.
+- Újdonság: választható, qBittorrenttel kompatibilis webes API, amellyel a Sonarr, a Radarr és más, qBittorrenthez készült eszközök vezérelhetik a NanoTorrentet. A Beállítások Webes felület részén kapcsolható be.
+- Javítások: a Seedek és a Peerek oszlop mostantól zárójelben mutatja a raj méretét, ahogy a trackerek jelentik; a fájlprioritásokkal beállított sorrend megmarad, ha egy torrentet szüneteltetnek, majd újraindítanak; és a Beállítások második megnyitása, miközben már nyitva van, többé nem dobja el a nem mentett módosításokat.
+- Javítások: a nyelv váltása mostantól minden nyitott párbeszédablakot újrarajzol, és betöltődik az az IP-szűrőfájl is, amelynek elérési útjában szóköz, # vagy % jel szerepel.
+- Biztonság: a webes felület frissített HTTP-könyvtárat használ, amely javítja a hibás formátumú kérések beolvasását.
+- Eltávolítva: a --webui-set parancssori kapcsoló. Ugyanezt teszi a --set web-bind, web-port, web-username és a többi web-* beállítás.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

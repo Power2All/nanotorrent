@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Română (România) - Partner Center: Romanian (Romania) (ro-RO)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent este o portare în Rust a PicoTorrent, de Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versiunea 0.4.6
+Versiunea 0.4.7
 
-- Remedieri: cantitatea încărcată pentru fiecare torrent se păstrează acum la închiderea NanoTorrent. Încărcările încă nesalvate se pierdeau la fiecare ieșire, așa că după o repornire un torrent putea arăta mult mai puțin sau nimic.
-- Remedieri: partenerii care se conectează la NanoTorrent fără criptare sunt din nou acceptați. Toți erau respinși, ceea ce frâna partajarea.
-- Sub capotă: bibliotecile pe care se bazează NanoTorrent au fost actualizate cu cele mai recente remedieri.
+- Nou: în fereastra Adaugă, fiecare folder are propria casetă de bifare, care bifează sau debifează tot ce conține, inclusiv subfolderele, iar butoanele Tot și Nimic fac același lucru pentru întregul torrent. Un folder cu doar o parte din fișiere bifate afișează o casetă cu o liniuță.
+- Nou: un API web opțional, compatibil cu qBittorrent, prin care Sonarr, Radarr și alte unelte făcute pentru qBittorrent pot controla NanoTorrent. Se activează din Preferințe, secțiunea Interfață web.
+- Remedieri: coloanele Semințe și Perechi afișează acum între paranteze dimensiunea roiului, așa cum o raportează tracker-ele, ordinea stabilită prin prioritățile fișierelor se păstrează când un torrent este pus în pauză și pornit din nou, iar deschiderea Preferințelor a doua oară, cât timp sunt deja deschise, nu mai aruncă modificările nesalvate.
+- Remedieri: schimbarea limbii redesenează acum toate dialogurile deschise, iar un fișier de filtru IP a cărui cale conține un spațiu, # sau % se încarcă acum.
+- Securitate: interfața web folosește o bibliotecă HTTP actualizată, care corectează modul în care citește o cerere malformată.
+- Eliminat: opțiunea de linie de comandă --webui-set. --set web-bind, web-port, web-username și celelalte setări web-* fac același lucru.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

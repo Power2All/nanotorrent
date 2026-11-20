@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Bosanski (Bosna i Hercegovina) - Partner Center: Bosnian (Bosnia and Herzegovina) (bs-Latn-BA)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent je Rust port PicoTorrenta autora Viktora Elofssona.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzija 0.4.6
+Verzija 0.4.7
 
-- Ispravke: količina poslanih podataka za svaki torrent sada se čuva kada se NanoTorrent zatvori. Poslani podaci koji još nisu bili spremljeni gubili su se pri svakom izlasku, pa je torrent nakon ponovnog pokretanja mogao pokazivati mnogo manje ili ništa.
-- Ispravke: vršnjaci koji se na NanoTorrent povezuju bez šifriranja ponovo se prihvataju. Svi su bili odbijani, što je kočilo dijeljenje.
-- Ispod haube: biblioteke na kojima je NanoTorrent izgrađen ažurirane su s najnovijim ispravkama.
+- Novo: u dijalogu „Dodaj torrente“ svaki folder ima vlastito polje za označavanje koje označava ili poništava oznaku za sve u njemu, uključujući podfoldere, a dugmad „Sve“ i „Ništa“ rade isto za cijeli torrent. Folder u kojem su označene samo neke datoteke prikazuje polje s crticom.
+- Novo: opcionalni web API kompatibilan s programom qBittorrent, pa Sonarr, Radarr i drugi alati napravljeni za qBittorrent mogu upravljati programom NanoTorrent. Uključite ga u „Postavkama“, u odjeljku „Web interfejs“.
+- Ispravke: kolone „Sijači“ i „Vršnjaci“ sada u zagradama prikazuju veličinu roja prema podacima trackera, redoslijed postavljen prioritetima datoteka zadržava se kada se torrent pauzira i ponovo pokrene, a ponovno otvaranje „Postavki“ dok su već otvorene više ne odbacuje nesačuvane promjene.
+- Ispravke: promjena jezika sada ponovo iscrtava svaki otvoreni dijalog, a datoteka IP filtera čija putanja sadrži razmak, # ili % sada se učitava.
+- Sigurnost: web interfejs koristi ažuriranu HTTP biblioteku, što ispravlja način na koji čita neispravan zahtjev.
+- Uklonjeno: opcija komandne linije --webui-set. --set web-bind, web-port, web-username i ostale web-* postavke rade isto.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

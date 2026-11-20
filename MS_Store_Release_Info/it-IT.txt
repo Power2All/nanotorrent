@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Italiano (Italia) - Partner Center: Italian (Italy) (it-IT)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent è un port in Rust di PicoTorrent, di Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Versione 0.4.6
+Versione 0.4.7
 
-- Correzioni: la quantità inviata per ogni torrent ora viene conservata alla chiusura di NanoTorrent. Gli invii non ancora salvati andavano persi a ogni uscita, quindi dopo un riavvio un torrent poteva mostrare molto meno, o nulla.
-- Correzioni: i peer che si connettono a NanoTorrent senza cifratura vengono di nuovo accettati. Venivano tutti respinti, e questo frenava la condivisione.
-- Sotto il cofano: le librerie su cui si basa NanoTorrent sono state aggiornate con le loro ultime correzioni.
+- Novità: nella finestra «Aggiungi torrent» ogni cartella ha una propria casella che seleziona o deseleziona tutto il suo contenuto, sottocartelle comprese, e i pulsanti «Tutti» e «Nessuno» fanno lo stesso per l’intero torrent. Una cartella con solo alcuni file selezionati mostra una casella con un trattino.
+- Novità: un’API web opzionale compatibile con qBittorrent, così Sonarr, Radarr e altri strumenti pensati per qBittorrent possono controllare NanoTorrent. Si attiva in «Impostazioni», nella sezione «Interfaccia web».
+- Correzioni: le colonne «Seed» e «Peer» ora mostrano tra parentesi la dimensione dello swarm, come riportata dai tracker; l’ordine impostato con le priorità dei file viene mantenuto quando un torrent viene messo in pausa e riavviato; e aprire «Impostazioni» una seconda volta mentre è già aperto non scarta più le modifiche non salvate.
+- Correzioni: cambiare lingua ora ridisegna tutte le finestre aperte, e un file di filtro IP il cui percorso contiene uno spazio, # o % ora viene caricato.
+- Sicurezza: l’interfaccia web usa una libreria HTTP aggiornata, che corregge il modo in cui legge una richiesta malformata.
+- Rimosso: l’opzione da riga di comando --webui-set. --set web-bind, web-port, web-username e le altre impostazioni web-* fanno la stessa cosa.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

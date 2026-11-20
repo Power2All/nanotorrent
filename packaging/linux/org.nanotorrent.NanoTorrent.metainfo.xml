@@ -95,6 +95,13 @@
   </screenshots>
 
   <releases>
+    <release version="0.4.7" date="2026-11-20">
+      <description>
+        <p>In the Add dialog, a folder has a checkbox of its own that ticks or unticks everything inside it, and All and None buttons tick or untick the whole torrent - no more unticking hundreds of files one at a time.</p>
+        <p>An optional qBittorrent-compatible web API lets Sonarr, Radarr and other tools made for qBittorrent control NanoTorrent.</p>
+        <p>The Seeds and Peers columns show the size of the swarm, file priorities survive pausing a torrent and land on the right file in hybrid torrents, and the web interface gets a security fix.</p>
+      </description>
+    </release>
     <release version="0.4.6" date="2026-11-15">
       <description>
         <p>Double-clicking a .torrent file in the Finder on macOS opens it in NanoTorrent, instead of an error saying the file type cannot be opened. Magnet links clicked in a browser on macOS work the same way.</p>

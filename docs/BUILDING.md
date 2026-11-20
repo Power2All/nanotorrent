@@ -96,7 +96,7 @@ Useful on a machine with no display at all:
 
 Then browse to `https://127.0.0.1:8443` and accept the self-signed certificate;
 its SHA-256 fingerprint is printed to the log so it can be checked rather than
-clicked through. `--webui-set bind_address 0.0.0.0` exposes it to the LAN, and
+clicked through. `--set web-bind 0.0.0.0` exposes it to the LAN, and
 the server refuses to serve plaintext off loopback.
 
 ## Verified on Ubuntu 24.04 (WSL2)

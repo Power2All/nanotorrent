@@ -133,7 +133,7 @@ pub fn file_url(base: &str, torrent_name: &str, file: &SeedFile, multi_file: boo
 fn encode_path(path: &str) -> String {
     // `/` stays: this encodes a path, and escaping its separators would ask
     // the server for one file with slashes in its name.
-    crate::core::utils::percent_encode(path.as_bytes(), b"/")
+    crate::core::utils::percent_encode(path.as_bytes(), true)
 }
 
 /// Read `url-list` (BEP 19) or `httpseeds` (BEP 17) out of a `.torrent`.
@@ -169,26 +169,31 @@ pub fn parse_url_key(torrent_bytes: &[u8], key: &[u8]) -> Vec<String> {
 /// Where the bytes come from. A trait so the protocol loop can be tested
 /// without an HTTP server standing behind it.
 pub trait ByteSource: Send + Sync + std::fmt::Debug {
+    /// True for a source asked for whole pieces through [`fetch_piece`]
+    /// rather than file spans through [`fetch`]. BEP 17 is one: its request
+    /// names an info hash and a piece index, and knows nothing about files.
+    /// A source implements whichever of the two this picks.
+    fn piece_oriented(&self) -> bool {
+        false
+    }
+
     /// Bytes from one file, at a file-relative offset. The BEP 19 shape.
     fn fetch(
         &self,
-        file: &SeedFile,
-        start: u64,
-        len: u64,
-    ) -> futures::future::BoxFuture<'_, Result<Vec<u8>>>;
+        _file: &SeedFile,
+        _start: u64,
+        _len: u64,
+    ) -> futures::future::BoxFuture<'_, Result<Vec<u8>>> {
+        Box::pin(async move { bail!("this source is fetched a whole piece at a time") })
+    }
 
-    /// A whole piece in one request, for a source that is piece-oriented.
-    ///
-    /// `None` - the default - means "assemble it from [`fetch`] calls across
-    /// the file spans", which is what BEP 19 does. BEP 17 overrides this
-    /// because a piece is the only thing it can ask for: its request names an
-    /// info hash and a piece index, and knows nothing about files.
+    /// A whole piece in one request, for a [`piece_oriented`] source.
     fn fetch_piece(
         &self,
         _index: u32,
         _len: u64,
-    ) -> Option<futures::future::BoxFuture<'_, Result<Vec<u8>>>> {
-        None
+    ) -> futures::future::BoxFuture<'_, Result<Vec<u8>>> {
+        Box::pin(async move { bail!("this source is fetched by file span") })
     }
 }
 
@@ -276,34 +281,25 @@ impl HttpSeedSource {
         format!(
             "{}{join}info_hash={}&piece={index}",
             self.base,
-            crate::core::utils::percent_encode(&self.info_hash.0, b"")
+            crate::core::utils::percent_encode(&self.info_hash.0, false)
         )
     }
 }
 
 impl ByteSource for HttpSeedSource {
-    /// Never called: [`fetch_piece`] answers first, and BEP 17 has no way to
-    /// ask for a file-relative range - its requests are keyed by piece.
-    fn fetch(
-        &self,
-        _file: &SeedFile,
-        _start: u64,
-        _len: u64,
-    ) -> futures::future::BoxFuture<'_, Result<Vec<u8>>> {
-        Box::pin(async move { bail!("BEP 17 seeds are fetched a whole piece at a time") })
+    fn piece_oriented(&self) -> bool {
+        true
     }
 
     fn fetch_piece(
         &self,
         index: u32,
         len: u64,
-    ) -> Option<futures::future::BoxFuture<'_, Result<Vec<u8>>>> {
+    ) -> futures::future::BoxFuture<'_, Result<Vec<u8>>> {
         let url = self.piece_url(index);
         // 200 here, unlike BEP 19: the request is not a range request, so
         // the whole response IS the piece.
-        Some(Box::pin(async move {
-            get_exact(self.client.get(&url), &url, len, None).await
-        }))
+        Box::pin(async move { get_exact(self.client.get(&url), &url, len, None).await })
     }
 }
 
@@ -399,25 +395,20 @@ struct PieceCache {
     data: Vec<u8>,
 }
 
-/// Up to `FETCH_ATTEMPTS` tries with a doubling pause between them. `attempt`
-/// returning `None` ends it at once - a source that stopped offering whole
-/// pieces is not going to start again on the next try.
+/// Up to `FETCH_ATTEMPTS` tries with a doubling pause between them.
 ///
 /// A single failed request used to be fatal to the whole web seed, which with
 /// one seed configured means the torrent never finishes.
 async fn with_retry<'a>(
     what: &str,
-    mut attempt: impl FnMut() -> Option<futures::future::BoxFuture<'a, Result<Vec<u8>>>>,
+    mut attempt: impl FnMut() -> futures::future::BoxFuture<'a, Result<Vec<u8>>>,
 ) -> Result<Vec<u8>> {
     let mut last = None;
     for n in 0..FETCH_ATTEMPTS {
         if n > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(250 << n)).await;
         }
-        let Some(fut) = attempt() else {
-            bail!("source stopped offering whole pieces mid-torrent");
-        };
-        match fut.await {
+        match attempt().await {
             Ok(v) => return Ok(v),
             Err(e) => {
                 tracing::debug!(attempt = n, "web seed {what} failed: {e:#}");
@@ -447,7 +438,7 @@ async fn piece_bytes<'a>(
 
     // A piece-oriented source answers in one request; retried the same number
     // of times as a span fetch, for the same reason.
-    if source.fetch_piece(index, len).is_some() {
+    if source.piece_oriented() {
         let data = with_retry("piece fetch", || source.fetch_piece(index, len)).await?;
         if data.len() as u64 != len {
             bail!("web seed returned {} bytes for a {len}-byte piece {index}", data.len());
@@ -466,7 +457,7 @@ async fn piece_bytes<'a>(
             continue;
         }
         let bytes =
-            with_retry("fetch", || Some(source.fetch(file, span.start, span.len))).await?;
+            with_retry("fetch", || source.fetch(file, span.start, span.len)).await?;
         data.extend_from_slice(&bytes);
     }
     if data.len() as u64 != len {
@@ -810,24 +801,20 @@ mod tests {
             content: Vec<u8>,
             piece_length: u64,
         }
+        // `fetch` is left at its default, which fails.
         impl ByteSource for Pieces {
-            fn fetch(
-                &self,
-                _file: &SeedFile,
-                _start: u64,
-                _len: u64,
-            ) -> futures::future::BoxFuture<'_, Result<Vec<u8>>> {
-                Box::pin(async move { bail!("a BEP 17 source must never be asked for a file span") })
+            fn piece_oriented(&self) -> bool {
+                true
             }
 
             fn fetch_piece(
                 &self,
                 index: u32,
                 len: u64,
-            ) -> Option<futures::future::BoxFuture<'_, Result<Vec<u8>>>> {
+            ) -> futures::future::BoxFuture<'_, Result<Vec<u8>>> {
                 let from = index as u64 * self.piece_length;
                 let slice = self.content[from as usize..(from + len) as usize].to_vec();
-                Some(Box::pin(async move { Ok(slice) }))
+                Box::pin(async move { Ok(slice) })
             }
         }
 
@@ -933,9 +920,9 @@ mod tests {
         eprintln!("web seed test: {} bytes", body.len());
 
         let mut torrent = build(&CreateInput {
-            source: &payload,
-            trackers: &[],
-            comment: "",
+            source: payload.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "nanotorrent webseed test".into(),
             private: false,
             piece_length: Some(PIECE_LEN),

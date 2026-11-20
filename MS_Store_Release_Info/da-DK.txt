@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Dansk (Danmark) - Partner Center: Danish (Denmark) (da-DK)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent er en Rust-portering af PicoTorrent af Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.6
+Version 0.4.7
 
-- Rettelser: mængden, der er uploadet for hver torrent, bevares nu, når NanoTorrent lukkes. Uploads, der endnu ikke var gemt, gik tabt ved hver afslutning, så en torrent kunne vise langt mindre, eller intet, efter en genstart.
-- Rettelser: modparter, der forbinder til NanoTorrent uden kryptering, accepteres igen. Alle blev afvist, hvilket holdt seedningen tilbage.
-- Under motorhjelmen: bibliotekerne, som NanoTorrent er bygget på, er opdateret med deres seneste rettelser.
+- Nyt: i dialogen »Tilføj torrent(s)« har hver mappe sit eget afkrydsningsfelt, der markerer eller fjerner markeringen af alt indeni, undermapper medregnet, og knapperne »Alle« og »Ingen« gør det samme for hele torrenten. En mappe, hvor kun nogle af filerne er markeret, viser et felt med en streg.
+- Nyt: en valgfri qBittorrent-kompatibel web-API, så Sonarr, Radarr og andre værktøjer lavet til qBittorrent kan styre NanoTorrent. Slå den til i »Indstillinger« under »Webgrænseflade«.
+- Rettelser: kolonnerne »Seedere« og »Peers« viser nu sværmens størrelse i parentes, som trackerne melder den, rækkefølgen sat med filprioriteter bevares, når en torrent sættes på pause og startes igen, og åbner man »Indstillinger« en gang til, mens det allerede er åbent, kasseres ikke-gemte ændringer ikke længere.
+- Rettelser: skift af sprog gentegner nu alle åbne dialoger, og en IP-filterfil, hvis sti indeholder et mellemrum, # eller %, indlæses nu.
+- Sikkerhed: webgrænsefladen bruger et opdateret HTTP-bibliotek, som retter, hvordan den læser en forkert udformet forespørgsel.
+- Fjernet: kommandolinjeindstillingen --webui-set. --set web-bind, web-port, web-username og de andre web-*-indstillinger gør det samme.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

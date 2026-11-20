@@ -37,20 +37,10 @@ pub fn usage(tr: &Translator) -> String {
             "  nanotorrent --webui on|off        {}\n",
             "  nanotorrent --set-web-password    {}\n",
             "  nanotorrent --webui-status        {}\n",
-            "  nanotorrent --webui-set KEY VALUE {}\n",
             "\n",
             "{}\n",
             "\n",
             "  nanotorrent --plugins on|off      {}\n",
-            "\n",
-            "{}\n",
-            "\n",
-            "  bind_address    {}\n",
-            "  port            {}\n",
-            "  username        {}\n",
-            "  tls_mode        {}\n",
-            "  tls_cert_path   {}\n",
-            "  tls_key_path    {}\n",
             "\n",
             "{}\n",
             "\n",
@@ -64,16 +54,8 @@ pub fn usage(tr: &Translator) -> String {
         tr.i18n("cli_web_flag_onoff"),
         tr.i18n("cli_web_flag_password"),
         tr.i18n("cli_web_flag_status"),
-        tr.i18n("cli_web_flag_set"),
         tr.i18n("cli_plugins_header"),
         tr.i18n("cli_plugins_flag_onoff"),
-        tr.i18n("cli_web_settings_header"),
-        tr.i18n("cli_web_bind_address"),
-        tr.i18n("cli_web_port"),
-        tr.i18n("cli_web_username"),
-        tr.i18n("cli_web_tls_mode"),
-        tr.i18n("cli_web_cert"),
-        tr.i18n("cli_web_key"),
         tr.i18n("cli_web_tls_off_note"),
         tr.i18n("cli_web_password_note"),
         tr.i18n("cli_applies_note"),
@@ -87,7 +69,7 @@ pub fn handle(args: &[String]) -> Result<bool> {
     };
     if !matches!(
         flag,
-        "--webui" | "--set-web-password" | "--webui-status" | "--webui-set" | "--plugins"
+        "--webui" | "--set-web-password" | "--webui-status" | "--plugins"
     ) {
         return Ok(false);
     }
@@ -148,15 +130,6 @@ pub fn handle(args: &[String]) -> Result<bool> {
             println!("{}", tr.i18n("cli_applies_note"));
         }
 
-        "--webui-set" => {
-            let (Some(key), Some(value)) = (args.get(1), args.get(2)) else {
-                anyhow::bail!("{}", usage(&tr));
-            };
-            set_setting(&cfg, key, value, &tr)?;
-            println!("webui.{key} = {value}");
-            println!("{}", tr.i18n("cli_applies_note"));
-        }
-
         "--webui-status" => {
             let wc = super::WebConfig::load(&cfg);
             // Deliberately unaligned. The labels used to be fixed English, so
@@ -188,9 +161,9 @@ pub fn handle(args: &[String]) -> Result<bool> {
     Ok(true)
 }
 
-/// Whitelisted rather than a generic key/value setter over the settings table.
-/// A typo would otherwise write a key nothing ever reads and report success,
-/// which is the worst possible outcome for a security-relevant setting.
+/// The two web settings `--set` delegates here, because each says something
+/// back: `bind_address` warns when it is not loopback, and `username` refuses
+/// to be blank.
 pub(crate) fn set_setting(
     cfg: &Configuration,
     key: &str,
@@ -198,22 +171,6 @@ pub(crate) fn set_setting(
     tr: &Translator,
 ) -> Result<()> {
     match key {
-        // Ordinary settings, checked by `crate::cli` the same way `--set`
-        // checks them.
-        "port" | "tls_mode" | "tls_cert_path" | "tls_key_path" => {
-            let full = format!("webui.{key}");
-            let s = crate::cli::SETTINGS
-                .iter()
-                .find(|s| s.key == full)
-                .with_context(|| format!("{full} is missing from crate::cli::SETTINGS"))?;
-            crate::cli::set(cfg, s, value, tr)?;
-            if key == "tls_mode" && value == "off" {
-                // Not refused here - it is legitimate on loopback, and startup
-                // is where the bind address is known. Say so now rather than
-                // letting it fail confusingly later.
-                println!("{}", tr.i18n("cli_web_tls_off_warning"));
-            }
-        }
         "bind_address" => {
             anyhow::ensure!(!value.trim().is_empty(), "bind_address must not be empty");
             if value != "127.0.0.1" && value != "::1" {
@@ -225,7 +182,7 @@ pub(crate) fn set_setting(
             anyhow::ensure!(!value.trim().is_empty(), "username must not be empty");
             cfg.set("webui.username", &value);
         }
-        _ => anyhow::bail!("{}\n\n{}", tr.i18n1("cli_unknown_setting", key), usage(tr)),
+        _ => anyhow::bail!("{}", tr.i18n1("cli_unknown_setting", key)),
     }
     Ok(())
 }
@@ -283,7 +240,6 @@ mod tests {
                             "--webui"
                                 | "--set-web-password"
                                 | "--webui-status"
-                                | "--webui-set"
                                 | "--plugins"
                         ),
                         "the usage text mentions {flag} but handle() does not match it"

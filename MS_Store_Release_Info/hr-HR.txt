@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Hrvatski (Hrvatska) - Partner Center: Croatian (Croatia) (hr-HR)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent je prijenos PicoTorrenta Viktora Elofssona na Rust.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Verzija 0.4.6
+Verzija 0.4.7
 
-- Ispravci: količina poslanih podataka za svaki torrent sada se čuva pri zatvaranju NanoTorrenta. Još nespremljeno slanje gubilo se pri svakom izlasku, pa je torrent nakon ponovnog pokretanja mogao pokazivati mnogo manje ili ništa.
-- Ispravci: sudionici koji se s NanoTorrentom povezuju bez šifriranja ponovno se prihvaćaju. Svi su bili odbijani, što je kočilo dijeljenje.
-- Ispod haube: biblioteke na kojima je NanoTorrent izgrađen ažurirane su s najnovijim ispravcima.
+- Novo: u prozoru za dodavanje torrenta svaka mapa ima vlastiti potvrdni okvir koji označava ili odznačava sve što je u njoj, uključujući podmape, a gumbi „Sve” i „Ništa” rade isto za cijeli torrent. Mapa u kojoj je označen samo dio datoteka prikazuje okvir s crticom.
+- Novo: neobavezni web API kompatibilan s qBittorrentom, pa Sonarr, Radarr i drugi alati izrađeni za qBittorrent mogu upravljati NanoTorrentom. Uključite ga u Postavkama, u odjeljku Web sučelje.
+- Ispravci: stupci „Seederi” i „Peerevi” sada u zagradama prikazuju veličinu roja kako je javljaju trackeri, redoslijed postavljen prioritetima datoteka čuva se kad se torrent pauzira i ponovno pokrene, a otvaranje prozora Postavki po drugi put dok je već otvoren više ne odbacuje nespremljene promjene.
+- Ispravci: promjena jezika sada ponovno iscrtava sve otvorene dijaloge, a datoteka IP filtra čija putanja sadrži razmak, # ili % sada se učitava.
+- Sigurnost: web-sučelje koristi ažuriranu HTTP biblioteku, koja ispravlja način na koji čita neispravno oblikovan zahtjev.
+- Uklonjeno: opcija naredbenog retka --webui-set. Isto rade --set web-bind, web-port, web-username i ostale web-* postavke.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

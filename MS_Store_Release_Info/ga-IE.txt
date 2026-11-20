@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Gaeilge (Éire) - Partner Center: Irish (Ireland) (ga-IE)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ Is leagan Rust de PicoTorrent le Viktor Elofsson é NanoTorrent.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Leagan 0.4.6
+Leagan 0.4.7
 
-- Ceartúcháin: coinnítear an méid a uaslódáladh do gach torrent anois nuair a dhúntar NanoTorrent. Chailltí uaslódálacha nach raibh sábháilte fós gach uair a scoir sé, mar sin d'fhéadfadh torrent i bhfad níos lú, nó faic, a thaispeáint tar éis atosú.
-- Ceartúcháin: glactar arís le piaraí a cheanglaíonn le NanoTorrent gan chriptiú. Bhí siad go léir á ndiúltú, rud a chuir srian ar an síolú.
-- Faoin gcochall: nuashonraíodh na leabharlanna ar a bhfuil NanoTorrent tógtha, lena gceartúcháin is déanaí.
+- Nua: sa bhosca dialóige “Cuir torrentanna leis”, tá a ticbhosca féin ag gach fillteán a chuireann tic le gach rud atá ann, fofhillteáin san áireamh, nó a bhaineann an tic díobh, agus déanann na cnaipí “Gach rud” agus “Faic” an rud céanna don torrent ar fad. Taispeánann fillteán nach bhfuil tic ach le cuid dá chomhaid bosca le fleiscín ann.
+- Nua: API gréasáin roghnach atá comhoiriúnach le qBittorrent, ionas gur féidir le Sonarr, Radarr agus uirlisí eile a rinneadh do qBittorrent NanoTorrent a rialú. Cuir ar siúl é in “Sainroghanna”, faoi “Comhéadan gréasáin”.
+- Ceartúcháin: taispeánann na colúin “Síolaitheoirí” agus “Piaraí” méid an tsaithe idir lúibíní anois, de réir mar a thuairiscíonn na rianaitheoirí é; coinnítear an t-ord a shocraítear le tosaíochtaí comhad nuair a chuirtear torrent ar sos agus nuair a thosaítear arís é; agus ní chailltear athruithe nár sábháladh a thuilleadh nuair a osclaítear “Sainroghanna” an dara huair agus é oscailte cheana.
+- Ceartúcháin: nuair a athraítear an teanga, atarraingítear gach bosca dialóige oscailte anois, agus luchtaítear anois comhad scagaire IP a bhfuil spás, # nó % ina chonair.
+- Slándáil: úsáideann an comhéadan gréasáin leabharlann HTTP nuashonraithe, a cheartaíonn an chaoi a léann sé iarratas míchumtha.
+- Bainte: an rogha líne ordaithe --webui-set. Déanann --set web-bind, web-port, web-username agus na socruithe web-* eile an rud céanna.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

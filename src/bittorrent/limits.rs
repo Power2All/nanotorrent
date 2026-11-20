@@ -10,6 +10,8 @@
 //! answer that would otherwise only show up as somebody's connection being
 //! throttled at the wrong time of day.
 
+use std::num::NonZeroU32;
+
 use chrono::{DateTime, Datelike, Local, Timelike};
 
 use crate::core::configuration::Configuration;
@@ -120,7 +122,10 @@ fn positive<T: PartialOrd + Default>(value: Option<T>) -> Option<T> {
 /// `None` in either half means unlimited. Returned as a pair rather than
 /// applied here so the caller can compare it against what is already set and
 /// stay quiet when nothing has changed - this is consulted every second.
-pub fn current_rates(cfg: &Configuration, now: DateTime<Local>) -> (Option<u32>, Option<u32>) {
+pub fn current_rates(
+    cfg: &Configuration,
+    now: DateTime<Local>,
+) -> (Option<NonZeroU32>, Option<NonZeroU32>) {
     if alt_speed_active(cfg, now) {
         return (
             rate(cfg.get_int("speed.alt_download_rate")),
@@ -139,8 +144,8 @@ pub fn current_rates(cfg: &Configuration, now: DateTime<Local>) -> (Option<u32>,
 }
 
 /// Rate limits are stored in KB/s, like the original. Zero is unlimited.
-fn rate(kb: Option<i64>) -> Option<u32> {
-    kb.filter(|kb| *kb > 0).map(|kb| (kb * 1024) as u32)
+fn rate(kb: Option<i64>) -> Option<NonZeroU32> {
+    kb.filter(|kb| *kb > 0).and_then(|kb| NonZeroU32::new((kb * 1024) as u32))
 }
 
 /// Are the alternative limits in force?

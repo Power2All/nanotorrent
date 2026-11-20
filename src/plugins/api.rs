@@ -151,7 +151,7 @@ pub fn register(
 
         let s = session.clone();
         engine.register_fn("peers", move |hash: &str| {
-            rhai::serde::to_dynamic(crate::webui::peer_rows(&s, hash))
+            rhai::serde::to_dynamic(s.peers(hash))
         });
 
         let s = session.clone();
@@ -202,18 +202,19 @@ pub fn register(
             let Ok(index) = usize::try_from(index) else {
                 return String::new();
             };
-            if !c.get_bool("webui.enabled") {
+            let wc = crate::webui::WebConfig::load(&c);
+            if !wc.enabled {
                 return String::new();
             }
             let Some(token) = crate::webui::streamtoken::issue_live(hash, index) else {
                 return String::new();
             };
-            let port = c.get_int("webui.port").unwrap_or(8443);
+            let port = wc.port;
             // Loopback and the scheme the server is actually using. A plugin
             // runs on the same machine as the server, so the LAN address is
             // never the right answer here and would only break when it changed.
-            let scheme = match c.get_string("webui.tls_mode").unwrap_or_default().as_str() {
-                "off" => "http",
+            let scheme = match wc.tls {
+                crate::webui::TlsMode::Off => "http",
                 _ => "https",
             };
             format!(

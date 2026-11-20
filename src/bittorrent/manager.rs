@@ -80,12 +80,7 @@ fn run(
 /// in the right place is left alone, which is also what makes this safe to run
 /// on every completion.
 fn move_finished(session: &Arc<Session>, cfg: &Configuration, hash: &str, name: &str) {
-    let Some(current) = session
-        .torrents(&Default::default())
-        .into_iter()
-        .find(|t| t.info_hash == hash)
-        .map(|t| t.save_path)
-    else {
+    let Some(current) = session.torrent(hash).map(|t| t.save_path) else {
         return;
     };
 

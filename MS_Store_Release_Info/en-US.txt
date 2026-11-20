@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: English (United States) (en-US)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent is a Rust port of PicoTorrent by Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Version 0.4.6
+Version 0.4.7
 
-- Fixes: the amount uploaded for each torrent is now kept when NanoTorrent closes. Uploads not yet saved were lost on every exit, so a torrent could show much less, or nothing, after a restart.
-- Fixes: peers that connect to NanoTorrent without encryption are accepted again. All of them were being turned away, which held back seeding.
-- Under the hood: the libraries NanoTorrent is built on have been updated, with their latest fixes.
+- New: in the Add dialog, every folder has a checkbox of its own that ticks or unticks everything inside it, subfolders included, and All and None buttons do the same for the whole torrent. A folder with only some of its files ticked shows a box with a dash.
+- New: an optional qBittorrent-compatible web API, so Sonarr, Radarr and other tools made for qBittorrent can control NanoTorrent. Switch it on in Preferences, under Web interface.
+- Fixes: the Seeds and Peers columns now show the size of the swarm in brackets, as reported by the trackers, the order set with file priorities is kept when a torrent is paused and started again, and opening Preferences a second time while it is open no longer throws away unsaved changes.
+- Fixes: changing the language now redraws every open dialog, and an IP filter file whose path contains a space, # or % now loads.
+- Security: the web interface uses an updated HTTP library, which fixes how it reads a malformed request.
+- Removed: the --webui-set command-line option. --set web-bind, web-port, web-username and the other web-* settings do the same.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

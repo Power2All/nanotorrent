@@ -421,13 +421,15 @@ fn tree_insert(tree: &mut Vec<(Vec<u8>, Ben)>, comps: &[String], leaf: Ben) {
 
 // Public builder
 
-pub struct CreateInput<'a> {
-    pub source: &'a Path,
+/// What to build, as the create-torrent dialog collects it. Owned so it can be
+/// handed to the hashing task as it is.
+pub struct CreateInput {
+    pub source: PathBuf,
     pub version: TorrentVersion,
     /// Already validated: power of two, multiple of 16 KiB. `None` = auto.
     pub piece_length: Option<u32>,
-    pub trackers: &'a [String],
-    pub comment: &'a str,
+    pub trackers: Vec<String>,
+    pub comment: String,
     pub private: bool,
     pub created_by: String,
 }
@@ -458,7 +460,7 @@ pub fn validate_piece_length(pl: u32) -> Result<u32> {
 
 /// Build a finished `.torrent` of any version from a file or folder.
 pub fn build(input: &CreateInput) -> Result<Vec<u8>> {
-    let (name, files, source_is_file) = collect_files(input.source)?;
+    let (name, files, source_is_file) = collect_files(&input.source)?;
     if files.is_empty() {
         bail!("no files to add");
     }
@@ -560,7 +562,7 @@ pub fn build(input: &CreateInput) -> Result<Vec<u8>> {
         ));
     }
     if !input.comment.is_empty() {
-        root.push((b"comment".to_vec(), Ben::s(input.comment)));
+        root.push((b"comment".to_vec(), Ben::s(&input.comment)));
     }
     root.push((b"created by".to_vec(), Ben::s(&input.created_by)));
     root.push((
@@ -601,9 +603,9 @@ mod tests {
 
         let make = |version| {
             build(&CreateInput {
-                source: &payload,
-                trackers: &[],
-                comment: "",
+                source: payload.to_path_buf(),
+                trackers: vec![],
+                comment: String::new(),
                 created_by: "test".into(),
                 private: false,
                 piece_length: Some(16384),
@@ -662,9 +664,9 @@ mod tests {
             _ => TorrentVersion::V1,
         };
         let built = build(&CreateInput {
-            source: &src,
-            trackers: &[],
-            comment: "",
+            source: src.to_path_buf(),
+            trackers: vec![],
+            comment: String::new(),
             created_by: "nanotorrent gui test".into(),
             private: false,
             piece_length: Some(16384),
@@ -754,11 +756,11 @@ mod tests {
         let data = vec![0xABu8; BLOCK * 2 + 100];
         let path = write_temp("v2single.bin", &data);
         let built = build(&CreateInput {
-            source: &path,
+            source: path.to_path_buf(),
             version: TorrentVersion::V2,
             piece_length: Some(BLOCK as u32), // 1 block per piece
-            trackers: &["http://tracker.example/announce".into()],
-            comment: "hi",
+            trackers: vec!["http://tracker.example/announce".into()],
+            comment: "hi".into(),
             private: false,
             created_by: "test".into(),
         })
@@ -781,11 +783,11 @@ mod tests {
         File::create(&b).unwrap().write_all(&[2u8; 200]).unwrap();
         // Build from the directory (multi-file → padding files exercised).
         let built = build(&CreateInput {
-            source: &dir,
+            source: dir.to_path_buf(),
             version: TorrentVersion::Hybrid,
             piece_length: Some(BLOCK as u32),
-            trackers: &[],
-            comment: "",
+            trackers: vec![],
+            comment: String::new(),
             private: true,
             created_by: "test".into(),
         })
@@ -821,11 +823,11 @@ mod tests {
 
     fn v1(source: &Path, piece_length: u32) -> Vec<u8> {
         build(&CreateInput {
-            source,
+            source: source.to_path_buf(),
             version: TorrentVersion::V1,
             piece_length: Some(piece_length),
-            trackers: &[],
-            comment: "",
+            trackers: vec![],
+            comment: String::new(),
             private: false,
             created_by: "test".into(),
         })
@@ -904,11 +906,11 @@ mod tests {
                 // The v1 half of a hybrid has to verify the same way, padding
                 // files and all, or v1-only peers cannot use it.
                 let hybrid = build(&CreateInput {
-                    source: &source,
+                    source: source.to_path_buf(),
                     version: TorrentVersion::Hybrid,
                     piece_length: Some(piece_length),
-                    trackers: &[],
-                    comment: "",
+                    trackers: vec![],
+                    comment: String::new(),
                     private: false,
                     created_by: "test".into(),
                 })
@@ -1023,11 +1025,11 @@ mod tests {
 
         let hashes = |version| {
             let built = build(&CreateInput {
-                source: &source,
+                source: source.to_path_buf(),
                 version,
                 piece_length: Some(16_384),
-                trackers: &["http://tracker.example/announce".into()],
-                comment: "pinned",
+                trackers: vec!["http://tracker.example/announce".into()],
+                comment: "pinned".into(),
                 private: true,
                 created_by: "test".into(),
             })
@@ -1081,11 +1083,11 @@ mod tests {
         std::fs::write(bad, b"x").unwrap();
 
         let err = build(&CreateInput {
-            source: &root.join("d"),
+            source: root.join("d"),
             version: TorrentVersion::V1,
             piece_length: Some(16_384),
-            trackers: &[],
-            comment: "",
+            trackers: vec![],
+            comment: String::new(),
             private: false,
             created_by: "test".into(),
         })

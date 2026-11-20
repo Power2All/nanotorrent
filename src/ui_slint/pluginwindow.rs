@@ -212,14 +212,6 @@ pub fn activate_menu(id: &str) {
     });
 }
 
-/// Configure was pressed. The plugin decides what that means - typically
-/// `ui_show()`, but a plugin with no window might do something else entirely.
-pub fn configure(name: &str) {
-    ui::post(ui::UiEvent::Configure {
-        plugin: name.to_owned(),
-    });
-}
-
 fn make(name: &str) -> Option<PluginWindow> {
     let window = match PluginWindow::new() {
         Ok(window) => window,

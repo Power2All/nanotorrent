@@ -397,7 +397,49 @@ mod tests {
                 missing.is_empty() && extra.is_empty(),
                 "{locale} does not match en-US: missing {missing:?}, extra {extra:?}"
             );
+            let twice = duplicate_keys(json);
+            assert!(twice.is_empty(), "{locale} has these keys twice: {twice:?}");
         }
+    }
+
+    /// Keys that appear more than once in one file.
+    ///
+    /// The comparison above cannot see them: parsing into a map keeps only the
+    /// last of a duplicated key, so the set of keys looks complete while the
+    /// first translation is silently discarded. 24 files carried two `all` and
+    /// two `custom`, and in each the version that lost was never shown.
+    fn duplicate_keys(json: &str) -> Vec<String> {
+        struct Keys(Vec<String>);
+        impl<'de> serde::Deserialize<'de> for Keys {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                struct V;
+                impl<'de> serde::de::Visitor<'de> for V {
+                    type Value = Keys;
+                    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        f.write_str("an object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(self, mut m: M) -> Result<Keys, M::Error> {
+                        let mut keys = Vec::new();
+                        while let Some((k, _)) = m.next_entry::<String, serde::de::IgnoredAny>()? {
+                            keys.push(k);
+                        }
+                        Ok(Keys(keys))
+                    }
+                }
+                d.deserialize_map(V)
+            }
+        }
+        let keys = serde_json::from_str::<Keys>(json.trim_start_matches('\u{feff}'))
+            .expect("parses")
+            .0;
+        let mut seen = std::collections::HashSet::new();
+        keys.into_iter().filter(|k| !seen.insert(k.clone())).collect()
+    }
+
+    #[test]
+    fn a_duplicated_key_is_noticed() {
+        assert_eq!(duplicate_keys(r#"{"a": "1", "b": "2", "a": "3"}"#), vec!["a"]);
+        assert!(duplicate_keys(r#"{"a": "1", "b": "2"}"#).is_empty());
     }
 
     #[test]
@@ -518,7 +560,7 @@ mod slint_key_tests {
             include_str!("../ui_slint/about.slint"),
             include_str!("../ui_slint/create.slint"),
             include_str!("../ui_slint/closeprompt.slint"),
-            include_str!("../ui_slint/dbprompt.slint"),
+            include_str!("../ui_slint/confirm.slint"),
             include_str!("../ui_slint/tray.slint"),
             // Four more that carried keys but were never scanned: the
             // list was hand-written and fell behind the directory.

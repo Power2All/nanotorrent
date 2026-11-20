@@ -883,19 +883,9 @@ fn deliver_ui(plugins: &mut [Plugin], event: ui::UiEvent) {
         }
     };
 
-    let Some(plugin) = plugins.iter_mut().find(|p| p.name == name) else {
-        return;
-    };
-    if !plugin.handles(func, args.len()) {
-        return;
-    }
-    let result =
-        plugin
-            .engine
-            .call_fn::<Dynamic>(&mut plugin.scope, &plugin.ast, func, args);
-    if let Err(err) = result {
-        tracing::error!("plugin {}: {func} failed: {err}", plugin.name);
-        ui::report_failure(&plugin.name, func, &err.to_string());
+    if let Some(plugin) = plugins.iter_mut().find(|p| p.name == name) {
+        let arity = args.len();
+        call_one(plugin, func, arity, args);
     }
 }
 
@@ -932,21 +922,24 @@ fn call_all<A: rhai::FuncArgs + Clone>(plugins: &mut [Plugin], func: &str, args:
     };
 
     for plugin in plugins.iter_mut() {
-        if !plugin.handles(func, arity) {
-            continue;
-        }
-        let result = plugin.engine.call_fn::<rhai::Dynamic>(
-            &mut plugin.scope,
-            &plugin.ast,
-            func,
-            args.clone(),
-        );
-        if let Err(err) = result {
-            tracing::error!("plugin {}: {func} failed: {err}", plugin.name);
-            // A plugin whose `on_tick` dies every minute would otherwise sit
-            // there looking busy - the window is where someone is looking.
-            ui::report_failure(&plugin.name, func, &err.to_string());
-        }
+        call_one(plugin, func, arity, args.clone());
+    }
+}
+
+/// Call `func` on one plugin if it defines it with `arity` parameters, and
+/// report a failure rather than propagate it.
+fn call_one(plugin: &mut Plugin, func: &str, arity: usize, args: impl rhai::FuncArgs) {
+    if !plugin.handles(func, arity) {
+        return;
+    }
+    let result = plugin
+        .engine
+        .call_fn::<rhai::Dynamic>(&mut plugin.scope, &plugin.ast, func, args);
+    if let Err(err) = result {
+        tracing::error!("plugin {}: {func} failed: {err}", plugin.name);
+        // A plugin whose `on_tick` dies every minute would otherwise sit
+        // there looking busy - the window is where someone is looking.
+        ui::report_failure(&plugin.name, func, &err.to_string());
     }
 }
 

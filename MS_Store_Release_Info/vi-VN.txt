@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Tiếng Việt (Việt Nam) - Partner Center: Vietnamese (Vietnam) (vi-VN)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent là bản chuyển sang Rust của PicoTorrent do Viktor Elofsson vi
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Phiên bản 0.4.6
+Phiên bản 0.4.7
 
-- Sửa lỗi: lượng dữ liệu đã tải lên của mỗi torrent giờ được giữ lại khi đóng NanoTorrent. Phần tải lên chưa được lưu từng bị mất mỗi lần thoát, nên sau khi khởi động lại, một torrent có thể hiển thị ít hơn nhiều, hoặc bằng không.
-- Sửa lỗi: máy ngang hàng kết nối tới NanoTorrent mà không mã hóa nay lại được chấp nhận. Trước đó tất cả đều bị từ chối, khiến việc chia sẻ bị chậm lại.
-- Thay đổi bên trong: các thư viện mà NanoTorrent dựa trên đã được cập nhật cùng các bản sửa lỗi mới nhất.
+- Mới: trong hộp thoại “Thêm file torrent”, mỗi thư mục có ô đánh dấu riêng để chọn hoặc bỏ chọn mọi thứ bên trong, kể cả thư mục con, còn các nút “Tất cả” và “Không có” làm điều tương tự cho cả torrent. Thư mục chỉ có một số tệp được chọn sẽ hiện ô có dấu gạch ngang.
+- Mới: API web tùy chọn, tương thích với qBittorrent, để Sonarr, Radarr và các công cụ khác dành cho qBittorrent có thể điều khiển NanoTorrent. Bật trong “Cài đặt”, mục “Giao diện web”.
+- Sửa lỗi: cột “Nguồn” và “Peer” giờ hiển thị trong ngoặc quy mô của cả swarm theo báo cáo của tracker, thứ tự đặt bằng mức ưu tiên tệp được giữ nguyên khi tạm dừng rồi chạy lại torrent, và mở “Cài đặt” lần thứ hai khi cửa sổ đang mở không còn làm mất các thay đổi chưa lưu.
+- Sửa lỗi: đổi ngôn ngữ giờ sẽ vẽ lại mọi hộp thoại đang mở, và tệp bộ lọc IP có đường dẫn chứa dấu cách, # hoặc % giờ đã tải được.
+- Bảo mật: giao diện web dùng thư viện HTTP đã cập nhật, khắc phục cách đọc một yêu cầu sai định dạng.
+- Đã gỡ bỏ: tùy chọn dòng lệnh --webui-set. --set web-bind, web-port, web-username và các thiết lập web-* khác làm được điều tương tự.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

@@ -1,5 +1,5 @@
 ================================================================================
-NanoTorrent 0.4.6 - Microsoft Store listing
+NanoTorrent 0.4.7 - Microsoft Store listing
 Language: Hausa (Najeriya) - Partner Center: Hausa (Nigeria) (ha-Latn-NG)
 ================================================================================
 Paste each block into the matching field in Partner Center, under
@@ -28,11 +28,14 @@ NanoTorrent shi ne sigar Rust na PicoTorrent na Viktor Elofsson.
 
 
 --- WHAT'S NEW IN THIS VERSION (max 1,500 characters) --------------------------
-Sigar 0.4.6
+Sigar 0.4.7
 
-- Gyare-gyare: yanzu ana adana yawan abin da aka aika na kowane torrent idan NanoTorrent ya rufe. Abubuwan da aka aika waɗanda ba a adana ba tukuna suna ɓacewa a kowace fita, don haka torrent zai iya nuna ƙasa sosai, ko babu komai, bayan sake farawa.
-- Gyare-gyare: an sake karɓar takwarorin da ke haɗawa da NanoTorrent ba tare da ɓoyewa ba. A da ana ƙin dukansu, wanda ya kawo cikas ga rabawa.
-- A ciki: an sabunta laburaren da aka gina NanoTorrent a kansu, tare da sabbin gyare-gyarensu.
+- Sabo: a cikin akwatin “Ƙara torrent”, kowane babban fayil yana da akwatin dubawa nasa wanda ke sa alama ko cire alama ga duk abin da ke cikinsa, har da ƙananan manyan fayiloli, kuma maɓallan “Duka” da “Babu” suna yin haka ga dukan torrent. Babban fayil da wasu daga cikin fayilolinsa kawai aka sa wa alama yana nuna akwati mai layi.
+- Sabo: API na yanar gizo na zaɓi wanda ya dace da qBittorrent, don Sonarr, Radarr da sauran kayan aikin da aka yi don qBittorrent su iya sarrafa NanoTorrent. Kunna shi a “Zaɓuɓɓuka”, ƙarƙashin “Hanyar yanar gizo”.
+- Gyare-gyare: ginshiƙan “Masu rabawa” da “Takwarori” yanzu suna nuna girman dukan taron a cikin baka, kamar yadda trackers suka bayar; tsarin da aka saita da fifikon fayiloli yana nan daram idan aka dakatar da torrent aka sake farawa; kuma buɗe “Zaɓuɓɓuka” a karo na biyu yayin da yake a buɗe ba ya sake share canje-canjen da ba a adana ba.
+- Gyare-gyare: canza harshe yanzu yana sake zana duk akwatunan tattaunawa da ke buɗe, kuma fayil ɗin matatar IP wanda hanyarsa ke da sarari, # ko % yanzu yana buɗewa.
+- Tsaro: hanyar yanar gizo tana amfani da laburaren HTTP da aka sabunta, wanda ya gyara yadda take karanta buƙatar da ba ta da tsari daidai.
+- An cire: zaɓin layin umarni --webui-set. --set web-bind, web-port, web-username da sauran saitunan web-* suna yin aiki ɗaya.
 
 
 --- PRODUCT FEATURES (up to 20 items, max 200 characters each; one per line) ----

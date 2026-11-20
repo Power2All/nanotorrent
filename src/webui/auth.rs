@@ -376,6 +376,35 @@ fn stream_token_ok(req: &ServiceRequest) -> bool {
 }
 
 
+/// What a qBittorrent-style form login comes to.
+pub(super) enum Login {
+    Ok,
+    Fails,
+    Banned,
+}
+
+/// A form login (`/api/v2/auth/login`), under the same lockout and the same
+/// account as Basic auth: one password, one failure count per address.
+pub(super) fn login(
+    creds: &Credentials,
+    attempts: &Attempts,
+    who: &str,
+    user: &str,
+    pass: &str,
+) -> Login {
+    if attempts.locked_for(who).is_some() {
+        return Login::Banned;
+    }
+    if creds.verify(user, pass) {
+        attempts.record_success(who);
+        Login::Ok
+    } else {
+        attempts.record_failure(who);
+        tracing::warn!("rejected a qBittorrent API login from {who}");
+        Login::Fails
+    }
+}
+
 /// Middleware demanding HTTP Basic credentials on every request it wraps.
 ///
 /// Applied to the whole app rather than per-route, so a route added later is
@@ -418,6 +447,25 @@ where
     if cross_site_write(&req) {
         tracing::warn!("refused a cross-site {} to {}", req.method(), req.path());
         return Ok(forbidden(req));
+    }
+
+    // The qBittorrent-compatible API, when it is switched on - which is
+    // exactly when its session table is in the app data. Its own login
+    // happens in a handler (it takes a form, not a header) that applies the
+    // lockout below itself; after that a request is in by its `SID` cookie.
+    // Without either, qBittorrent answers 403, and its clients read that as
+    // "log in again" - a 401 with a Basic challenge would be the wrong cue.
+    // Basic credentials still work here, by falling through.
+    if req.path().starts_with("/api/v2/")
+        && let Some(sids) = req.app_data::<web::Data<super::qbt::Sids>>().cloned()
+    {
+        let in_session = super::qbt::sid(req.headers()).is_some_and(|s| sids.check(s));
+        if in_session || req.path() == "/api/v2/auth/login" {
+            return next.call(req).await.map(|res| res.map_into_boxed_body());
+        }
+        if !req.headers().contains_key("Authorization") {
+            return Ok(req.into_response(HttpResponse::Forbidden().body("Forbidden")));
+        }
     }
 
     // peer_addr, NOT connection_info().realip_remote_addr(): that one trusts
